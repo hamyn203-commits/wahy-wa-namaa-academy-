@@ -92,6 +92,12 @@ img, svg, video {
 
 .spinner-lg { @apply w-12 h-12; }
 
+.wn-loading-label {
+  color: var(--wn-text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
 /* ── Inputs (legacy class → brand field) ──────────────────────────── */
 .input-field {
   @apply w-full px-4 py-2.5 text-sm outline-none;
