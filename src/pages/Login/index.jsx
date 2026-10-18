@@ -128,7 +128,7 @@ export default function Login() {
           <div className="wn-auth-visual__content">
             <div>
               <BrandLogo size={60} variant="light" to={lp('/')} />
-              <span className="wn-auth-visual__eyebrow" style={{ marginTop: '2.6rem' }}>
+              <span className="wn-auth-visual__eyebrow wn-auth-visual__eyebrow--spaced">
                 <Sparkles size={14} />
                 {isAr ? 'مرحبًا بعودتك إلى وحي ونماء' : 'WELCOME BACK TO WAHY WA NAMAA'}
               </span>
@@ -178,9 +178,9 @@ export default function Login() {
             </div>
 
             {loginNotice && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950" role="status">
-                <strong className="block mb-1">{loginNotice.title}</strong>
-                <p className="text-sm leading-6">{loginNotice.text}</p>
+              <div className="wn-public-notice wn-public-notice--warning" role="status">
+                <strong>{loginNotice.title}</strong>
+                <p>{loginNotice.text}</p>
               </div>
             )}
             {error && <div className="wn-public-error" role="alert">{error}</div>}

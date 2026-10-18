@@ -55,9 +55,9 @@ export default function ForgotPassword() {
         </div>
 
         {status === 'success' ? (
-          <div className="text-center">
-            <div className="w-14 h-14 mx-auto grid place-items-center rounded-2xl bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)]"><KeyRound size={25} /></div>
-            <p className="mt-4 text-sm leading-7 text-[var(--wn-text-secondary)]">
+          <div className="wn-public-feedback wn-public-feedback--success">
+            <div className="wn-public-feedback__icon"><KeyRound size={25} /></div>
+            <p className="wn-public-feedback__message">
               {isAr ? 'لو البريد مسجل عندنا، ستصلك رسالة تحتوي على الخطوة التالية.' : 'If the email is registered, you will receive the next step by email.'}
             </p>
             <Link to={localizedPath('/login', locale)} className="wn-btn wn-btn--primary wn-btn--block mt-5">
@@ -66,9 +66,9 @@ export default function ForgotPassword() {
             </Link>
           </div>
         ) : status === 'unavailable' ? (
-          <div className="text-center">
-            <div className="w-14 h-14 mx-auto grid place-items-center rounded-2xl bg-amber-50 text-amber-700"><Mail size={25} /></div>
-            <p className="mt-4 text-sm leading-7 text-[var(--wn-text-secondary)]">{message}</p>
+          <div className="wn-public-feedback wn-public-feedback--warning">
+            <div className="wn-public-feedback__icon"><Mail size={25} /></div>
+            <p className="wn-public-feedback__message">{message}</p>
             <button
               type="button"
               onClick={() => setStatus('')}

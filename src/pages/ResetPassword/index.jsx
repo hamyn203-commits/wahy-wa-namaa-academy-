@@ -71,11 +71,11 @@ export default function ResetPassword() {
         </div>
 
         {status === 'success' ? (
-          <div className="text-center">
-            <div className="w-14 h-14 mx-auto grid place-items-center rounded-2xl bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)]">
+          <div className="wn-public-feedback wn-public-feedback--success">
+            <div className="wn-public-feedback__icon">
               <KeyRound size={25} />
             </div>
-            <p className="mt-4 text-sm leading-7 text-[var(--wn-text-secondary)]">
+            <p className="wn-public-feedback__message">
               {isAr
                 ? 'تم تغيير كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن.'
                 : 'Your password was changed successfully. You can sign in now.'}
@@ -86,11 +86,11 @@ export default function ResetPassword() {
             </Link>
           </div>
         ) : status === 'invalid' ? (
-          <div className="text-center">
-            <div className="w-14 h-14 mx-auto grid place-items-center rounded-2xl bg-red-50 text-red-700">
+          <div className="wn-public-feedback wn-public-feedback--error">
+            <div className="wn-public-feedback__icon">
               <LockKeyhole size={25} />
             </div>
-            <p className="mt-4 text-sm leading-7 text-[var(--wn-text-secondary)]">
+            <p className="wn-public-feedback__message">
               {isAr
                 ? 'رابط استعادة كلمة المرور غير مكتمل. اطلب رابطًا جديدًا.'
                 : 'This password reset link is incomplete. Request a new one.'}

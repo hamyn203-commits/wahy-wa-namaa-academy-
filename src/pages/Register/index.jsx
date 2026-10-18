@@ -203,10 +203,6 @@ export default function Register() {
   const planPrice = getEstimatedPrice();
   const planDuration = getEstimatedDuration();
 
-  // Dynamic style values based on language direction
-  const iconStyle = isRtl ? { right: '16px' } : { left: '16px' };
-  const inputPadding = isRtl ? '14px 50px 14px 16px' : '14px 16px 14px 50px';
-
   return (
     <div className="wn-register-shell flex items-center justify-center" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="w-full max-w-6xl grid lg:grid-cols-12 gap-8 items-stretch">
@@ -287,7 +283,7 @@ export default function Register() {
 
                   {isIndonesian && (
                     <div className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-950/40 border border-emerald-500/20 p-2.5 text-[11px] text-emerald-300 leading-normal">
-                      <Globe size={14} className="shrink-0 text-emerald-400 mt-0.5 animate-spin" style={{ animationDuration: '6s' }} />
+                      <Globe size={14} className="shrink-0 text-emerald-400 mt-0.5 animate-spin wn-spin-slow" />
                       <span>
                         {locale === 'id' 
                           ? 'Terdeteksi IP Indonesia: Subsidi Biaya Khusus Aktif (Dukungan Guru Mesir Terjangkau).' 
@@ -331,7 +327,7 @@ export default function Register() {
 
                 {isIndonesian && (
                   <div className="mt-4 flex items-start gap-2 rounded-xl bg-emerald-950/40 border border-emerald-500/20 p-2.5 text-[11px] text-emerald-300 leading-normal">
-                    <Globe size={14} className="shrink-0 text-emerald-400 mt-0.5 animate-spin" style={{ animationDuration: '6s' }} />
+                    <Globe size={14} className="shrink-0 text-emerald-400 mt-0.5 animate-spin wn-spin-slow" />
                     <span>
                       {locale === 'id' 
                         ? 'Terdeteksi IP Indonesia: Subsidi Biaya Khusus Aktif (Dukungan Guru Mesir Terjangkau).' 
@@ -437,7 +433,7 @@ export default function Register() {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-4 mb-6 text-sm flex items-start gap-2.5"
+                className="wn-public-error wn-public-error--inline"
               >
                 <span className="font-bold shrink-0">!</span>
                 <span>{error}</span>
@@ -451,8 +447,8 @@ export default function Register() {
                 <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
                   {locale === 'ar' ? 'الاسم الكامل' : 'Full Name'}
                 </label>
-                <div className="relative">
-                  <User size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <div className="wn-register-field__control">
+                  <User size={18} className="wn-register-field__icon" />
                   <input
                     type="text"
                     name="name"
@@ -460,8 +456,7 @@ export default function Register() {
                     onChange={handleChange}
                     required
                     placeholder={locale === 'ar' ? 'أدخل اسمك الكامل' : 'Enter your full name'}
-                    style={{ padding: inputPadding }}
-                    className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
+                    className="wn-register-field__input"
                   />
                 </div>
               </div>
@@ -471,8 +466,8 @@ export default function Register() {
                 <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
                   {locale === 'ar' ? 'البريد الإلكتروني' : 'Email Address'}
                 </label>
-                <div className="relative">
-                  <Mail size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <div className="wn-register-field__control">
+                  <Mail size={18} className="wn-register-field__icon" />
                   <input
                     type="email"
                     name="email"
@@ -480,8 +475,7 @@ export default function Register() {
                     onChange={handleChange}
                     required
                     placeholder="example@email.com"
-                    style={{ padding: inputPadding }}
-                    className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
+                    className="wn-register-field__input"
                   />
                 </div>
               </div>
@@ -553,8 +547,8 @@ export default function Register() {
                     ? (locale === 'ar' ? 'رقم هاتف ولي الأمر' : 'Guardian Phone Number')
                     : (locale === 'ar' ? 'رقم الهاتف (اختياري)' : 'Phone Number (Optional)')}
                 </label>
-                <div className="relative">
-                  <Phone size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <div className="wn-register-field__control">
+                  <Phone size={18} className="wn-register-field__icon" />
                   <input
                     type="tel"
                     name="phone"
@@ -562,8 +556,7 @@ export default function Register() {
                     onChange={handleChange}
                     required={role === 'guardian'}
                     placeholder="+20 123 456 7890"
-                    style={{ padding: inputPadding }}
-                    className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
+                    className="wn-register-field__input"
                   />
                 </div>
                 {role === 'guardian' && (
@@ -631,8 +624,8 @@ export default function Register() {
                 <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
                   {locale === 'ar' ? 'كلمة المرور' : 'Password'}
                 </label>
-                <div className="relative">
-                  <Lock size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <div className="wn-register-field__control">
+                  <Lock size={18} className="wn-register-field__icon" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     name="password"
@@ -640,14 +633,12 @@ export default function Register() {
                     onChange={handleChange}
                     required
                     placeholder="••••••••"
-                    style={{ padding: inputPadding }}
-                    className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
+                    className="wn-register-field__input wn-register-field__input--with-toggle"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    style={isRtl ? { left: '16px' } : { right: '16px' }}
-                    className="absolute top-1/2 transform -translate-y-1/2 background-none border-none cursor-pointer text-slate-400 p-1 flex items-center"
+                    className="wn-register-field__toggle"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
@@ -665,8 +656,8 @@ export default function Register() {
                 <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
                   {locale === 'ar' ? 'تأكيد كلمة المرور' : 'Confirm Password'}
                 </label>
-                <div className="relative">
-                  <Lock size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <div className="wn-register-field__control">
+                  <Lock size={18} className="wn-register-field__icon" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     name="confirmPassword"
@@ -674,8 +665,7 @@ export default function Register() {
                     onChange={handleChange}
                     required
                     placeholder="••••••••"
-                    style={{ padding: inputPadding }}
-                    className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
+                    className="wn-register-field__input wn-register-field__input--with-toggle"
                   />
                 </div>
               </div>
