@@ -289,6 +289,15 @@
   font-size: .78rem;
 }
 
+.wn-public-error--inline {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  border-radius: 12px;
+  padding: 1rem;
+  font-size: .875rem;
+}
+
 .wn-public-feedback {
   display: grid;
   justify-items: center;
@@ -936,6 +945,65 @@
   color: #efd28e;
   flex: 0 0 auto;
   margin-top: .1rem;
+}
+
+.wn-register-field__control {
+  position: relative;
+}
+
+.wn-register-field__icon {
+  position: absolute;
+  inset-inline-start: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.wn-register-field__input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.875rem;
+  padding-block: 0.875rem;
+  padding-inline-start: 3rem;
+  padding-inline-end: 1rem;
+  outline: none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.wn-register-field__input:focus {
+  border-color: color-mix(in srgb, var(--wn-gold) 90%, #ffffff);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--wn-gold) 12%, transparent);
+}
+
+.wn-register-field__input--with-toggle {
+  padding-inline-end: 3rem;
+}
+
+.wn-register-field__toggle {
+  position: absolute;
+  inset-inline-end: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  padding: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.wn-register-field__toggle:hover {
+  color: var(--wn-emerald-dark);
+}
+
+.wn-spin-slow {
+  animation-duration: 6s;
 }
 
 @media (min-width: 768px) {
