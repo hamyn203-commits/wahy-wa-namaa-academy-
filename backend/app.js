@@ -12,6 +12,8 @@ const { getLaunchReadiness } = require('./config/launchReadiness');
 const { getEmailProviderStatus } = require('./config/emailProvider');
 const { isTrustedOrigin, requireTrustedOrigin } = require('./config/origins');
 const { version: APP_VERSION } = require('./package.json');
+const log = require('./utils/logger');
+const { requestId } = require('./middleware/requestId');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -19,6 +21,9 @@ const app = express();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+
+// --- Request correlation ID (earliest possible middleware) ---
+app.use(requestId);
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -357,8 +362,12 @@ app.use((_req, res) => {
 });
 
 app.use((err, req, res, _next) => {
-  console.error('API error:', {
-    message: err.message,
+  const errLog = req.log || log;
+  errLog.error('API error', {
+    error: err.message,
+    name: err.name,
+    code: err.code,
+    status: err.status,
     path: req.path,
     method: req.method,
     stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,

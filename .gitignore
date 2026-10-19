@@ -60,6 +60,7 @@ backend/tmp/
 eslint-warnings*.json
 .lint-output.txt
 qa-student-state.json
+output/
 
 # Uploads
 uploads/
