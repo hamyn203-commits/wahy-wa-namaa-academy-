@@ -41,7 +41,7 @@ jobs:
         run: npm run test:routes
 
       - name: Teacher upload recovery tests
-        run: node --test scripts/teacher-upload-queue.test.mjs
+        run: node --test scripts/teacher-upload-queue.test.mjs scripts/resumable-teacher-upload.test.mjs
 
       - name: Build
         run: npm run build --ignore-scripts

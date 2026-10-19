@@ -165,7 +165,9 @@ assert.match(teacherDashboard, /tab\s*===\s*['"]students['"]/);
 assert.match(teacherDashboard, /\/api\/finance\/teacher\/balance/);
 assert.match(teacherDashboard, /\/api\/live\/sessions/);
 assert.match(teacherDashboard, /tab\s*===\s*['"]updates['"]/);
-assert.match(teacherDashboard, /uploadFileDirect\(file,\s*['"]teacher-update-video['"]\)/);
+assert.match(teacherDashboard, /uploadTeacherFiles\(/);
+assert.match(teacherDashboard, /purpose:\s*['"]teacher-update-video['"]/);
+assert.match(teacherDashboard, /upload:\s*uploadFileDirect/);
 assert.match(teacherDashboard, /\/api\/teacher-updates\/teacher/);
 assert.doesNotMatch(teacherDashboard, /<TabBar\s/);
 

@@ -1,6 +1,9 @@
-import { upload } from '@vercel/blob/client';
+import { upload, createMultipartUpload, uploadPart, completeMultipartUpload } from '@vercel/blob/client';
+import { uploadResumableParts } from './resumableTeacherUpload.mjs';
 import { apiUrl } from '../config';
 import { getAccessToken } from './authSession';
+
+const incompleteVideoUploads = new WeakMap();
 
 function decodeJwt(token) {
   try {
@@ -48,22 +51,65 @@ export async function uploadFileDirect(file, purpose, options = {}) {
     || `${Math.random().toString(36).slice(2)}-${performance.now?.().toString().replace('.', '-') || '0'}`;
   const pathname = `uploads/${sanitizeSegment(purpose)}/${sanitizeSegment(owner)}/${Date.now()}-${sanitizeSegment(nonce)}-${sanitizeSegment(file.name || 'file')}`;
 
-  const blob = await upload(pathname, file, {
-    access: 'private',
-    abortSignal: options.abortSignal,
-    onUploadProgress: options.onUploadProgress,
-    handleUploadUrl: apiUrl('/api/uploads/blob'),
-    multipart: file.size > 5 * 1024 * 1024,
-    clientPayload: JSON.stringify({
-      purpose,
-      filename: file.name,
-      contentType: file.type,
-      size: file.size,
-      accessToken: accessToken || undefined,
-      verificationToken: verificationToken || undefined,
-      phoneVerificationToken: phoneVerificationToken || undefined,
-    }),
+  const handleUploadUrl = apiUrl('/api/uploads/blob');
+  const clientPayload = JSON.stringify({
+    purpose,
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+    accessToken: accessToken || undefined,
+    verificationToken: verificationToken || undefined,
+    phoneVerificationToken: phoneVerificationToken || undefined,
   });
+
+  // Teacher videos use explicitly checkpointed multipart uploads. The Vercel
+  // automatic multipart mode retries failed parts internally, but a new call
+  // cannot recover parts from the previous call after its request fails.
+  let blob;
+  if (options.resumable && file.size > 5 * 1024 * 1024) {
+    blob = await uploadResumableParts(file, {
+      pathname,
+      scope: sanitizeSegment(owner) + '/' + sanitizeSegment(purpose),
+      sessions: incompleteVideoUploads,
+      abortSignal: options.abortSignal,
+      onUploadProgress: options.onUploadProgress,
+      onUploadState: options.onUploadState,
+      getToken: async (activePathname, signal) => {
+        const response = await fetch(handleUploadUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal,
+          body: JSON.stringify({
+            type: 'blob.generate-client-token',
+            payload: {
+              pathname: activePathname,
+              multipart: true,
+              clientPayload,
+            },
+          }),
+        });
+        if (!response.ok) throw new Error('Upload authorization rejected (' + response.status + ')');
+        const data = await response.json();
+        if (!data.clientToken) throw new Error('Upload authorization missing');
+        return data.clientToken;
+      },
+      client: {
+        create: createMultipartUpload,
+        uploadPart,
+        complete: completeMultipartUpload,
+      },
+    });
+  } else {
+    options.onUploadState?.('uploading');
+    blob = await upload(pathname, file, {
+      access: 'private',
+      abortSignal: options.abortSignal,
+      onUploadProgress: options.onUploadProgress,
+      handleUploadUrl,
+      multipart: file.size > 5 * 1024 * 1024,
+      clientPayload,
+    });
+  }
 
   return {
     url: blob.url,

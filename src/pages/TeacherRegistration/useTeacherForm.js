@@ -343,9 +343,10 @@ export function useTeacherForm() {
     const city = pCity(formData.personalInfo.address);
     let saveTimer;
     let saveTimedOut = false;
+    let filesUploaded = false;
 
     try {
-      const scope = authenticatedTeacher ? String(user.id || user._id || user.email) : verificationToken;
+      const scope = authenticatedTeacher ? String(user.id || user._id || user.email) : verifiedEmailNow;
       if (completedUploads.current.scope !== scope) {
         completedUploads.current = { scope, files: new Map() };
       }
@@ -370,6 +371,7 @@ export function useTeacherForm() {
         cache: completedUploads.current.files,
         onProgress: setUploadProgress,
       });
+      filesUploaded = true;
       setUploadProgress({ saving: true });
 
       const payload = {
@@ -426,7 +428,7 @@ export function useTeacherForm() {
       setSubmitted(true);
       toast.success('تم إرسال طلبك بنجاح!');
     } catch (e) {
-      const message = saveTimedOut || /failed to fetch|network|load failed/i.test(e.message || '')
+      const message = saveTimedOut || (filesUploaded && /failed to fetch|network|load failed/i.test(e.message || ''))
         ? 'اكتمل رفع الملفات لكن تعذر تأكيد حفظ الطلب. تحقق من حالة الطلب مع الإدارة قبل إعادة الإرسال.'
         : e.message;
       setFieldError(message);

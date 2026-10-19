@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Calendar, Users, Star, Wallet, ClipboardList,
@@ -12,6 +12,7 @@ import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
+import { uploadTeacherFiles } from '../../lib/teacherUploadQueue.mjs';
 import { apiUrl } from '../../config';
 import { TASK_TYPES } from '../TeacherRegistration/constants';
 import SessionChatModal from '../../components/session/SessionChatModal';
@@ -110,6 +111,8 @@ export default function TeacherDashboard() {
     files: [],
   });
   const [publishingUpdate, setPublishingUpdate] = useState(false);
+  const [updateUploadProgress, setUpdateUploadProgress] = useState(null);
+  const updateUploadCache = useRef(new Map());
   const [updateVideoUrls, setUpdateVideoUrls] = useState({});
   const [profileChange, setProfileChange] = useState(null);
   const [profileEdit, setProfileEdit] = useState({
@@ -120,6 +123,8 @@ export default function TeacherDashboard() {
     profilePhoto: null, introductionVideo: null, recitationVideo: null, teachingMethodVideo: null,
   });
   const [savingProfileChange, setSavingProfileChange] = useState(false);
+  const [profileUploadProgress, setProfileUploadProgress] = useState(null);
+  const profileUploadCache = useRef(new Map());
   const [attendanceUpdating, setAttendanceUpdating] = useState('');
 
 
@@ -195,10 +200,13 @@ export default function TeacherDashboard() {
 
     try {
       const mediaEntries = Object.entries(profileFiles).filter(([, file]) => Boolean(file));
-      const uploadedPairs = await Promise.all(mediaEntries.map(async ([kind, file]) => (
-        [kind, await uploadFileDirect(file, 'teacher-public')]
-      )));
-      const media = Object.fromEntries(uploadedPairs);
+      const media = await uploadTeacherFiles(mediaEntries.map(([kind, file]) => ({
+        key: kind, label: file.name || kind, purpose: 'teacher-public', files: [file],
+      })), {
+        upload: uploadFileDirect,
+        cache: profileUploadCache.current,
+        onProgress: setProfileUploadProgress,
+      });
       const changes = { personalInfo: {}, academicInfo: {}, quranInfo: {}, user: {} };
 
       if (profileEdit.fullName.trim() !== String(teacher.personalInfo?.fullName || '').trim()) changes.personalInfo.fullName = profileEdit.fullName.trim();
@@ -212,12 +220,14 @@ export default function TeacherDashboard() {
 
       const result = await api.post('/api/teachers/dashboard/profile-change', { changes, media }, { auth: true });
       setProfileChange(result.request || null);
+      profileUploadCache.current.clear();
       setProfileFiles({ profilePhoto: null, introductionVideo: null, recitationVideo: null, teachingMethodVideo: null });
       toast.success('تم إرسال التعديلات للإدارة. ملفك العام سيبقى كما هو حتى الموافقة.');
     } catch (error) {
       toast.error(error.message || 'تعذر إرسال طلب التعديل');
     } finally {
       setSavingProfileChange(false);
+      setProfileUploadProgress(null);
     }
   };
 
@@ -626,16 +636,23 @@ export default function TeacherDashboard() {
 
     setPublishingUpdate(true);
     try {
-      const uploaded = [];
-      for (const file of updateForm.files) {
-        const result = await uploadFileDirect(file, 'teacher-update-video');
-        uploaded.push({
-          reference: result.url,
-          name: result.name,
-          size: result.size,
-          contentType: result.contentType,
-        });
-      }
+      const files = await uploadTeacherFiles([{
+        key: 'videos',
+        label: 'فيديوهات الرسالة',
+        purpose: 'teacher-update-video',
+        multiple: true,
+        files: updateForm.files,
+      }], {
+        upload: uploadFileDirect,
+        cache: updateUploadCache.current,
+        onProgress: setUpdateUploadProgress,
+      });
+      const uploaded = files.videos.map((result) => ({
+        reference: result.url,
+        name: result.name,
+        size: result.size,
+        contentType: result.contentType,
+      }));
 
       await api.post('/api/teacher-updates/teacher', {
         title: updateForm.title.trim(),
@@ -645,6 +662,7 @@ export default function TeacherDashboard() {
         videos: uploaded,
       }, { auth: true });
 
+      updateUploadCache.current.clear();
       toast.success('تم نشر الرسالة وإشعار الطلاب');
       setUpdateForm({
         title: '',
@@ -659,6 +677,7 @@ export default function TeacherDashboard() {
       toast.error(error.message || 'تعذر نشر الرسالة');
     } finally {
       setPublishingUpdate(false);
+      setUpdateUploadProgress(null);
     }
   };
 
@@ -1125,6 +1144,9 @@ export default function TeacherDashboard() {
                       ))}
                     </div>
 
+                    {savingProfileChange && profileUploadProgress && (
+                      <TeacherUploadProgress value={profileUploadProgress} />
+                    )}
                     <button type="submit" disabled={savingProfileChange || profileChange?.status === 'pending'}
                       className="wn-btn wn-btn--primary mt-5 disabled:opacity-50">
                       <Send size={16} />
@@ -1870,6 +1892,9 @@ export default function TeacherDashboard() {
                       </div>
                     )}
 
+                    {publishingUpdate && updateUploadProgress && (
+                      <TeacherUploadProgress value={updateUploadProgress} />
+                    )}
                     <button type="submit" disabled={publishingUpdate || !updateForm.files.length} className="wn-teacher-primary-action">
                       <Send size={16} />
                       {publishingUpdate ? 'جاري رفع الفيديوهات والنشر...' : 'نشر وإشعار الطلاب'}
@@ -2478,4 +2503,31 @@ function mergeSchedule(apiDays) {
       })),
     };
   });
+}
+
+
+function TeacherUploadProgress({ value }) {
+  const percentage = value.overallPercentage || 0;
+  const state = value.status === 'paused'
+    ? 'انقطع الإنترنت؛ سنكمل عند عودة الاتصال.'
+    : value.status === 'retrying'
+      ? 'نعيد محاولة الجزء غير المكتمل تلقائيًا.'
+      : value.status === 'resuming'
+        ? 'جاري استكمال الأجزاء المحفوظة.'
+        : value.status === 'finalizing'
+          ? 'جاري تأكيد حفظ الفيديو.'
+          : 'جاري رفع الملفات.';
+  return (
+    <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+      <div className="flex justify-between gap-3">
+        <span>{state}</span>
+        <strong className="tabular-nums" dir="ltr">{percentage}%</strong>
+      </div>
+      <progress className="mt-2 w-full accent-emerald-600" max="100" value={percentage} aria-label="إجمالي رفع الملفات" />
+      <p className="mt-1 text-xs">
+        {value.completed} من {value.total} ملفات مكتملة — {value.label}
+      </p>
+      <p className="mt-1 text-xs text-slate-600">لا تغلق الصفحة قبل تأكيد الحفظ.</p>
+    </div>
+  );
 }

@@ -454,15 +454,59 @@ export default function TeacherRegistration() {
                     <span>بالضغط على إرسال، أنت توافق على مراجعة بياناتك من قبل إدارة الأكاديمية</span>
                   </div>
                   {f.submitting && (
-                    <div role="status" aria-live="polite" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <div role="status" aria-live="polite" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 shadow-sm">
                       {f.uploadProgress?.saving ? (
-                        <p>اكتمل رفع الملفات، جاري حفظ الطلب...</p>
+                        <div>
+                          <p className="font-semibold">اكتمل رفع جميع الملفات بنجاح ✓</p>
+                          <p className="mt-1">جاري حفظ طلبك ومراجعته على الخادم... لا تغلق الصفحة.</p>
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+                            <div className="h-full w-full rounded-full bg-emerald-600" />
+                          </div>
+                        </div>
                       ) : (
                         <>
-                          <p>جاري رفع: {f.uploadProgress?.label || 'تجهيز الملفات'}</p>
-                          <p className="mt-1">الملفات المكتملة: {f.uploadProgress?.completed || 0} من {f.uploadProgress?.total || '—'}</p>
-                          <progress className="mt-2 w-full" max={100} value={f.uploadProgress?.percentage || 0} aria-label="نسبة رفع الملف الحالي" />
-                          <p>{f.uploadProgress?.percentage || 0}% — اترك الصفحة مفتوحة حتى يكتمل الإرسال.</p>
+                          <div className="flex items-center justify-between gap-3">
+                            <strong>رفع مستندات وفيديوهات المعلم</strong>
+                            <strong dir="ltr" className="text-lg tabular-nums">
+                              {f.uploadProgress?.overallPercentage || 0}%
+                            </strong>
+                          </div>
+                          <div
+                            role="progressbar"
+                            aria-label="إجمالي تقدم رفع الملفات"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={f.uploadProgress?.overallPercentage || 0}
+                            className="mt-2 h-3 overflow-hidden rounded-full bg-emerald-100"
+                          >
+                            <div
+                              className="h-full rounded-full bg-emerald-600 transition-[width] duration-300 ease-out"
+                              style={{ width: `${f.uploadProgress?.overallPercentage || 0}%` }}
+                            />
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span>الملفات المكتملة: {f.uploadProgress?.completed || 0} من {f.uploadProgress?.total || '—'}</span>
+                            <span className="tabular-nums" dir="ltr">
+                              {((f.uploadProgress?.loadedBytes || 0) / 1048576).toFixed(1)} / {((f.uploadProgress?.totalBytes || 0) / 1048576).toFixed(1)} MB
+                            </span>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-emerald-100 bg-white/80 p-3">
+                            <p className="font-medium">الملف الحالي: {f.uploadProgress?.label || 'تجهيز الملفات'}</p>
+                            <progress className="mt-2 w-full accent-emerald-600" max={100} value={f.uploadProgress?.percentage || 0} aria-label="نسبة رفع الملف الحالي" />
+                            <p className="text-xs">{f.uploadProgress?.percentage || 0}% من الملف الحالي</p>
+                          </div>
+                          {f.uploadProgress?.status === 'paused' ? (
+                            <p className="mt-3 font-medium text-amber-800">الاتصال بالإنترنت متوقف. ننتظر عودة الشبكة لاستكمال الأجزاء المتبقية.</p>
+                          ) : f.uploadProgress?.status === 'retrying' ? (
+                            <p className="mt-3 font-medium text-amber-800">الاتصال غير مستقر، نعيد محاولة الجزء غير المكتمل تلقائيًا...</p>
+                          ) : f.uploadProgress?.status === 'resuming' ? (
+                            <p className="mt-3 text-emerald-800">تم العثور على أجزاء مرفوعة سابقًا؛ نستكمل المتبقي فقط.</p>
+                          ) : f.uploadProgress?.status === 'finalizing' ? (
+                            <p className="mt-3 text-emerald-800">تم إرسال جميع أجزاء الملف، جاري تأكيد الحفظ...</p>
+                          ) : (
+                            <p className="mt-3 text-emerald-800">جاري الرفع. الملفات المكتملة محفوظة خلال هذه الجلسة.</p>
+                          )}
+                          <p className="mt-2 text-xs text-slate-600">اترك هذه الصفحة مفتوحة حتى يظهر تأكيد إرسال الطلب.</p>
                         </>
                       )}
                     </div>
