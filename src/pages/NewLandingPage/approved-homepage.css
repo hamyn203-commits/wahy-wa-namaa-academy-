@@ -3537,3 +3537,75 @@ html {
     animation: none !important;
   }
 }
+
+/* ── Landing FAQ section (batch 2) ───────────────────────────────── */
+.wn-home-faq {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+.wn-home-faq__list {
+  display: grid;
+  gap: .75rem;
+}
+.wn-home-faq__item {
+  overflow: hidden;
+  border: 1px solid rgba(212, 175, 107, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 44px -40px rgba(7, 53, 40, 0.42);
+  transition: border-color var(--wn-dur-fast) var(--wn-ease);
+}
+.wn-home-faq__item:hover {
+  border-color: rgba(212, 175, 107, 0.38);
+}
+.wn-home-faq__button {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .85rem 1.1rem;
+  color: var(--wn-emerald-deep);
+  font-size: .92rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.wn-home-faq__button > svg {
+  color: var(--wn-gold-dark);
+}
+.wn-home-faq__answer {
+  padding: 0 1.1rem 1rem;
+  color: var(--wn-text-secondary);
+  font-size: .85rem;
+  line-height: 1.8;
+  border-top: 1px dashed rgba(212, 175, 107, 0.22);
+  padding-top: .8rem;
+  margin-inline: 0;
+}
+.wn-home-faq__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  border: 1px solid var(--wn-border);
+  border-radius: 16px;
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  font-size: .9rem;
+}
+.wn-home-faq__more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+[data-theme='dark'] .wn-home-faq__item {
+  background: var(--wn-surface);
+  border-color: rgba(212, 175, 107, 0.2);
+}
+[data-theme='dark'] .wn-home-faq__empty {
+  background: var(--wn-surface);
+}

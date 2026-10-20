@@ -63,6 +63,8 @@
 
 ### 1.2 — الصفحة الرئيسية
 
+> **تدقيق 2026-10-19:** الـ landing المعتمد (approved homepage) يعرض 9 أقسام فقط، و**سبعة أقسام قديمة كود ميت غير مستورد**: `FAQSection`, `SocialProofStrip`, `StatsBar`, `TestimonialsSection`, `FeaturesSection`, `AlAzharHeritageSection`, `PhilosophySection` (+ محتملة أخرى). قرار مطلوب: حذفها (نظافة) أو إعادة تدويرها — لا تُصرف عليها ساعات تحسين قبل ذلك. دفعة 2 أضافت FAQ بحت بتصميم approved (`FAQHomeSection`) مربوطاً بصفحة `/faq`.
+
 | بند | المهمة | الحالة | الحجم |
 |---|---|---|---|
 | 061 | Animated statistics counter | ✅ `AnimatedCounter` في `_shared.jsx` | — |

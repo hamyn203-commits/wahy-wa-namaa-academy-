@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, HelpCircle, Sparkles } from 'lucide-react';
+import { ChevronDown, HelpCircle, Sparkles, Search, SearchX } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
@@ -10,15 +10,27 @@ import '../../styles/public-experience.css';
 export default function FAQPage() {
   const { t, locale } = useI18n();
   const isAr = locale === 'ar';
-  const [open, setOpen] = useState(0);
+  const [open, setOpen] = useState(null);
+  const [query, setQuery] = useState('');
 
-  const faqs = [
+  const allFaqs = [
     { q: t.faq.q1, a: t.faq.a1 },
     { q: t.faq.q2, a: t.faq.a2 },
     { q: t.faq.q3, a: t.faq.a3 },
     { q: t.faq.q4, a: t.faq.a4 },
     { q: t.faq.q5, a: t.faq.a5 },
+    { q: t.faq.q6, a: t.faq.a6 },
+    { q: t.faq.q7, a: t.faq.a7 },
+    { q: t.faq.q8, a: t.faq.a8 },
+    { q: t.faq.q9, a: t.faq.a9 },
+    { q: t.faq.q10, a: t.faq.a10 },
   ].filter((item) => item.q && item.a);
+
+  const trimmedQuery = query.trim().toLowerCase();
+  const searching = trimmedQuery.length > 0;
+  const faqs = searching
+    ? allFaqs.filter((item) => `${item.q} ${item.a}`.toLowerCase().includes(trimmedQuery))
+    : allFaqs;
 
   return (
     <>
@@ -37,23 +49,49 @@ export default function FAQPage() {
         </section>
 
         <section className="wn-editorial-wrap">
-          <div className="wn-faq-list">
-            {faqs.map((item, index) => (
-              <div key={item.q} className="wn-faq-item">
-                <button type="button" onClick={() => setOpen(open === index ? -1 : index)} className="wn-faq-button">
-                  <span>{item.q}</span>
-                  <ChevronDown size={18} className={'shrink-0 transition-transform ' + (open === index ? 'rotate-180' : '')} />
-                </button>
-                <AnimatePresence initial={false}>
-                  {open === index ? (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <div className="wn-faq-answer">{item.a}</div>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              </div>
-            ))}
+          <div className="relative mb-5">
+            <Search size={18} className="pointer-events-none absolute top-1/2 -translate-y-1/2 ltr:left-4 rtl:right-4 text-[var(--wn-text-tertiary)]" aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t.faq?.searchPlaceholder || (isAr ? 'ابحث في الأسئلة...' : 'Search questions...')}
+              aria-label={t.faq?.searchPlaceholder || (isAr ? 'ابحث في الأسئلة' : 'Search questions')}
+              className="input-field !py-3 ltr:pl-11 ltr:pr-4 rtl:pr-11 rtl:pl-4"
+            />
           </div>
+
+          {faqs.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-[var(--wn-border)] bg-white px-6 py-12 text-center">
+              <SearchX size={32} className="text-[var(--wn-gold)]" strokeWidth={1.5} />
+              <p className="text-sm text-[var(--wn-text-secondary)]">{t.faq?.noResults || (isAr ? 'لا توجد نتائج مطابقة.' : 'No matching questions.')}</p>
+            </div>
+          ) : (
+            <div className="wn-faq-list">
+              {faqs.map((item) => {
+                const isOpen = searching || open === item.q;
+                return (
+                  <div key={item.q} className="wn-faq-item">
+                    <button type="button" onClick={() => setOpen(open === item.q ? null : item.q)} aria-expanded={isOpen} className="wn-faq-button">
+                      <span>{item.q}</span>
+                      <ChevronDown size={18} className={'shrink-0 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
+                    </button>
+                    {searching ? (
+                      isOpen ? <div className="wn-faq-answer">{item.a}</div> : null
+                    ) : (
+                      <AnimatePresence initial={false}>
+                        {open === item.q ? (
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="wn-faq-answer">{item.a}</div>
+                          </motion.div>
+                        ) : null}
+                      </AnimatePresence>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       </main>
       <GlobalFooter />

@@ -13,6 +13,7 @@ import ProductShowcaseSection from './sections/ProductShowcaseSection';
 import StudentJourneySection from './sections/StudentJourneySection';
 import TeachersSection from './sections/TeachersSection';
 import TargetAudiencesSection from './sections/TargetAudiencesSection';
+import FAQHomeSection from './sections/FAQHomeSection';
 import CTASection from './sections/CTASection';
 
 export default function NewLandingPage() {
@@ -48,6 +49,7 @@ export default function NewLandingPage() {
         <StudentJourneySection />
         <TeachersSection />
         <TargetAudiencesSection />
+        <FAQHomeSection />
         <CTASection />
       </main>
       <MobileStickyBar />
