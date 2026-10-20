@@ -105,6 +105,8 @@ export default {
   faq: {
     title: 'Sıkça Sorulan Sorular',
     subtitle: 'En yaygın soruların yanıtları',
+    searchPlaceholder: 'Sorularda ara...',
+    noResults: 'Eşleşen soru yok. Başka bir anahtar kelime deneyin.',
     q1: 'Öğrenmeye nasıl başlayabilirim?',
     a1: 'Ücretsiz bir hesap oluşturarak başlayabilir, ardından öğretmenlere göz atıp size uygun olanı seçebilir ve ücretsiz bir deneme dersi ayırtabilirsiniz.',
     q2: 'Derslerin ücreti ne kadar?',

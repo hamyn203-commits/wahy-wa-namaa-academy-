@@ -105,6 +105,8 @@ export default {
   faq: {
     title: 'Häufig gestellte Fragen',
     subtitle: 'Antworten auf die häufigsten Fragen',
+    searchPlaceholder: 'Fragen durchsuchen...',
+    noResults: 'Keine passenden Fragen gefunden. Versuchen Sie ein anderes Stichwort.',
     q1: 'Wie kann ich mit dem Lernen beginnen?',
     a1: 'Erstellen Sie ein kostenloses Konto, wählen Sie einen Lehrer und buchen Sie eine kostenlose Probestunde.',
     q2: 'Was kosten die Unterrichtsstunden?',

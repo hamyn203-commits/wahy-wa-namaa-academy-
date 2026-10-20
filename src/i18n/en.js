@@ -101,6 +101,8 @@ export default {
   faq: {
     title: 'Frequently Asked Questions',
     subtitle: 'Answers to the most common questions',
+    searchPlaceholder: 'Search questions...',
+    noResults: 'No matching questions. Try another keyword.',
     q1: 'How can I start learning?',
     a1: 'You can start by creating a free account, then browse teachers and choose the one that suits you, and book a free trial lesson.',
     q2: 'What is the cost of lessons?',

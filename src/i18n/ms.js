@@ -105,6 +105,8 @@ export default {
   faq: {
     title: 'Soalan Lazim',
     subtitle: 'Jawapan kepada soalan yang paling biasa',
+    searchPlaceholder: 'Cari soalan...',
+    noResults: 'Tiada soalan sepadan. Cuba kata kunci lain.',
     q1: 'Bagaimana saya boleh mula belajar?',
     a1: 'Anda boleh bermula dengan mencipta akaun percuma, kemudian semak imbas guru dan pilih yang sesuai, dan tempah sesi percubaan percuma.',
     q2: 'Berapakah kos pelajaran?',

@@ -105,6 +105,8 @@ export default {
   faq: {
     title: 'Pertanyaan yang Sering Diajukan',
     subtitle: 'Jawaban untuk pertanyaan yang paling umum',
+    searchPlaceholder: 'Cari pertanyaan...',
+    noResults: 'Tidak ada pertanyaan yang cocok. Coba kata kunci lain.',
     q1: 'Bagaimana saya bisa mulai belajar?',
     a1: 'Anda dapat memulai dengan membuat akun gratis, lalu telusuri guru dan pilih yang sesuai, dan pesan sesi uji coba gratis.',
     q2: 'Berapa biaya pelajarannya?',

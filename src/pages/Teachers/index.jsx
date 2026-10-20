@@ -9,7 +9,26 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import '../../styles/public-experience.css';
+
+function TeacherCardSkeleton() {
+  return (
+    <div className="wn-teacher-card" aria-hidden="true">
+      <div className="wn-teacher-card__media"><Skeleton className="h-full w-full" /></div>
+      <div className="wn-teacher-card__body">
+        <Skeleton className="mb-3 h-5 w-2/3" />
+        <Skeleton className="mb-4 h-3.5 w-1/3" />
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <Skeleton className="h-9 w-full" />
+      </div>
+    </div>
+  );
+}
 
 export default function Teachers() {
   const [searchParams] = useSearchParams();
@@ -388,10 +407,12 @@ export default function Teachers() {
 
           <section className="wn-public-section">
             {loading ? (
-              <div className="wn-public-empty">
-                <span className="inline-block w-8 h-8 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" />
-                <p>{active.loading}</p>
-              </div>
+              <>
+                <div className="wn-public-grid">
+                  {Array.from({ length: 8 }, (_, index) => <TeacherCardSkeleton key={index} />)}
+                </div>
+                <p className="sr-only" role="status">{active.loading}</p>
+              </>
             ) : teachers.length === 0 ? (
               <div className="wn-public-empty">
                 <Users size={48} />

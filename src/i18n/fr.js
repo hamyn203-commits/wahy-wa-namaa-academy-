@@ -107,6 +107,8 @@ export default {
   faq: {
     title: 'Questions fréquemment posées',
     subtitle: 'Réponses aux questions les plus courantes',
+    searchPlaceholder: 'Rechercher une question...',
+    noResults: 'Aucune question correspondante. Essayez un autre mot-clé.',
     q1: 'Comment puis-je commencer à apprendre?',
     a1: 'Vous pouvez commencer par créer un compte gratuit, puis parcourir les enseignants et choisir celui qui vous convient, et réserver une leçon d\'essai gratuite.',
     q2: 'Quel est le coût des leçons?',
