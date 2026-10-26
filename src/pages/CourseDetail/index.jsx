@@ -6,6 +6,7 @@ import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import LocalizedLink from '../../components/LocalizedLink';
+import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import { useToast } from '../../context/ToastProvider';
@@ -106,9 +107,39 @@ export default function CourseDetail() {
 
   if (loading) {
     return (
-      <div className="wn-detail-shell min-h-screen grid place-items-center">
-        <span className="w-9 h-9 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" />
-      </div>
+      <>
+        <GlobalHeader />
+        <main className="wn-detail-shell" role="status" aria-live="polite">
+          <span className="sr-only">{isAr ? 'جاري تحميل تفاصيل الدورة...' : 'Loading course details...'}</span>
+          <section className="wn-detail-hero">
+            <div className="page-container">
+              <Skeleton className="mb-3 h-4 w-28" />
+              <Skeleton className="mb-4 h-10 w-2/3" />
+              <Skeleton className="mb-5 h-4 w-1/2" />
+              <div className="flex gap-3">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            </div>
+          </section>
+          <div className="page-container wn-detail-layout">
+            <section className="wn-detail-card">
+              <div className="wn-detail-card__body grid gap-4">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-7 w-48" />
+                {Array.from({ length: 4 }, (_, idx) => (
+                  <Skeleton key={idx} className="h-12 w-full rounded-xl" />
+                ))}
+              </div>
+            </section>
+            <aside className="wn-detail-card wn-detail-aside grid gap-4">
+              <Skeleton className="h-9 w-28" />
+              <Skeleton className="h-12 w-full rounded-xl" />
+            </aside>
+          </div>
+        </main>
+        <GlobalFooter />
+      </>
     );
   }
 

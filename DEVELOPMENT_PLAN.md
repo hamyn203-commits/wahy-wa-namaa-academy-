@@ -54,7 +54,7 @@
 |---|---|---|---|
 | 052 | Spacing scale موحد | ✅ موجود في brand.css (`--wn-space-*`) | — |
 | 054 | Color tokens موثقة وموحّدة | ✅ موجود + dark theme | — |
-| 058 | Loading states شاملة (skeletons/shimmer) | 🟡 skeleton component + Teachers grid (دفعة 1)؛ يتبقى بقية الصفحات | M |
+| 058 | Loading states شاملة (skeletons/shimmer) | ✅ skeleton component + Teachers/Courses/Blog/Leaderboard/Details (دفعة 1 + 3) | M |
 | 055 | Typography scale موحد (مراجعة استخدام الخطوط + أوزان قرآنية) | ⬜ | S |
 | 057 | Motion library موحدة (توقيت واحد عبر `--wn-dur-*`/`--wn-ease`) | ⬜ | S |
 | 051 | توثيق مكونات النظام (Storybook أو صفحة معاينة خفيفة) | ⬜ | M |
@@ -69,10 +69,10 @@
 |---|---|---|---|
 | 061 | Animated statistics counter | ✅ `AnimatedCounter` في `_shared.jsx` | — |
 | 060 | Social proof | 🟡 الـ Strip موجود لكن المحتوى placeholder — يحتاج بيانات حقيقية أو إزالة مؤقتة (مصداقية!) | S |
-| 065 | FAQ تفاعلي مع بحث | 🟡 **البحث منفّذ في دفعة 1**؛ يتبقى توسيع الأسئلة (q6-q10) | S |
-| 064 | Trust signals (أمان الدفع، خصوصية الأطفال) | ⬜ | S |
-| 063 | CTA micro-animations | ⬜ | S |
-| 062 | Pricing comparison + calculator | ⬜ | M |
+| 065 | FAQ تفاعلي مع بحث | ✅ `FAQHomeSection` + `/faq` بـ 10 أسئلة في 9 لغات (دفعة 1 + 2) | S |
+| 064 | Trust signals (أمان الدفع، خصوصية الأطفال) | ✅ `TrustSignalsSection` في الصفحة الرئيسية المعتمدة (دفعة 3) | S |
+| 063 | CTA micro-animations | ✅ `.wn-btn__arrow` + sheen motion في `approved-homepage.css` | S |
+| 062 | Pricing comparison + calculator | ✅ `PricingCalculatorSection` + جدول المقارنة في `/plans` (دفعة 3) | M |
 | 059 | Hero section (video/animated illustration) | ⬜ قرار تصميمي أولاً | M |
 
 ### 1.3 — لوحات التحكم

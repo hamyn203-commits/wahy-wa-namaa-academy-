@@ -4,6 +4,7 @@ import { Star, MapPin, Award, BookOpen, CheckCircle, Clock, Sparkles, Users, Vid
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
@@ -53,7 +54,46 @@ export default function TeacherProfile() {
   };
 
   if (loading) {
-    return <div className="wn-detail-shell min-h-screen grid place-items-center"><span className="w-9 h-9 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" /></div>;
+    return (
+      <>
+        <GlobalHeader />
+        <main className="wn-detail-shell" role="status" aria-live="polite">
+          <span className="sr-only">{isAr ? 'جاري تحميل ملف المعلم...' : 'Loading teacher profile...'}</span>
+          <section className="wn-detail-hero wn-teacher-profile-hero">
+            <div className="page-container wn-teacher-profile-grid">
+              <div className="wn-teacher-profile-photo">
+                <Skeleton className="h-full w-full" />
+              </div>
+              <div>
+                <Skeleton className="mb-3 h-4 w-28" />
+                <Skeleton className="mb-4 h-10 w-2/3" />
+                <div className="mb-5 flex gap-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                <div className="wn-teacher-stats">
+                  <Skeleton className="h-16 w-28 rounded-xl" />
+                  <Skeleton className="h-16 w-28 rounded-xl" />
+                  <Skeleton className="h-16 w-28 rounded-xl" />
+                </div>
+                <Skeleton className="mt-5 h-12 w-48 rounded-xl" />
+              </div>
+            </div>
+          </section>
+          <div className="page-container wn-public-copy-section">
+            <section className="wn-detail-card">
+              <div className="wn-detail-card__body grid gap-4">
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </section>
+          </div>
+        </main>
+        <GlobalFooter />
+      </>
+    );
   }
 
   if (!teacher) {

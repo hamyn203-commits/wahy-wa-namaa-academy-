@@ -20,9 +20,33 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import { useMarket } from '../../context/MarketProvider';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
+
+function CourseCardSkeleton() {
+  return (
+    <div className="wn-course-card" aria-hidden="true">
+      <div className="wn-course-card__visual">
+        <Skeleton className="h-full w-full" />
+      </div>
+      <div className="wn-course-card__body">
+        <Skeleton className="mb-3 h-5 w-3/4" />
+        <Skeleton className="mb-2 h-3.5 w-full" />
+        <Skeleton className="mb-4 h-3.5 w-2/3" />
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+        </div>
+        <div className="wn-course-card__footer">
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-9 w-9 rounded-full" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function localizedValue(value, locale) {
   if (typeof value === 'string') return value;
@@ -96,7 +120,6 @@ export default function Courses() {
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
     api.get('/api/courses')
       .then((data) => {
         const source = Array.isArray(data?.courses) ? data.courses : [];
@@ -253,7 +276,10 @@ export default function Courses() {
             </div>
 
             {loading ? (
-              <div className="wn-public-empty"><span className="inline-block w-8 h-8 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" /></div>
+              <div className="wn-public-grid" role="status" aria-live="polite">
+                <span className="sr-only">{isAr ? 'جاري تحميل الدورات...' : 'Loading courses...'}</span>
+                {Array.from({ length: 6 }, (_, idx) => <CourseCardSkeleton key={idx} />)}
+              </div>
             ) : sortedCourses.length === 0 ? (
               <div className="wn-public-empty">
                 <BookOpen size={48} />

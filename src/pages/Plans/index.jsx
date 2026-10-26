@@ -459,6 +459,44 @@ export default function PlansPage() {
               ))}
             </div>
 
+            {visiblePlans.length > 1 && (
+              <div className="wn-plans-compare">
+                <div className="wn-plans-compare__header">
+                  <h3>{isAr ? 'جدول المقارنة السريع بين الخطط' : 'Quick Plan Comparison'}</h3>
+                  <p>{isAr ? 'مقارنة شاملة حسب عدد الطلاب ومدة الحصة والتكلفة الإجمالية للباقة المختارة.' : 'Side-by-side comparison of group size, session duration, and package total.'}</p>
+                </div>
+                <div className="wn-plans-compare__scroll">
+                  <table className="wn-plans-compare__table">
+                    <thead>
+                      <tr>
+                        <th>{isAr ? 'الخطة' : 'Plan'}</th>
+                        <th>{isAr ? 'عدد الطلاب' : 'Group size'}</th>
+                        <th>{isAr ? 'مدة الحصة' : 'Session duration'}</th>
+                        <th>{isAr ? 'سعر الحصة' : 'Per session'}</th>
+                        <th>{isAr ? `إجمالي (${sessionCount} ${sessionCount === 12 ? 'حصة' : 'حصص'})` : `Total (${sessionCount} sessions)`}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visiblePlans.map((plan) => (
+                        <tr key={plan.id} className={plan.featured ? 'is-featured' : ''}>
+                          <td>
+                            <div className="wn-plans-compare__plan-name">
+                              <span>{isAr ? plan.nameAr : plan.nameEn}</span>
+                              <span className="wn-plans-compare__tag">{isAr ? plan.badgeAr : plan.badgeEn}</span>
+                            </div>
+                          </td>
+                          <td>{isAr ? plan.studentsAr : plan.studentsEn}</td>
+                          <td>{isAr ? plan.durationAr : plan.durationEn}</td>
+                          <td><strong>{plan.from ? (isAr ? 'من ' : 'from ') : ''}{plan.price} {isAr ? 'ج' : 'EGP'}</strong></td>
+                          <td><strong>{plan.from ? (isAr ? 'من ' : 'from ') : ''}{plan.packageTotal} {isAr ? 'ج' : 'EGP'}</strong></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="wn-plans-note">
               <UserRound size={21} />
               <div>
@@ -487,4 +525,3 @@ export default function PlansPage() {
     </>
   );
 }
-

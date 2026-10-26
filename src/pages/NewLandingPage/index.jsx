@@ -13,6 +13,8 @@ import ProductShowcaseSection from './sections/ProductShowcaseSection';
 import StudentJourneySection from './sections/StudentJourneySection';
 import TeachersSection from './sections/TeachersSection';
 import TargetAudiencesSection from './sections/TargetAudiencesSection';
+import PricingCalculatorSection from './sections/PricingCalculatorSection';
+import TrustSignalsSection from './sections/TrustSignalsSection';
 import FAQHomeSection from './sections/FAQHomeSection';
 import CTASection from './sections/CTASection';
 
@@ -49,6 +51,8 @@ export default function NewLandingPage() {
         <StudentJourneySection />
         <TeachersSection />
         <TargetAudiencesSection />
+        <PricingCalculatorSection />
+        <TrustSignalsSection />
         <FAQHomeSection />
         <CTASection />
       </main>

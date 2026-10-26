@@ -7,8 +7,29 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
+
+function BlogCardSkeleton() {
+  return (
+    <div className="wn-blog-card" aria-hidden="true">
+      <div className="wn-blog-card__visual">
+        <Skeleton className="h-full w-full" />
+      </div>
+      <div className="wn-blog-card__body">
+        <Skeleton className="mb-3 h-5 w-4/5" />
+        <Skeleton className="mb-2 h-3.5 w-full" />
+        <Skeleton className="mb-4 h-3.5 w-2/3" />
+        <div className="flex gap-3">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+        <Skeleton className="mt-4 h-4 w-24" />
+      </div>
+    </div>
+  );
+}
 
 export default function Blog() {
   const { locale } = useI18n();
@@ -90,7 +111,10 @@ export default function Blog() {
 
           <section className="wn-public-section">
             {loading ? (
-              <div className="wn-public-empty"><span className="inline-block w-8 h-8 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" /></div>
+              <div className="wn-blog-grid" role="status" aria-live="polite">
+                <span className="sr-only">{isAr ? 'جاري تحميل المقالات...' : 'Loading articles...'}</span>
+                {Array.from({ length: 6 }, (_, idx) => <BlogCardSkeleton key={idx} />)}
+              </div>
             ) : filteredArticles.length === 0 ? (
               <div className="wn-public-empty">
                 <BookOpen size={48} />
