@@ -113,6 +113,23 @@ export default function StartPage() {
             </>
           )}
 
+          <div className="mt-8 grid gap-3 sm:grid-cols-2 max-w-3xl mx-auto">
+            <Link
+              to={lp('/free-trial')}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200/60 bg-white/80 px-4 py-3 text-sm font-bold text-emerald-950 shadow-sm hover:border-amber-400 transition"
+            >
+              <span>{isAr ? '🎁 تريد تجربة حصة مجانية أولاً بدون حساب؟' : '🎁 Want a free trial class first?'}</span>
+              <ArrowIcon size={15} />
+            </Link>
+            <Link
+              to={lp('/plans')}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200/70 bg-white/80 px-4 py-3 text-sm font-bold text-emerald-950 shadow-sm hover:border-emerald-400 transition"
+            >
+              <span>{isAr ? '📋 استعرض الباقات وجدول المقارنة' : '📋 Compare study plans & pricing'}</span>
+              <ArrowIcon size={15} />
+            </Link>
+          </div>
+
           <p className="wn-start-existing">{isAr ? 'عندك حساب بالفعل؟' : 'Already have an account?'} <Link to={lp('/login')}>{isAr ? 'سجّل الدخول' : 'Sign in'} <ArrowIcon size={14}/></Link></p>
         </div>
       </main>

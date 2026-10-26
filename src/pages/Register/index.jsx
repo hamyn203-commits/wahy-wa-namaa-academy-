@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   User, Users, Lock, Mail, Phone, Eye, EyeOff, ArrowRight, CheckCircle,
-  Sparkles, CheckCircle2, Globe, ArrowLeft, Star, ShieldCheck
+  Sparkles, CheckCircle2, Globe, ArrowLeft, ShieldCheck
 } from 'lucide-react';
 import BrandLogo from '../../components/BrandLogo';
 import GoogleSignIn from '../../components/GoogleSignIn';
@@ -14,9 +14,29 @@ import { localizedPath } from '../../lib/locale';
 import { dashboardPathForRole, isSafeInternalRedirect } from '../../lib/navigation';
 import '../../styles/public-experience.css';
 import { uploadFileDirect } from '../../lib/fileUpload';
+import { useToast } from '../../context/ToastProvider';
+
+function evaluatePasswordStrength(pw, isAr) {
+  if (!pw) return { score: 0, label: '', color: 'bg-slate-200', textColor: 'text-slate-500' };
+  let score = 0;
+  if (pw.length >= 8) score += 1;
+  if (pw.length >= 11 || (/[a-z]/.test(pw) && /[A-Z]/.test(pw))) score += 1;
+  if (/\d/.test(pw)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+  if (pw.length < 8) score = 1;
+
+  const levels = {
+    1: { label: isAr ? 'ضعيفة (8 أحرف على الأقل)' : 'Weak (min 8 chars)', color: 'bg-red-500', textColor: 'text-red-600' },
+    2: { label: isAr ? 'متوسطة — أضف أرقاماً أو رموزاً' : 'Fair — add numbers/symbols', color: 'bg-amber-500', textColor: 'text-amber-600' },
+    3: { label: isAr ? 'جيدة وآمنة' : 'Good password', color: 'bg-emerald-500', textColor: 'text-emerald-600' },
+    4: { label: isAr ? 'قوية جداً وممتازة' : 'Very strong password', color: 'bg-emerald-600', textColor: 'text-emerald-700' },
+  };
+  return { score, ...(levels[score] || levels[1]) };
+}
 
 export default function Register() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { register: createAccount } = useAuth();
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get('ref') || '';
@@ -129,7 +149,7 @@ export default function Register() {
           });
           if (!updateResponse.ok) throw new Error('Photo save failed');
         } catch {
-          window.alert(locale === 'ar'
+          toast.warning(locale === 'ar'
             ? 'تم إنشاء الحساب بنجاح، لكن تعذر حفظ الصورة. يمكنك إضافتها لاحقًا.'
             : 'Your account was created, but the optional photo could not be saved.');
         }
@@ -652,7 +672,28 @@ export default function Register() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                {formData.password && formData.password.length >= 8 && (
+                {formData.password && (() => {
+                  const strength = evaluatePasswordStrength(formData.password, locale === 'ar');
+                  return (
+                    <div className="mt-2.5 space-y-1.5" aria-live="polite">
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[1, 2, 3, 4].map((bar) => (
+                          <span
+                            key={bar}
+                            className={`h-1.5 rounded-full transition-all duration-300 ${
+                              bar <= strength.score ? strength.color : 'bg-slate-200'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <div className={`flex items-center gap-1.5 text-xs font-semibold ${strength.textColor}`}>
+                        <CheckCircle size={13} />
+                        <span>{strength.label}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {formData.confirmPassword && formData.password === formData.confirmPassword && (
                   <div className="mt-2 flex items-center gap-1.5 text-emerald-600 text-xs">
                     <CheckCircle size={14} />
                     {locale === 'ar' ? 'كلمة مرور قوية ومقبولة' : 'Strong secure password'}

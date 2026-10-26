@@ -120,7 +120,7 @@
 | 118 | حجز الحصة التجريبية التفاعلي (Visual Date Strip + Time Slot Pills + 3-Step Bar + Toast + Skeleton) | ✅ منجز في `/book-trial/:teacherId` (دفعة 4) |
 | 123 | صفحة الخطط وجدول المقارنة التفاعلي | ✅ منجز في `/plans` (دفعة 3) |
 | 124 | شهادة الإتمام وختم التحقق الرقمي بـ QR | ✅ منجز في `/verify-certificate/:certificateId` (دفعة 5) |
-| 116, 119-122 | تحسين باقي الصفحات العامة القائمة | ⬜ (كلها M ما عدا المذكورة S) |
+| 116, 120-122 | تحسين صفحات التسجيل وابدأ معنا ومن نحن وتواصل معنا | ✅ منجز في `/register`, `/start`, `/about`, `/contact` (دفعة 6) |
 | 125-135 | مكونات جديدة (Progress Ring, Streak Tracker, Teacher Card محسّن...) | ✅ Progress Ring + Streak Tracker + Teacher Card محسّن (دفعة 4 + 5) |
 | 106-115 | صفحات جديدة (رحلتي، مجتمع، جدول أسبوعي، مسابقات...) | ⏸️ **بعد الإطلاق وتحليل الاستخدام** — تُدرج في المرحلة 3 |
 
@@ -134,7 +134,7 @@
 |---|---|---|
 | 027-028-030-032 | إدارة الأجهزة، بصمة الجهاز، كشف دخول مشبوه، brute-force تدريجي | M |
 | 029 | 2FA (TOTP) للمعلمين والإدارة | M |
-| 031 | Password strength meter | S |
+| 031 | Password strength meter | ✅ مؤشر قوة كلمة المرور (4 درجات) في `/register` (دفعة 6) |
 | 033-039 | API versioning، HMAC للـ webhooks، CSRF، sanitization شاملة، CSP reporting، body size validation | M (038 في المسار A) |
 | 036 | Input sanitization | 🟡 يوجد في نقاط حرجة — يتبقى تغطية شاملة |
 | 042-043-044 | GDPR/حق الحذف، consent، retention | M — **يتضمن حماية بيانات القاصرين وparental consent (إضافة صريحة لهذا المنتج)** |
