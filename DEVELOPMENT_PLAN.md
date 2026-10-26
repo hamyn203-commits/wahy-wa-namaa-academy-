@@ -137,7 +137,7 @@
 | 031 | Password strength meter | ✅ مؤشر قوة كلمة المرور (4 درجات) في `/register` (دفعة 6) |
 | 033-039 | API versioning، HMAC للـ webhooks، CSRF، sanitization شاملة، CSP reporting، body size validation | M (038 في المسار A) |
 | 036 | Input sanitization | ✅ تطهير شامل للمدخلات النصية (`sanitizeStringValue`) في `backend/app.js` ضد `<script>` و`javascript:` و`on*=` مع حماية حقول كلمات المرور (دفعة باك إند 2) |
-| 042-043-044 | GDPR/حق الحذف، consent، retention | M — **يتضمن حماية بيانات القاصرين وparental consent (إضافة صريحة لهذا المنتج)** |
+| 042-043-044 | GDPR/حق الحذف، consent، retention | ✅ مسارات `/api/auth/privacy/export` و`/api/auth/privacy/delete-request` وتوثيق موافقة ولي الأمر للقُصَّر `parentalConsentVerified` + إبطال جميع الجلسات `/api/auth/logout-all` (دفعة باك إند 3) |
 | 045 | PII masking في الـ logs | ✅ `maskPII` منفّذ في `backend/utils/logger.js` ومربوط بمعالج أخطاء `app.js` (دفعة باك إند 1) |
 | 046-050 | أمان الملفات (virus scan، EXIF، signed URLs، magic bytes) | ✅ فاحص البصمة السحرية للملفات (`backend/utils/magicBytes.js`) لملفات PDF وPNG وJPEG وMP4 وWebM وWAV وOGG وMP3 (دفعة باك إند 2) |
 
@@ -161,7 +161,7 @@
 | 021 | Request correlation IDs | ✅ منفّذ في `backend/middleware/correlationId.js` (`X-Request-Id`) (دفعة باك إند 1) |
 | 017, 020 | Health dashboard، log aggregation | M |
 | 008-013 | Migrations آلية، rollback، canary، Dependabot، backup verification | M |
-| 011 | Dependabot/Snyk | S — **يُنفّذ مبكراً (رخيص وعالي القيمة)** |
+| 011 | Dependabot/Snyk | ✅ تم إعداد `.github/dependabot.yml` لفحص تحديثات الأمان أسبوعياً للواجهة والباك إند وGitHub Actions (دفعة باك إند 3) |
 | 014 | Visual regression testing | ⏸️ مؤجل |
 
 ---

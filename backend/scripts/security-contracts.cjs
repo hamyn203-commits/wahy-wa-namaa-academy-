@@ -1241,6 +1241,28 @@ requireContains(
   /minPoolSize:[\s\S]{0,180}maxIdleTimeMS:/
 );
 
+// Backend Wave 3 (011, 027, 042, 043, 044):
+requireContains(
+  'backend/routes/auth.js',
+  'auth router must support active session revocation across all devices (/logout-all and /sessions)',
+  /router\.post\(['"]\/logout-all['"][\s\S]{0,1600}router\.get\(['"]\/sessions['"]/
+);
+requireContains(
+  'backend/routes/auth.js',
+  'auth router must support privacy data export and account deletion request (/privacy/export and /privacy/delete-request)',
+  /router\.get\(['"]\/privacy\/export['"][\s\S]{0,1600}router\.post\(['"]\/privacy\/delete-request['"]/
+);
+requireContains(
+  'backend/models/User.js',
+  'user model must track privacyConsent and parentalConsentVerified',
+  /privacyConsent:\s*\{[\s\S]{0,300}parentalConsentVerified:/
+);
+requireContains(
+  '.github/dependabot.yml',
+  'Dependabot configuration must monitor root and backend npm ecosystems',
+  /package-ecosystem:\s*["']npm["'][\s\S]{0,400}directory:\s*["']\/backend["']/
+);
+
 if (failures.length) {
   console.error('Security contracts failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

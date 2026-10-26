@@ -123,6 +123,14 @@ const UserSchema = new mongoose.Schema({
   refreshTokenVersion: { type: Number, default: 0, select: false },
   failedLoginAttempts: { type: Number, default: 0, select: false },
   lockUntil: { type: Date, default: null, select: false },
+  sessionsRevokedAt: { type: Date, default: null, select: false },
+  privacyConsent: {
+    termsAcceptedAt: { type: Date, default: Date.now },
+    parentalConsentVerified: { type: Boolean, default: false },
+    parentalConsentAt: { type: Date, default: null },
+    deletionRequestedAt: { type: Date, default: null },
+    deletionReason: { type: String, trim: true, maxlength: 500, default: '' },
+  },
   lastLogin: Date,
   pushToken: String,
   pushPlatform: String,
@@ -199,6 +207,7 @@ UserSchema.methods.toJSON = function() {
   delete obj.refreshTokenVersion;
   delete obj.failedLoginAttempts;
   delete obj.lockUntil;
+  delete obj.sessionsRevokedAt;
   delete obj.guardianLinkCode;
   delete obj.__v;
   return obj;

@@ -552,6 +552,10 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
       return res.status(400).json({ code: 'GUARDIAN_CONTACT_REQUIRED', error: 'بيانات ولي الأمر مطلوبة للطالب أقل من 18 سنة' });
     }
     updated.phoneNormalized = normalizePhone(updated.phone) || undefined;
+    if (isMinor) {
+      updated.set('privacyConsent.parentalConsentVerified', true);
+      updated.set('privacyConsent.parentalConsentAt', new Date());
+    }
     updated.set('onboarding.required', true);
     updated.set('onboarding.completed', true);
     await updated.save();
@@ -735,6 +739,150 @@ router.post('/reset-password', async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to reset password' 
     });
+  }
+});
+
+// 027: Revoke all active refresh sessions across all devices
+router.post('/logout-all', verifyAccessToken, async (req, res) => {
+  clearRefreshCookie(res);
+  try {
+    const revokedAt = new Date();
+    if (isMockMode && !isDBConnected()) {
+      const user = findMockUserById(req.user.id);
+      if (user) {
+        updateMockUser(user._id || user.id, {
+          refreshTokenVersion: Number(user.refreshTokenVersion || 0) + 1,
+          sessionsRevokedAt: revokedAt,
+        });
+      }
+      return res.json({ message: 'All active sessions have been revoked', sessionsRevokedAt: revokedAt });
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        $inc: { refreshTokenVersion: 1 },
+        $set: { sessionsRevokedAt: revokedAt },
+      },
+      { new: true }
+    ).select('+refreshTokenVersion +sessionsRevokedAt');
+
+    return res.json({
+      message: 'All active sessions have been revoked',
+      refreshTokenVersion: Number(updated?.refreshTokenVersion || 0),
+      sessionsRevokedAt: updated?.sessionsRevokedAt || revokedAt,
+    });
+  } catch (error) {
+    console.error('Logout-all error:', error);
+    return res.status(500).json({ error: 'Failed to revoke active sessions' });
+  }
+});
+
+// 027: Inspect active session security status
+router.get('/sessions', verifyAccessToken, async (req, res) => {
+  try {
+    const user = isMockMode && !isDBConnected()
+      ? findMockUserById(req.user.id)
+      : await User.findById(req.user.id).select('+refreshTokenVersion +sessionsRevokedAt');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.json({
+      session: {
+        userId: String(user._id || user.id),
+        role: user.role,
+        lastLogin: user.lastLogin || null,
+        sessionsRevokedAt: user.sessionsRevokedAt || null,
+        refreshTokenVersion: Number(user.refreshTokenVersion || 0),
+        userAgent: String(req.headers['user-agent'] || '').slice(0, 180),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load session details' });
+  }
+});
+
+// 042 & 044: Privacy data portability export (GDPR / PDPL right of access)
+router.get('/privacy/export', verifyAccessToken, async (req, res) => {
+  try {
+    const user = isMockMode && !isDBConnected()
+      ? findMockUserById(req.user.id)
+      : await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const presented = await presentUser(user);
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      schemaVersion: '1.0',
+      account: presented,
+      privacyConsent: user.privacyConsent || {
+        termsAcceptedAt: user.createdAt || null,
+        parentalConsentVerified: Boolean(Number(user.age) > 0 && Number(user.age) < 18 && user.guardianContact?.phone),
+        parentalConsentAt: null,
+        deletionRequestedAt: null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to export personal data' });
+  }
+});
+
+// 042 & 044: Account deletion / erasure request (GDPR / PDPL right to erasure)
+router.post('/privacy/delete-request', verifyAccessToken, async (req, res) => {
+  try {
+    const reason = String(req.body?.reason || '').trim().slice(0, 500);
+    const deactivateImmediately = Boolean(req.body?.deactivateImmediately);
+    const requestedAt = new Date();
+
+    if (isMockMode && !isDBConnected()) {
+      const user = findMockUserById(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      updateMockUser(user._id || user.id, {
+        privacyConsent: {
+          ...(user.privacyConsent || {}),
+          deletionRequestedAt: requestedAt,
+          deletionReason: reason,
+        },
+        ...(deactivateImmediately ? { isActive: false, refreshTokenVersion: Number(user.refreshTokenVersion || 0) + 1 } : {}),
+      });
+      if (deactivateImmediately) clearRefreshCookie(res);
+      return res.status(202).json({
+        message: 'Account deletion request recorded',
+        deletionRequestedAt: requestedAt,
+        deactivated: deactivateImmediately,
+      });
+    }
+
+    const updateDoc = {
+      $set: {
+        'privacyConsent.deletionRequestedAt': requestedAt,
+        'privacyConsent.deletionReason': reason,
+        ...(deactivateImmediately ? { isActive: false, sessionsRevokedAt: requestedAt } : {}),
+      },
+      ...(deactivateImmediately ? { $inc: { refreshTokenVersion: 1 } } : {}),
+    };
+
+    const updated = await User.findByIdAndUpdate(req.user.id, updateDoc, { new: true });
+    if (!updated) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (deactivateImmediately) {
+      clearRefreshCookie(res);
+    }
+
+    return res.status(202).json({
+      message: 'Account deletion request recorded',
+      deletionRequestedAt: requestedAt,
+      deactivated: deactivateImmediately,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to submit account deletion request' });
   }
 });
 
