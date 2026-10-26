@@ -1182,6 +1182,38 @@ requireContains('backend/services/subscriptionUsage.js', 'settlement must dedupl
 requireContains('backend/services/subscriptionUsage.js', 'concurrent renewal settlement must lock the circle inside the transaction', /withTransaction[\s\S]{0,550}\$inc:\s*\{\s*subscriptionUsageVersion:\s*1/);
 requireContains('backend/routes/circles.js', 'subscription circles cannot bypass paid admin placement', /router\.post\(['"]\/:id\/join['"][\s\S]{0,1800}SUBSCRIPTION_PLACEMENT_REQUIRED/);
 
+// Backend Wave 1 (A7, 019, 021, 026, 032, 038, 041, 045):
+requireContains(
+  'backend/models/User.js',
+  'user model must track failedLoginAttempts and lockUntil behind select:false',
+  /failedLoginAttempts:\s*\{[\s\S]{0,120}select:\s*false[\s\S]{0,160}lockUntil:\s*\{[\s\S]{0,120}select:\s*false/
+);
+requireContains(
+  'backend/routes/auth.js',
+  'login must enforce temporary account lockout on repeated failures',
+  /ACCOUNT_LOCKED[\s\S]{0,1200}MAX_FAILED_LOGIN_ATTEMPTS/
+);
+requireContains(
+  'backend/middleware/userRateLimit.js',
+  'per-user rate limiter must key by authenticated actor or IP fallback',
+  /userRateLimiter[\s\S]{0,600}USER_RATE_LIMIT_EXCEEDED/
+);
+requireContains(
+  'backend/middleware/correlationId.js',
+  'correlationId middleware must attach X-Request-Id header',
+  /res\.setHeader\(['"]X-Request-Id['"],\s*requestId\)/
+);
+requireContains(
+  'backend/utils/logger.js',
+  'structured logger must provide recursive PII masking',
+  /function\s+maskPII\s*\(/
+);
+requireContains(
+  'backend/routes/payments.js',
+  'manual payment admin review must write an append-only audit log entry',
+  /payment\.manual\.approved[\s\S]{0,120}payment\.manual\.rejected/
+);
+
 if (failures.length) {
   console.error('Security contracts failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

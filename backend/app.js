@@ -11,6 +11,9 @@ const { getConfigurationReadiness } = require('./config/readiness');
 const { getLaunchReadiness } = require('./config/launchReadiness');
 const { getEmailProviderStatus } = require('./config/emailProvider');
 const { isTrustedOrigin, requireTrustedOrigin } = require('./config/origins');
+const correlationId = require('./middleware/correlationId');
+const { userRateLimiter } = require('./middleware/userRateLimit');
+const logger = require('./utils/logger');
 const { version: APP_VERSION } = require('./package.json');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -19,6 +22,7 @@ const app = express();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.use(correlationId);
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -134,6 +138,7 @@ app.use(express.urlencoded({ extended: true, limit: '4mb' }));
 
 if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/', generalLimiter);
+  app.use('/api/', userRateLimiter);
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', registrationLimiter);
   app.use('/api/auth/send-verification', otpSendLimiter);
@@ -357,7 +362,8 @@ app.use((_req, res) => {
 });
 
 app.use((err, req, res, _next) => {
-  console.error('API error:', {
+  logger.error('API error', {
+    requestId: req.requestId,
     message: err.message,
     path: req.path,
     method: req.method,

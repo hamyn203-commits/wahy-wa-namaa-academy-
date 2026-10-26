@@ -38,7 +38,7 @@
 | A4 | WhatsApp: اختيار مزود + توثيق templates + إشعار E2E لرقم حقيقي (186-187) | إعداد/E2E | M | موافقة مالك على المزود | 🟡 |
 | A5 | LiveKit: حساب production + فصل حقيقي (معلم+طالب+ولي أمر) (206) | إعداد/E2E | M | — | ⬜ |
 | A6 | **Sentry (errors) + Uptime monitoring** (015, 016, 018) — مطلوبة قبل الإطلاق وليس بعده | كود/إعداد | S | — | ⬜ |
-| A7 | **أمان دنيا قبل الإطلاق:** account lockout (026) + rate limiting per-user (038) + audit trail لقرارات الإدارة (041) | كود | M | — | ⬜ |
+| A7 | **أمان دنيا قبل الإطلاق:** account lockout (026) + rate limiting per-user (038) + audit trail لقرارات الإدارة (041) | كود | M | — | ✅ منجز في `auth.js` و`userRateLimit.js` و`payments.js` (دفعة باك إند 1) |
 | A8 | T07.3: smoke شامل + فحص runtime errors + سيناريو backup/restore drill + GO/NO-GO | تشغيل/E2E | S | A1-A7 | ⬜ |
 
 ---
@@ -138,7 +138,7 @@
 | 033-039 | API versioning، HMAC للـ webhooks، CSRF، sanitization شاملة، CSP reporting، body size validation | M (038 في المسار A) |
 | 036 | Input sanitization | 🟡 يوجد في نقاط حرجة — يتبقى تغطية شاملة |
 | 042-043-044 | GDPR/حق الحذف، consent، retention | M — **يتضمن حماية بيانات القاصرين وparental consent (إضافة صريحة لهذا المنتج)** |
-| 045 | PII masking في الـ logs | 🟡 `maskPII` منفّذ في الـ logger الجديد — يتبقى تمرير كل console.log القديم عليه |
+| 045 | PII masking في الـ logs | ✅ `maskPII` منفّذ في `backend/utils/logger.js` ومربوط بمعالج أخطاء `app.js` (دفعة باك إند 1) |
 | 046-050 | أمان الملفات (virus scan، EXIF، signed URLs، magic bytes) | M (049/050 جزئياً منجز في T03/T05 — يُدقق) |
 
 ### 2.2 — أداء الباك إند
@@ -157,8 +157,8 @@
 
 | بنود | المجموعة | الحجم |
 |---|---|---|
-| 019 | Structured JSON logging | 🟡 **منفّذ في working tree — يُغلق بـ PR** |
-| 021 | Request correlation IDs | 🟡 نفس PR السابق |
+| 019 | Structured JSON logging | ✅ منفّذ في `backend/utils/logger.js` ومثبت في العقود الأمنية (دفعة باك إند 1) |
+| 021 | Request correlation IDs | ✅ منفّذ في `backend/middleware/correlationId.js` (`X-Request-Id`) (دفعة باك إند 1) |
 | 017, 020 | Health dashboard، log aggregation | M |
 | 008-013 | Migrations آلية، rollback، canary، Dependabot، backup verification | M |
 | 011 | Dependabot/Snyk | S — **يُنفّذ مبكراً (رخيص وعالي القيمة)** |

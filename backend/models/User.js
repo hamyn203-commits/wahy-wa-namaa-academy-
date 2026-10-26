@@ -121,6 +121,8 @@ const UserSchema = new mongoose.Schema({
   passwordResetToken: String,
   passwordResetExpires: Date,
   refreshTokenVersion: { type: Number, default: 0, select: false },
+  failedLoginAttempts: { type: Number, default: 0, select: false },
+  lockUntil: { type: Date, default: null, select: false },
   lastLogin: Date,
   pushToken: String,
   pushPlatform: String,
@@ -195,6 +197,8 @@ UserSchema.methods.toJSON = function() {
   delete obj.passwordResetToken;
   delete obj.passwordResetExpires;
   delete obj.refreshTokenVersion;
+  delete obj.failedLoginAttempts;
+  delete obj.lockUntil;
   delete obj.guardianLinkCode;
   delete obj.__v;
   return obj;

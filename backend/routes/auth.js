@@ -24,6 +24,8 @@ const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 
 const REFRESH_COOKIE = 'wn_refresh';
+const MAX_FAILED_LOGIN_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS || 5);
+const LOCKOUT_DURATION_MS = Number(process.env.LOCKOUT_DURATION_MS || 15 * 60 * 1000);
 const REFRESH_COOKIE_MAX_AGE_SECONDS = Number(
   process.env.REFRESH_COOKIE_MAX_AGE_SECONDS || 7 * 24 * 60 * 60
 );
@@ -62,6 +64,8 @@ function sanitizeUserResponse(user) {
   delete obj.password;
   delete obj.googleSubject;
   delete obj.refreshTokenVersion;
+  delete obj.failedLoginAttempts;
+  delete obj.lockUntil;
   delete obj.passwordResetToken;
   delete obj.passwordResetExpires;
   delete obj.emailVerificationToken;
@@ -165,6 +169,8 @@ router.post('/register', async (req, res) => {
       setRefreshCookie(res, refreshToken);
 
       user.lastLogin = new Date();
+      user.failedLoginAttempts = 0;
+      user.lockUntil = null;
       await user.save();
 
       res.status(201).json({
@@ -302,11 +308,21 @@ router.post('/login', async (req, res) => {
 
     const user = isMockMode && !isDBConnected()
       ? findMockUserByEmail(email)
-      : await User.findOne({ email: email.toLowerCase() }).select('+password +refreshTokenVersion +phoneNormalized');
+      : await User.findOne({ email: email.toLowerCase() }).select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
     
     if (!user) {
       return res.status(401).json({ 
         error: 'Invalid email or password' 
+      });
+    }
+
+    if (user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
+      const retryAfterSeconds = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      return res.status(423).json({
+        error: 'Account temporarily locked due to repeated failed login attempts. Please try again later.',
+        code: 'ACCOUNT_LOCKED',
+        retryAfterSeconds,
       });
     }
 
@@ -321,6 +337,14 @@ router.post('/login', async (req, res) => {
       : await user.comparePassword(password);
     
     if (!isPasswordValid) {
+      if (!isMockMode || isDBConnected()) {
+        const nextAttempts = Number(user.failedLoginAttempts || 0) + 1;
+        user.failedLoginAttempts = nextAttempts;
+        if (nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+          user.lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        }
+        await user.save().catch(() => {});
+      }
       return res.status(401).json({ 
         error: 'Invalid email or password' 
       });
@@ -345,6 +369,8 @@ router.post('/login', async (req, res) => {
 
     if (!isMockMode || isDBConnected()) {
       user.lastLogin = new Date();
+      user.failedLoginAttempts = 0;
+      user.lockUntil = null;
       if (user.phone) {
         user.phoneNormalized = normalizePhone(user.phone) || undefined;
       }
@@ -575,6 +601,14 @@ router.post('/change-password', verifyAccessToken, async (req, res) => {
 
     const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
+      if (!isMockMode || isDBConnected()) {
+        const nextAttempts = Number(user.failedLoginAttempts || 0) + 1;
+        user.failedLoginAttempts = nextAttempts;
+        if (nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+          user.lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        }
+        await user.save().catch(() => {});
+      }
       return res.status(401).json({ 
         error: 'Current password is incorrect' 
       });

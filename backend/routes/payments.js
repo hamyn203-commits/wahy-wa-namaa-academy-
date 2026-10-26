@@ -22,6 +22,7 @@ const { processPaymobWebhook } = require('../services/paymentSettlement');
 const { processManualPaymentReview } = require('../services/manualPaymentSettlement');
 const { placeSubscription } = require('../services/subscriptionPlacement');
 const { notifyCourseEnrollment, notifyAdmins, notifyUser } = require('../utils/notify');
+const { logAdminAction } = require('../services/adminAudit');
 
 const SUPPORTED_LOCALES = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
 
@@ -642,6 +643,20 @@ router.patch('/admin/manual/:id/review', protect, authorize('admin'), async (req
       action: req.body?.action,
       note: req.body?.note,
     });
+
+    await logAdminAction({
+      req,
+      action: result.paymentStatus === 'succeeded' ? 'payment.manual.approved' : 'payment.manual.rejected',
+      entityType: 'payment',
+      entityId: result.paymentId || req.params.id,
+      reason: String(req.body?.note || '').trim() || (result.paymentStatus === 'succeeded' ? 'اعتماد تحويل يدوي' : 'رفض تحويل يدوي'),
+      metadata: {
+        paymentStatus: result.paymentStatus,
+        studentId: result.studentId ? String(result.studentId) : undefined,
+        subscriptionId: result.subscriptionId ? String(result.subscriptionId) : undefined,
+        courseId: result.courseId ? String(result.courseId) : undefined,
+      },
+    }).catch(() => {});
 
     let autoPlacement = null;
     if (
