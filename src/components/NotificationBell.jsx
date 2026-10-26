@@ -21,9 +21,11 @@ export default function NotificationBell() {
   const realtimeRoomRef = useRef(null);
   const fetching = useRef(false);
   const refreshPending = useRef(false);
+  const fetchNotificationsRef = useRef(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [onlyUnread, setOnlyUnread] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     if (fetching.current) { refreshPending.current = true; return; }
@@ -60,14 +62,15 @@ export default function NotificationBell() {
       console.error('Error fetching notifications:', error);
     } finally {
       fetching.current = false;
-      if (refreshPending.current) { refreshPending.current = false; fetchNotifications(); }
+      if (refreshPending.current) { refreshPending.current = false; fetchNotificationsRef.current?.(); }
     }
   }, [locale, toast]);
 
   useEffect(() => {
     let disposed = false;
+    fetchNotificationsRef.current = fetchNotifications;
 
-    fetchNotifications();
+    setTimeout(() => { fetchNotifications(); }, 0);
 
     const connectRealtime = async () => {
       try {
@@ -102,7 +105,7 @@ export default function NotificationBell() {
               detail: notification,
             }));
 
-            fetchNotifications();
+            setTimeout(() => { fetchNotifications(); }, 0);
           } catch (error) {
             console.error('Realtime notification payload error:', error);
           }
@@ -211,7 +214,7 @@ export default function NotificationBell() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 mt-2 w-96 bg-white rounded-xl shadow-2xl z-50 overflow-hidden border border-gray-200">
+          <div className="absolute left-0 mt-2 w-[min(24rem,calc(100vw-1.5rem))] bg-white rounded-xl shadow-2xl z-50 overflow-hidden border border-gray-200">
             <div className="bg-gradient-to-r from-emerald-600 to-green-600 p-4 text-white">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-lg">الإشعارات</h3>
@@ -227,6 +230,22 @@ export default function NotificationBell() {
               </div>
             </div>
 
+            <div className="flex items-center gap-1.5 border-b border-gray-100 bg-gray-50/80 px-3 py-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setOnlyUnread(false)}
+                className={!onlyUnread ? 'rounded-lg bg-emerald-700 px-2.5 py-1 text-white' : 'rounded-lg px-2.5 py-1 text-gray-600 hover:bg-gray-200/60'}
+              >
+                الكل ({notifications.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOnlyUnread(true)}
+                className={onlyUnread ? 'rounded-lg bg-emerald-700 px-2.5 py-1 text-white' : 'rounded-lg px-2.5 py-1 text-gray-600 hover:bg-gray-200/60'}
+              >
+                غير المقروءة ({unreadCount})
+              </button>
+            </div>
             <div className="max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">
@@ -235,7 +254,7 @@ export default function NotificationBell() {
                 </div>
               ) : (
                 <div className="divide-y">
-                  {notifications.map((notification) => {
+                  {(onlyUnread ? notifications.filter((n) => !n.isRead) : notifications).map((notification) => {
                     const href = getNotificationLink(notification);
                     const content = (
                       <>

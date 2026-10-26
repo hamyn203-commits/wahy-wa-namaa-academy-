@@ -2020,3 +2020,82 @@
     justify-content: space-between;
   }
 }
+
+
+/* ==========================================================================
+   Batch 7 — Mobile < 375px Responsiveness & Touch Targets >= 44px (073, 075)
+   ========================================================================== */
+.wn-quick-pill,
+.wn-quick-spec-pill,
+.wn-active-filter-chip,
+.wn-teacher-tab,
+.wn-ai-tab,
+.wn-library-switch button,
+.wn-field__eye,
+.wn-auth-role {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wn-field__eye {
+  min-width: 44px;
+}
+
+@media (max-width: 374px) {
+  .wn-public-wrap,
+  .wn-editorial-wrap,
+  .wn-utility-wrap,
+  .wn-ai-wrap {
+    width: calc(100% - 1.25rem);
+  }
+
+  .wn-public-hero {
+    padding-block: 2.5rem 3.5rem;
+  }
+
+  .wn-public-hero h1,
+  .wn-detail-hero h1,
+  .wn-program-hero h1,
+  .wn-library-hero h1 {
+    font-size: clamp(1.65rem, 7.5vw, 2.15rem);
+    line-height: 1.25;
+  }
+
+  .wn-public-form-card,
+  .wn-register-form-card,
+  .wn-public-message-card,
+  .wn-detail-card__body,
+  .wn-editorial-card,
+  .wn-utility-card {
+    padding: 0.95rem;
+    border-radius: 18px;
+  }
+
+  .wn-auth-role-grid,
+  .wn-teacher-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .wn-quick-gender-switch {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .wn-quick-spec-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+
+  .wn-quick-spec-pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .wn-quick-spec-pill {
+    flex: 0 0 auto;
+  }
+}

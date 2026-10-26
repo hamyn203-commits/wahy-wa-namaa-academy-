@@ -187,6 +187,8 @@ export default function Contact() {
                     </label>
                     <input
                       name="name"
+                      autoComplete="name"
+                      enterKeyHint="next"
                       value={formData.name}
                       onChange={handleChange}
                       required
@@ -200,6 +202,9 @@ export default function Contact() {
                     <input
                       type="email"
                       name="email"
+                      autoComplete="email"
+                      inputMode="email"
+                      enterKeyHint="next"
                       value={formData.email}
                       onChange={handleChange}
                       required
@@ -217,6 +222,9 @@ export default function Contact() {
                     <input
                       type="tel"
                       name="phone"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      enterKeyHint="next"
                       value={formData.phone}
                       onChange={handleChange}
                       placeholder="+20..."

@@ -194,7 +194,7 @@ export default function Login() {
                   ['guardian', isAr ? 'ولي أمر' : 'Guardian']
                 ].map(([value, label]) => <button key={value} type="button" onClick={() => setGoogleRole(value)}
                   aria-pressed={googleRole === value}
-                  className={`rounded-xl border p-2 text-sm font-bold ${googleRole === value ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-600'}`}>{label}</button>)}
+                  className={`min-h-[44px] rounded-xl border p-2 text-sm font-bold transition ${googleRole === value ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-600'}`}>{label}</button>)}
               </div>
               <p className="mt-2 text-xs text-slate-500">{isAr ? 'لو عندك حساب بالفعل، هنفتح حسابك الحالي بنفس نوعه دون تغييره.' : 'Existing accounts retain their registered role.'}</p>
             </div>
@@ -212,6 +212,10 @@ export default function Login() {
                     onChange={handleChange}
                     required
                     autoComplete="email"
+                    inputMode="email"
+                    enterKeyHint="next"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     placeholder="example@email.com"
                     dir="auto"
                   />
@@ -235,6 +239,7 @@ export default function Login() {
                     onChange={handleChange}
                     required
                     autoComplete="current-password"
+                    enterKeyHint="done"
                     placeholder="••••••••"
                     dir="auto"
                   />

@@ -84,17 +84,17 @@
 | 068 | Teacher Dashboard: مؤشرات حالة لحظية | ✅ مؤشر نبضي لحظي + Skeleton في `TeacherDashboard/index.jsx` (دفعة 5) | M |
 | 069 | Guardian Dashboard: child-switcher + مقارنة | ✅ جدول مقارنة تقدم الأبناء + أشرطة الحفظ والتجويد والحضور (دفعة 5) | M |
 | 070 | Admin Dashboard: KPI widgets + revenue charts | ⬜ | M |
-| 072 | Notification center بفلاتر وأولويات | 🟡 يوجد أساس (NotificationBell) | M |
+| 072 | Notification center بفلاتر وأولويات | ✅ فلاتر تصنيف (الكل/غير المقروءة/الحصص/الواجبات) + شارات أولوية + Skeleton في `/notifications` و`NotificationBell` (دفعة 7) | M |
 | 071 | Drag-and-drop widgets | ⏸️ مؤجل — قيمة منخفضة قبل الإطلاق | — |
 
 ### 1.4 — الموبايل
 
 | بند | المهمة | الحالة | الحجم |
 |---|---|---|---|
-| 073 | Responsive < 375px لكل الصفحات | ⬜ | M |
-| 075 | Touch targets ≥ 44px (يوجد `--wn-control-md` — يتبقى التطبيق) | 🟡 | S |
+| 073 | Responsive < 375px لكل الصفحات | ✅ قواعد استجابة `< 375px` في `public-experience.css` و`NotificationBell` (دفعة 7) | M |
+| 075 | Touch targets ≥ 44px (يوجد `--wn-control-md` — يتبقى التطبيق) | ✅ تطبيق `min-height: 44px` على فلاتر وشرائح وأزرار التفاعل (دفعة 7) | S |
 | 074 | Bottom navigation لكل persona (يوجد MobileStickyBar عام) | 🟡 | M |
-| 079 | Keyboard handling في الفورمات | ⬜ | S |
+| 079 | Keyboard handling في الفورمات | ✅ إضافة `inputMode`, `enterKeyHint`, `autoComplete` في نماذج الدخول والتسجيل والتواصل (دفعة 7) | S |
 | 080 | Offline mode للمحتوى المقروء | ⏸️ مؤجل مع PWA المتقدمة | — |
 | 076-078 | Pull-to-refresh / swipe gestures / haptics | ⏸️ مؤجل — يسبقها قياس استخدام موبايل فعلي | — |
 
