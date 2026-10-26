@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -53,7 +53,7 @@ function localizedValue(value, locale) {
   return value?.[locale] || value?.ar || value?.en || '';
 }
 
-function CourseCard({ course, locale }) {
+const CourseCard = memo(function CourseCard({ course, locale }) {
   const { t } = useI18n();
   const { displayPrice } = useMarket();
   const isAr = locale === 'ar';
@@ -105,7 +105,7 @@ function CourseCard({ course, locale }) {
       </div>
     </motion.article>
   );
-}
+});
 
 export default function Courses() {
   const { t, locale } = useI18n();
@@ -118,6 +118,14 @@ export default function Courses() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('popular');
   const [showFilters, setShowFilters] = useState(false);
+
+  const quickCategories = useMemo(() => ([
+    { id: 'all', label: isAr ? 'كل البرامج' : 'All programs' },
+    { id: 'quran', label: isAr ? 'القرآن والحفظ' : 'Quran & Hifz' },
+    { id: 'tajweed', label: isAr ? 'التجويد' : 'Tajweed' },
+    { id: 'arabic', label: isAr ? 'اللغة العربية' : 'Arabic' },
+    { id: 'ijazah', label: isAr ? 'الإجازة والسند' : 'Ijazah' },
+  ]), [isAr]);
 
   useEffect(() => {
     api.get('/api/courses')
@@ -235,6 +243,21 @@ export default function Courses() {
                   {isAr ? 'الفلاتر' : 'Filters'}
                   <ChevronDown size={15} className={showFilters ? 'rotate-180 transition' : 'transition'} />
                 </button>
+              </div>
+            </div>
+
+            <div className="wn-quick-filter-bar">
+              <div className="wn-quick-spec-pills" role="group" aria-label={isAr ? 'تصنيفات البرامج' : 'Program categories'}>
+                {quickCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={selectedCategory === cat.id ? 'wn-quick-spec-pill is-active' : 'wn-quick-spec-pill'}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
               </div>
             </div>
 

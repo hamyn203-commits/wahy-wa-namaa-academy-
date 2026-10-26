@@ -9,6 +9,7 @@ import UserMenu from './UserMenu';
 import BrandLogo from './BrandLogo';
 import ThemeToggle from './shared/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
+import { prefetchRoute } from '../lib/routePrefetch';
 
 export default function GlobalHeader() {
   const { t, locale } = useI18n();
@@ -49,6 +50,9 @@ export default function GlobalHeader() {
               <Link
                 key={link.path}
                 to={link.path}
+                onMouseEnter={() => prefetchRoute(link.path)}
+                onFocus={() => prefetchRoute(link.path)}
+                onTouchStart={() => prefetchRoute(link.path)}
                 className={'wn-approved-header__link ' + (isActive(link.path) ? 'is-active' : '')}
               >
                 {link.label}
@@ -57,7 +61,13 @@ export default function GlobalHeader() {
           </nav>
 
           <div className="wn-approved-header__actions">
-            <Link to={lp('/courses')} className="wn-approved-header__icon" aria-label={isAr ? 'استكشف البرامج' : 'Explore programs'}>
+            <Link
+              to={lp('/courses')}
+              onMouseEnter={() => prefetchRoute('/courses')}
+              onFocus={() => prefetchRoute('/courses')}
+              className="wn-approved-header__icon"
+              aria-label={isAr ? 'استكشف البرامج' : 'Explore programs'}
+            >
               <Search size={19} />
             </Link>
             <LanguageSwitcher />
@@ -69,10 +79,20 @@ export default function GlobalHeader() {
               </>
             ) : (
               <>
-                <Link to={lp('/login')} className="wn-approved-header__login">
+                <Link
+                  to={lp('/login')}
+                  onMouseEnter={() => prefetchRoute('/login')}
+                  onFocus={() => prefetchRoute('/login')}
+                  className="wn-approved-header__login"
+                >
                   {t.common.login}
                 </Link>
-                <Link to={lp('/start')} className="wn-approved-header__cta">
+                <Link
+                  to={lp('/start')}
+                  onMouseEnter={() => prefetchRoute('/start')}
+                  onFocus={() => prefetchRoute('/start')}
+                  className="wn-approved-header__cta"
+                >
                   <span>{isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}</span>
                   <ArrowIcon size={15} />
                 </Link>
@@ -98,6 +118,7 @@ export default function GlobalHeader() {
                 <Link
                   key={link.path}
                   to={link.path}
+                  onTouchStart={() => prefetchRoute(link.path)}
                   onClick={() => setIsMenuOpen(false)}
                   className={'wn-approved-mobile-menu__link ' + (isActive(link.path) ? 'is-active' : '')}
                 >
@@ -112,7 +133,12 @@ export default function GlobalHeader() {
                 <LanguageSwitcher />
               </div>
               {!isAuthenticated && (
-                <Link to={lp('/login')} onClick={() => setIsMenuOpen(false)} className="wn-btn wn-btn--secondary wn-btn--sm">
+                <Link
+                  to={lp('/login')}
+                  onTouchStart={() => prefetchRoute('/login')}
+                  onClick={() => setIsMenuOpen(false)}
+                  className="wn-btn wn-btn--secondary wn-btn--sm"
+                >
                   {t.common.login}
                 </Link>
               )}
@@ -120,6 +146,7 @@ export default function GlobalHeader() {
 
             <Link
               to={lp('/start')}
+              onTouchStart={() => prefetchRoute('/start')}
               onClick={() => setIsMenuOpen(false)}
               className="wn-btn wn-btn--primary wn-btn--block"
             >

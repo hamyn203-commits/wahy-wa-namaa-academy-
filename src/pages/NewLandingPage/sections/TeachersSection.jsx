@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../../i18n';
 import {
   GraduationCap,
@@ -11,6 +11,7 @@ import {
   UserRoundCheck,
 } from 'lucide-react';
 import LocalizedLink from '../../../components/LocalizedLink';
+import { teacherPublicImage, teacherImageFallback } from '../../../lib/teacherMedia';
 
 const specialtyLabels = {
   children: { ar: 'الأطفال', en: 'Children' },
@@ -21,7 +22,7 @@ const specialtyLabels = {
   'arabic-language': { ar: 'العربية', en: 'Arabic' },
 };
 
-function TeacherCard({ teacher, locale, isAr }) {
+const TeacherCard = memo(function TeacherCard({ teacher, locale, isAr }) {
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const id = teacher?._id || teacher?.id;
   const name = teacher?.user?.name || teacher?.personalInfo?.fullName || (isAr ? 'معلم قرآن' : 'Quran Teacher');
@@ -34,7 +35,13 @@ function TeacherCard({ teacher, locale, isAr }) {
     <article className="wn-faculty-card">
       <div className="wn-faculty-card__media">
         {photo ? (
-          <img src={photo} alt={name} loading="lazy" />
+          <img
+            src={teacherPublicImage(photo)}
+            alt={name}
+            loading="lazy"
+            decoding="async"
+            onError={teacherImageFallback}
+          />
         ) : (
           <div className="wn-faculty-card__placeholder" aria-hidden="true">
             <GraduationCap size={40} strokeWidth={1.35} />
@@ -83,7 +90,7 @@ function TeacherCard({ teacher, locale, isAr }) {
       </div>
     </article>
   );
-}
+});
 
 export default function TeachersSection() {
   const { locale } = useI18n();

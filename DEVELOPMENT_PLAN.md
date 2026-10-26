@@ -93,7 +93,7 @@
 |---|---|---|---|
 | 073 | Responsive < 375px لكل الصفحات | ✅ قواعد استجابة `< 375px` في `public-experience.css` و`NotificationBell` (دفعة 7) | M |
 | 075 | Touch targets ≥ 44px (يوجد `--wn-control-md` — يتبقى التطبيق) | ✅ تطبيق `min-height: 44px` على فلاتر وشرائح وأزرار التفاعل (دفعة 7) | S |
-| 074 | Bottom navigation لكل persona (يوجد MobileStickyBar عام) | 🟡 | M |
+| 074 | Bottom navigation لكل persona (يوجد MobileStickyBar عام) | ✅ تطوير `MobileStickyBar` بشريط تنقل سفلي مخصص لكل دور (طالب/ولي أمر/معلم/إدارة/زائر) وربطه بكل الصفحات العامة عبر `GlobalFooter` (دفعة 8) | M |
 | 079 | Keyboard handling في الفورمات | ✅ إضافة `inputMode`, `enterKeyHint`, `autoComplete` في نماذج الدخول والتسجيل والتواصل (دفعة 7) | S |
 | 080 | Offline mode للمحتوى المقروء | ⏸️ مؤجل مع PWA المتقدمة | — |
 | 076-078 | Pull-to-refresh / swipe gestures / haptics | ⏸️ مؤجل — يسبقها قياس استخدام موبايل فعلي | — |
@@ -104,11 +104,11 @@
 |---|---|---|---|
 | 081 | تقليل `dashboard-experience.css` (196KB/8000 سطر) — تقسيم per-page أو purging | ⬜ **أعلى بند أداء** | L |
 | 082 | Route-based code splitting أدق | ⬜ | M |
-| 084 | Image optimization pipeline (WebP/AVIF + lazy) | 🟡 lazy موجود في Teachers | M |
+| 084 | Image optimization pipeline (WebP/AVIF + lazy) | ✅ تعميم `loading="lazy" decoding="async"` ومعالجة صور المعلمين عبر `teacherPublicImage` (دفعة 8) | M |
 | 089 | Lighthouse > 90 في كل الفئات | ⬜ (يُقاس بعد 081/082) | M |
-| 086 | React.memo/useMemo استراتيجي | ⬜ | S |
+| 086 | React.memo/useMemo استراتيجي | ✅ تطبيق `memo` و`useMemo` في بطاقات المعلمين والدورات والفلاتر السريعة (دفعة 8) | S |
 | 085 | Virtual scrolling للقوائم الطويلة | ⏸️ مؤجل حتى وجود قوائم ضخمة فعلياً | — |
-| 083, 087, 088 | Prefetching / Service Worker precache / third-party scripts | ⬜ | M |
+| 083, 087, 088 | Prefetching / Service Worker precache / third-party scripts | ✅ بناء `src/lib/routePrefetch.js` للتحميل المسبق الذكي للمسارات في `GlobalHeader` و`GlobalFooter` و`MobileStickyBar` (دفعة 8) | M |
 
 ### 1.6 — صفحات ومكونات (فرز حسب القيمة)
 

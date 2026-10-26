@@ -119,7 +119,7 @@ export default function PlansPage() {
   const [renewalSource, setRenewalSource] = useState(null);
 
   useEffect(() => {
-    if (!renewalId && enrolledSection) setAudience(enrolledSection === 'ladies' ? 'women' : 'general');
+    if (!renewalId && enrolledSection) setTimeout(() => setAudience(enrolledSection === 'ladies' ? 'women' : 'general'), 0);
   }, [enrolledSection, renewalId]);
 
   useEffect(() => {
@@ -286,6 +286,7 @@ export default function PlansPage() {
             <div className="wn-plans-hero__visual">
               <img
                 src={audience === 'women' ? '/images/plans/plan-women.svg' : '/images/plans/plan-community.svg'}
+                decoding="async"
                 alt={isAr
                   ? (audience === 'women' ? 'حلقة قرآن لقسم السيدات' : 'طلاب في حلقة قرآن جماعية')
                   : (audience === 'women' ? 'Women Quran learning circle' : 'Students in a group Quran circle')}
@@ -384,7 +385,7 @@ export default function PlansPage() {
                   <h2>{isAr ? 'نفس الخطط والأسعار — مع معلمات فقط' : 'Same plans and pricing — female tutors only'}</h2>
                   <p>{isAr ? 'يتم توزيع الطالبات حسب السن والمستوى، مع الحفاظ على الخصوصية وجودة المتابعة.' : 'Learners are grouped by age and level with privacy and consistent academic follow-up.'}</p>
                 </div>
-                <img src="/images/plans/plan-women.svg" alt="" aria-hidden="true" />
+                <img src="/images/plans/plan-women.svg" alt="" aria-hidden="true" loading="lazy" decoding="async" />
               </aside>
             )}
           </div>
@@ -402,7 +403,7 @@ export default function PlansPage() {
               {visiblePlans.map((plan) => (
                 <article key={plan.id} className={'wn-plan-card is-' + plan.tone + (plan.featured ? ' is-featured' : '')}>
                   <div className="wn-plan-card__media">
-                    <img src={plan.image} alt={isAr ? plan.nameAr : plan.nameEn} loading="lazy" />
+                    <img src={plan.image} alt={isAr ? plan.nameAr : plan.nameEn} loading="lazy" decoding="async" />
                     <span className="wn-plan-card__badge">{isAr ? plan.badgeAr : plan.badgeEn}</span>
                   </div>
 

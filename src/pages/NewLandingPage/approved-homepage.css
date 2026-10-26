@@ -4097,3 +4097,33 @@ html {
     transform: none !important;
   }
 }
+
+
+/* Batch 8 — Persona Mobile Sticky Bar Grid */
+.wn-mobile-sticky__persona-grid {
+  max-width: 30rem;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.wn-mobile-sticky__tab {
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  padding: 0.35rem 0.25rem;
+  border-radius: 11px;
+  color: var(--wn-text-secondary);
+  font-size: 0.68rem;
+  font-weight: 750;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.wn-mobile-sticky__tab.is-active {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-deep);
+}

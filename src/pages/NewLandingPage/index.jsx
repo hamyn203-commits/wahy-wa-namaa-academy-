@@ -2,7 +2,6 @@ import { useI18n } from '../../i18n';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
-import MobileStickyBar from '../../components/MobileStickyBar';
 import HomepageMotionController from './HomepageMotionController';
 
 import HeroSection from './sections/HeroSection';
@@ -56,7 +55,6 @@ export default function NewLandingPage() {
         <FAQHomeSection />
         <CTASection />
       </main>
-      <MobileStickyBar />
       <GlobalFooter />
     </>
   );
