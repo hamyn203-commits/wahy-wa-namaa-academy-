@@ -234,3 +234,155 @@
   border-radius:11px !important;
   background:#fff !important;
 }
+
+
+/* ==========================================================================
+   Batch 4 — Interactive Booking Steps, Date Strip & Time Slot Pills
+   ========================================================================== */
+.wn-booking-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1.35rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  overflow-x: auto;
+}
+
+.wn-booking-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.wn-booking-step__num {
+  width: 1.45rem;
+  height: 1.45rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.wn-booking-step.is-active {
+  color: #fffdf7;
+}
+
+.wn-booking-step.is-active .wn-booking-step__num {
+  border-color: #efd28e;
+  background: #efd28e;
+  color: #05281f;
+}
+
+.wn-booking-step__line {
+  flex: 1;
+  min-width: 1.25rem;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.wn-booking-visual-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.wn-booking-visual-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--wn-emerald-deep);
+  font-size: 0.77rem;
+  font-weight: 750;
+}
+
+.wn-booking-date-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.wn-booking-date-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  padding: 0.6rem 0.4rem;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 107, 79, 0.13);
+  background: #fff;
+  color: var(--wn-text-primary);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.wn-booking-date-chip:hover {
+  transform: translateY(-2px);
+  border-color: rgba(212, 175, 107, 0.55);
+  background: #fffdf7;
+}
+
+.wn-booking-date-chip small {
+  font-size: 0.65rem;
+  color: var(--wn-text-secondary);
+}
+
+.wn-booking-date-chip strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--wn-emerald-deep);
+  line-height: 1.15;
+}
+
+.wn-booking-date-chip span {
+  font-size: 0.63rem;
+  color: var(--wn-text-tertiary);
+}
+
+.wn-booking-date-chip.is-selected {
+  border-color: var(--wn-emerald);
+  background: linear-gradient(145deg, #083b2e, #0d6049);
+  color: #fffdf7;
+  box-shadow: 0 12px 24px -16px rgba(7, 53, 40, 0.65);
+}
+
+.wn-booking-date-chip.is-selected small,
+.wn-booking-date-chip.is-selected strong,
+.wn-booking-date-chip.is-selected span {
+  color: #fffdf7;
+}
+
+.wn-booking-time-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wn-booking-time-pill {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 107, 79, 0.15);
+  background: #fff;
+  color: var(--wn-emerald-deep);
+  font-size: 0.74rem;
+  font-weight: 750;
+  transition: all 0.18s ease;
+}
+
+.wn-booking-time-pill:hover {
+  border-color: var(--wn-gold);
+  background: var(--wn-gold-soft);
+}
+
+.wn-booking-time-pill.is-selected {
+  border-color: var(--wn-gold-dark);
+  background: linear-gradient(135deg, #efd28e, #d4af6b);
+  color: #05281f;
+  box-shadow: 0 8px 18px -12px rgba(184, 138, 57, 0.55);
+}

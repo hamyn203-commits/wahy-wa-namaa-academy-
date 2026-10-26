@@ -1883,3 +1883,140 @@
 .wn-notfound__card{width:min(100%,42rem);padding:clamp(1.5rem,5vw,3rem);text-align:center;border:1px solid rgba(212,175,107,.18);border-radius:26px;background:rgba(255,255,255,.88);box-shadow:0 34px 80px -58px rgba(7,53,40,.55);backdrop-filter:blur(16px)}
 .wn-notfound__code{font-family:var(--wn-font-display);font-size:clamp(5rem,18vw,10rem);line-height:.9;color:var(--wn-emerald-deep);text-shadow:0 10px 35px rgba(212,175,107,.16)}
 @media(min-width:700px){.wn-certificate__meta{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+
+/* ==========================================================================
+   Batch 4 — Teacher Quick Filters, Active Chips & Verified Badges
+   ========================================================================== */
+.wn-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: 0.35rem;
+  border-radius: 999px;
+  background: #efd28e;
+  color: #05281f;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.wn-quick-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(15, 107, 79, 0.08);
+}
+
+.wn-quick-gender-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.28rem;
+  border-radius: 13px;
+  background: rgba(15, 107, 79, 0.05);
+  border: 1px solid rgba(15, 107, 79, 0.09);
+  width: fit-content;
+}
+
+.wn-quick-pill {
+  padding: 0.42rem 0.85rem;
+  border-radius: 9px;
+  font-size: 0.74rem;
+  font-weight: 750;
+  color: var(--wn-text-secondary);
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wn-quick-pill:hover {
+  color: var(--wn-emerald-deep);
+}
+
+.wn-quick-pill.is-active {
+  background: var(--wn-emerald-deep);
+  color: #fffdf7;
+  box-shadow: 0 8px 18px -12px rgba(7, 53, 40, 0.65);
+}
+
+.wn-quick-spec-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wn-quick-spec-pill {
+  padding: 0.38rem 0.78rem;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 107, 0.26);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--wn-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.wn-quick-spec-pill:hover {
+  border-color: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+  background: var(--wn-gold-soft);
+}
+
+.wn-quick-spec-pill.is-active {
+  border-color: var(--wn-gold-dark);
+  background: linear-gradient(135deg, #fff8e6, #f4e6c3);
+  color: var(--wn-emerald-deep);
+  box-shadow: 0 6px 16px -10px rgba(184, 138, 57, 0.45);
+}
+
+.wn-active-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.wn-active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: var(--wn-emerald-soft);
+  border: 1px solid var(--wn-border-mint);
+  color: var(--wn-emerald-dark);
+  font-size: 0.68rem;
+  font-weight: 750;
+  transition: background 0.18s ease;
+}
+
+.wn-active-filter-chip:hover {
+  background: #d7ede4;
+}
+
+.wn-teacher-verified {
+  position: absolute;
+  top: 0.8rem;
+  inset-inline-start: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(5, 40, 31, 0.72);
+  color: #dff7ec;
+  font-size: 0.63rem;
+  font-weight: 750;
+  backdrop-filter: blur(8px);
+}
+
+@media (min-width: 960px) {
+  .wn-quick-filter-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}

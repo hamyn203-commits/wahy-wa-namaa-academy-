@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
+import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { useToast } from '../../context/ToastProvider';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 import '../../styles/session-experience.css';
 
@@ -24,6 +26,7 @@ export default function BookSession() {
   const navigate = useNavigate();
   const { locale } = useI18n();
   const isAr = locale === 'ar';
+  const toast = useToast();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [teacher, setTeacher] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
@@ -152,13 +155,18 @@ export default function BookSession() {
         notes,
       }, { auth: true });
 
+      toast.success(
+        isAr
+          ? 'تم إرسال طلب الحصة التجريبية بنجاح!'
+          : 'Your trial session request has been submitted!',
+      );
       navigate(localizedPath('/student/dashboard', locale));
     } catch (err) {
       if (err.code === 'TRIAL_ALREADY_EXISTS' && err.data?.existingSession) {
         setExistingTrial(err.data.existingSession);
         setShowConfirmation(false);
       } else {
-        alert(err.message || (isAr ? 'تعذر إرسال طلب الحجز' : 'Unable to send booking request'));
+        toast.error(err.message || (isAr ? 'تعذر إرسال طلب الحجز' : 'Unable to send booking request'));
       }
     } finally {
       setSubmitting(false);
@@ -166,7 +174,40 @@ export default function BookSession() {
   };
 
   if (loading) {
-    return <div className="wn-session-shell min-h-screen grid place-items-center"><span className="w-9 h-9 rounded-full border-2 border-[var(--wn-emerald)]/20 border-t-[var(--wn-emerald)] animate-spin" /></div>;
+    return (
+      <>
+        <GlobalHeader />
+        <main className="wn-session-shell">
+          <div className="wn-booking-wrap" aria-hidden="true">
+            <section className="wn-booking-card">
+              <div className="wn-booking-head">
+                <Skeleton className="h-4 w-36 bg-white/15" />
+                <div className="wn-booking-teacher mt-4">
+                  <Skeleton className="h-20 w-20 rounded-2xl bg-white/15 shrink-0" />
+                  <div className="flex-1">
+                    <Skeleton className="h-7 w-56 bg-white/20 mb-2" />
+                    <Skeleton className="h-4 w-36 bg-white/15" />
+                  </div>
+                </div>
+              </div>
+              <div className="wn-booking-form">
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                </div>
+                <Skeleton className="h-28 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-xl" />
+              </div>
+            </section>
+          </div>
+          <p className="sr-only" role="status">
+            {isAr ? 'جاري تحميل مواعيد الحجز...' : 'Loading booking slots...'}
+          </p>
+        </main>
+        <GlobalFooter />
+      </>
+    );
   }
 
   if (!teacher) {
@@ -183,6 +224,7 @@ export default function BookSession() {
 
   const name = teacher.user?.name || teacher.personalInfo?.fullName || (isAr ? 'معلم قرآن' : 'Quran teacher');
   const photo = teacherPublicImage(teacher.media?.profilePhoto || teacher.user?.avatar);
+  const currentStep = showConfirmation ? 2 : selectedDate && selectedTime ? 1.5 : 1;
 
   return (
     <>
@@ -191,12 +233,38 @@ export default function BookSession() {
         <div className="wn-booking-wrap">
           <section className="wn-booking-card">
             <div className="wn-booking-head">
-              <span className="wn-auth-visual__eyebrow"><Sparkles size={14} /> {isAr ? 'حجز جلسة تعريفية' : 'BOOK AN INTRODUCTORY SESSION'}</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="wn-auth-visual__eyebrow">
+                  <Sparkles size={14} /> {isAr ? 'حجز جلسة تعريفية مجانية' : 'BOOK A FREE INTRODUCTORY SESSION'}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[#efd28e]">
+                  <ShieldCheck size={14} /> {isAr ? 'مجانية 100% — بدون بطاقة بنكية' : '100% Free — No card required'}
+                </span>
+              </div>
+
               <div className="wn-booking-teacher mt-4">
                 <img src={photo} alt={name} onError={teacherImageFallback} loading="eager" decoding="async" />
                 <div>
                   <h1>{isAr ? 'اختر موعدًا مناسبًا' : 'Choose a suitable time'}</h1>
                   <p>{isAr ? 'مع ' + name : 'With ' + name}</p>
+                </div>
+              </div>
+
+              {/* 3-Step Visual Progress Indicator */}
+              <div className="wn-booking-steps" aria-label={isAr ? 'خطوات الحجز' : 'Booking steps'}>
+                <div className={currentStep >= 1 ? 'wn-booking-step is-active' : 'wn-booking-step'}>
+                  <span className="wn-booking-step__num">1</span>
+                  <span>{isAr ? 'اختيار اليوم والوقت' : 'Pick date & time'}</span>
+                </div>
+                <div className="wn-booking-step__line" />
+                <div className={currentStep >= 2 ? 'wn-booking-step is-active' : 'wn-booking-step'}>
+                  <span className="wn-booking-step__num">2</span>
+                  <span>{isAr ? 'مراجعة التفاصيل' : 'Review details'}</span>
+                </div>
+                <div className="wn-booking-step__line" />
+                <div className="wn-booking-step">
+                  <span className="wn-booking-step__num">3</span>
+                  <span>{isAr ? 'تأكيد الموعد' : 'Confirm session'}</span>
                 </div>
               </div>
             </div>
@@ -239,6 +307,86 @@ export default function BookSession() {
                     ? 'لم يحدد المعلم جدول توفر بعد؛ أرسل الوقت المقترح وسيقوم المعلم بتأكيده أو اقتراح بديل.'
                     : 'The tutor has not configured availability yet; send a preferred time for confirmation.')}
               </div>
+
+              {/* Interactive Visual Date Strip */}
+              {availableDates.length > 0 && (
+                <div className="wn-booking-visual-group">
+                  <span className="wn-booking-visual-title">
+                    <Calendar size={15} /> {isAr ? 'اختر اليوم المناسب سريعًا:' : 'Quickly pick a day:'}
+                  </span>
+                  <div className="wn-booking-date-strip">
+                    {availableDates.slice(0, 7).map((date) => {
+                      const representative = availabilityData.configured
+                        ? availabilityData.slots.find((slot) => dateKeyInTimezone(slot.startsAt, timezone) === date)?.startsAt
+                        : date + 'T12:00:00';
+                      const dObj = new Date(representative);
+                      const weekday = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                        timeZone: availabilityData.configured ? timezone : undefined,
+                        weekday: 'short',
+                      });
+                      const dayNum = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                        timeZone: availabilityData.configured ? timezone : undefined,
+                        day: 'numeric',
+                      });
+                      const monthShort = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                        timeZone: availabilityData.configured ? timezone : undefined,
+                        month: 'short',
+                      });
+                      const isSelected = selectedDate === date;
+                      return (
+                        <button
+                          key={date}
+                          type="button"
+                          onClick={() => {
+                            setSelectedDate(date);
+                            setSelectedTime('');
+                            setShowConfirmation(false);
+                          }}
+                          className={isSelected ? 'wn-booking-date-chip is-selected' : 'wn-booking-date-chip'}
+                        >
+                          <small>{weekday}</small>
+                          <strong>{dayNum}</strong>
+                          <span>{monthShort}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Interactive Visual Time Slot Pills when a date is selected */}
+              {selectedDate && (
+                <div className="wn-booking-visual-group">
+                  <span className="wn-booking-visual-title">
+                    <Clock size={15} /> {isAr ? 'اختر الفترة الزمنية:' : 'Pick a time slot:'}
+                  </span>
+                  <div className="wn-booking-time-pills">
+                    {(availabilityData.configured
+                      ? slotsForSelectedDate.map((slot) => ({
+                          value: slot.startsAt,
+                          label: new Date(slot.startsAt).toLocaleTimeString(isAr ? 'ar-EG' : 'en', {
+                            timeZone: timezone,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }),
+                        }))
+                      : fallbackTimes.slice(0, 12).map((time) => ({ value: time, label: time }))
+                    ).map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTime(item.value);
+                          setShowConfirmation(false);
+                        }}
+                        className={selectedTime === item.value ? 'wn-booking-time-pill is-selected' : 'wn-booking-time-pill'}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="wn-booking-field">
