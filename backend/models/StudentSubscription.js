@@ -107,6 +107,8 @@ StudentSubscriptionSchema.index(
   { unique: true, partialFilterExpression: { status: 'pending_payment' } }
 );
 StudentSubscriptionSchema.index({ circle: 1, status: 1 });
+StudentSubscriptionSchema.index({ status: 1, createdAt: -1 });
+StudentSubscriptionSchema.index({ preferredTeacher: 1, status: 1 });
 StudentSubscriptionSchema.index(
   { renewalOf: 1 },
   { unique: true, partialFilterExpression: { renewalOf: { $type: 'objectId' } } }

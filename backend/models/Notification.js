@@ -148,6 +148,7 @@ const NotificationSchema = new mongoose.Schema({
 NotificationSchema.index({ user: 1, createdAt: -1 });
 NotificationSchema.index({ user: 1, 'data.supportMessage': 1 }, { unique: true, partialFilterExpression: { 'data.supportMessage': { $exists: true } } });
 NotificationSchema.index({ user: 1, isRead: 1 });
+NotificationSchema.index({ user: 1, isRead: 1, createdAt: -1 });
 NotificationSchema.index({ user: 1, type: 1 });
 NotificationSchema.index({ scheduledAt: 1 });
 NotificationSchema.index({ expiresAt: 1 });

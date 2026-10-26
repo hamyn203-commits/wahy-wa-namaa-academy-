@@ -22,6 +22,7 @@ const app = express();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.set('etag', 'weak');
 app.use(correlationId);
 
 app.use(helmet({
@@ -154,11 +155,26 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
 
 app.use(require('./middleware/detectMarket'));
 
-function sanitizeObject(obj) {
+function sanitizeStringValue(value, fieldKey = '') {
+  if (typeof value !== 'string') return value;
+  const lowerKey = String(fieldKey || '').toLowerCase();
+  if (lowerKey.includes('password') || lowerKey.includes('token') || lowerKey.includes('credential')) {
+    return value;
+  }
+  return value
+    .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+    .replace(/<\s*\/?\s*script\b[^>]*>/gi, '')
+    .replace(/\b(?:javascript|vbscript)\s*:/gi, '')
+    .replace(/\bon[a-z]{2,20}\s*=/gi, '');
+}
+
+function sanitizeObject(obj, parentKey = '') {
+  if (typeof obj === 'string') return sanitizeStringValue(obj, parentKey);
   if (typeof obj !== 'object' || obj === null) return obj;
   const sanitized = Array.isArray(obj) ? [] : {};
   for (const key in obj) {
-    sanitized[key.replace(/[.$]/g, '_')] = sanitizeObject(obj[key]);
+    const cleanKey = key.replace(/[.$]/g, '_');
+    sanitized[cleanKey] = sanitizeObject(obj[key], cleanKey);
   }
   return sanitized;
 }

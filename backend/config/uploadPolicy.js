@@ -1,4 +1,5 @@
 const path = require('path');
+const { validateMagicBytes } = require('../utils/magicBytes');
 
 const PURPOSES = Object.freeze({
   homework: {
@@ -127,4 +128,5 @@ module.exports = {
   normalizeContentType,
   getFileExtension,
   validateUploadMetadata,
+  validateMagicBytes,
 };

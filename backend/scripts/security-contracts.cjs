@@ -1214,6 +1214,33 @@ requireContains(
   /payment\.manual\.approved[\s\S]{0,120}payment\.manual\.rejected/
 );
 
+// Backend Wave 2 (036, 050, 091, 092, 103, 158):
+requireContains(
+  'backend/app.js',
+  'request sanitizer must strip inline script tags and event handlers',
+  /function\s+sanitizeStringValue\s*\([\s\S]{0,600}javascript\|vbscript/
+);
+requireContains(
+  'backend/utils/magicBytes.js',
+  'upload magic-byte validator must check binary headers for PDF, PNG, JPEG, MP4, WebM, WAV, OGG, MP3',
+  /function\s+validateMagicBytes\s*\([\s\S]{0,2000}application\/pdf[\s\S]{0,1600}video\/mp4/
+);
+requireContains(
+  'backend/models/Teacher.js',
+  'teacher model must define compound index for approved/verified directory sorting',
+  /TeacherSchema\.index\(\{\s*status:\s*1,\s*isVerified:\s*1,\s*['"]rating\.average['"]:\s*-1\s*\}\)/
+);
+requireContains(
+  'backend/models/Session.js',
+  'session model must define compound indexes for teacher and student status scheduling',
+  /SessionSchema\.index\(\{\s*teacher:\s*1,\s*status:\s*1,\s*scheduledAt:\s*1\s*\}\)/
+);
+requireContains(
+  'backend/config/database.js',
+  'database connection pool must configure minPoolSize and maxIdleTimeMS',
+  /minPoolSize:[\s\S]{0,180}maxIdleTimeMS:/
+);
+
 if (failures.length) {
   console.error('Security contracts failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

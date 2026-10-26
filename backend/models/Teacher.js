@@ -120,5 +120,8 @@ TeacherSchema.index({ status: 1 });
 TeacherSchema.index({ 'personalInfo.country': 1 });
 TeacherSchema.index({ 'quranInfo.specializations': 1 });
 TeacherSchema.index({ 'rating.average': -1 });
+TeacherSchema.index({ status: 1, isVerified: 1, 'rating.average': -1 });
+TeacherSchema.index({ status: 1, createdAt: -1 });
+TeacherSchema.index({ status: 1, 'personalInfo.gender': 1 });
 
 module.exports = mongoose.model('Teacher', TeacherSchema);

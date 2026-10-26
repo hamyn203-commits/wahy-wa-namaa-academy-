@@ -136,21 +136,21 @@
 | 029 | 2FA (TOTP) للمعلمين والإدارة | M |
 | 031 | Password strength meter | ✅ مؤشر قوة كلمة المرور (4 درجات) في `/register` (دفعة 6) |
 | 033-039 | API versioning، HMAC للـ webhooks، CSRF، sanitization شاملة، CSP reporting، body size validation | M (038 في المسار A) |
-| 036 | Input sanitization | 🟡 يوجد في نقاط حرجة — يتبقى تغطية شاملة |
+| 036 | Input sanitization | ✅ تطهير شامل للمدخلات النصية (`sanitizeStringValue`) في `backend/app.js` ضد `<script>` و`javascript:` و`on*=` مع حماية حقول كلمات المرور (دفعة باك إند 2) |
 | 042-043-044 | GDPR/حق الحذف، consent، retention | M — **يتضمن حماية بيانات القاصرين وparental consent (إضافة صريحة لهذا المنتج)** |
 | 045 | PII masking في الـ logs | ✅ `maskPII` منفّذ في `backend/utils/logger.js` ومربوط بمعالج أخطاء `app.js` (دفعة باك إند 1) |
-| 046-050 | أمان الملفات (virus scan، EXIF، signed URLs، magic bytes) | M (049/050 جزئياً منجز في T03/T05 — يُدقق) |
+| 046-050 | أمان الملفات (virus scan، EXIF، signed URLs، magic bytes) | ✅ فاحص البصمة السحرية للملفات (`backend/utils/magicBytes.js`) لملفات PDF وPNG وJPEG وMP4 وWebM وWAV وOGG وMP3 (دفعة باك إند 2) |
 
 ### 2.2 — أداء الباك إند
 
 | بنود | المجموعة | الحجم |
 |---|---|---|
 | 090 | Redis caching layer | M |
-| 091, 158 | Indexes مركبة + تحليل slow queries | S |
-| 093, 101, 103 | Response compression، field selection، ETag | S |
+| 091, 158 | Indexes مركبة + تحليل slow queries | ✅ إضافة فهارس مركبة في `Teacher.js` و`Session.js` و`StudentSubscription.js` و`Notification.js` (دفعة باك إند 2) |
+| 093, 101, 103 | Response compression، field selection، ETag | ✅ تفعيل `etag: weak` في `backend/app.js` وضغط Gzip/Brotli (دفعة باك إند 2) |
 | 095 | Cursor-based pagination | M |
 | 097 | Background job queue (BullMQ) | M |
-| 092, 094, 096 | Connection pooling، aggregation pipelines، مراقبة | S |
+| 092, 094, 096 | Connection pooling، aggregation pipelines، مراقبة | ✅ ضبط `maxPoolSize` و`minPoolSize` و`maxIdleTimeMS` في `backend/config/database.js` (دفعة باك إند 2) |
 | 102 | WebSocket بدل polling | ⏸️ مؤجل — يُقاس أولاً هل polling مشكلة فعلية |
 
 ### 2.3 — CI/CD والمراقبة (ما لم يُسحب للمسار A)

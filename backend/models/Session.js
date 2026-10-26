@@ -111,5 +111,8 @@ SessionSchema.index({ teacher: 1, scheduledAt: -1 });
 SessionSchema.index({ circle: 1, scheduledAt: -1 });
 SessionSchema.index({ status: 1, scheduledAt: 1 });
 SessionSchema.index({ type: 1 });
+SessionSchema.index({ teacher: 1, status: 1, scheduledAt: 1 });
+SessionSchema.index({ student: 1, status: 1, scheduledAt: 1 });
+SessionSchema.index({ 'attendance.student': 1, scheduledAt: -1 });
 
 module.exports = mongoose.model('Session', SessionSchema);
