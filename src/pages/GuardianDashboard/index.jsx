@@ -9,6 +9,7 @@ import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import GuardianOverviewCenter from './GuardianOverviewCenter';
+import Skeleton from '../../components/shared/Skeleton';
 
 function relationshipLabel(value) {
   const labels = { father: 'ابن / ابنة', mother: 'ابن / ابنة', guardian: 'تحت الرعاية', other: 'تحت الرعاية' };
@@ -302,7 +303,16 @@ export default function GuardianDashboard() {
     <DashboardLayout title="لوحة متابعة ولي الأمر" user={user} onLogout={logout}>
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 space-y-4">
-          <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-full max-w-5xl space-y-4">
+            <Skeleton className="h-36 w-full rounded-2xl" />
+            <div className="grid gap-4 md:grid-cols-4">
+              <Skeleton className="h-24 w-full rounded-xl" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+            </div>
+            <Skeleton className="h-56 w-full rounded-2xl" />
+          </div>
           <p className="text-gray-500 font-medium font-arabic">جاري تحميل بيانات الأبناء وحلقات القرآن...</p>
         </div>
       ) : (
@@ -464,6 +474,55 @@ export default function GuardianDashboard() {
                   <small>طلبات أو واجبات</small>
                 </div>
               </div>
+
+              {children.length > 1 && (
+                <section className="mb-4 rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-emerald-700">مقارنة شاملة</span>
+                      <h3 className="text-base font-black text-slate-900">مقارنة تقدم الأبناء</h3>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-xs font-bold text-slate-500">
+                          <th className="py-2.5 px-3">الابن / الابنة</th>
+                          <th className="py-2.5 px-3">نسبة الحضور</th>
+                          <th className="py-2.5 px-3">آخر تقييم حفظ</th>
+                          <th className="py-2.5 px-3">الواجبات المعلقة</th>
+                          <th className="py-2.5 px-3">النقاط</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {children.map((child) => {
+                          const familyChild = familyChildById.get(String(child.studentId)) || {};
+                          const attRate = child.attendance?.rate;
+                          const memScore = familyChild.latestReport?.memorizationScore;
+                          return (
+                            <tr key={child.studentId} className="hover:bg-emerald-50/40">
+                              <td className="py-3 px-3 font-bold text-slate-900">{child.name}</td>
+                              <td className="py-3 px-3">
+                                {attRate != null ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2 w-20 overflow-hidden rounded-full bg-emerald-100">
+                                      <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.min(100, Number(attRate))}%` }} />
+                                    </div>
+                                    <span className="text-xs font-bold text-emerald-800">{attRate}%</span>
+                                  </div>
+                                ) : '—'}
+                              </td>
+                              <td className="py-3 px-3 font-bold text-emerald-700">{memScore != null ? `${memScore}/10` : '—'}</td>
+                              <td className="py-3 px-3">{familyChild.pendingHomework ?? 0}</td>
+                              <td className="py-3 px-3 font-bold text-amber-700">{child.studentProfile?.points || 0} ⭐</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
 
               <div className="wn-guardian-family-grid">
                 {children.map((child) => {

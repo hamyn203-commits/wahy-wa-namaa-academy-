@@ -15,6 +15,7 @@ import { uploadFileDirect } from '../../lib/fileUpload';
 import { apiUrl } from '../../config';
 import { TASK_TYPES } from '../TeacherRegistration/constants';
 import SessionChatModal from '../../components/session/SessionChatModal';
+import Skeleton from '../../components/shared/Skeleton';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
 import { useI18n } from '../../i18n';
@@ -777,7 +778,19 @@ export default function TeacherDashboard() {
 
   return (
     <DashboardLayout title="لوحة تحكم المعلم" user={user} onLogout={logout}>
-      {loading ? <div className="flex justify-center py-20"><div className="spinner spinner-lg" /></div> : (
+      {loading ? (
+        <div className="space-y-4 py-6" role="status" aria-live="polite">
+          <span className="sr-only">جاري تحميل لوحة المعلم...</span>
+          <Skeleton className="h-44 w-full rounded-2xl" />
+          <div className="grid gap-4 md:grid-cols-4">
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+          </div>
+          <Skeleton className="h-64 w-full rounded-2xl" />
+        </div>
+      ) : (
         <>
 
           <section className="wn-teacher-welcome">
@@ -813,6 +826,10 @@ export default function TeacherDashboard() {
 
               <div className="wn-teacher-welcome__chips">
                 <span className="is-verified"><CheckCircle2 size={14} /> معلم معتمد</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`inline-block h-2 w-2 rounded-full ${nextSession ? 'bg-emerald-400 animate-pulse' : (trials.length + pendingRegular.length) > 0 ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                  {nextSession ? 'حصة مجدولة قادمة' : (trials.length + pendingRegular.length) > 0 ? `${trials.length + pendingRegular.length} طلب بانتظارك` : 'متاح لاستقبال الحجوزات'}
+                </span>
                 <span><Users size={14} /> {activeStudents.length} طالب نشط</span>
                 <span><Star size={14} /> {stats.averageRating?.toFixed?.(1) || '0'} تقييم</span>
               </div>

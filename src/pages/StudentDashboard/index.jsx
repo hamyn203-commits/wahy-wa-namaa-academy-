@@ -20,6 +20,8 @@ import { apiUrl } from '../../config';
 import StudentTeacherMarketplace from './TeacherMarketplace';
 import SessionChatModal from '../../components/session/SessionChatModal';
 import SupportChat, { SupportLauncher } from '../../components/support/SupportChat';
+import Skeleton from '../../components/shared/Skeleton';
+import { StudentInspirationStrip } from '../../components/dashboard/QuranJourneyWidgets';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 
 const emptyReview = { rating: 5, comment: '', wouldContinue: true };
@@ -896,10 +898,30 @@ export default function StudentDashboard() {
     <DashboardLayout title={locale === 'id' ? 'Dasbor Siswa' : locale === 'ar' ? 'لوحة الطالب' : 'Student Dashboard'} user={user} onLogout={logout}>
       <SupportLauncher onOpen={() => setTab('support')} />
       {loading ? (
-        <div className="flex justify-center py-20"><div className="spinner spinner-lg" /></div>
+        <div className="space-y-4 py-6" role="status" aria-live="polite">
+          <span className="sr-only">{locale === 'ar' ? 'جاري تحميل لوحة الطالب...' : 'Loading student dashboard...'}</span>
+          <Skeleton className="h-36 w-full rounded-2xl" />
+          <div className="grid gap-4 md:grid-cols-4">
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+          </div>
+          <Skeleton className="h-64 w-full rounded-2xl" />
+        </div>
       ) : (
         <>
           {tab !== 'support' && <>
+          <StudentInspirationStrip
+            studentFirstName={studentFirstName}
+            locale={locale}
+            streak={gameStats?.streak?.current || profile?.studentProfile?.streak || 0}
+            totalPoints={gameStats?.points?.total || profile?.studentProfile?.points || 0}
+            completedSessions={stats.completedSessions || 0}
+            homeworkSubmitted={stats.homeworkSubmitted || 0}
+            homeworkPending={stats.homeworkPending || 0}
+            subscription={currentSubscription}
+          />
           {subscriptionsLoaded && !currentSubscription && <section className="wn-student-welcome">
             <div className="wn-student-welcome__content">
               <span className="wn-student-welcome__eyebrow">

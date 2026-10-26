@@ -24,6 +24,9 @@ export default function GuardianOverviewCenter({ child, nextSession }) {
 
   const permissions = child.permissions || {};
   const evaluation = child.latestEvaluation;
+  const memScore = Number(evaluation?.memorizationScore ?? 0);
+  const tajScore = Number(evaluation?.tajweedScore ?? 0);
+  const attendanceRate = Number(child.attendance?.rate ?? 0);
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
@@ -101,9 +104,31 @@ export default function GuardianOverviewCenter({ child, nextSession }) {
               آخر تقييم
             </div>
             {evaluation ? (
-              <div className="flex flex-wrap gap-3 text-sm">
-                <span>الحفظ <strong className="text-emerald-700">{evaluation.memorizationScore ?? '—'}/10</strong></span>
-                <span>التجويد <strong className="text-teal-700">{evaluation.tajweedScore ?? '—'}/10</strong></span>
+              <div className="space-y-2.5 text-sm">
+                <div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span>الحفظ</span>
+                    <strong className="text-emerald-700">{evaluation.memorizationScore ?? '—'}/10</strong>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-600"
+                      style={{ width: `${Math.min(100, memScore * 10)}%` }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span>التجويد</span>
+                    <strong className="text-teal-700">{evaluation.tajweedScore ?? '—'}/10</strong>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+                    <div
+                      className="h-full rounded-full bg-teal-600"
+                      style={{ width: `${Math.min(100, tajScore * 10)}%` }}
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="text-sm text-slate-500">لا يوجد تقييم مسجل بعد.</p>
@@ -118,7 +143,15 @@ export default function GuardianOverviewCenter({ child, nextSession }) {
             <p className="text-xl font-black text-slate-900">
               {child.attendance?.rate != null ? child.attendance.rate + '%' : '—'}
             </p>
-            <p className="text-xs text-slate-500 mt-1">
+            {child.attendance?.rate != null && (
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                <div
+                  className="h-full rounded-full bg-emerald-600"
+                  style={{ width: `${Math.min(100, attendanceRate)}%` }}
+                />
+              </div>
+            )}
+            <p className="text-xs text-slate-500 mt-1.5">
               {child.attendance
                 ? `${child.attendance.attended || 0} حضور · ${child.attendance.absent || 0} غياب · ${child.attendance.excused || 0} اعتذار`
                 : 'هذه البيانات غير متاحة حسب الصلاحيات.'}

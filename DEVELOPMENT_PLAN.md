@@ -79,10 +79,10 @@
 
 | بند | المهمة | الحالة | الحجم |
 |---|---|---|---|
-| 066 | Student Dashboard: progress visualization متقدمة | ⬜ | M |
-| 067 | تحيات شخصية ودعاء اليوم | ⬜ | S |
-| 068 | Teacher Dashboard: مؤشرات حالة لحظية | ⬜ | M |
-| 069 | Guardian Dashboard: child-switcher + مقارنة | ⬜ | M |
+| 066 | Student Dashboard: progress visualization متقدمة | ✅ `ProgressRing` + شريط تقدم الحصص والواجبات في `QuranJourneyWidgets.jsx` (دفعة 5) | M |
+| 067 | تحيات شخصية ودعاء اليوم | ✅ `StudentInspirationStrip` (تحية زمنية + آية/دعاء متجدد + Streak) (دفعة 5) | S |
+| 068 | Teacher Dashboard: مؤشرات حالة لحظية | ✅ مؤشر نبضي لحظي + Skeleton في `TeacherDashboard/index.jsx` (دفعة 5) | M |
+| 069 | Guardian Dashboard: child-switcher + مقارنة | ✅ جدول مقارنة تقدم الأبناء + أشرطة الحفظ والتجويد والحضور (دفعة 5) | M |
 | 070 | Admin Dashboard: KPI widgets + revenue charts | ⬜ | M |
 | 072 | Notification center بفلاتر وأولويات | 🟡 يوجد أساس (NotificationBell) | M |
 | 071 | Drag-and-drop widgets | ⏸️ مؤجل — قيمة منخفضة قبل الإطلاق | — |
@@ -119,8 +119,9 @@
 | 117 | فلاتر البحث عن معلمين (Quick Filter Pills + Active Chips + Verified Badge) | ✅ منجز في `/teachers` (دفعة 4) |
 | 118 | حجز الحصة التجريبية التفاعلي (Visual Date Strip + Time Slot Pills + 3-Step Bar + Toast + Skeleton) | ✅ منجز في `/book-trial/:teacherId` (دفعة 4) |
 | 123 | صفحة الخطط وجدول المقارنة التفاعلي | ✅ منجز في `/plans` (دفعة 3) |
-| 116, 119-122, 124 | تحسين باقي الصفحات العامة القائمة | ⬜ (كلها M ما عدا المذكورة S) |
-| 125-135 | مكونات جديدة (Progress Ring, Streak Tracker, Teacher Card محسّن...) | 🟡 Teacher Card محسّن (دفعة 4) — الباقي داخل بنود 1.3-1.4 |
+| 124 | شهادة الإتمام وختم التحقق الرقمي بـ QR | ✅ منجز في `/verify-certificate/:certificateId` (دفعة 5) |
+| 116, 119-122 | تحسين باقي الصفحات العامة القائمة | ⬜ (كلها M ما عدا المذكورة S) |
+| 125-135 | مكونات جديدة (Progress Ring, Streak Tracker, Teacher Card محسّن...) | ✅ Progress Ring + Streak Tracker + Teacher Card محسّن (دفعة 4 + 5) |
 | 106-115 | صفحات جديدة (رحلتي، مجتمع، جدول أسبوعي، مسابقات...) | ⏸️ **بعد الإطلاق وتحليل الاستخدام** — تُدرج في المرحلة 3 |
 
 ---
