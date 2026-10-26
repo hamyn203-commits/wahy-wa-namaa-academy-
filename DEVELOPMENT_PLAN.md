@@ -55,11 +55,11 @@
 | 052 | Spacing scale موحد | ✅ موجود في brand.css (`--wn-space-*`) | — |
 | 054 | Color tokens موثقة وموحّدة | ✅ موجود + dark theme | — |
 | 058 | Loading states شاملة (skeletons/shimmer) | ✅ skeleton component + Teachers/Courses/Blog/Leaderboard/Details (دفعة 1 + 3) | M |
-| 055 | Typography scale موحد (مراجعة استخدام الخطوط + أوزان قرآنية) | ⬜ | S |
-| 057 | Motion library موحدة (توقيت واحد عبر `--wn-dur-*`/`--wn-ease`) | ⬜ | S |
+| 055 | Typography scale موحد (مراجعة استخدام الخطوط + أوزان قرآنية) | ✅ موحد عبر `--wn-font-display` و`--wn-font-ui` في `brand.css` و`public-experience.css` (دفعة 9) | S |
+| 057 | Motion library موحدة (توقيت واحد عبر `--wn-dur-*`/`--wn-ease`) | ✅ توحيد متغيرات الحركة `--wn-motion-fast`/`--wn-motion-base` واحترام `prefers-reduced-motion` (دفعة 9) | S |
 | 051 | توثيق مكونات النظام (Storybook أو صفحة معاينة خفيفة) | ⬜ | M |
-| 056 | تحسين dark mode كتصميم مستقل | ⬜ | M |
-| 1.1a | **ترحيل الـ legacy tokens** (`--athar-*`/`--azhar-*`) إلى `--wn-*` في كل صفحات الـ landing العامة | 🟡 بدأ في دفعة 1 (FAQ) | M |
+| 056 | تحسين dark mode كتصميم مستقل | ✅ دعم `[data-theme="dark"]` في كافة الصفحات العامة والرئيسية وتفعيل `ThemeToggle` في الهيدر (دفعة 9) | M |
+| 1.1a | **ترحيل الـ legacy tokens** (`--athar-*`/`--azhar-*`) إلى `--wn-*` في كل صفحات الـ landing العامة | ✅ استبدال `--azhar-*`/`--athar-*` بـ `--wn-*` في `ThemeToggle` والصفحات العامة مع الحفاظ على التوافقية (دفعة 1 + 9) | M |
 
 ### 1.2 — الصفحة الرئيسية
 
@@ -83,7 +83,7 @@
 | 067 | تحيات شخصية ودعاء اليوم | ✅ `StudentInspirationStrip` (تحية زمنية + آية/دعاء متجدد + Streak) (دفعة 5) | S |
 | 068 | Teacher Dashboard: مؤشرات حالة لحظية | ✅ مؤشر نبضي لحظي + Skeleton في `TeacherDashboard/index.jsx` (دفعة 5) | M |
 | 069 | Guardian Dashboard: child-switcher + مقارنة | ✅ جدول مقارنة تقدم الأبناء + أشرطة الحفظ والتجويد والحضور (دفعة 5) | M |
-| 070 | Admin Dashboard: KPI widgets + revenue charts | ⬜ | M |
+| 070 | Admin Dashboard: KPI widgets + revenue charts | ✅ شريط مؤشرات الكفاءة المالية والتشغيلية (متوسط إيراد الحصة، تغطية المعلمين، مؤشر الاستقرار) في `AdminExecutiveHome.jsx` (دفعة 9) | M |
 | 072 | Notification center بفلاتر وأولويات | ✅ فلاتر تصنيف (الكل/غير المقروءة/الحصص/الواجبات) + شارات أولوية + Skeleton في `/notifications` و`NotificationBell` (دفعة 7) | M |
 | 071 | Drag-and-drop widgets | ⏸️ مؤجل — قيمة منخفضة قبل الإطلاق | — |
 
@@ -102,8 +102,8 @@
 
 | بند | المهمة | الحالة | الحجم |
 |---|---|---|---|
-| 081 | تقليل `dashboard-experience.css` (196KB/8000 سطر) — تقسيم per-page أو purging | ⬜ **أعلى بند أداء** | L |
-| 082 | Route-based code splitting أدق | ⬜ | M |
+| 081 | تقليل `dashboard-experience.css` (196KB/8000 سطر) — تقسيم per-page أو purging | ✅ معزول بالكامل في حزمة `DashboardLayout.css` (22.4KB gzipped) ولا يُحمّل للزوار في الصفحات العامة (دفعة 9) | L |
+| 082 | Route-based code splitting أدق | ✅ تقسيم كافة الصفحات + تحويل `QuranChatWidget` و`PwaInstallPrompt` إلى `React.lazy` غير حاجب في `App.jsx` (دفعة 9) | M |
 | 084 | Image optimization pipeline (WebP/AVIF + lazy) | ✅ تعميم `loading="lazy" decoding="async"` ومعالجة صور المعلمين عبر `teacherPublicImage` (دفعة 8) | M |
 | 089 | Lighthouse > 90 في كل الفئات | ⬜ (يُقاس بعد 081/082) | M |
 | 086 | React.memo/useMemo استراتيجي | ✅ تطبيق `memo` و`useMemo` في بطاقات المعلمين والدورات والفلاتر السريعة (دفعة 8) | S |

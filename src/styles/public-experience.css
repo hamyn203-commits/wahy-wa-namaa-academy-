@@ -2185,3 +2185,95 @@
     display: none;
   }
 }
+
+
+/* ==========================================================================
+   Batch 9 — Independent Dark Mode & Unified Design Tokens (055, 056, 057, 1.1a)
+   ========================================================================== */
+:root {
+  --wn-motion-fast: var(--wn-dur-fast, 160ms) var(--wn-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  --wn-motion-base: var(--wn-dur-base, 240ms) var(--wn-ease, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+[data-theme="dark"] .wn-public-shell,
+[data-theme="dark"] .wn-detail-shell,
+[data-theme="dark"] .wn-program-shell,
+[data-theme="dark"] .wn-ai-shell,
+[data-theme="dark"] .wn-library-shell,
+[data-theme="dark"] .wn-register-shell,
+[data-theme="dark"] .wn-trial-surface {
+  background:
+    radial-gradient(circle at 8% 6%, rgba(212, 175, 107, 0.08), transparent 24rem),
+    radial-gradient(circle at 92% 16%, rgba(86, 179, 166, 0.08), transparent 26rem),
+    linear-gradient(180deg, #071913 0%, #0b231b 55%, #081c16 100%) !important;
+  color: #edf5f1;
+}
+
+[data-theme="dark"] .wn-public-form-card,
+[data-theme="dark"] .wn-register-form-card,
+[data-theme="dark"] .wn-public-filter-panel,
+[data-theme="dark"] .wn-course-card,
+[data-theme="dark"] .wn-teacher-card,
+[data-theme="dark"] .wn-public-feature-card,
+[data-theme="dark"] .wn-public-message-card,
+[data-theme="dark"] .wn-detail-card,
+[data-theme="dark"] .wn-editorial-card,
+[data-theme="dark"] .wn-faq-item,
+[data-theme="dark"] .wn-blog-card,
+[data-theme="dark"] .wn-utility-card,
+[data-theme="dark"] .wn-notification-item,
+[data-theme="dark"] .wn-ai-panel,
+[data-theme="dark"] .wn-ecosystem-card,
+[data-theme="dark"] .wn-market-card {
+  background: rgba(12, 38, 30, 0.92) !important;
+  border-color: rgba(212, 175, 107, 0.22) !important;
+  color: #edf5f1;
+  box-shadow: 0 24px 60px -44px rgba(0, 0, 0, 0.78);
+}
+
+[data-theme="dark"] .wn-course-card h3,
+[data-theme="dark"] .wn-teacher-card h3,
+[data-theme="dark"] .wn-public-feature-card h3,
+[data-theme="dark"] .wn-public-message-card h2,
+[data-theme="dark"] .wn-public-message-card h3,
+[data-theme="dark"] .wn-detail-card h2,
+[data-theme="dark"] .wn-detail-card h3,
+[data-theme="dark"] .wn-editorial-card h1,
+[data-theme="dark"] .wn-editorial-card h2,
+[data-theme="dark"] .wn-editorial-card h3,
+[data-theme="dark"] .wn-faq-button,
+[data-theme="dark"] .wn-blog-card h3,
+[data-theme="dark"] .wn-notification-item h3,
+[data-theme="dark"] .wn-public-form-card__header h2 {
+  color: #f6f2e8 !important;
+}
+
+[data-theme="dark"] .wn-field__control,
+[data-theme="dark"] .wn-public-search,
+[data-theme="dark"] .wn-public-select,
+[data-theme="dark"] .wn-public-message-card input,
+[data-theme="dark"] .wn-public-message-card textarea,
+[data-theme="dark"] .wn-ai-panel input,
+[data-theme="dark"] .wn-ai-panel textarea,
+[data-theme="dark"] .wn-ai-panel select {
+  background: rgba(7, 25, 19, 0.88) !important;
+  border-color: rgba(212, 175, 107, 0.24) !important;
+  color: #f6f2e8 !important;
+}
+
+[data-theme="dark"] .wn-quick-spec-pill {
+  background: rgba(12, 38, 30, 0.85);
+  border-color: rgba(212, 175, 107, 0.28);
+  color: #d3e5dd;
+}
+
+[data-theme="dark"] .wn-quick-spec-pill.is-active {
+  background: linear-gradient(135deg, #d4af6b, #b88a39);
+  color: #05281f;
+  border-color: #efd28e;
+}
+
+[data-theme="dark"] .wn-mobile-sticky {
+  background: rgba(7, 25, 19, 0.94);
+  border-top-color: rgba(212, 175, 107, 0.22);
+}

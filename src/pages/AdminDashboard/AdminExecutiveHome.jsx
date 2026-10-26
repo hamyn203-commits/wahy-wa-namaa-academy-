@@ -1,6 +1,6 @@
 import {
   Activity, AlertTriangle, ArrowLeft, BookOpen, Calendar, CheckCircle2,
-  CreditCard, DollarSign, GraduationCap, History, MonitorPlay, ServerCog,
+  CreditCard, DollarSign, GraduationCap, History, ServerCog,
   ShieldCheck, Sparkles, Users, WalletCards,
 } from 'lucide-react';
 import {
@@ -173,6 +173,50 @@ export default function AdminExecutiveHome({
           tone={critical ? 'red' : 'navy'}
           onClick={goToActions}
         />
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-3 my-4" aria-label="مؤشرات الكفاءة المالية والتشغيلية">
+        <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm flex items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold text-slate-500 block">متوسط إيراد الحصة المكتملة</span>
+            <strong className="text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {currency(stats?.totalSessions > 0 ? Math.round((stats?.totalEarnings || 0) / stats.totalSessions) : 0)}
+            </strong>
+            <small className="text-[11px] text-emerald-700 font-semibold">لكل حصة مسجلة ومكتملة</small>
+          </div>
+          <span className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center shrink-0">
+            <DollarSign size={18} />
+          </span>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm flex items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold text-slate-500 block">معدل تغطية المعلمين للطلاب</span>
+            <strong className="text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {stats?.totalTeachers > 0 ? `${Math.max(1, Math.round((stats?.totalStudents || 0) / stats.totalTeachers))} : 1` : '—'}
+            </strong>
+            <small className="text-[11px] text-amber-700 font-semibold">طالب لكل معلم معتمد</small>
+          </div>
+          <span className="w-10 h-10 rounded-xl bg-amber-50 text-amber-800 flex items-center justify-center shrink-0">
+            <GraduationCap size={18} />
+          </span>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm flex items-center justify-between gap-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+              <span>مؤشر الاستقرار التشغيلي</span>
+              <span className="text-emerald-800">{Math.max(0, 100 - Math.min(85, totalPending * 8))}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-700 to-teal-500 transition-all duration-500"
+                style={{ width: `${Math.max(15, 100 - Math.min(85, totalPending * 8))}%` }}
+              />
+            </div>
+            <small className="text-[11px] text-slate-500 mt-1 block">حسب عدد التدخلات المفتوحة وجاهزية الخدمات</small>
+          </div>
+        </div>
       </section>
 
       <section className="wn-admin-exec-grid">

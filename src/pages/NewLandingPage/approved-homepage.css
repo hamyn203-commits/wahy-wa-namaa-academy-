@@ -4127,3 +4127,50 @@ html {
   background: var(--wn-emerald-soft);
   color: var(--wn-emerald-deep);
 }
+
+
+/* ==========================================================================
+   Batch 9 — Approved Homepage Dark Mode Polish (056)
+   ========================================================================== */
+[data-theme="dark"] .wn-approved-header {
+  background: rgba(7, 25, 19, 0.92);
+  border-bottom-color: rgba(212, 175, 107, 0.18);
+}
+
+[data-theme="dark"] .wn-approved-home {
+  background: #071913;
+  color: #edf5f1;
+}
+
+[data-theme="dark"] .wn-home-section--ivory,
+[data-theme="dark"] .wn-home-section--white,
+[data-theme="dark"] .wn-home-section--sand {
+  background: linear-gradient(180deg, #071913 0%, #0b231b 100%);
+}
+
+[data-theme="dark"] .wn-program-card-home,
+[data-theme="dark"] .wn-pillar-card,
+[data-theme="dark"] .wn-experience-card,
+[data-theme="dark"] .wn-journey-card,
+[data-theme="dark"] .wn-faculty-card,
+[data-theme="dark"] .wn-faculty-principle,
+[data-theme="dark"] .wn-audience-card,
+[data-theme="dark"] .wn-calc-controls,
+[data-theme="dark"] .wn-trust-card,
+[data-theme="dark"] .wn-home-faq-item {
+  background: rgba(12, 38, 30, 0.92);
+  border-color: rgba(212, 175, 107, 0.22);
+  color: #edf5f1;
+}
+
+[data-theme="dark"] .wn-home-title,
+[data-theme="dark"] .wn-program-card-home h3,
+[data-theme="dark"] .wn-pillar-card h3,
+[data-theme="dark"] .wn-experience-card h3,
+[data-theme="dark"] .wn-journey-card h3,
+[data-theme="dark"] .wn-faculty-card h3,
+[data-theme="dark"] .wn-audience-card h3,
+[data-theme="dark"] .wn-trust-card h3,
+[data-theme="dark"] .wn-home-faq-question {
+  color: #f6f2e8;
+}

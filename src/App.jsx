@@ -8,8 +8,8 @@ import { MarketProvider } from './context/MarketProvider';
 import LocaleLayout from './components/LocaleLayout';
 import { StudentLegacyRedirect, TeacherLegacyRedirect, GuardianLegacyRedirect, AdminLegacyRedirect, AuthenticatedLanding } from './components/DashboardRedirect';
 import BrandLogo from './components/BrandLogo';
-import QuranChatWidget from './components/QuranChatWidget';
-import PwaInstallPrompt from './components/PwaInstallPrompt';
+const QuranChatWidget = lazy(() => import('./components/QuranChatWidget'));
+const PwaInstallPrompt = lazy(() => import('./components/PwaInstallPrompt'));
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
@@ -174,8 +174,8 @@ export default function App() {
               <ToastProvider>
               <Router>
                 <AppContent />
-                <QuranChatWidget />
-                <PwaInstallPrompt />
+                <Suspense fallback={null}><QuranChatWidget /></Suspense>
+                <Suspense fallback={null}><PwaInstallPrompt /></Suspense>
               </Router>
               </ToastProvider>
             </AuthProvider>

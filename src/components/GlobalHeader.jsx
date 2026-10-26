@@ -70,6 +70,7 @@ export default function GlobalHeader() {
             >
               <Search size={19} />
             </Link>
+            <ThemeToggle />
             <LanguageSwitcher />
 
             {isAuthenticated ? (

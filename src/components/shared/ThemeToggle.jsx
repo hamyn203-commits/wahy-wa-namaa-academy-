@@ -16,8 +16,9 @@ export default function ThemeToggle() {
 
   return (
     <button
+      type="button"
       onClick={() => setIsDark(!isDark)}
-      className="rounded-lg p-2 text-slate-600 hover:text-[var(--azhar-green-deep)] hover:bg-[var(--athar-cream)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
+      className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-xl p-2 text-[var(--wn-text-secondary)] hover:text-[var(--wn-emerald-deep)] hover:bg-[var(--wn-emerald-soft)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
       aria-label={
         isDark
           ? (locale === 'ar' ? 'التبديل للوضع الفاتح' : locale === 'tr' ? 'Açık moda geç' : locale === 'id' || locale === 'ms' ? 'Beralih ke mode terang' : locale === 'ur' ? 'روشن موڈ پر جائیں' : locale === 'fr' ? 'Passer en mode clair' : locale === 'de' ? 'Hellen Modus aktivieren' : 'Switch to light mode')
