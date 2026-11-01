@@ -40,6 +40,9 @@ jobs:
       - name: Route navigation contracts
         run: npm run test:routes
 
+      - name: Design-token ratchet (raw colours and sizes may only decrease)
+        run: npm run design:scan
+
       - name: Teacher upload recovery tests
         run: node --test scripts/teacher-upload-queue.test.mjs
 

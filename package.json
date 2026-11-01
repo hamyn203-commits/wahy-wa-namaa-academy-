@@ -13,6 +13,11 @@
     "start": "vite preview",
     "safety:production": "node scripts/production-safety-scan.cjs",
     "test:routes": "node scripts/route-contracts.mjs",
+    "design:scan": "node scripts/design-token-scan.mjs",
+    "design:scan:report": "node scripts/design-token-scan.mjs --report",
+    "design:scan:update": "node scripts/design-token-scan.mjs --update",
+    "visual:baseline": "vite build --mode production && playwright test -c playwright.visual.config.js --update-snapshots",
+    "visual:compare": "vite build --mode production && playwright test -c playwright.visual.config.js",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report"

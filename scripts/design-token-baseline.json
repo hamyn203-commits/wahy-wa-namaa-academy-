@@ -1,0 +1,144 @@
+{
+  "generatedBy": "scripts/design-token-scan.mjs",
+  "totals": {
+    "important": 115,
+    "hex": 1150,
+    "rgba": 1002,
+    "fontSize": 801,
+    "radiusPx": 468
+  },
+  "files": {
+    "src/App.css": {
+      "important": 3
+    },
+    "src/components/classroom/classroom.css": {
+      "hex": 39,
+      "rgba": 60,
+      "fontSize": 21,
+      "radiusPx": 18
+    },
+    "src/components/dashboard/QuranJourneyWidgets.jsx": {
+      "hex": 5
+    },
+    "src/components/Logo.jsx": {
+      "hex": 3
+    },
+    "src/components/shared/ErrorBoundary.jsx": {
+      "hex": 2
+    },
+    "src/components/support/support.css": {
+      "hex": 57,
+      "fontSize": 18,
+      "radiusPx": 15
+    },
+    "src/components/WahyNamaaEmblem.jsx": {
+      "hex": 17
+    },
+    "src/context/ToastProvider.jsx": {
+      "hex": 2
+    },
+    "src/index.css": {
+      "important": 3
+    },
+    "src/pages/AdminDashboard/AdminExecutiveHome.jsx": {
+      "hex": 11
+    },
+    "src/pages/AdminDashboard/index.jsx": {
+      "hex": 20
+    },
+    "src/pages/AdminDashboard/TeacherReviewDossier.css": {
+      "hex": 47,
+      "rgba": 2,
+      "fontSize": 28,
+      "radiusPx": 11
+    },
+    "src/pages/BookSession/index.jsx": {
+      "hex": 1
+    },
+    "src/pages/Certificate/index.jsx": {
+      "hex": 3
+    },
+    "src/pages/Contact/index.jsx": {
+      "hex": 1
+    },
+    "src/pages/CourseLearn/index.jsx": {
+      "hex": 1
+    },
+    "src/pages/FreeTrial/FreeTrial.jsx": {
+      "hex": 1
+    },
+    "src/pages/Library/index.jsx": {
+      "hex": 12
+    },
+    "src/pages/LiveRoom/LiveRoom.css": {
+      "hex": 21,
+      "rgba": 25,
+      "fontSize": 23,
+      "radiusPx": 4,
+      "important": 24
+    },
+    "src/pages/Meeting/MeetingRoom.jsx": {
+      "hex": 1
+    },
+    "src/pages/NewLandingPage/approved-homepage.css": {
+      "hex": 69,
+      "rgba": 249,
+      "fontSize": 99,
+      "radiusPx": 73,
+      "important": 10
+    },
+    "src/pages/NewLandingPage/sections/FeaturesSection.jsx": {
+      "hex": 1
+    },
+    "src/pages/NewLandingPage/sections/PhilosophySection.jsx": {
+      "hex": 7
+    },
+    "src/pages/NewLandingPage/sections/TestimonialsSection.jsx": {
+      "hex": 4
+    },
+    "src/pages/Plans/plans.css": {
+      "hex": 99,
+      "rgba": 22,
+      "fontSize": 39,
+      "radiusPx": 20,
+      "important": 4
+    },
+    "src/pages/Start/start.css": {
+      "hex": 48,
+      "rgba": 7,
+      "fontSize": 10,
+      "radiusPx": 7
+    },
+    "src/styles/components.css": {
+      "fontSize": 13,
+      "radiusPx": 1
+    },
+    "src/styles/dashboard-experience.css": {
+      "hex": 525,
+      "rgba": 373,
+      "fontSize": 457,
+      "radiusPx": 236,
+      "important": 21
+    },
+    "src/styles/learning-experience.css": {
+      "hex": 10,
+      "rgba": 21,
+      "fontSize": 8,
+      "radiusPx": 6
+    },
+    "src/styles/public-experience.css": {
+      "hex": 110,
+      "rgba": 206,
+      "fontSize": 74,
+      "radiusPx": 69,
+      "important": 18
+    },
+    "src/styles/session-experience.css": {
+      "hex": 33,
+      "rgba": 37,
+      "fontSize": 11,
+      "radiusPx": 8,
+      "important": 32
+    }
+  }
+}

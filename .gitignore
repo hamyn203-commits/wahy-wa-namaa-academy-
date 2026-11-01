@@ -61,6 +61,11 @@ eslint-warnings*.json
 .lint-output.txt
 qa-student-state.json
 
+# Visual regression (local-only, OS-specific snapshots)
+e2e-visual/__snapshots__/
+playwright-visual-report/
+test-results-visual/
+
 # Uploads
 uploads/
 backend/uploads/
