@@ -24,3 +24,12 @@ export async function logout(page) {
     await expect(page).toHaveURL(/\/ar\/login/);
   }
 }
+
+/** Student registration keeps level/age/guardian fields in a collapsed optional section. */
+export async function openOptionalRegistrationDetails(page) {
+  const details = page.locator('details.wn-register-optional');
+  if (!(await details.evaluate((el) => el.open))) {
+    await details.locator('summary').click();
+  }
+  await expect(details).toHaveAttribute('open', '');
+}

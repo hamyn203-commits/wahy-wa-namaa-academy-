@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { accounts, login } from './helpers.js';
+import { accounts, login, openOptionalRegistrationDetails } from './helpers.js';
 
 test.describe('Wahy Wa Namaa core academy journey', () => {
   test('student registration works through the real UI', async ({ page }) => {
@@ -9,6 +9,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     await page.locator('input[name="name"]').fill('E2E Registered Student');
     await page.locator('input[name="email"]').fill(email);
     await page.locator('input[name="phone"]').fill('+201000009999');
+    await openOptionalRegistrationDetails(page);
     await page.locator('input[name="age"]').fill('21');
     await page.locator('select[name="gender"]').selectOption('male');
     await page.locator('select[name="preferredTrack"]').selectOption('memorization');

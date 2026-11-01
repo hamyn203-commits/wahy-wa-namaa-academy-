@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   User, Users, Lock, Mail, Phone, Eye, EyeOff, ArrowRight, CheckCircle,
-  Sparkles, CheckCircle2, Globe, ArrowLeft, ShieldCheck
+  Sparkles, CheckCircle2, Globe, ArrowLeft, ShieldCheck, ChevronDown, ImagePlus
 } from 'lucide-react';
 import BrandLogo from '../../components/BrandLogo';
 import GoogleSignIn from '../../components/GoogleSignIn';
@@ -91,6 +91,9 @@ export default function Register() {
   const [error, setError] = useState('');
   const [errorStatus, setErrorStatus] = useState(null);
   const errorRef = useRef(null);
+  const optionalDetailsRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const [whatsappSame, setWhatsappSame] = useState(true);
   const [studentPhoto, setStudentPhoto] = useState(null);
   const [photoNotice, setPhotoNotice] = useState('');
   const [formData, setFormData] = useState({
@@ -153,7 +156,7 @@ export default function Register() {
         email: formData.email,
         phone: formData.phone,
         ...(role === 'student' ? {
-          whatsappPhone: formData.whatsappPhone,
+          whatsappPhone: whatsappSame ? formData.phone : formData.whatsappPhone,
           age: formData.age,
           gender: formData.gender,
           currentLevel: formData.currentLevel === 'other' ? 'beginner' : formData.currentLevel,
@@ -269,6 +272,9 @@ export default function Register() {
   // Dynamic style values based on language direction
   const iconStyle = isRtl ? { right: '16px' } : { left: '16px' };
   const inputPadding = isRtl ? '14px 50px 14px 16px' : '14px 16px 14px 50px';
+  // Shared look for the plain (icon-less) fields so the whole form is consistent.
+  const fieldClass = 'mt-1.5 block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10';
+  const fieldLabelClass = 'block text-xs font-bold text-[var(--athar-text)]';
 
   return (
     <div className="wn-register-shell flex items-center justify-center" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -492,11 +498,19 @@ export default function Register() {
               <p className="text-sm text-[var(--athar-text-muted)] mt-1">
                 {role === 'guardian'
                   ? (locale === 'ar' ? 'تابع مسيرة أبنائك في حفظ القرآن وتقارير حضورهم وتقييماتهم' : 'Monitor your children’s Quran progress, attendance & teacher reports')
-                  : (locale === 'ar' ? 'أدخل بياناتك لإنشاء حسابك وبدء التعلم' : 'Fill in your details to create your account')}
+                  : (locale === 'ar' ? 'دقيقة واحدة وتبدأ: الاسم والبريد وكلمة المرور تكفي الآن.' : 'One minute to start: name, email and password are enough for now.')}
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form
+              onSubmit={handleSubmit}
+              // A required/invalid field inside the collapsed section cannot receive focus,
+              // which would block submission silently. Open the section first.
+              onInvalidCapture={(event) => {
+                if (optionalDetailsRef.current?.contains(event.target)) optionalDetailsRef.current.open = true;
+              }}
+              className="space-y-5"
+            >
               
               {/* Full Name */}
               <div>
@@ -538,69 +552,9 @@ export default function Register() {
                 </div>
               </div>
 
-              {role === 'student' && (
-                <section className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 space-y-4">
-                  <h3 className="font-bold text-emerald-900">{locale === 'ar' ? 'مستواك الحالي في القرآن الكريم' : 'Your current Quran level'}</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'العمر' : 'Age'}
-                      <input className="block w-full rounded-xl border p-3 mt-1" type="number" min="4" max="100" name="age" value={formData.age} onChange={handleChange} />
-                    </label>
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'النوع' : 'Gender'}
-                      <select className="block w-full rounded-xl border p-3 mt-1" name="gender" value={formData.gender} onChange={handleChange}>
-                        <option value="">{locale === 'ar' ? 'اختر' : 'Select'}</option><option value="male">{locale === 'ar' ? 'ذكر' : 'Male'}</option><option value="female">{locale === 'ar' ? 'أنثى' : 'Female'}</option>
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'المسار التعليمي' : 'Learning track'}
-                      <select className="block w-full rounded-xl border p-3 mt-1" name="preferredTrack" value={formData.preferredTrack} onChange={handleChange}>
-                        <option value="memorization">{locale === 'ar' ? 'حفظ القرآن' : 'Memorization'}</option>
-                        <option value="tajweed_ijazah">{locale === 'ar' ? 'التجويد والإجازة' : 'Tajweed / Ijazah'}</option>
-                        <option value="kids_foundation">{locale === 'ar' ? 'تأسيس الأطفال' : 'Foundation'}</option>
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'مستواك' : 'Level'}
-                      <select className="block w-full rounded-xl border p-3 mt-1" name="currentLevel" value={formData.currentLevel} onChange={handleChange}>
-                        <option value="beginner">{locale === 'ar' ? 'مبتدئ' : 'Beginner'}</option><option value="intermediate">{locale === 'ar' ? 'متوسط' : 'Intermediate'}</option><option value="advanced">{locale === 'ar' ? 'متقدم' : 'Advanced'}</option><option value="ijazah">{locale === 'ar' ? 'طالب إجازة' : 'Ijazah'}</option><option value="other">{locale === 'ar' ? 'أخرى — اكتب مستواك' : 'Other — specify'}</option>
-                      </select>
-                    </label>
-                    {formData.currentLevel === 'other' && <label className="text-sm font-semibold sm:col-span-2">{locale === 'ar' ? 'اكتب مستواك' : 'Describe your level'}<input required maxLength="120" className="block w-full rounded-xl border p-3 mt-1" name="customLevel" value={formData.customLevel} onChange={handleChange} /></label>}
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'كم جزءًا تحفظ؟ (0 إلى 30)' : 'Memorized Juz (0–30)'}
-                      <input type="number" min="0" max="30" step="1" required className="block w-full rounded-xl border p-3 mt-1" name="memorizedJuz" value={formData.memorizedJuz} onChange={handleChange} />
-                    </label>
-                    <label className="text-sm font-semibold">{locale === 'ar' ? 'واتساب للتواصل (اختياري)' : 'WhatsApp (optional)'}
-                      <input type="tel" className="block w-full rounded-xl border p-3 mt-1" name="whatsappPhone" value={formData.whatsappPhone} onChange={handleChange} placeholder="+201000000000" />
-                    </label>
-                  </div>
-                  <label className="block text-sm font-semibold">{locale === 'ar' ? 'تفاصيل الحفظ — السور أو الأجزاء التي تحفظها، أو خطة أخرى' : 'Memorization details / custom plan'}
-                    <textarea name="memorizationDetails" maxLength="500" rows="3" value={formData.memorizationDetails} onChange={handleChange} className="block w-full rounded-xl border p-3 mt-1" placeholder={locale === 'ar' ? 'مثال: أحفظ جزء عم وتبارك، وأريد البدء من سورة البقرة' : 'Example: I memorized Juz Amma and Tabarak'} />
-                  </label>
-                </section>
-              )}
-
-              {role === 'student' && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-                  <label htmlFor="optional-student-photo" className="block font-bold text-sm text-slate-900">
-                    {locale === 'ar' ? 'الصورة الشخصية (اختيارية)' : 'Profile photo (optional)'}
-                  </label>
-                  <input id="optional-student-photo" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                    className="block w-full text-sm" onChange={(event) => {
-                      const file = event.target.files?.[0] || null;
-                      if (file && (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
-                        setStudentPhoto(null);
-                        event.target.value = '';
-                        setPhotoNotice(locale === 'ar' ? 'اختر JPG أو PNG بحجم لا يتجاوز 5 ميجابايت' : 'Choose JPG or PNG up to 5 MB');
-                      } else {
-                        setStudentPhoto(file);
-                        setPhotoNotice(file ? file.name : '');
-                      }
-                    }} />
-                  <p className="text-xs text-slate-500">{locale === 'ar' ? 'يمكنك إكمال التسجيل دون صورة. JPG أو PNG بحد أقصى 5 MB.' : 'You can register without a photo. JPG or PNG, up to 5 MB.'}</p>
-                  {photoNotice && <p role="status" className="text-xs text-emerald-800">{photoNotice}</p>}
-                </div>
-              )}
-
               {/* Phone Number */}
               <div>
-                <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
+                <label htmlFor="register-phone" className="block text-xs font-bold text-[var(--athar-text)] mb-2">
                   {role === 'guardian'
                     ? (locale === 'ar' ? 'رقم هاتف ولي الأمر' : 'Guardian Phone Number')
                     : (locale === 'ar' ? 'رقم الهاتف (اختياري)' : 'Phone Number (Optional)')}
@@ -608,8 +562,11 @@ export default function Register() {
                 <div className="relative">
                   <Phone size={18} style={iconStyle} className="absolute top-1/2 transform -translate-y-1/2 text-slate-400" />
                   <input
+                    id="register-phone"
                     type="tel"
                     name="phone"
+                    autoComplete="tel"
+                    inputMode="tel"
                     value={formData.phone}
                     onChange={handleChange}
                     required={role === 'guardian'}
@@ -618,65 +575,39 @@ export default function Register() {
                     className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
                   />
                 </div>
-                {role === 'guardian' && (
+                {role === 'guardian' ? (
                   <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
                     {locale === 'ar'
                       ? 'نستخدم الرقم فقط لمطابقة طلبات ربط أبنائك. لا يتم الربط إلا بعد موافقتك داخل حسابك.'
                       : 'This number is used only to match child-link requests. Nothing is linked until you confirm it.'}
                   </p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {locale === 'ar'
+                        ? 'نحتاجه فقط لتأكيد مواعيد حصصك، ويمكنك إضافته لاحقًا.'
+                        : 'Only used to confirm your session times. You can add it later.'}
+                    </p>
+                    {formData.phone.trim() && (
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={whatsappSame}
+                          onChange={(event) => setWhatsappSame(event.target.checked)}
+                          className="h-4 w-4 rounded accent-emerald-700"
+                        />
+                        {locale === 'ar' ? 'هذا الرقم عليه واتساب' : 'This number is on WhatsApp'}
+                      </label>
+                    )}
+                    {formData.phone.trim() && !whatsappSame && (
+                      <label className={fieldLabelClass}>
+                        {locale === 'ar' ? 'رقم الواتساب' : 'WhatsApp number'}
+                        <input type="tel" name="whatsappPhone" autoComplete="tel" inputMode="tel" value={formData.whatsappPhone} onChange={handleChange} placeholder="+201000000000" className={fieldClass} />
+                      </label>
+                    )}
+                  </div>
                 )}
               </div>
-
-              {role === 'student' && (
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <ShieldCheck size={18} className="text-emerald-700 mt-0.5 shrink-0" />
-                    <div>
-                      <h3 className="text-sm font-bold text-emerald-900">
-                        {locale === 'ar' ? 'ربط ولي الأمر' : 'Guardian Linking'}
-                      </h3>
-                      <p className="text-[11px] text-emerald-800/80 mt-1 leading-relaxed">
-                        {locale === 'ar'
-                          ? 'اختياري الآن. اكتب رقم ولي الأمر ليظهر له طلب الربط عندما ينشئ حسابه أو يسجل الدخول. لن يتم الربط تلقائيًا.'
-                          : 'Optional for now. Enter a guardian phone so a pending request appears when they sign in. Linking is never automatic.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
-                        {locale === 'ar' ? 'رقم ولي الأمر' : 'Guardian Phone'}
-                      </label>
-                      <input
-                        type="tel"
-                        name="guardianPhone"
-                        value={formData.guardianPhone}
-                        onChange={handleChange}
-                        placeholder="+20 10 0000 0000"
-                        className="w-full rounded-xl border border-emerald-100 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[var(--athar-text)] mb-2">
-                        {locale === 'ar' ? 'صلة القرابة' : 'Relationship'}
-                      </label>
-                      <select
-                        name="guardianRelationship"
-                        value={formData.guardianRelationship}
-                        onChange={handleChange}
-                        className="w-full rounded-xl border border-emerald-100 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      >
-                        <option value="father">{locale === 'ar' ? 'أب' : 'Father'}</option>
-                        <option value="mother">{locale === 'ar' ? 'أم' : 'Mother'}</option>
-                        <option value="guardian">{locale === 'ar' ? 'ولي أمر / وصي' : 'Guardian'}</option>
-                        <option value="other">{locale === 'ar' ? 'صلة أخرى' : 'Other'}</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Password */}
               <div>
@@ -759,6 +690,134 @@ export default function Register() {
                   )
                 )}
               </div>
+
+              {role === 'student' && (
+                <details ref={optionalDetailsRef} className="wn-register-optional group rounded-2xl border border-emerald-100 bg-emerald-50/40">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-sm font-bold text-emerald-900">
+                        {locale === 'ar' ? 'أضف مستواك وبيانات إضافية الآن' : 'Add your level and extra details now'}{' '}
+                        <span className="font-normal text-emerald-800/70">{locale === 'ar' ? '(اختياري)' : '(optional)'}</span>
+                      </span>
+                      <span className="text-[11px] text-emerald-800/80">
+                        {locale === 'ar' ? 'يمكنك تخطي هذه الخطوة واستكمالها لاحقًا من لوحتك.' : 'You can skip this and complete it later from your dashboard.'}
+                      </span>
+                    </span>
+                    <ChevronDown size={18} className="shrink-0 text-emerald-800 transition-transform group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+
+                  <div className="space-y-5 border-t border-emerald-100 p-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className={fieldLabelClass}>{locale === 'ar' ? 'العمر' : 'Age'}
+                        <input className={fieldClass} type="number" min="4" max="100" inputMode="numeric" name="age" value={formData.age} onChange={handleChange} />
+                      </label>
+                      <label className={fieldLabelClass}>{locale === 'ar' ? 'النوع' : 'Gender'}
+                        <select className={fieldClass} name="gender" value={formData.gender} onChange={handleChange}>
+                          <option value="">{locale === 'ar' ? 'اختر' : 'Select'}</option><option value="male">{locale === 'ar' ? 'ذكر' : 'Male'}</option><option value="female">{locale === 'ar' ? 'أنثى' : 'Female'}</option>
+                        </select>
+                      </label>
+                      <label className={fieldLabelClass}>{locale === 'ar' ? 'المسار التعليمي' : 'Learning track'}
+                        <select className={fieldClass} name="preferredTrack" value={formData.preferredTrack} onChange={handleChange}>
+                          <option value="memorization">{locale === 'ar' ? 'حفظ القرآن' : 'Memorization'}</option>
+                          <option value="tajweed_ijazah">{locale === 'ar' ? 'التجويد والإجازة' : 'Tajweed / Ijazah'}</option>
+                          <option value="kids_foundation">{locale === 'ar' ? 'تأسيس الأطفال' : 'Foundation'}</option>
+                        </select>
+                      </label>
+                      <label className={fieldLabelClass}>{locale === 'ar' ? 'مستواك' : 'Level'}
+                        <select className={fieldClass} name="currentLevel" value={formData.currentLevel} onChange={handleChange}>
+                          <option value="beginner">{locale === 'ar' ? 'مبتدئ' : 'Beginner'}</option><option value="intermediate">{locale === 'ar' ? 'متوسط' : 'Intermediate'}</option><option value="advanced">{locale === 'ar' ? 'متقدم' : 'Advanced'}</option><option value="ijazah">{locale === 'ar' ? 'طالب إجازة' : 'Ijazah'}</option><option value="other">{locale === 'ar' ? 'أخرى — اكتب مستواك' : 'Other — specify'}</option>
+                        </select>
+                      </label>
+                      {formData.currentLevel === 'other' && (
+                        <label className={fieldLabelClass + ' sm:col-span-2'}>{locale === 'ar' ? 'اكتب مستواك' : 'Describe your level'}
+                          <input required maxLength="120" className={fieldClass} name="customLevel" value={formData.customLevel} onChange={handleChange} />
+                        </label>
+                      )}
+                      <label className={fieldLabelClass + ' sm:col-span-2'}>{locale === 'ar' ? 'كم جزءًا تحفظ؟ (0 إلى 30)' : 'Memorized Juz (0–30)'}
+                        <input type="number" min="0" max="30" step="1" inputMode="numeric" className={fieldClass} name="memorizedJuz" value={formData.memorizedJuz} onChange={handleChange} />
+                      </label>
+                    </div>
+                    <label className={fieldLabelClass}>{locale === 'ar' ? 'تفاصيل الحفظ — السور أو الأجزاء التي تحفظها، أو خطة أخرى' : 'Memorization details / custom plan'}
+                      <textarea name="memorizationDetails" maxLength="500" rows="3" value={formData.memorizationDetails} onChange={handleChange} className={fieldClass} placeholder={locale === 'ar' ? 'مثال: أحفظ جزء عم وتبارك، وأريد البدء من سورة البقرة' : 'Example: I memorized Juz Amma and Tabarak'} />
+                    </label>
+                    <p className="text-[11px] text-emerald-900/70">
+                      {locale === 'ar' ? 'اختيارك مبدئي، والمعلم يحدد مستواك الفعلي في الحصة التجريبية.' : 'This is only a first estimate — your tutor confirms your level in the trial class.'}
+                    </p>
+
+                    <div className="space-y-2 border-t border-emerald-100 pt-4">
+                      <span className={fieldLabelClass}>{locale === 'ar' ? 'الصورة الشخصية (اختيارية)' : 'Profile photo (optional)'}</span>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-800 focus-within:ring-2 focus-within:ring-emerald-200">
+                          <ImagePlus size={16} aria-hidden="true" />
+                          {studentPhoto ? (locale === 'ar' ? 'تغيير الصورة' : 'Change photo') : (locale === 'ar' ? 'اختيار صورة' : 'Choose photo')}
+                          <input
+                            ref={photoInputRef}
+                            id="optional-student-photo"
+                            type="file"
+                            accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                            className="sr-only"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] || null;
+                              if (file && (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+                                setStudentPhoto(null);
+                                event.target.value = '';
+                                setPhotoNotice(locale === 'ar' ? 'اختر JPG أو PNG بحجم لا يتجاوز 5 ميجابايت' : 'Choose JPG or PNG up to 5 MB');
+                              } else {
+                                setStudentPhoto(file);
+                                setPhotoNotice(file ? file.name : '');
+                              }
+                            }}
+                          />
+                        </label>
+                        {studentPhoto && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStudentPhoto(null);
+                              setPhotoNotice('');
+                              if (photoInputRef.current) photoInputRef.current.value = '';
+                            }}
+                            className="text-xs font-semibold text-slate-500 underline underline-offset-2 hover:text-red-700"
+                          >
+                            {locale === 'ar' ? 'إزالة' : 'Remove'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">{locale === 'ar' ? 'JPG أو PNG بحد أقصى 5 MB.' : 'JPG or PNG, up to 5 MB.'}</p>
+                      {photoNotice && <p role="status" className="text-xs text-emerald-800">{photoNotice}</p>}
+                    </div>
+
+                    <div className="space-y-3 border-t border-emerald-100 pt-4">
+                      <div className="flex items-start gap-2.5">
+                        <ShieldCheck size={18} className="text-emerald-700 mt-0.5 shrink-0" />
+                        <div>
+                          <h3 className="text-sm font-bold text-emerald-900">
+                            {locale === 'ar' ? 'ربط ولي الأمر' : 'Guardian Linking'}
+                          </h3>
+                          <p className="text-[11px] text-emerald-800/80 mt-1 leading-relaxed">
+                            {locale === 'ar'
+                              ? 'اكتب رقم ولي الأمر ليظهر له طلب الربط عندما ينشئ حسابه أو يسجل الدخول. لن يتم الربط تلقائيًا.'
+                              : 'Enter a guardian phone so a pending request appears when they sign in. Linking is never automatic.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <label className={fieldLabelClass}>{locale === 'ar' ? 'رقم ولي الأمر' : 'Guardian Phone'}
+                          <input type="tel" name="guardianPhone" autoComplete="off" inputMode="tel" value={formData.guardianPhone} onChange={handleChange} placeholder="+20 10 0000 0000" className={fieldClass} />
+                        </label>
+                        <label className={fieldLabelClass}>{locale === 'ar' ? 'صلة القرابة' : 'Relationship'}
+                          <select name="guardianRelationship" value={formData.guardianRelationship} onChange={handleChange} className={fieldClass}>
+                            <option value="father">{locale === 'ar' ? 'أب' : 'Father'}</option>
+                            <option value="mother">{locale === 'ar' ? 'أم' : 'Mother'}</option>
+                            <option value="guardian">{locale === 'ar' ? 'ولي أمر / وصي' : 'Guardian'}</option>
+                            <option value="other">{locale === 'ar' ? 'صلة أخرى' : 'Other'}</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              )}
 
               {error && (
                 <motion.div

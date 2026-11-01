@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openOptionalRegistrationDetails } from './helpers.js';
 
 test.describe('Public enrollment entry', () => {
   test('homepage CTA starts with section choice and continues as a parent', async ({ page }) => {
@@ -43,6 +44,7 @@ test('women-section account stays within its saved section at subscription check
   await page.locator('input[name="name"]').fill('E2E Division Student');
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="phone"]').fill('+201000009992');
+  await openOptionalRegistrationDetails(page);
   await page.locator('input[name="age"]').fill('23');
   await page.locator('input[name="password"]').fill('Playwright123!');
   await page.locator('input[name="confirmPassword"]').fill('Playwright123!');
