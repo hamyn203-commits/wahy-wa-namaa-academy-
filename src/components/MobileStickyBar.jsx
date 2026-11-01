@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { localizedPath, DEFAULT_LOCALE } from '../lib/locale';
-import { dashboardPathForRole } from '../lib/navigation';
+import { dashboardPathForRole, isOnboardingPath } from '../lib/navigation';
 import { useAuth } from '../hooks/useAuth';
 import { prefetchRoute } from '../lib/routePrefetch';
 
@@ -83,6 +83,10 @@ export default function MobileStickyBar() {
       </aside>
     );
   }
+
+  // Inside the enrollment funnel the bar would cover form fields and its
+  // "Get started" button only points back to the current step.
+  if (isOnboardingPath(location.pathname)) return null;
 
   return (
     <aside

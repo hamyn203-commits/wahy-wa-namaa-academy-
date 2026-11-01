@@ -51,7 +51,7 @@ const MATCH_GOALS = [
   ['non-arabic', 'غير الناطقين بالعربية', 'Non-Arabic speakers'],
 ];
 
-export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar' }) {
+export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar', loadFailed = false, onRetry }) {
   const isAr = locale === 'ar';
   const lp = (path) => localizedPath(path, locale);
   const [preview, setPreview] = useState(null);
@@ -313,11 +313,22 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
         </section>
       )}
 
-      {rankedTeachers.length === 0 ? (
+      {rankedTeachers.length === 0 && loadFailed ? (
+        <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 p-10 text-center">
+          <GraduationCap size={40} className="mx-auto text-red-300 mb-3" />
+          <h3 className="font-bold text-red-800">{isAr ? 'تعذر تحميل قائمة المعلمين' : 'We could not load the tutor list'}</h3>
+          <p className="text-sm text-red-700 mt-1">{isAr ? 'المشكلة مؤقتة من جهتنا وليست في حسابك. أعد المحاولة بعد لحظات.' : 'This is a temporary problem on our side, not your account. Please try again shortly.'}</p>
+          {onRetry && (
+            <button type="button" onClick={onRetry} className="btn-primary mt-4 inline-block text-sm">
+              {isAr ? 'إعادة المحاولة' : 'Try again'}
+            </button>
+          )}
+        </div>
+      ) : rankedTeachers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center">
           <GraduationCap size={40} className="mx-auto text-slate-300 mb-3" />
-          <h3 className="font-bold text-slate-800">{isAr ? 'لا توجد ملفات منشورة حاليًا' : 'No tutor profiles are available yet'}</h3>
-          <p className="text-sm text-slate-500 mt-1">{isAr ? 'ستظهر هنا المعلمين المعتمدين بمجرد نشر ملفاتهم.' : 'Approved tutors will appear here once their profiles are published.'}</p>
+          <h3 className="font-bold text-slate-800">{isAr ? 'لا يوجد معلمون متاحون حاليًا' : 'No tutors are available yet'}</h3>
+          <p className="text-sm text-slate-500 mt-1">{isAr ? 'سيظهر هنا المعلمون المعتمدون فور نشر ملفاتهم. يمكنك التواصل معنا لترشيح معلم مناسب.' : 'Approved tutors will appear here once their profiles are published. Contact us for a recommendation.'}</p>
         </div>
       ) : (
         <div className="grid xl:grid-cols-2 gap-4">

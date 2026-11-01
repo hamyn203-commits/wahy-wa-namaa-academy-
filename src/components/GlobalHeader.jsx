@@ -10,6 +10,7 @@ import BrandLogo from './BrandLogo';
 import ThemeToggle from './shared/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 import { prefetchRoute } from '../lib/routePrefetch';
+import { isOnboardingPath } from '../lib/navigation';
 
 export default function GlobalHeader() {
   const { t, locale } = useI18n();
@@ -22,6 +23,7 @@ export default function GlobalHeader() {
   const location = useLocation();
 
   const lp = (path) => localizedPath(path, activeLocale);
+  const inOnboarding = isOnboardingPath(location.pathname);
 
   const navLinks = [
     { path: lp('/'), label: isAr ? 'الرئيسية' : 'Home' },
@@ -88,15 +90,17 @@ export default function GlobalHeader() {
                 >
                   {t.common.login}
                 </Link>
-                <Link
-                  to={lp('/start')}
-                  onMouseEnter={() => prefetchRoute('/start')}
-                  onFocus={() => prefetchRoute('/start')}
-                  className="wn-approved-header__cta"
-                >
-                  <span>{isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}</span>
-                  <ArrowIcon size={15} />
-                </Link>
+                {!inOnboarding && (
+                  <Link
+                    to={lp('/start')}
+                    onMouseEnter={() => prefetchRoute('/start')}
+                    onFocus={() => prefetchRoute('/start')}
+                    className="wn-approved-header__cta"
+                  >
+                    <span>{isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}</span>
+                    <ArrowIcon size={15} />
+                  </Link>
+                )}
               </>
             )}
           </div>
@@ -145,14 +149,16 @@ export default function GlobalHeader() {
               )}
             </div>
 
-            <Link
-              to={lp('/start')}
-              onTouchStart={() => prefetchRoute('/start')}
-              onClick={() => setIsMenuOpen(false)}
-              className="wn-btn wn-btn--primary wn-btn--block"
-            >
-              {isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}
-            </Link>
+            {!isAuthenticated && !inOnboarding && (
+              <Link
+                to={lp('/start')}
+                onTouchStart={() => prefetchRoute('/start')}
+                onClick={() => setIsMenuOpen(false)}
+                className="wn-btn wn-btn--primary wn-btn--block"
+              >
+                {isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}
+              </Link>
+            )}
           </div>
         )}
       </div>

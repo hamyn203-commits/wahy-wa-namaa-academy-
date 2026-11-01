@@ -124,21 +124,35 @@ export function AuthProvider({ children }) {
   }, [saveAuthenticatedSession]);
 
   const register = useCallback(async (userData) => {
+    let response;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userData),
       });
+    } catch (error) {
+      // fetch only rejects on network failure (offline, DNS, server unreachable).
+      return { success: false, status: 0, code: 'NETWORK_ERROR', error: error.message };
+    }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Registration failed');
+    // Proxies and rate limiters may answer with HTML or an empty body.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        success: false,
+        status: response.status,
+        code: data.code || null,
+        error: data.error || 'Registration failed',
+      };
+    }
 
+    try {
       saveAuthenticatedSession(data);
       return { success: true, user: data.user };
     } catch (error) {
-      return { success: false, error: error.message };
+      return { success: false, status: response.status, code: 'SESSION_SAVE_FAILED', error: error.message };
     }
   }, [saveAuthenticatedSession]);
 

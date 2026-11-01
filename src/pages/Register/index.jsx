@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -34,6 +34,36 @@ function evaluatePasswordStrength(pw, isAr) {
   return { score, ...(levels[score] || levels[1]) };
 }
 
+/**
+ * Turns a failed registration result into a message the learner can act on.
+ * Server messages are often English/technical, so known cases are mapped first.
+ */
+function registrationErrorMessage(result, isAr) {
+  const { status, code, error } = result || {};
+  if (code === 'NETWORK_ERROR' || status === 0) {
+    return isAr
+      ? 'تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت ثم حاول مرة أخرى.'
+      : 'We could not reach the server. Check your connection and try again.';
+  }
+  if (status === 429) {
+    return isAr
+      ? 'تمت محاولات تسجيل كثيرة خلال وقت قصير. انتظر بضع دقائق ثم حاول مرة أخرى، أو تواصل معنا إن استمرت المشكلة.'
+      : 'Too many sign-up attempts in a short time. Please wait a few minutes and try again.';
+  }
+  if (code === 'GUARDIAN_PHONE_ALREADY_REGISTERED') return error;
+  if (status === 409) {
+    return isAr
+      ? 'هذا البريد الإلكتروني مسجل بالفعل. سجّل الدخول إلى حسابك، أو استخدم "نسيت كلمة المرور".'
+      : 'This email is already registered. Sign in instead, or use "Forgot password".';
+  }
+  if (status >= 500) {
+    return isAr
+      ? 'حدث خطأ مؤقت لدينا أثناء إنشاء الحساب. لم يتم حفظ أي شيء، حاول مرة أخرى بعد قليل.'
+      : 'A temporary server error occurred. Nothing was saved — please try again shortly.';
+  }
+  return error || (isAr ? 'تعذر إنشاء الحساب. راجع البيانات وحاول مرة أخرى.' : 'Registration failed. Please review your details and try again.');
+}
+
 export default function Register() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -59,6 +89,8 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorStatus, setErrorStatus] = useState(null);
+  const errorRef = useRef(null);
   const [studentPhoto, setStudentPhoto] = useState(null);
   const [photoNotice, setPhotoNotice] = useState('');
   const [formData, setFormData] = useState({
@@ -79,6 +111,14 @@ export default function Register() {
     confirmPassword: ''
   });
 
+  // The form is long: bring any error into view next to the submit button and
+  // move focus to it so screen readers announce it immediately.
+  useEffect(() => {
+    if (!error || !errorRef.current) return;
+    errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    errorRef.current.focus({ preventScroll: true });
+  }, [error]);
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -91,6 +131,7 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setErrorStatus(null);
 
     // التحقق من تطابق كلمات المرور
     if (formData.password !== formData.confirmPassword) {
@@ -135,7 +176,9 @@ export default function Register() {
       });
 
       if (!result.success) {
-        throw new Error(result.error || (locale === 'ar' ? 'فشل إنشاء الحساب' : 'Registration failed'));
+        setErrorStatus(result.status ?? null);
+        setError(registrationErrorMessage(result, locale === 'ar'));
+        return;
       }
 
       if (role === 'student' && studentPhoto) {
@@ -160,7 +203,7 @@ export default function Register() {
         { replace: true }
       );
     } catch (err) {
-      setError(err.message);
+      setError(registrationErrorMessage({ error: err.message }, locale === 'ar'));
     } finally {
       setLoading(false);
     }
@@ -453,17 +496,6 @@ export default function Register() {
               </p>
             </div>
 
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-4 mb-6 text-sm flex items-start gap-2.5"
-              >
-                <span className="font-bold shrink-0">!</span>
-                <span>{error}</span>
-              </motion.div>
-            )}
-
             <form onSubmit={handleSubmit} className="space-y-5">
               
               {/* Full Name */}
@@ -693,12 +725,6 @@ export default function Register() {
                     </div>
                   );
                 })()}
-                {formData.confirmPassword && formData.password === formData.confirmPassword && (
-                  <div className="mt-2 flex items-center gap-1.5 text-emerald-600 text-xs">
-                    <CheckCircle size={14} />
-                    {locale === 'ar' ? 'كلمة مرور قوية ومقبولة' : 'Strong secure password'}
-                  </div>
-                )}
               </div>
 
               {/* Confirm Password */}
@@ -719,7 +745,45 @@ export default function Register() {
                     className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 outline-none transition focus:border-[var(--athar-gold)] focus:ring-2 focus:ring-[var(--athar-gold)]/10"
                   />
                 </div>
+                {formData.confirmPassword && (
+                  formData.password === formData.confirmPassword ? (
+                    <div className="mt-2 flex items-center gap-1.5 text-emerald-700 text-xs" aria-live="polite">
+                      <CheckCircle size={14} />
+                      {locale === 'ar' ? 'كلمتا المرور متطابقتان' : 'Passwords match'}
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex items-center gap-1.5 text-amber-700 text-xs" aria-live="polite">
+                      <span className="font-bold">!</span>
+                      {locale === 'ar' ? 'كلمتا المرور غير متطابقتين بعد' : 'Passwords do not match yet'}
+                    </div>
+                  )
+                )}
               </div>
+
+              {error && (
+                <motion.div
+                  ref={errorRef}
+                  tabIndex={-1}
+                  role="alert"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-start gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                >
+                  <span className="font-bold shrink-0" aria-hidden="true">!</span>
+                  <div className="space-y-2">
+                    <p>{error}</p>
+                    {errorStatus === 409 && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(localizedPath('/login', locale))}
+                        className="font-bold underline underline-offset-2"
+                      >
+                        {locale === 'ar' ? 'الذهاب لتسجيل الدخول' : 'Go to sign in'}
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
 
               {/* Submit Button */}
               <button

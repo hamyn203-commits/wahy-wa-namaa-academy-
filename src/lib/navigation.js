@@ -28,6 +28,16 @@ export function dashboardPathForRole(role, locale = DEFAULT_LOCALE) {
     : localizedPath('/', activeLocale);
 }
 
+/**
+ * Enrollment / auth funnel pages. Global "Start your journey" CTAs are hidden
+ * here because they would only link back to the step the visitor is already on.
+ */
+const ONBOARDING_PATH = /^\/(?:[a-z]{2}\/)?(?:start|register|login|forgot-password|reset-password)(?:\/|$)/;
+
+export function isOnboardingPath(pathname = '') {
+  return ONBOARDING_PATH.test(String(pathname));
+}
+
 export function loginPathForLocale(locale = DEFAULT_LOCALE) {
   return localizedPath('/login', normalizeNavigationLocale(locale));
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BookOpenCheck, Check, ChevronRight, HeartHandshake, ShieldCheck, Sparkles, Users, UserRound, Baby, GraduationCap } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
@@ -17,6 +17,15 @@ export default function StartPage() {
   const [section, setSection] = useState(() => validSections.includes(searchParams.get('section')) ? searchParams.get('section') : '');
   const lp = (path) => localizedPath(path, locale);
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const contentRef = useRef(null);
+  const isFirstRender = useRef(true);
+
+  // After a section is picked (or changed) the next choices render below the
+  // fold, so bring the step heading back into view.
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [section]);
 
   const sections = [
     {
@@ -53,12 +62,12 @@ export default function StartPage() {
       <main className="wn-start-page" dir={isAr ? 'rtl' : 'ltr'}>
         <div className="wn-start-halo wn-start-halo--first" aria-hidden="true" />
         <div className="wn-start-halo wn-start-halo--second" aria-hidden="true" />
-        <div className="page-container wn-start-content">
+        <div className="page-container wn-start-content" ref={contentRef} style={{ scrollMarginTop: '6rem' }}>
           <div className="wn-start-top">
             <div className="wn-start-mark"><BookOpenCheck size={21} strokeWidth={1.8} /><span>{isAr ? 'وَحْيٌ وَنَمَاء' : 'WAHY WA NAMAA'}</span></div>
             <div className="wn-start-progress" aria-label={isAr ? 'مراحل بدء التسجيل' : 'Enrollment steps'}>
               <span className="is-done"><Check size={13} /> {isAr ? 'الترحيب' : 'Welcome'}</span>
-              <span className={section ? 'is-done' : 'is-active'}>{section ? <Check size={13} /> : '٢'} {isAr ? 'القسم' : 'Section'}</span>
+              <span className={section ? 'is-done' : 'is-active'}>{section ? <Check size={13} /> : (isAr ? '٢.' : '2.')} {isAr ? 'القسم' : 'Section'}</span>
               <span className={section ? 'is-active' : ''}>{isAr ? '٣. نوع الحساب' : '3. Account'}</span>
             </div>
           </div>
@@ -97,9 +106,9 @@ export default function StartPage() {
                 <Link to={registrationLink('student')} className="wn-start-choice wn-start-choice--student">
                   <span className="wn-start-choice__symbol" aria-hidden="true"><UserRound size={32} strokeWidth={1.5} /></span>
                   <span className="wn-start-choice__detail">{isAr ? 'حساب متعلم' : 'Learner account'}</span>
-                  <strong>{isAr ? 'أنا طالب / طالبة' : 'I am a student'}</strong>
+                  <strong>{isAr ? (section === 'women' ? 'أنا طالبة' : 'أنا طالب') : 'I am a student'}</strong>
                   <span className="wn-start-choice__description">{isAr ? 'سجل بياناتك وابدأ رحلة تعلم القرآن مع المسار الذي يناسب مستواك.' : 'Create your account and begin a learning path tailored to your level.'}</span>
-                  <span className="wn-start-choice__action">{isAr ? 'التسجيل كطالب' : 'Register as student'} <ArrowIcon size={17} /></span>
+                  <span className="wn-start-choice__action">{isAr ? (section === 'women' ? 'التسجيل كطالبة' : 'التسجيل كطالب') : 'Register as student'} <ArrowIcon size={17} /></span>
                 </Link>
                 <Link to={registrationLink('guardian')} className="wn-start-choice wn-start-choice--guardian">
                   <span className="wn-start-choice__symbol" aria-hidden="true"><Users size={32} strokeWidth={1.5} /></span>
