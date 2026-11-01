@@ -89,6 +89,8 @@ export default function HeroSection() {
           <img
             src="/images/hero-wahy-namaa.jpg"
             alt={isAr ? 'مصحف كريم في أجواء تعليمية روحانية لأكاديمية وحي ونماء' : 'Quran learning atmosphere at Wahy Wa Namaa Academy'}
+            width="640"
+            height="560"
             loading="eager"
             fetchPriority="high"
           />

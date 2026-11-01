@@ -32,3 +32,25 @@ test('teacher approval gate fails closed when a teacher profile is missing', () 
   assert.equal(missing.status, 'pending');
   assert.equal(missing.code, 'TEACHER_APPROVAL_PENDING');
 });
+
+test('teacher approval gate exposes latest admin reviewNote and requestedChanges checklist items', () => {
+  const underReviewWithFeedback = decisionForTeacher({
+    status: 'under-review',
+    isVerified: false,
+    reviewNotes: [
+      { note: 'ملاحظة أولى' },
+      { note: 'يرجى إعادة رفع فيديو التلاوة بصوت أوضح' },
+    ],
+    reviewChecklist: [
+      { key: 'recitation-video', status: 'changes-requested', note: 'الصوت منخفض في الدقيقة الأولى' },
+      { key: 'id-card-front', status: 'approved', note: '' },
+    ],
+  });
+
+  assert.equal(underReviewWithFeedback.allowed, false);
+  assert.equal(underReviewWithFeedback.reviewNote, 'يرجى إعادة رفع فيديو التلاوة بصوت أوضح');
+  assert.equal(underReviewWithFeedback.requestedChanges.length, 1);
+  assert.equal(underReviewWithFeedback.requestedChanges[0].key, 'recitation-video');
+  assert.equal(underReviewWithFeedback.requestedChanges[0].label, 'فيديو التلاوة');
+  assert.equal(underReviewWithFeedback.requestedChanges[0].note, 'الصوت منخفض في الدقيقة الأولى');
+});

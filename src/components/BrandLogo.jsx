@@ -22,12 +22,12 @@ export default function BrandLogo({
       {showText && (
         <span className={'flex min-w-0 flex-col ' + (vertical ? 'items-center' : 'items-start')}>
           <span
-            className={'font-naskh text-[18px] sm:text-[20px] font-bold leading-none ' + (isLight ? 'text-white' : 'text-[var(--wn-emerald-deep)]')}
+            className={'wn-brand-wordmark font-naskh text-[18px] sm:text-[20px] font-bold leading-none ' + (isLight ? 'text-white' : 'text-[var(--wn-emerald-deep)]')}
           >
             وَحْيٌ وَنَمَاء
           </span>
           <span
-            className={'mt-1 block text-[9px] sm:text-[10px] font-semibold tracking-[0.08em] leading-none ' + (isLight ? 'text-[var(--wn-sand)]' : 'text-[var(--wn-text-secondary)]')}
+            className={'wn-brand-wordmark__sub mt-1 block text-[9px] sm:text-[10px] font-semibold tracking-[0.08em] leading-none ' + (isLight ? 'text-[var(--wn-sand)]' : 'text-[var(--wn-text-secondary)]')}
           >
             Wahy Wa Namaa Academy
           </span>

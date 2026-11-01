@@ -2,6 +2,7 @@ import {
   X, UserRound, Users, Calendar, BookOpen, CreditCard, Bell, GraduationCap,
   PlayCircle, CheckCircle2, AlertTriangle, History, MessageSquare, TrendingUp,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 
 function studentAvatarUrl(value) {
@@ -48,9 +49,38 @@ export default function Student360Dossier({
   onOpenTeacher,
   onOpenHomeworkAudio,
   onMessageStudent,
+  onUpdateStudent,
 }) {
   const student = dossier?.student;
   const summary = dossier?.summary || {};
+  const [adminLevel, setAdminLevel] = useState(student?.currentLevel || 'beginner');
+  const [adminTrack, setAdminTrack] = useState(student?.preferredTrack || 'memorization');
+  const [adminJuz, setAdminJuz] = useState(student?.memorizedJuz ?? 0);
+  const [adminActive, setAdminActive] = useState(student?.isActive !== false);
+  const [savingStudent, setSavingStudent] = useState(false);
+
+  useEffect(() => {
+    setAdminLevel(student?.currentLevel || 'beginner');
+    setAdminTrack(student?.preferredTrack || 'memorization');
+    setAdminJuz(student?.memorizedJuz ?? 0);
+    setAdminActive(student?.isActive !== false);
+  }, [student?._id, student?.currentLevel, student?.preferredTrack, student?.memorizedJuz, student?.isActive]);
+
+  const handleSaveStudent = async (e) => {
+    e.preventDefault();
+    if (!onUpdateStudent || !student?._id) return;
+    setSavingStudent(true);
+    try {
+      await onUpdateStudent(student._id, {
+        currentLevel: adminLevel,
+        preferredTrack: adminTrack,
+        memorizedJuz: Number(adminJuz) || 0,
+        isActive: Boolean(adminActive),
+      });
+    } finally {
+      setSavingStudent(false);
+    }
+  };
 
   return (
     <div className="wn-admin-dossier-backdrop" dir="rtl" role="dialog" aria-modal="true">
@@ -96,6 +126,48 @@ export default function Student360Dossier({
                 <Info label="الحساب" value={student?.isActive === false ? 'موقوف' : 'نشط'} />
                 <Info label="البريد مؤكد" value={student?.emailVerified ? 'نعم' : 'لا'} />
                 <Info label="آخر دخول" value={student?.lastLogin ? new Date(student.lastLogin).toLocaleString('ar-EG') : '—'} />
+              </div>
+              {onUpdateStudent && student?._id ? (
+                <form onSubmit={handleSaveStudent} className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                  <div className="font-bold text-xs text-emerald-900">تحديث بيانات الطالب وحالة الحساب (إدارة مباشرة)</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">المستوى</span>
+                      <select value={adminLevel} onChange={(e) => setAdminLevel(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                        <option value="beginner">مبتدئ (beginner)</option>
+                        <option value="intermediate">متوسط (intermediate)</option>
+                        <option value="advanced">متقدم (advanced)</option>
+                        <option value="hafiz">خاتم / مجاز (hafiz)</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">المسار</span>
+                      <select value={adminTrack} onChange={(e) => setAdminTrack(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                        <option value="memorization">الحفظ والمراجعة</option>
+                        <option value="tajweed_ijazah">التجويد والإجازة</option>
+                        <option value="kids_foundation">تأسيس الأطفال</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">الأجزاء المحفوظة</span>
+                      <input type="number" min="0" max="30" value={adminJuz} onChange={(e) => setAdminJuz(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">حالة الحساب</span>
+                      <select value={adminActive ? 'active' : 'suspended'} onChange={(e) => setAdminActive(e.target.value === 'active')} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                        <option value="active">نشط (مفعّل)</option>
+                        <option value="suspended">موقوف مؤقتاً</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex justify-end">
+                    <button type="submit" disabled={savingStudent} className="px-4 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition disabled:opacity-50">
+                      {savingStudent ? 'جاري الحفظ...' : 'حفظ تعديلات الطالب'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+              <div className="hidden">
               </div>
             </section>
 
@@ -207,15 +279,35 @@ export default function Student360Dossier({
             </section>
 
             <section className="wn-admin-dossier__section">
-              <div className="wn-admin-dossier__section-title"><CreditCard size={18} /><h3>المدفوعات</h3></div>
+              <div className="wn-admin-dossier__section-title"><CreditCard size={18} /><h3>اشتراكات الباقات والمدفوعات</h3></div>
+              {(dossier.subscriptions || []).length > 0 ? (
+                <div className="mb-4 space-y-2">
+                  <strong className="block text-xs text-emerald-800">اشتراكات الحلقات والباقات ({dossier.subscriptions.length})</strong>
+                  <div className="wn-admin-360-table">
+                    {(dossier.subscriptions || []).map((sub) => (
+                      <div key={sub._id}>
+                        <span>
+                          <strong>{sub.pricingSnapshot?.nameAr || sub.planKey || 'باقة اشتراك'}</strong>
+                          <small>{sub.circle?.name || 'بانتظار التسكين في حلقة'} · {sub.section === 'ladies' ? 'قسم السيدات' : 'قسم الرجال والأطفال'}</small>
+                        </span>
+                        <span>
+                          <strong>الرصيد: {sub.sessionsRemaining ?? 0}/{sub.sessionCount ?? 0} حصة</strong>
+                          <small>{sub.status}</small>
+                        </span>
+                        <small>{sub.createdAt ? new Date(sub.createdAt).toLocaleDateString('ar-EG') : '—'}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {(dossier.payments || []).length === 0 ? (
                 <p className="wn-admin-dossier__empty">لا توجد عمليات دفع.</p>
               ) : (
                 <div className="wn-admin-360-table">
                   {(dossier.payments || []).map((payment) => (
                     <div key={payment._id}>
-                      <span><strong>{titleValue(payment.course?.title)}</strong><small>{payment.provider}</small></span>
-                      <span><strong>{payment.amountMinor} {payment.currency}</strong><small>{payment.status}</small></span>
+                      <span><strong>{payment.subscription?.pricingSnapshot?.nameAr || (payment.kind === 'subscription' ? 'اشتراك باقة قرآن' : titleValue(payment.course?.title))}</strong><small>{payment.provider}</small></span>
+                      <span><strong>{(Number(payment.amountMinor || 0) / 100).toFixed(2)} {payment.currency}</strong><small>{payment.status}</small></span>
                       <small>{new Date(payment.createdAt).toLocaleString('ar-EG')}</small>
                     </div>
                   ))}

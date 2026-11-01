@@ -28,6 +28,7 @@ export default function LiveSessions() {
   const [copiedId, setCopiedId] = useState(null);
   const [liveStatus, setLiveStatus] = useState({ configured: false });
   const [demoLoading, setDemoLoading] = useState(false);
+  const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState(null);
 
   const role = user?.role || '';
   const canManage = role === 'teacher' || role === 'admin';
@@ -82,7 +83,8 @@ export default function LiveSessions() {
   };
 
   const deleteSession = async (roomId) => {
-    if (!confirm(t.live.confirmDelete)) return;
+    if (!roomId) return;
+    setDeleteConfirmRoomId(null);
     
     try {
       await api.delete(`/api/live/sessions/${roomId}`, { auth: true });
@@ -226,7 +228,7 @@ export default function LiveSessions() {
                     {session.canManage && (
                       <button 
                         className="btn-icon delete-btn"
-                        onClick={() => deleteSession(session.roomId)}
+                        onClick={() => setDeleteConfirmRoomId(session.roomId)}
                         title={t.common.delete}
                       >
                         <Trash2 size={18} />
@@ -240,6 +242,20 @@ export default function LiveSessions() {
         )}
       </main>
 
+      <Modal isOpen={Boolean(deleteConfirmRoomId)} onClose={() => setDeleteConfirmRoomId(null)}>
+        <div className="p-4 space-y-4 text-right" dir="rtl">
+          <h3 className="text-lg font-bold text-slate-900">{t.live.confirmDelete || 'تأكيد حذف الغرفة المباشرة'}</h3>
+          <p className="text-sm text-slate-600">هل أنت متأكد من رغبتك في حذف هذه الغرفة المباشرة نهائياً؟</p>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setDeleteConfirmRoomId(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold">
+              {t.common.cancel}
+            </button>
+            <button type="button" onClick={() => deleteSession(deleteConfirmRoomId)} className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold">
+              {t.common.delete}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <CreateSessionModal 
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

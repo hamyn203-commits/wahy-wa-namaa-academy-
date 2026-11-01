@@ -1,13 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Session = require('../models/Session');
-const Teacher = require('../models/Teacher');
 const { protect, authorize } = require('../middleware/auth');
+const { logAdminAction } = require('../services/adminAudit');
 
 router.post('/', protect, authorize('student'), async (req, res) => {
   try {
-    const { sessionId, rating, comment, categories, isAnonymous } = req.body;
+    const { sessionId, rating, comment, categories, isAnonymous } = req.body || {};
+
+    if (!sessionId || !mongoose.Types.ObjectId.isValid(String(sessionId))) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+
+    const numericRating = Number(rating);
+    if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+    }
+
+    const cleanComment = String(comment || '').trim().slice(0, 1500);
 
     const session = await Session.findOne({
       _id: sessionId,
@@ -37,10 +49,10 @@ router.post('/', protect, authorize('student'), async (req, res) => {
       student: req.user.id,
       teacher: teacherId,
       session: sessionId,
-      rating,
-      comment,
-      categories,
-      isAnonymous: isAnonymous || false
+      rating: numericRating,
+      comment: cleanComment,
+      categories: categories && typeof categories === 'object' && !Array.isArray(categories) ? categories : undefined,
+      isAnonymous: Boolean(isAnonymous)
     });
 
     await Review.updateTeacherRating(teacherId);
@@ -53,7 +65,6 @@ router.post('/', protect, authorize('student'), async (req, res) => {
 
 router.get('/student', protect, authorize('student'), async (req, res) => {
   try {
-    const mongoose = require('mongoose');
     const isDBConnected = () => mongoose.connection.readyState === 1;
     const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
 
@@ -63,24 +74,29 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
 
     const reviews = await Review.find({ student: req.user.id })
       .populate('teacher', 'personalInfo.fullName rating')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(100);
     res.json(reviews);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to load reviews' });
   }
 });
 
 router.get('/teacher/:teacherId', async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.teacherId || ''))) {
+      return res.status(400).json({ error: 'Invalid teacher ID' });
+    }
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip = (pageNum - 1) * limitNum;
 
     const [reviews, total] = await Promise.all([
       Review.find({ teacher: req.params.teacherId, isApproved: true })
         .populate('student', 'name avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limitNum),
       Review.countDocuments({ teacher: req.params.teacherId, isApproved: true })
     ]);
 
@@ -95,22 +111,26 @@ router.get('/teacher/:teacherId', async (req, res) => {
     res.json({
       reviews: formattedReviews,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to load teacher reviews' });
   }
 });
 
 router.put('/:id/approve', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ error: 'Invalid review ID' });
+    }
+    const isApproved = Boolean(req.body?.isApproved);
     const review = await Review.findByIdAndUpdate(
       req.params.id,
-      { isApproved: req.body.isApproved },
+      { isApproved },
       { new: true }
     );
 
@@ -119,6 +139,14 @@ router.put('/:id/approve', protect, authorize('admin'), async (req, res) => {
     }
 
     await Review.updateTeacherRating(review.teacher);
+
+    await logAdminAction({
+      req,
+      action: isApproved ? 'review.approved' : 'review.unapproved',
+      entityType: 'review',
+      entityId: review._id,
+      metadata: { teacherId: String(review.teacher), isApproved },
+    }).catch(() => {});
 
     res.json({ success: true, review });
   } catch (error) {

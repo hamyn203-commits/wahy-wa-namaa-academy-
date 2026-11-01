@@ -54,6 +54,8 @@ async function presentUser(user) {
     const decision = await getTeacherAccessDecision(user._id || user.id);
     result.teacherApproved = decision.allowed;
     result.teacherApprovalStatus = decision.status;
+    result.teacherReviewNote = decision.reviewNote || '';
+    result.teacherRequestedChanges = decision.requestedChanges || [];
   }
   return result;
 }
@@ -491,6 +493,19 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
           (storage.getDriver() === 'vercel-blob' && !storage.isVercelBlobReference(value)))) {
         return res.status(400).json({ error: 'Invalid student avatar reference' });
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'avatar') && req.user.role !== 'student') {
+      const value = String(req.body.avatar || '');
+      if (value && !storage.referenceMatches(value, 'teacher-public', req.user.id) && !storage.referenceMatches(value, 'student-avatar', req.user.id)) {
+        return res.status(400).json({ error: 'Invalid avatar reference' });
+      }
+    }
+    if (typeof req.body.name === 'string') req.body.name = req.body.name.trim().slice(0, 100);
+    if (typeof req.body.bio === 'string') req.body.bio = req.body.bio.trim().slice(0, 1000);
+    if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
+      req.body.phone = String(req.body.phone || '').trim().slice(0, 32);
+      req.body.phoneNormalized = normalizePhone(req.body.phone) || undefined;
     }
 
     let user;

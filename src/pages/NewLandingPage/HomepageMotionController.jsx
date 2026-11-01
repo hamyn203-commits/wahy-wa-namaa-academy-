@@ -46,27 +46,46 @@ export default function HomepageMotionController() {
 
     let onPointerMove;
     let onPointerLeave;
+    let onPointerEnter;
+    let onResize;
+    let pointerRafId = 0;
+    let cachedRect = null;
 
     if (heroVisual && finePointer) {
+      const updateRect = () => {
+        if (heroVisual) cachedRect = heroVisual.getBoundingClientRect();
+      };
+
+      onPointerEnter = updateRect;
+      onResize = updateRect;
+
       onPointerMove = (event) => {
-        const rect = heroVisual.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width - 0.5;
-        const y = (event.clientY - rect.top) / rect.height - 0.5;
-        heroVisual.style.setProperty('--wn-tilt-x', `${(-y * 3.2).toFixed(2)}deg`);
-        heroVisual.style.setProperty('--wn-tilt-y', `${(x * 4.2).toFixed(2)}deg`);
-        heroVisual.style.setProperty('--wn-glow-x', `${((x + 0.5) * 100).toFixed(1)}%`);
-        heroVisual.style.setProperty('--wn-glow-y', `${((y + 0.5) * 100).toFixed(1)}%`);
+        if (!cachedRect) updateRect();
+        cancelAnimationFrame(pointerRafId);
+        pointerRafId = requestAnimationFrame(() => {
+          if (!cachedRect || cachedRect.width === 0 || cachedRect.height === 0) return;
+          const x = (event.clientX - cachedRect.left) / cachedRect.width - 0.5;
+          const y = (event.clientY - cachedRect.top) / cachedRect.height - 0.5;
+          heroVisual.style.setProperty('--wn-tilt-x', `${(-y * 3.2).toFixed(2)}deg`);
+          heroVisual.style.setProperty('--wn-tilt-y', `${(x * 4.2).toFixed(2)}deg`);
+          heroVisual.style.setProperty('--wn-glow-x', `${((x + 0.5) * 100).toFixed(1)}%`);
+          heroVisual.style.setProperty('--wn-glow-y', `${((y + 0.5) * 100).toFixed(1)}%`);
+        });
       };
 
       onPointerLeave = () => {
+        cancelAnimationFrame(pointerRafId);
         heroVisual.style.setProperty('--wn-tilt-x', '0deg');
         heroVisual.style.setProperty('--wn-tilt-y', '0deg');
         heroVisual.style.setProperty('--wn-glow-x', '50%');
         heroVisual.style.setProperty('--wn-glow-y', '38%');
+        cachedRect = null;
       };
 
+      heroVisual.addEventListener('pointerenter', onPointerEnter, { passive: true });
       heroVisual.addEventListener('pointermove', onPointerMove, { passive: true });
       heroVisual.addEventListener('pointerleave', onPointerLeave);
+      window.addEventListener('resize', onResize, { passive: true });
     }
 
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -78,8 +97,11 @@ export default function HomepageMotionController() {
       cancelAnimationFrame(rafId);
 
       if (heroVisual && onPointerMove && onPointerLeave) {
+        cancelAnimationFrame(pointerRafId);
+        heroVisual.removeEventListener('pointerenter', onPointerEnter);
         heroVisual.removeEventListener('pointermove', onPointerMove);
         heroVisual.removeEventListener('pointerleave', onPointerLeave);
+        window.removeEventListener('resize', onResize);
       }
     };
   }, []);

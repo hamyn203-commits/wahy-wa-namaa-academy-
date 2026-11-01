@@ -92,6 +92,33 @@ const TrialRequestSchema = new mongoose.Schema({
     },
     evaluatedAt: Date
   },
+  // Linked platform account (set when the request is submitted while signed in,
+  // or when the admin assigns the trial and a matching account is found).
+  studentUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  submittedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  currentLevel: {
+    type: String,
+    trim: true,
+    maxlength: 40,
+    default: ''
+  },
+  preferredDay: {
+    type: String,
+    trim: true,
+    maxlength: 20,
+    default: ''
+  },
+  referenceNumber: {
+    type: String,
+    trim: true,
+    maxlength: 40
+  },
   notes: {
     type: String,
     default: ''
@@ -101,5 +128,8 @@ const TrialRequestSchema = new mongoose.Schema({
 TrialRequestSchema.index({ status: 1 });
 TrialRequestSchema.index({ whatsappPhone: 1 });
 TrialRequestSchema.index({ assignedTeacher: 1 });
+TrialRequestSchema.index({ studentUser: 1, createdAt: -1 });
+TrialRequestSchema.index({ submittedBy: 1, createdAt: -1 });
+TrialRequestSchema.index({ scheduledSession: 1 });
 
 module.exports = mongoose.model('TrialRequest', TrialRequestSchema);

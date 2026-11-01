@@ -333,7 +333,7 @@ export default function PricingCalculatorSection() {
             </ul>
 
             <div className="wn-calc-summary__actions">
-              <LocalizedLink to="/plans" locale={locale} className="wn-btn wn-btn--accent wn-btn--lg wn-btn--block">
+              <LocalizedLink to="/plans" locale={locale} className="wn-btn wn-btn--light wn-btn--lg wn-btn--block">
                 <span>{isAr ? 'انتقل لاختيار هذه الخطة' : 'Proceed with this plan'}</span>
                 <ArrowIcon size={17} className="wn-btn__arrow" />
               </LocalizedLink>

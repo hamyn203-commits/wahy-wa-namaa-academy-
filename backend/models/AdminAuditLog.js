@@ -61,4 +61,11 @@ for (const operation of immutableOperations) {
   });
 }
 
+AdminAuditLogSchema.pre('save', function (next) {
+  if (!this.isNew) {
+    return next(new Error('Admin audit log entries are append-only'));
+  }
+  next();
+});
+
 module.exports = mongoose.model('AdminAuditLog', AdminAuditLogSchema);

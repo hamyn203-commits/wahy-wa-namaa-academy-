@@ -108,7 +108,7 @@ router.get('/achievements', protect, async (req, res) => {
       .populate('badge', 'name icon color')
       .populate('metadata.course', 'title')
       .sort({ achievedAt: -1 })
-      .limit(parseInt(limit));
+      .limit(Math.min(100, Math.max(1, parseInt(limit, 10) || 20)));
 
     res.json(achievements);
   } catch (error) {
@@ -165,6 +165,8 @@ router.get('/leaderboard/:type/:timeframe', async (req, res) => {
   try {
     const { type, timeframe } = req.params;
     const { limit = 50 } = req.query;
+    const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+    if (!['points', 'streak', 'courses', 'quizzes'].includes(type) || !['weekly', 'monthly', 'all-time'].includes(timeframe)) return res.status(400).json({ error: 'Invalid leaderboard type or timeframe' });
 
     if (!isDBConnected()) {
       return res.json({
@@ -185,7 +187,7 @@ router.get('/leaderboard/:type/:timeframe', async (req, res) => {
         .populate('entries.user', 'name avatar');
     }
 
-    const entries = leaderboard.entries.slice(0, parseInt(limit));
+    const entries = leaderboard.entries.slice(0, safeLimit);
 
     let userRank = null;
     if (req.user) {

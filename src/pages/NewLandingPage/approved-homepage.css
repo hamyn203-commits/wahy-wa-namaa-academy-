@@ -55,7 +55,7 @@
   bottom: .7rem;
   height: 2px;
   border-radius: 999px;
-  background: var(--wn-gold-dark);
+  background: var(--wn-text-gold);
 }
 
 .wn-approved-header__actions {
@@ -70,8 +70,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 42px;
-  min-height: 42px;
+  min-width: 48px;
+  min-height: 48px;
   border-radius: 12px;
   color: var(--wn-emerald-dark);
 }
@@ -91,13 +91,14 @@
 }
 
 .wn-approved-header__cta {
-  min-height: 44px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   gap: .55rem;
   padding: .65rem 1.15rem;
   border-radius: 12px;
-  background: var(--wn-gold-dark);
+  /* Primary Action Rule — emerald converts, gold only accents */
+  background: var(--wn-emerald);
   color: var(--wn-white);
   font-size: .875rem;
   font-weight: 700;
@@ -107,7 +108,8 @@
 
 .wn-approved-header__cta:hover {
   transform: translateY(-1px);
-  box-shadow: var(--wn-shadow-gold);
+  background: var(--wn-emerald-hover);
+  box-shadow: var(--wn-shadow-md);
 }
 
 .wn-approved-header__menu {
@@ -147,7 +149,7 @@
   display: inline-flex;
   align-items: center;
   gap: .45rem;
-  color: var(--wn-gold-dark);
+  color: var(--wn-text-gold);
   font-family: var(--wn-font-ui);
   font-size: .76rem;
   font-weight: 750;
@@ -165,7 +167,7 @@
   border-bottom: 1px solid var(--wn-border);
   background:
     radial-gradient(circle at 10% 15%, color-mix(in srgb, var(--wn-gold) 10%, transparent), transparent 27%),
-    var(--wn-ivory);
+    var(--wn-surface-canvas);
 }
 
 .wn-approved-hero__pattern {
@@ -593,14 +595,6 @@
 }
 
 @media (min-width: 768px) {
-  .wn-approved-header__actions {
-    display: flex;
-  }
-
-  .wn-approved-header__menu {
-    display: none;
-  }
-
   .wn-approved-hero__trust {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -621,6 +615,16 @@
 }
 
 @media (min-width: 1024px) {
+  /* Desktop chrome only. Below 1024px the hamburger + drawer stay reachable
+     so tablet viewports (768–1023px) never lose navigation. */
+  .wn-approved-header__actions {
+    display: flex;
+  }
+
+  .wn-approved-header__menu {
+    display: none;
+  }
+
   .wn-approved-header__nav {
     display: flex;
   }
@@ -818,8 +822,8 @@
   padding-block: clamp(4.75rem, 8vw, 7.5rem);
 }
 
-.wn-home-section--white { background: var(--wn-surface); }
-.wn-home-section--ivory { background: var(--wn-ivory); }
+.wn-home-section--white { background: var(--wn-surface-canvas); }
+.wn-home-section--ivory { background: var(--wn-surface-subtle); }
 .wn-home-section--mint {
   background:
     radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--wn-teal) 9%, transparent), transparent 30%),
@@ -1405,7 +1409,7 @@
 }
 
 .wn-mobile-sticky__primary {
-  min-height: 44px;
+  min-height: 48px;
   flex: 1;
   display: inline-flex;
   align-items: center;
@@ -1420,8 +1424,8 @@
 }
 
 .wn-mobile-sticky__secondary {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1471,11 +1475,11 @@
     align-items: center;
     justify-content: space-between;
   }
-
-  .wn-mobile-sticky { display: none; }
 }
 
 @media (min-width: 1024px) {
+  .wn-mobile-sticky { display: none; }
+
   .wn-experience-layout {
     grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
   }
@@ -1553,25 +1557,28 @@
 
 .wn-approved-home {
   background:
-    radial-gradient(circle at 8% 4%, rgba(212,175,107,.08), transparent 23rem),
-    radial-gradient(circle at 96% 20%, rgba(86,179,166,.07), transparent 28rem),
-    var(--wn-ivory);
+    radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--wn-gold) 8%, transparent), transparent 23rem),
+    radial-gradient(circle at 96% 20%, color-mix(in srgb, var(--wn-teal) 7%, transparent), transparent 28rem),
+    var(--wn-surface-canvas);
 }
 
 .wn-approved-header {
   background:
     linear-gradient(90deg,
-      color-mix(in srgb, var(--wn-ivory) 97%, var(--wn-gold) 3%),
-      color-mix(in srgb, var(--wn-ivory) 96%, var(--wn-mint) 4%));
+      color-mix(in srgb, var(--wn-surface-canvas) 97%, var(--wn-gold) 3%),
+      color-mix(in srgb, var(--wn-surface-canvas) 96%, var(--wn-teal) 4%));
   box-shadow: 0 10px 35px -30px rgba(7,53,40,.45);
 }
 
 .wn-approved-hero {
   isolation: isolate;
   background:
-    radial-gradient(circle at 12% 20%, rgba(212,175,107,.20), transparent 24rem),
-    radial-gradient(circle at 87% 18%, rgba(86,179,166,.14), transparent 30rem),
-    linear-gradient(115deg, #fffdf6 0%, #f8f3e9 46%, #edf6f1 100%);
+    radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--wn-gold) 20%, transparent), transparent 24rem),
+    radial-gradient(circle at 87% 18%, color-mix(in srgb, var(--wn-teal) 14%, transparent), transparent 30rem),
+    linear-gradient(115deg,
+      var(--wn-surface-canvas) 0%,
+      var(--wn-surface-subtle) 46%,
+      color-mix(in srgb, var(--wn-surface-subtle) 55%, var(--wn-mint)) 100%);
 }
 
 .wn-approved-hero::before {
@@ -1717,9 +1724,12 @@
 .wn-approved-programs {
   isolation: isolate;
   background:
-    radial-gradient(circle at 9% 10%, rgba(212,175,107,.17), transparent 25rem),
-    radial-gradient(circle at 88% 64%, rgba(86,179,166,.13), transparent 28rem),
-    linear-gradient(180deg, #fbf8ef 0%, #f7f2e8 50%, #faf9f4 100%);
+    radial-gradient(circle at 9% 10%, color-mix(in srgb, var(--wn-gold) 17%, transparent), transparent 25rem),
+    radial-gradient(circle at 88% 64%, color-mix(in srgb, var(--wn-teal) 13%, transparent), transparent 28rem),
+    linear-gradient(180deg,
+      var(--wn-surface-subtle) 0%,
+      var(--wn-surface-canvas) 50%,
+      var(--wn-surface-canvas) 100%);
 }
 
 .wn-approved-programs::before {
@@ -1897,8 +1907,8 @@
   isolation: isolate;
   overflow: hidden;
   background:
-    radial-gradient(circle at 12% 32%, rgba(212,175,107,.12), transparent 24rem),
-    linear-gradient(180deg, #fffdf8 0%, #f8f4e9 100%);
+    radial-gradient(circle at 12% 32%, color-mix(in srgb, var(--wn-gold) 12%, transparent), transparent 24rem),
+    linear-gradient(180deg, var(--wn-surface-canvas) 0%, var(--wn-surface-subtle) 100%);
 }
 
 .wn-approved-why::before {
@@ -1962,7 +1972,10 @@
   isolation: isolate;
   overflow: hidden;
   background:
-    linear-gradient(120deg, rgba(248,243,233,.96) 0%, rgba(232,245,239,.94) 55%, rgba(247,240,224,.96) 100%);
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--wn-surface-subtle) 96%, var(--wn-gold)) 0%,
+      color-mix(in srgb, var(--wn-mint-soft) 94%, var(--wn-teal)) 55%,
+      color-mix(in srgb, var(--wn-surface-subtle) 96%, var(--wn-sand)) 100%);
 }
 
 .wn-home-section--mint::before {
@@ -2022,9 +2035,9 @@
 .wn-home-section--white {
   overflow: hidden;
   background:
-    radial-gradient(circle at 8% 45%, rgba(212,175,107,.09), transparent 22rem),
-    radial-gradient(circle at 92% 20%, rgba(86,179,166,.08), transparent 24rem),
-    linear-gradient(180deg, #fffefb 0%, #fbf8ef 100%);
+    radial-gradient(circle at 8% 45%, color-mix(in srgb, var(--wn-gold) 9%, transparent), transparent 22rem),
+    radial-gradient(circle at 92% 20%, color-mix(in srgb, var(--wn-teal) 8%, transparent), transparent 24rem),
+    linear-gradient(180deg, var(--wn-surface-canvas) 0%, var(--wn-surface-subtle) 100%);
 }
 
 .wn-audience-card {
@@ -2805,9 +2818,9 @@ html {
   overflow: hidden;
   padding-block: clamp(5.5rem, 9vw, 8rem);
   background:
-    radial-gradient(circle at 14% 8%, rgba(212,175,107,.12), transparent 24rem),
-    radial-gradient(circle at 90% 84%, rgba(86,179,166,.12), transparent 25rem),
-    linear-gradient(180deg, #fffefa 0%, #f8f4eb 100%);
+    radial-gradient(circle at 14% 8%, color-mix(in srgb, var(--wn-gold) 12%, transparent), transparent 24rem),
+    radial-gradient(circle at 90% 84%, color-mix(in srgb, var(--wn-teal) 12%, transparent), transparent 25rem),
+    linear-gradient(180deg, var(--wn-surface-canvas) 0%, var(--wn-surface-subtle) 100%);
 }
 
 .wn-product-showcase::before {
@@ -3549,9 +3562,9 @@ html {
 }
 .wn-home-faq__item {
   overflow: hidden;
-  border: 1px solid rgba(212, 175, 107, 0.16);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 22%, var(--wn-border));
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--wn-surface);
   box-shadow: 0 18px 44px -40px rgba(7, 53, 40, 0.42);
   transition: border-color var(--wn-dur-fast) var(--wn-ease);
 }
@@ -3566,7 +3579,7 @@ html {
   justify-content: space-between;
   gap: 1rem;
   padding: .85rem 1.1rem;
-  color: var(--wn-emerald-deep);
+  color: var(--wn-text-primary);
   font-size: .92rem;
   font-weight: 600;
   text-align: start;
@@ -3604,7 +3617,7 @@ html {
 }
 [data-theme='dark'] .wn-home-faq__item {
   background: var(--wn-surface);
-  border-color: rgba(212, 175, 107, 0.2);
+  border-color: var(--wn-border);
 }
 [data-theme='dark'] .wn-home-faq__empty {
   background: var(--wn-surface);
@@ -4109,7 +4122,7 @@ html {
 }
 
 .wn-mobile-sticky__tab {
-  min-height: 46px;
+  min-height: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4133,23 +4146,23 @@ html {
    Batch 9 — Approved Homepage Dark Mode Polish (056)
    ========================================================================== */
 [data-theme="dark"] .wn-approved-header {
-  background: rgba(7, 25, 19, 0.92);
-  border-bottom-color: rgba(212, 175, 107, 0.18);
+  background: color-mix(in srgb, var(--wn-surface-canvas) 94%, transparent);
+  border-bottom-color: var(--wn-border);
 }
 
 [data-theme="dark"] .wn-approved-home {
-  background: #071913;
-  color: #edf5f1;
+  background: var(--wn-surface-canvas);
+  color: var(--wn-text-primary);
 }
 
 [data-theme="dark"] .wn-home-section--ivory,
 [data-theme="dark"] .wn-home-section--white,
 [data-theme="dark"] .wn-home-section--sand {
-  background: linear-gradient(180deg, #071913 0%, #0b231b 100%);
+  background: var(--wn-surface-canvas);
 }
 
-[data-theme="dark"] .wn-program-card-home,
-[data-theme="dark"] .wn-pillar-card,
+[data-theme="dark"] .wn-approved-program-card,
+[data-theme="dark"] .wn-approved-why-card,
 [data-theme="dark"] .wn-experience-card,
 [data-theme="dark"] .wn-journey-card,
 [data-theme="dark"] .wn-faculty-card,
@@ -4157,20 +4170,138 @@ html {
 [data-theme="dark"] .wn-audience-card,
 [data-theme="dark"] .wn-calc-controls,
 [data-theme="dark"] .wn-trust-card,
-[data-theme="dark"] .wn-home-faq-item {
-  background: rgba(12, 38, 30, 0.92);
-  border-color: rgba(212, 175, 107, 0.22);
-  color: #edf5f1;
+[data-theme="dark"] .wn-home-faq__item {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
 }
 
 [data-theme="dark"] .wn-home-title,
-[data-theme="dark"] .wn-program-card-home h3,
-[data-theme="dark"] .wn-pillar-card h3,
+[data-theme="dark"] .wn-approved-program-card h3,
+[data-theme="dark"] .wn-approved-why-card h3,
 [data-theme="dark"] .wn-experience-card h3,
 [data-theme="dark"] .wn-journey-card h3,
 [data-theme="dark"] .wn-faculty-card h3,
+[data-theme="dark"] .wn-faculty-principle h3,
 [data-theme="dark"] .wn-audience-card h3,
 [data-theme="dark"] .wn-trust-card h3,
-[data-theme="dark"] .wn-home-faq-question {
-  color: #f6f2e8;
+[data-theme="dark"] .wn-approved-hero__title,
+[data-theme="dark"] .wn-approved-section-heading h2,
+[data-theme="dark"] .wn-approved-trust-bar__item strong,
+[data-theme="dark"] .wn-journey-cta strong,
+[data-theme="dark"] .wn-product-tile > h3,
+[data-theme="dark"] .wn-calc-label,
+[data-theme="dark"] .wn-calc-section-btn strong,
+[data-theme="dark"] .wn-calc-plan-option h4,
+[data-theme="dark"] .wn-calc-plan-option__price,
+[data-theme="dark"] .wn-calc-pack-btn strong,
+[data-theme="dark"] .wn-home-faq__button {
+  color: var(--wn-text-primary);
+}
+
+/* ==========================================================================
+   Batch 10 — Accessibility, mobile chrome & conversion colour rules
+   ========================================================================== */
+
+/* Skip link — first tab stop, hidden until focused */
+.wn-skip-link {
+  position: fixed;
+  inset-inline-start: .75rem;
+  top: .75rem;
+  z-index: var(--wn-z-modal);
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding-inline: 1.25rem;
+  border-radius: var(--wn-radius-md);
+  background: var(--wn-emerald);
+  color: var(--wn-white);
+  font-size: var(--wn-text-sm);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-skip-link:focus,
+.wn-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-emerald);
+}
+
+/* Programmatic skip target should not paint a focus ring */
+.wn-approved-home:focus {
+  outline: none;
+}
+
+/* Chat launcher — lifted clear of the mobile sticky bar (z 45) */
+.wn-chat-launcher {
+  position: fixed;
+  left: 1.5rem;
+  right: auto;
+  bottom: 1.5rem;
+  z-index: 50;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.wn-chat-panel {
+  position: fixed;
+  left: 1.5rem;
+  right: auto;
+  bottom: 6rem;
+  z-index: var(--wn-z-overlay);
+  width: 24rem;
+  max-width: calc(100vw - 2rem);
+  height: 540px;
+  max-height: calc(100vh - 8rem);
+}
+
+/* The sticky bar now lives up to 1023px, so the clearance must match it. */
+@media (max-width: 1023px) {
+  .wn-chat-launcher {
+    left: 1rem;
+    bottom: calc(var(--wn-mobile-bar-h, 72px) + 16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .wn-chat-panel {
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+    max-width: none;
+    bottom: calc(var(--wn-mobile-bar-h, 72px) + 72px + env(safe-area-inset-bottom, 0px));
+    height: min(65vh, 540px);
+    max-height: calc(100vh - var(--wn-mobile-bar-h, 72px) - 88px);
+  }
+
+  .wn-chat-close {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+
+/* Dark-mode header branding stays legible on the night canvas */
+[data-theme="dark"] .wn-approved-header .wn-brand-wordmark {
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-approved-header .wn-brand-wordmark__sub {
+  color: var(--wn-text-gold);
+}
+
+/* Header controls sit on a near-black bar in dark mode — emerald-dark
+   (#0a4a37) would be ~1.6:1 there, so they follow the text token. */
+[data-theme="dark"] .wn-approved-header__link:hover,
+[data-theme="dark"] .wn-approved-header__link.is-active,
+[data-theme="dark"] .wn-approved-header__icon,
+[data-theme="dark"] .wn-approved-header__login,
+[data-theme="dark"] .wn-approved-header__menu,
+[data-theme="dark"] .wn-mobile-sticky__secondary {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-approved-header__icon:hover,
+[data-theme="dark"] .wn-approved-header__menu:hover {
+  background: var(--wn-emerald-soft);
 }

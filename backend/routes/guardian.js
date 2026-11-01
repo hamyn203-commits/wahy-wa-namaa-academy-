@@ -10,6 +10,7 @@ const LiveSession = require('../models/LiveSession');
 const Progress = require('../models/Progress');
 const TeacherTask = require('../models/TeacherTask');
 const GuardianInvitation = require('../models/GuardianInvitation');
+const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
 const { findChildAccess, hasChildPermission } = require('../utils/guardianSafeguarding');
 const { normalizePhone, maskPhone } = require('../utils/phone');
@@ -155,6 +156,7 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
       let absentSessions = 0;
 
       if (permissions.viewAttendance) {
+        const now = new Date();
         const sessions = await Session.find({
           $or: [
             { student: studentId },
@@ -164,6 +166,11 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
         }).select('scheduledAt status attendance').lean();
 
         sessions.forEach((sess) => {
+          const isEligible = sess.status === 'completed' || (sess.scheduledAt && new Date(sess.scheduledAt) <= now);
+          if (!isEligible) {
+            return;
+          }
+
           totalSessions += 1;
           const att = sess.attendance?.find(
             (entry) => entry.student && entry.student.toString() === studentId.toString()
@@ -172,7 +179,7 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
             if (att.status === 'attended') attendedSessions += 1;
             else if (att.status === 'excused') excusedSessions += 1;
             else if (att.status === 'absent') absentSessions += 1;
-            else attendedSessions += 1;
+            else if (sess.status === 'completed') attendedSessions += 1;
           } else if (sess.status === 'completed') {
             attendedSessions += 1;
           }
@@ -216,6 +223,10 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
         ? await Progress.find({ student: studentId }).populate('course', 'title').lean()
         : [];
 
+      const latestSubscription = await StudentSubscription.findOne({
+        student: studentId,
+      }).sort({ createdAt: -1 }).lean();
+
       return {
         studentId: studentUser._id,
         name: studentUser.name,
@@ -243,7 +254,21 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
         coursesProgress: permissions.viewProgress ? progressList.map(p => ({
           courseTitle: p.course?.title,
           percentage: p.overallProgress?.percentage || 0
-        })) : []
+        })) : [],
+        subscription: latestSubscription ? {
+          _id: latestSubscription._id,
+          planKey: latestSubscription.planKey,
+          section: latestSubscription.section,
+          sessionCount: latestSubscription.sessionCount,
+          sessionsRemaining: latestSubscription.sessionsRemaining,
+          sessionsUsed: latestSubscription.sessionsUsed,
+          status: latestSubscription.status,
+          currency: latestSubscription.currency || 'EGP',
+          pricePerSessionMinor: latestSubscription.pricePerSessionMinor,
+          totalAmountMinor: latestSubscription.totalAmountMinor,
+          expiresAt: latestSubscription.expiresAt,
+          updatedAt: latestSubscription.updatedAt
+        } : null
       };
     }));
 
@@ -744,7 +769,7 @@ router.get('/reports/:studentId', protect, authorize('guardian', 'admin'), async
       ],
       'studentReports.0': { $exists: true }
     })
-    .populate('teacher', 'name')
+    .populate({ path: 'teacher', select: 'personalInfo.fullName user', populate: { path: 'user', select: 'name' } })
     .sort({ scheduledAt: -1 })
     .lean();
 
@@ -758,7 +783,7 @@ router.get('/reports/:studentId', protect, authorize('guardian', 'admin'), async
         reportsHistory.push({
           sessionId: sess._id,
           scheduledAt: sess.scheduledAt,
-          teacherName: sess.teacher?.name || 'المعلم',
+          teacherName: sess.teacher?.user?.name || sess.teacher?.personalInfo?.fullName || sess.teacher?.name || 'المعلم',
           memorizationScore: rep.memorizationScore,
           tajweedScore: rep.tajweedScore,
           surahRecited: rep.surahRecited,

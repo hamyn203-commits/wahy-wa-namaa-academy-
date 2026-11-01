@@ -1,5 +1,5 @@
 import {
-  Activity, AlertTriangle, ArrowLeft, BookOpen, Calendar, CheckCircle2,
+  Activity, AlertTriangle, ArrowLeft, BookOpen, Calendar, CalendarClock, CheckCircle2,
   CreditCard, DollarSign, GraduationCap, History, ServerCog,
   ShieldCheck, Sparkles, Users, WalletCards,
 } from 'lucide-react';
@@ -17,6 +17,8 @@ const ACTION_META = {
   'guardian-links': { icon: Users, tone: 'info' },
   'overdue-sessions': { icon: Calendar, tone: 'danger' },
   'missing-session-reports': { icon: BookOpen, tone: 'warning' },
+  'trial-requests': { icon: CalendarClock, tone: 'warning' },
+  'awaiting-placement': { icon: Users, tone: 'warning' },
 };
 
 const CHART_COLORS = ['#d3a33c', '#0c2749', '#2563eb', '#16a56f', '#7c3aed', '#e87928', '#d64545'];
@@ -110,6 +112,9 @@ export default function AdminExecutiveHome({
         </button>
         <button type="button" onClick={() => onNavigate?.('/admin/payments')}>
           <CreditCard size={17} /><span><strong>مراجعة المدفوعات</strong><small>Manual payments</small></span><ArrowLeft size={14} />
+        </button>
+        <button type="button" onClick={() => onNavigate?.('/admin/trials')}>
+          <CalendarClock size={17} /><span><strong>الحصص التجريبية</strong><small>Trial requests</small></span><ArrowLeft size={14} />
         </button>
         <button type="button" onClick={() => onNavigate?.('/admin?tab=system')}>
           <ServerCog size={17} /><span><strong>حالة النظام</strong><small>Health & launch</small></span><ArrowLeft size={14} />

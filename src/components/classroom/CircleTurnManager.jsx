@@ -32,6 +32,7 @@ export default function CircleTurnManager({
   isObserver = false,
   currentUserName = 'مشارك',
   onMuteLocalMic = null,
+  rosterStudents = [],
 }) {
   // حالة الطالب الحالي
   const currentParticipantId = localParticipant?.localParticipant?.identity || currentUserName;
@@ -95,6 +96,7 @@ export default function CircleTurnManager({
             // إذا كان المستخدم ليس المعلم، اكتم الصوت
             if (!isTeacher) {
               if (onMuteLocalMic) onMuteLocalMic();
+              try { localParticipant?.localParticipant?.setMicrophoneEnabled(false); } catch { /* ignore */ }
               setActionNotice('قام المعلم بكتم صوت الجميع للحفاظ على هدوء التسميع');
               setTimeout(() => setActionNotice(null), 4000);
             }
@@ -181,12 +183,20 @@ export default function CircleTurnManager({
   const circleStudents = useMemo(() => {
     // قائمة أسماء الحاضرين في الغرفة
     const activeNames = new Set(participants.map(p => p.name || p.identity));
+    const activeIdentities = new Set(participants.map(p => p.identity).filter(Boolean));
+    if (currentUserName) activeNames.add(currentUserName);
+    if (currentParticipantId) activeIdentities.add(currentParticipantId);
+    const baseList = Array.isArray(rosterStudents) && rosterStudents.length > 0 ? rosterStudents : DEFAULT_STUDENTS_LIST;
     if (currentUserName) activeNames.add(currentUserName);
 
-    return DEFAULT_STUDENTS_LIST.map((student, index) => {
+    return baseList.map((student, index) => {
+      const matchedParticipant = Array.isArray(rosterStudents) && rosterStudents.length > 0
+        ? participants.find(p => p.identity === student.id || p.name === student.name)
+        : participants[index];
+      const isOnline = Boolean(matchedParticipant) || activeIdentities.has(student.id) || activeNames.has(student.name);
       // إما اسم مسجل أو مشارك فعلي في الغرفة
-      const matchedParticipant = participants[index];
-      const isOnline = matchedParticipant ? true : activeNames.has(student.name);
+
+
       const studentName = matchedParticipant?.name || student.name;
       const studentId = matchedParticipant?.identity || student.id;
 
@@ -204,7 +214,7 @@ export default function CircleTurnManager({
         timeSpent: timeSpentMap[studentId] || 0
       };
     });
-  }, [participants, currentUserName, activeReciter, waitingQueue, timeSpentMap]);
+  }, [participants, currentUserName, currentParticipantId, rosterStudents, activeReciter, waitingQueue, timeSpentMap]);
 
   // ── أدوات المعلم ──
 
@@ -284,7 +294,7 @@ export default function CircleTurnManager({
           <Users size={18} className="text-emerald-700" />
           <h3>
             حلقة القرآن الكريم
-            <span className="circle-count-badge">10 طلاب</span>
+            <span className="circle-count-badge">{circleStudents.length} طلاب</span>
           </h3>
         </div>
 
@@ -478,7 +488,7 @@ export default function CircleTurnManager({
           <span className="font-semibold text-gray-800">5 دقائق لكل طالب في الحلقة</span>
         </div>
         <div className="text-[11px] text-gray-500">
-          إجمالي الحضور: {circleStudents.filter(s => s.isOnline).length}/10
+          إجمالي الحضور: {circleStudents.filter(s => s.isOnline).length}/{circleStudents.length}
         </div>
       </div>
     </div>

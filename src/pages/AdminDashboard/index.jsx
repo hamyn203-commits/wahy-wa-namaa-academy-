@@ -56,7 +56,10 @@ export default function AdminDashboard() {
   const [lessons, setLessons] = useState([]);
 
   const [replyText, setReplyText] = useState({});
-  const [teacherForm, setTeacherForm] = useState({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة' });
+  const [teacherForm, setTeacherForm] = useState({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة', gender: 'male', hourlyRate: 50 });
+  const [payoutModal, setPayoutModal] = useState(null);
+  const [confirmDeleteModal, setConfirmDeleteModal] = useState(null);
+  const [reviewPromptModal, setReviewPromptModal] = useState(null);
   const [courseForm, setCourseForm] = useState({ titleAr: '', slug: '', instructorId: '', price: 0, descAr: '', programs: [] });
   const [lessonForm, setLessonForm] = useState({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', duration: 10 });
   const [blogForm, setBlogForm] = useState({ slug: '', titleAr: '', excerptAr: '', contentAr: '' });
@@ -246,6 +249,10 @@ export default function AdminDashboard() {
     let reviewNote = note;
 
     if (['request-changes', 'reject'].includes(action) && !reviewNote) {
+      setReviewPromptModal({ kind: 'teacher-review', id, action, note: '' });
+      return;
+    }
+    if (false) {
       reviewNote = window.prompt(
         action === 'reject' ? 'اكتب سبب رفض الطلب:' : 'اكتب المطلوب من المعلم استكماله أو تعديله:',
         ''
@@ -401,6 +408,10 @@ export default function AdminDashboard() {
   const reviewTeacherProfileChange = async (teacherId, action, suppliedNote = '') => {
     let note = suppliedNote;
     if (action === 'reject' && !note) {
+      setReviewPromptModal({ kind: 'profile-change', id: teacherId, action, note: '' });
+      return;
+    }
+    if (false) {
       note = window.prompt('اكتب سبب رفض التعديل أو المطلوب من المعلم:', '') ?? '';
       if (!note.trim()) return;
     }
@@ -449,7 +460,7 @@ export default function AdminDashboard() {
     try {
       await api.post('/api/admin/teachers', { ...teacherForm, autoApprove: false }, { auth: true });
       toast.success('تم إنشاء ملف المعلم وإرساله إلى مركز المراجعة');
-      setTeacherForm({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة' });
+      setTeacherForm({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة', gender: 'male', hourlyRate: 50 });
       load();
     } catch (e) { toast.error(e.message); }
   };
@@ -498,7 +509,96 @@ export default function AdminDashboard() {
     } catch (e) { toast.error(e.message); }
   };
 
-  const reviewWithdraw = async (withdrawal, action) => {
+  const updateTeacherAdminSettings = async (teacherId, settings) => {
+    try {
+      await api.put(`/api/admin/teachers/${teacherId}`, {
+        ...settings,
+        adminReason: 'تحديث إعدادات المعلم (أجر الساعة / القسم / التمييز)',
+      }, { auth: true });
+      toast.success('تم تحديث إعدادات المعلم بنجاح');
+      await openTeacherDossier(teacherId);
+      await loadCore();
+    } catch (e) {
+      toast.error(e.message || 'تعذر تحديث إعدادات المعلم');
+    }
+  };
+
+  const updateStudentAdminProfile = async (studentId, settings) => {
+    try {
+      await api.put(`/api/admin/people/students/${studentId}`, {
+        ...settings,
+        adminReason: 'تحديث بيانات وحالة الطالب من Student 360',
+      }, { auth: true });
+      toast.success('تم تحديث بيانات الطالب وحالة حسابه بنجاح');
+      await openStudentDossier(studentId);
+    } catch (e) {
+      toast.error(e.message || 'تعذر تحديث بيانات الطالب');
+    }
+  };
+
+  const toggleCourseStatus = async (course) => {
+    const nextStatus = course.status === 'published' ? 'draft' : 'published';
+    try {
+      await api.put(`/api/admin/courses/${course._id}`, { status: nextStatus }, { auth: true });
+      toast.success(nextStatus === 'published' ? 'تم نشر الدورة' : 'تم تحويل الدورة إلى مسودة');
+      loadCourses();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const toggleBlogStatus = async (post) => {
+    const nextStatus = post.status === 'published' ? 'draft' : 'published';
+    try {
+      await api.put(`/api/admin/blog/${post._id}`, { status: nextStatus }, { auth: true });
+      toast.success(nextStatus === 'published' ? 'تم نشر المقال' : 'تم تحويل المقال إلى مسودة');
+      loadBlog();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const submitPayoutDecision = async (e) => {
+    e.preventDefault();
+    if (!payoutModal) return;
+    const { withdrawal, action, referenceNumber, notes } = payoutModal;
+    try {
+      if (withdrawal.source === 'ledger') {
+        await api.put(`/api/finance/admin/payouts/${withdrawal._id}/process`, {
+          action,
+          referenceNumber: referenceNumber?.trim() || '',
+          notes: notes?.trim() || '',
+        }, { auth: true });
+      } else {
+        await api.patch(`/api/admin/withdrawals/${withdrawal._id}`, {
+          action,
+          adminNote: notes?.trim() || referenceNumber?.trim() || '',
+        }, { auth: true });
+      }
+      toast.success(action === 'approve' ? 'تم اعتماد تحويل المبلغ وتسجيل المرجع' : 'تم رفض طلب السحب');
+      setPayoutModal(null);
+      loadWithdrawals();
+      loadCore();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const reviewWithdraw = (withdrawal, action) => {
+    setPayoutModal({ withdrawal, action, referenceNumber: '', notes: '' });
+  };
+
+  const executeDeleteItem = async (type, id) => {
+    const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
+    try {
+      await api.delete(paths[type], { auth: true });
+      toast.success('تم الحذف بنجاح');
+      setConfirmDeleteModal(null);
+      if (type === 'lesson') loadLessons(selectedCourse);
+      else if (type === 'course') loadCourses();
+      else if (type === 'blog') loadBlog();
+      else load();
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const deleteItem = async (type, id, label = '') => {
+    setConfirmDeleteModal({ type, id, label });
+  };
+  /*
     try {
       if (withdrawal.source === 'ledger') {
         await api.put(`/api/finance/admin/payouts/${withdrawal._id}/process`, {
@@ -510,9 +610,30 @@ export default function AdminDashboard() {
       toast.success(action === 'approve' ? 'تم اعتماد تحويل المبلغ' : 'تم رفض الطلب');
       loadWithdrawals();
     } catch (e) { toast.error(e.message); }
+    }
+  };
+    } catch (e) { toast.error(e.message); }
   };
 
-  const deleteItem = async (type, id) => {
+  const executeDeleteItem = async (type, id) => {
+    const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
+    try {
+      await api.delete(paths[type], { auth: true });
+      toast.success('تم الحذف بنجاح');
+      setConfirmDeleteModal(null);
+      if (type === 'lesson') loadLessons(selectedCourse);
+      else if (type === 'course') loadCourses();
+      else if (type === 'blog') loadBlog();
+      else load();
+    } catch (e) { toast.error(e.message); }
+    }
+  };
+    } catch (e) { toast.error(e.message); }
+  };
+
+  const deleteItem = async (type, id, label = '') => {
+    setConfirmDeleteModal({ type, id, label });
+    if (false) {
     if (!confirm('هل أنت متأكد؟')) return;
     const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
     try {
@@ -521,8 +642,12 @@ export default function AdminDashboard() {
       if (type === 'lesson') loadLessons(selectedCourse);
       else load();
     } catch (e) { toast.error(e.message); }
+    }
+  };
+    } catch (e) { toast.error(e.message); }
   };
 
+  */
   const COLORS = ['#d5a83d', '#2563eb', '#16a56f', '#7c3aed'];
 
   const donationPieData = Object.entries(growthSummary.donationsByCategory || {}).map(([name, value]) => ({
@@ -570,7 +695,7 @@ export default function AdminDashboard() {
       onOpenStudent={openStudentDossier}
       onOpenGuardian={openFamilyDossier}
       onOpenTeacher={openTeacherDossier}
-      onOpenPayments={() => navigate('payments')}
+      onOpenPayments={() => navigate('/admin/payments')}
     />
   );
 
@@ -762,6 +887,13 @@ export default function AdminDashboard() {
                   <input placeholder="الدولة" value={teacherForm.country} onChange={(e) => setTeacherForm((p) => ({ ...p, country: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
                   <input placeholder="المدينة" value={teacherForm.city} onChange={(e) => setTeacherForm((p) => ({ ...p, city: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={teacherForm.gender || 'male'} onChange={(e) => setTeacherForm((p) => ({ ...p, gender: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm bg-white" aria-label="النوع / القسم">
+                    <option value="male">معلم (ذكر)</option>
+                    <option value="female">معلمة (أنثى)</option>
+                  </select>
+                  <input type="number" min="10" max="1000" placeholder="أجر الساعة (ج.م)" value={teacherForm.hourlyRate ?? 50} onChange={(e) => setTeacherForm((p) => ({ ...p, hourlyRate: Number(e.target.value) }))} className="border rounded-lg px-3 py-2 text-sm" />
+                </div>
                 <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm">إنشاء ملف للمراجعة</button>
               </form>
               <div className="wn-dashboard-surface wn-admin-teachers-list">
@@ -895,7 +1027,12 @@ export default function AdminDashboard() {
                           <p className="font-semibold">{c.title?.ar}</p>
                           <p className="text-xs text-gray-500">{c.slug} — {c.status} — {c.price}$ {(c.programs || []).length ? `[${c.programs.join(',')}]` : ''}</p>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); deleteItem('course', c._id); }} className="text-red-500"><Trash2 size={16} /></button>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); toggleCourseStatus(c); }} className="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-700">
+                            {c.status === 'published' ? 'تحويل لمسودة' : 'نشر'}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteItem('course', c._id, c.title?.ar); }} className="text-red-500"><Trash2 size={16} /></button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -954,7 +1091,12 @@ export default function AdminDashboard() {
                       <p className="font-semibold">{p.title?.ar}</p>
                       <p className="text-xs text-gray-500">{p.slug} — {p.status}</p>
                     </div>
-                    <button onClick={() => deleteItem('blog', p._id)} className="text-red-500"><Trash2 size={16} /></button>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => toggleBlogStatus(p)} className="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 font-semibold text-slate-700">
+                        {p.status === 'published' ? 'تحويل لمسودة' : 'نشر'}
+                      </button>
+                      <button onClick={() => deleteItem('blog', p._id, p.title?.ar)} className="text-red-500"><Trash2 size={16} /></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -971,6 +1113,8 @@ export default function AdminDashboard() {
                     <p className="text-lg font-bold text-emerald-700 mt-1">{w.amount} {w.currency || 'EGP'} — {w.method}</p>
                     <p className="text-[11px] text-slate-400">{w.source === 'ledger' ? 'السجل المالي الموحد' : 'طلب قديم قيد الترحيل'}</p>
                     <p className="text-sm text-gray-600">{w.accountInfo}</p>
+                    {w.referenceNumber ? <p className="text-xs text-emerald-700 font-semibold mt-1">مرجع التحويل: {w.referenceNumber}</p> : null}
+                    {w.notes ? <p className="text-xs text-slate-500 mt-0.5">ملاحظات: {w.notes}</p> : null}
                     <p className="text-xs text-gray-400 mt-1">{new Date(w.createdAt).toLocaleString('ar-EG')}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1166,6 +1310,7 @@ export default function AdminDashboard() {
           onOpenProfileChangeMedia={openTeacherProfileChangeMedia}
           onProfileChangeReview={reviewTeacherProfileChange}
           onPreviewPublic={previewPublicTeacher}
+          onUpdateAdminSettings={updateTeacherAdminSettings}
         />
       )}
 
@@ -1178,6 +1323,7 @@ export default function AdminDashboard() {
           onOpenTeacher={openTeacherDossier}
           onOpenHomeworkAudio={openStudentHomeworkAudio}
           onMessageStudent={(studentId) => { setStudentDossier(null); setSupportStudent(studentId); setTab('messages'); }}
+          onUpdateStudent={updateStudentAdminProfile}
         />
       )}
 
@@ -1188,6 +1334,134 @@ export default function AdminDashboard() {
           onClose={() => setFamilyDossier(null)}
           onOpenStudent={openStudentDossier}
         />
+      )}
+      {payoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+          <form onSubmit={submitPayoutDecision} className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+            <div className="p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">
+                {payoutModal.action === 'approve' ? 'اعتماد تحويل مستحقات المعلم' : 'رفض طلب سحب الأرباح'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {payoutModal.withdrawal.teacher?.user?.name || payoutModal.withdrawal.teacher?.personalInfo?.fullName || 'معلم'} — {payoutModal.withdrawal.amount} {payoutModal.withdrawal.currency || 'EGP'} ({payoutModal.withdrawal.method})
+              </p>
+              {payoutModal.withdrawal.accountInfo ? (
+                <p className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2 mt-2">
+                  بيانات الحساب: {payoutModal.withdrawal.accountInfo}
+                </p>
+              ) : null}
+            </div>
+            <div className="p-4 space-y-3">
+              {payoutModal.action === 'approve' ? (
+                <label className="block text-xs font-semibold text-slate-700 space-y-1">
+                  <span>رقم مرجع التحويل (فودافون كاش / إنستاباي / بنك):</span>
+                  <input
+                    required
+                    type="text"
+                    value={payoutModal.referenceNumber}
+                    onChange={(e) => setPayoutModal({ ...payoutModal, referenceNumber: e.target.value })}
+                    placeholder="مثال: TXN-98451203"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm"
+                  />
+                </label>
+              ) : null}
+              <label className="block text-xs font-semibold text-slate-700 space-y-1">
+                <span>{payoutModal.action === 'approve' ? 'ملاحظات للمعلم (اختياري):' : 'سبب رفض طلب السحب (مطلوب):'}</span>
+                <textarea
+                  required={payoutModal.action === 'reject'}
+                  rows={3}
+                  value={payoutModal.notes}
+                  onChange={(e) => setPayoutModal({ ...payoutModal, notes: e.target.value })}
+                  placeholder={payoutModal.action === 'approve' ? 'تم التحويل بنجاح...' : 'اكتب سبب الرفض بوضوح للمعلم...'}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button type="button" onClick={() => setPayoutModal(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">إلغاء</button>
+              <button
+                type="submit"
+                className={`px-4 py-2 text-sm text-white font-semibold rounded-lg ${payoutModal.action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+              >
+                {payoutModal.action === 'approve' ? 'تأكيد التحويل' : 'تأكيد الرفض'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {confirmDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+            <div className="p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">تأكيد الحذف</h3>
+            </div>
+            <div className="p-4 text-sm text-slate-600">
+              <p>هل أنت متأكد من حذف هذا العنصر نهائيًا{confirmDeleteModal.label ? ` (${confirmDeleteModal.label})` : ''}؟</p>
+            </div>
+            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button type="button" onClick={() => setConfirmDeleteModal(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">إلغاء</button>
+              <button
+                type="button"
+                onClick={() => executeDeleteItem(confirmDeleteModal.type, confirmDeleteModal.id)}
+                className="px-4 py-2 text-sm text-white font-semibold rounded-lg bg-rose-600 hover:bg-rose-700"
+              >
+                نعم، احذف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {reviewPromptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const noteVal = reviewPromptModal.note?.trim();
+              if (!noteVal) return;
+              const current = reviewPromptModal;
+              setReviewPromptModal(null);
+              if (current.kind === 'teacher-review') {
+                await review(current.id, current.action, noteVal);
+              } else {
+                await reviewTeacherProfileChange(current.id, current.action, noteVal);
+              }
+            }}
+            className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200"
+          >
+            <div className="p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">
+                {reviewPromptModal.kind === 'profile-change'
+                  ? 'رفض تعديل ملف المعلم'
+                  : reviewPromptModal.action === 'reject'
+                    ? 'رفض طلب تسجيل المعلم'
+                    : 'طلب استكمال أو تعديل بيانات المعلم'}
+              </h3>
+            </div>
+            <div className="p-4 space-y-2">
+              <label className="block text-xs font-semibold text-slate-700">
+                {reviewPromptModal.action === 'reject'
+                  ? 'اكتب سبب الرفض ليصل للمعلم بوضوح:'
+                  : 'اكتب المطلوب من المعلم استكماله أو تعديله:'}
+              </label>
+              <textarea
+                required
+                autoFocus
+                rows={3}
+                value={reviewPromptModal.note}
+                onChange={(e) => setReviewPromptModal({ ...reviewPromptModal, note: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg p-2.5 text-sm"
+                placeholder="اكتب الملاحظات التوجيهية للمعلم..."
+              />
+            </div>
+            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button type="button" onClick={() => setReviewPromptModal(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">إلغاء</button>
+              <button type="submit" className="px-4 py-2 text-sm text-white font-semibold rounded-lg bg-rose-600 hover:bg-rose-700">
+                تأكيد الإرسال
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </AdminDashboardShell>
   );

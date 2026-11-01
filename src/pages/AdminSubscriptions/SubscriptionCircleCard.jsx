@@ -33,6 +33,17 @@ export default function SubscriptionCircleCard({ circle, onChanged }) {
     finally { setWorking(false); }
   };
 
+  const toggleCirclePause = async () => {
+    const nextStatus = paused ? 'active' : 'paused';
+    setWorking(true);
+    try {
+      await api.put('/api/subscriptions/admin/circles/' + circle._id + '/status', { status: nextStatus }, { auth: true });
+      toast.success(nextStatus === 'paused' ? 'تم إيقاف الحلقة مؤقتاً' : 'تم استئناف تشغيل الحلقة');
+      await onChanged();
+    } catch (error) { toast.error(error.message || 'فشل تحديث حالة الحلقة'); }
+    finally { setWorking(false); }
+  };
+
   const scheduleSession = async () => {
     if (!sessionForm.scheduledAt) return toast.error('اختر موعد الحصة');
     setWorking(true);
@@ -56,6 +67,11 @@ export default function SubscriptionCircleCard({ circle, onChanged }) {
         <div className="text-center rounded-xl bg-emerald-50 p-3">
           <strong className="flex items-center gap-2"><UsersRound size={18} /> {circle.studentCount}/{circle.capacity} طالب</strong>
           <p className="text-sm mt-1">{paused ? 'متوقفة' : running ? 'حلقة جارية' : circle.missingToStart ? `متبقي ${circle.missingToStart} طالب قبل تحديد المواعيد` : 'جاهزة لتحديد المواعيد والبدء'}</p>
+          {(running || paused) ? (
+            <button type="button" disabled={working} onClick={toggleCirclePause} className="mt-2 px-3 py-1 rounded-lg text-xs font-bold border border-emerald-200 bg-white hover:bg-emerald-100 text-emerald-900 transition">
+              {paused ? 'استئناف تشغيل الحلقة' : 'إيقاف الحلقة مؤقتاً'}
+            </button>
+          ) : null}
         </div>
       </div>
 

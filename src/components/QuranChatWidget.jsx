@@ -126,7 +126,7 @@ export default function QuranChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white px-4 py-3 rounded-full shadow-xl transition-all duration-300 active:scale-95 group border-2 border-emerald-300/30"
+        className="wn-chat-launcher flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white px-4 py-3 rounded-full shadow-xl transition-all duration-300 active:scale-95 group border-2 border-emerald-300/30"
         aria-label="مساعد وحي ونماء لخدمة العملاء"
       >
         <div className="relative">
@@ -138,7 +138,7 @@ export default function QuranChatWidget() {
 
       {/* Chat Modal Box */}
       {open && (
-        <div className="fixed bottom-24 left-6 z-50 w-96 max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-8rem)] bg-white rounded-2xl shadow-2xl border border-emerald-100 flex flex-col overflow-hidden animate-fade-in font-arabic">
+        <div className="wn-chat-panel bg-white rounded-2xl shadow-2xl border border-emerald-100 flex flex-col overflow-hidden animate-fade-in font-arabic">
           
           {/* Header */}
           <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white p-4 flex items-center justify-between shadow-md shrink-0">
@@ -158,7 +158,8 @@ export default function QuranChatWidget() {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+              aria-label="إغلاق المساعد"
+              className="wn-chat-close w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
             >
               <X size={18} />
             </button>

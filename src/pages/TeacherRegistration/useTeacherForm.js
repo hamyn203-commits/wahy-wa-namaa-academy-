@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastProvider';
 import { apiUrl } from '../../config';
-import { INITIAL_FORM, DRAFT_KEY } from './constants';
+import { INITIAL_FORM, DRAFT_KEY, STATUS_TOKEN_KEY } from './constants';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { uploadTeacherFiles } from '../../lib/teacherUploadQueue.mjs';
@@ -114,6 +114,8 @@ export function useTeacherForm() {
   const completedUploads = useRef({ scope: '', files: new Map() });
   const [applicationStatus, setApplicationStatus] = useState('pending');
   const [applicationStatusToken, setApplicationStatusToken] = useState('');
+  const [applicationReviewNote, setApplicationReviewNote] = useState('');
+  const [applicationRequestedChanges, setApplicationRequestedChanges] = useState([]);
   const [credentials, setCredentials] = useState({ email: '', password: '', confirmPassword: '' });
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [files, setFiles] = useState(emptyFiles);
@@ -126,20 +128,52 @@ export function useTeacherForm() {
 
   useEffect(() => {
     try {
+      const savedStatusRaw = sessionStorage.getItem(STATUS_TOKEN_KEY);
+      if (savedStatusRaw && !authenticatedTeacher) {
+        const parsedStatus = JSON.parse(savedStatusRaw);
+        if (parsedStatus?.token) {
+          setApplicationStatusToken(parsedStatus.token);
+          setApplicationStatus(parsedStatus.status || 'pending');
+          if (parsedStatus.email) {
+            setCredentials((p) => ({ ...p, email: parsedStatus.email }));
+          }
+          setSubmitted(true);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+
+    try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       const d = JSON.parse(raw);
-      if (d.formData) setFormData(d.formData);
+      if (d.formData) {
+        setFormData((prev) => ({
+          ...prev,
+          ...d.formData,
+          personalInfo: { ...prev.personalInfo, ...(d.formData.personalInfo || {}) },
+          academicInfo: { ...prev.academicInfo, ...(d.formData.academicInfo || {}) },
+          quranInfo: { ...prev.quranInfo, ...(d.formData.quranInfo || {}) },
+          languages: Array.isArray(d.formData.languages) && d.formData.languages.length ? d.formData.languages : prev.languages,
+        }));
+      }
       if (d.credentials) setCredentials((p) => ({ ...p, email: d.credentials.email || '' }));
       if (d.step) setStep(d.step);
       // Verification proof is intentionally never restored from localStorage.
     } catch { /* ignore */ }
-  }, []);
+  }, [authenticatedTeacher]);
 
   useEffect(() => {
     if (!authenticatedTeacher) return;
-    setCredentials(p => ({ ...p, email: user.email }));
-    setFormData(p => ({ ...p, personalInfo: { ...p.personalInfo, fullName: p.personalInfo.fullName || user.name, phone: p.personalInfo.phone || user.phone || '' } }));
+    setCredentials((p) => ({ ...p, email: user.email }));
+    setFormData((p) => ({
+      ...p,
+      personalInfo: {
+        ...p.personalInfo,
+        fullName: p.personalInfo.fullName || user.name,
+        phone: p.personalInfo.phone || user.phone || '',
+      },
+    }));
   }, [authenticatedTeacher, user?.email, user?.name, user?.phone]);
 
   const checkApplicationStatus = useCallback(async () => {
@@ -152,11 +186,13 @@ export function useTeacherForm() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) return;
-      setApplicationStatus(data.applicationStatus || 'pending');
-    } catch {
-      // Keep the waiting screen stable if connectivity is temporary.
-    }
-  }, [submitted, applicationStatusToken]);
+      const nextStatus = data.applicationStatus || 'pending';
+      setApplicationStatus(nextStatus);
+      setApplicationReviewNote(data.reviewNote || '');
+      setApplicationRequestedChanges(Array.isArray(data.requestedChanges) ? data.requestedChanges : []);
+      try { sessionStorage.setItem(STATUS_TOKEN_KEY, JSON.stringify({ token: applicationStatusToken, status: nextStatus, email: credentials.email })); } catch { /* ignore */ }
+    } catch { /* ignore */ }
+  }, [submitted, applicationStatusToken, credentials.email]);
 
   useEffect(() => {
     if (!submitted || !applicationStatusToken) return undefined;
@@ -195,6 +231,45 @@ export function useTeacherForm() {
   const update = (section, field, value) => {
     setFieldError('');
     setFormData((p) => ({ ...p, [section]: { ...p[section], [field]: value } }));
+  };
+
+  const toggleSpecialization = (specId) => {
+    setFieldError('');
+    setFormData((p) => {
+      const current = Array.isArray(p.quranInfo?.specializations) ? p.quranInfo.specializations : ['tajweed'];
+      const exists = current.includes(specId);
+      const nextList = exists
+        ? (current.length > 1 ? current.filter((item) => item !== specId) : current)
+        : [...current, specId];
+      return {
+        ...p,
+        quranInfo: { ...(p.quranInfo || {}), specializations: nextList },
+      };
+    });
+  };
+
+  const toggleLanguage = (langId) => {
+    setFieldError('');
+    setFormData((p) => {
+      const current = Array.isArray(p.languages) ? p.languages : ['arabic'];
+      const exists = current.includes(langId);
+      const nextList = exists
+        ? (current.length > 1 ? current.filter((item) => item !== langId) : current)
+        : [...current, langId];
+      return {
+        ...p,
+        languages: nextList,
+      };
+    });
+  };
+
+  const resetSubmittedApplication = () => {
+    try {
+      sessionStorage.removeItem(STATUS_TOKEN_KEY);
+    } catch { /* ignore */ }
+    setSubmitted(false);
+    setApplicationStatusToken('');
+    setStep(1);
   };
 
   const setFile = (field, file) => setFiles((p) => ({ ...p, [field]: file }));
@@ -260,6 +335,7 @@ export function useTeacherForm() {
       case 1:
         if (!p.fullName?.trim()) return 'الاسم مطلوب';
         if (!p.age || Number(p.age) < 18) return 'العمر 18+';
+        if (!['male', 'female'].includes(p.gender)) return 'اختر الجنس (معلم / معلمة)';
         if (!p.address?.trim()) return 'العنوان مطلوب';
         if (!a.university?.trim()) return 'اسم الجامعة / خريج أي مطلوب';
         if (!a.graduationYear) return 'سنة التخرج مطلوبة';
@@ -372,9 +448,11 @@ export function useTeacherForm() {
       });
       setUploadProgress({ saving: true });
 
+      const qInfo = formData.quranInfo || {};
       const payload = {
         personalInfo: JSON.stringify({
           ...formData.personalInfo,
+          gender: ['male', 'female'].includes(formData.personalInfo.gender) ? formData.personalInfo.gender : 'male',
           age: Number(formData.personalInfo.age),
           city,
           whatsapp: formData.personalInfo.whatsapp || formData.personalInfo.phone,
@@ -387,12 +465,12 @@ export function useTeacherForm() {
           qualification: 'خريج',
         }),
         quranInfo: JSON.stringify({
-          numberOfIjazat: 0,
-          memorizedParts: 30,
-          teachingExperience: 0,
-          specializations: ['tajweed'],
+          numberOfIjazat: Math.max(0, Number(qInfo.numberOfIjazat) || (formData.documentAvailability?.ijazat ? (files.ijazat?.length || 1) : 0)),
+          memorizedParts: Math.min(30, Math.max(1, Number(qInfo.memorizedParts ?? 30))),
+          teachingExperience: Math.max(0, Number(qInfo.teachingExperience) || 0),
+          specializations: Array.isArray(qInfo.specializations) && qInfo.specializations.length ? qInfo.specializations : ['tajweed'],
         }),
-        languages: JSON.stringify(['arabic']),
+        languages: JSON.stringify(Array.isArray(formData.languages) && formData.languages.length ? formData.languages : ['arabic']),
         availability: JSON.stringify([]),
         email: verifiedEmailNow,
         password: credentials.password,
@@ -420,8 +498,19 @@ export function useTeacherForm() {
         throw new Error('تعذر تأكيد حفظ الطلب من رد الخادم. راجع حالة الطلب مع الإدارة قبل إعادة الإرسال.');
       }
       localStorage.removeItem(DRAFT_KEY);
-      setApplicationStatus(data.applicationStatus || 'pending');
-      setApplicationStatusToken(data.applicationStatusToken || '');
+      const nextStatus = data.applicationStatus || 'pending';
+      const nextToken = data.applicationStatusToken || '';
+      setApplicationStatus(nextStatus);
+      setApplicationStatusToken(nextToken);
+      try {
+        if (nextToken) {
+          sessionStorage.setItem(STATUS_TOKEN_KEY, JSON.stringify({
+            token: nextToken,
+            status: nextStatus,
+            email: verifiedEmailNow,
+          }));
+        }
+      } catch { /* ignore */ }
       completedUploads.current.files.clear();
       setSubmitted(true);
       toast.success('تم إرسال طلبك بنجاح!');
@@ -440,8 +529,11 @@ export function useTeacherForm() {
   };
 
   return {
-    step, setStep, submitted, submitting, uploadProgress, applicationStatus, checkApplicationStatus, credentials, setCredentials, authenticatedTeacher,
-    formData, files, setFile, update,
+    step, setStep, submitted, submitting, uploadProgress, applicationStatus,
+    applicationReviewNote, applicationRequestedChanges,
+    checkApplicationStatus, resetSubmittedApplication,
+    credentials, setCredentials, authenticatedTeacher,
+    formData, files, setFile, update, toggleSpecialization, toggleLanguage,
     verificationCode, setVerificationCode, isCodeSent, emailVerified,
     verifiedEmail, fieldError,
     sendCode, verifyCode, resetVerification, next, prev, submit,

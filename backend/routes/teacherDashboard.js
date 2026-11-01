@@ -47,6 +47,7 @@ if (isMockMode) {
   router.get('/availability', protect, authorize('teacher'), (req, res) => res.json({ availability: [] }));
   router.put('/availability', protect, authorize('teacher'), (req, res) => res.json({ success: true, availability: req.body.availability || [] }));
   router.get('/reviews', protect, authorize('teacher'), (req, res) => res.json({ reviews: [], averageRating: 0, totalReviews: 0 }));
+  router.get('/circles', protect, authorize('teacher'), (req, res) => res.json({ circles: [] }));
 }
 
 router.get('/profile', protect, authorize('teacher'), async (req, res) => {
@@ -66,7 +67,7 @@ router.get('/profile', protect, authorize('teacher'), async (req, res) => {
     res.json({
       teacher: teacherValue,
       wallet: {
-        sessionRate: SESSION_RATE,
+        sessionRate: Number(teacher.hourlyRate || SESSION_RATE),
         sessionDurationMinutes: 60,
         pendingEarnings: teacher.earnings.pendingEarnings,
         totalEarned: teacher.earnings.totalEarned,
@@ -553,10 +554,35 @@ router.get('/stats', protect, authorize('teacher'), async (req, res) => {
       pendingEarnings: teacher.earnings.pendingEarnings,
       totalEarnings,
       averageRating: Number(teacher.rating?.count || 0) > 0 ? Number(teacher.rating?.average || 0) : 0,
-      sessionRate: SESSION_RATE,
+      sessionRate: Number(teacher.hourlyRate || SESSION_RATE),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/circles', protect, authorize('teacher'), async (req, res) => {
+  try {
+    const teacher = await Teacher.findOne({ user: req.user.id }).select('_id');
+    if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
+    const GroupCircle = require('../models/GroupCircle');
+    const { getPlan } = require('../config/subscriptionPlans');
+    const circles = await GroupCircle.find({ teacher: teacher._id, status: { $ne: 'completed' } })
+      .populate('students', 'name email avatar')
+      .sort({ createdAt: -1 })
+      .lean();
+    const enriched = circles.map((circle) => {
+      const plan = circle.subscriptionPlanKey ? getPlan(circle.subscriptionPlanKey) : null;
+      return {
+        ...circle,
+        currentCount: Array.isArray(circle.students) ? circle.students.length : 0,
+        durationMinMinutes: Number(plan?.durationMinMinutes || 30),
+        durationMaxMinutes: Number(plan?.durationMaxMinutes || 60),
+      };
+    });
+    return res.json({ circles: enriched });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -778,7 +804,7 @@ router.post('/withdrawals', protect, authorize('teacher'), async (req, res) => {
 const VALID_DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 function timeToMinutes(value) {
-  if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(String(value || ''))) return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''))) return null;
   const [hours, minutes] = String(value).split(':').map(Number);
   return (hours * 60) + minutes;
 }

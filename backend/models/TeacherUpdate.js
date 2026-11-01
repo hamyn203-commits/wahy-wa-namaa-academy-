@@ -35,8 +35,8 @@ const TeacherUpdateSchema = new mongoose.Schema({
   videos: {
     type: [TeacherUpdateVideoSchema],
     validate: {
-      validator: (items) => Array.isArray(items) && items.length >= 1 && items.length <= 5,
-      message: 'Teacher update must contain between 1 and 5 videos',
+      validator: (items) => !items || (Array.isArray(items) && items.length <= 5),
+      message: 'Teacher update can contain up to 5 videos',
     },
   },
   audience: {

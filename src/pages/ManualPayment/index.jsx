@@ -25,6 +25,7 @@ export default function ManualPayment() {
   const [params] = useSearchParams();
   const slug = params.get('course') || '';
   const subscriptionId = params.get('subscription') || '';
+  const studentIdParam = params.get('student') || '';
   const isSubscription = Boolean(subscriptionId);
 
   const [course, setCourse] = useState(null);
@@ -231,7 +232,11 @@ export default function ManualPayment() {
             )}
 
             <p className="text-xs text-gray-400 mb-6">Payment ID: {paymentId}</p>
-            <LocalizedLink to="/student/dashboard" locale={locale} className="wn-btn wn-btn--primary">
+            <LocalizedLink to={studentIdParam ? '/guardian/dashboard' : '/student/dashboard'} locale={locale} className="wn-btn wn-btn--primary">
+              {studentIdParam ? (isAr ? 'العودة إلى لوحة ولي الأمر' : 'Back to guardian dashboard') : (isAr ? 'العودة إلى لوحة الطالب' : 'Back to student dashboard')}
+            </LocalizedLink>
+            {false && null}
+            <LocalizedLink to="/student/dashboard" locale={locale} className="wn-btn wn-btn--primary hidden">
               {isAr ? 'العودة إلى لوحة الطالب' : 'Back to student dashboard'}
             </LocalizedLink>
           </div>

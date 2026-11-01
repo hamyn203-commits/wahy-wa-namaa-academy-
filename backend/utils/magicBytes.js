@@ -48,6 +48,13 @@ function validateMagicBytes(input, expectedContentType) {
       return valid ? { valid: true, detected: 'image/jpeg' } : { valid: false, reason: 'Invalid JPEG signature' };
     }
 
+    case 'image/webp': {
+      // RIFF....WEBP (52 49 46 46 .... 57 45 42 50)
+      const isRiff = startsWithBytes(buf, [0x52, 0x49, 0x46, 0x46]);
+      const isWebp = buf.length >= 12 && startsWithBytes(buf, [0x57, 0x45, 0x42, 0x50], 8);
+      return isRiff && isWebp ? { valid: true, detected: 'image/webp' } : { valid: false, reason: 'Invalid WebP signature' };
+    }
+
     case 'video/mp4':
     case 'video/quicktime':
     case 'audio/mp4':

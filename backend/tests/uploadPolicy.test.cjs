@@ -256,3 +256,72 @@ test('session chat voice notes are private student/teacher uploads capped at 10 
     /Not allowed/
   );
 });
+
+
+test('homework submissions allow PDF, images (JPEG, PNG, WebP) and audio files', () => {
+  const pdfResult = validateUploadMetadata({
+    purpose: 'homework',
+    role: 'student',
+    filename: 'worksheet.pdf',
+    contentType: 'application/pdf',
+    size: 2 * 1024 * 1024,
+  });
+  assert.equal(pdfResult.contentType, 'application/pdf');
+  assert.equal(pdfResult.extension, '.pdf');
+
+  const jpgResult = validateUploadMetadata({
+    purpose: 'homework',
+    role: 'student',
+    filename: 'page1.jpg',
+    contentType: 'image/jpeg',
+    size: 1 * 1024 * 1024,
+  });
+  assert.equal(jpgResult.contentType, 'image/jpeg');
+
+  const pngResult = validateUploadMetadata({
+    purpose: 'homework',
+    role: 'student',
+    filename: 'exercise.png',
+    contentType: 'image/png',
+    size: 1 * 1024 * 1024,
+  });
+  assert.equal(pngResult.contentType, 'image/png');
+
+  const webpResult = validateUploadMetadata({
+    purpose: 'homework',
+    role: 'student',
+    filename: 'submission.webp',
+    contentType: 'image/webp',
+    size: 500 * 1024,
+  });
+  assert.equal(webpResult.contentType, 'image/webp');
+  assert.equal(webpResult.extension, '.webp');
+
+  const audioResult = validateUploadMetadata({
+    purpose: 'homework',
+    role: 'student',
+    filename: 'recitation.mp3',
+    contentType: 'audio/mpeg',
+    size: 5 * 1024 * 1024,
+  });
+  assert.equal(audioResult.contentType, 'audio/mpeg');
+});
+
+test('validateMagicBytes correctly recognizes WebP signature', () => {
+  const { validateMagicBytes } = require('../utils/magicBytes');
+  // RIFF header (4 bytes) + file size (4 bytes) + WEBP (4 bytes)
+  const webpBuffer = Buffer.from([
+    0x52, 0x49, 0x46, 0x46, // 'RIFF'
+    0x24, 0x00, 0x00, 0x00, // size
+    0x57, 0x45, 0x42, 0x50, // 'WEBP'
+    0x56, 0x50, 0x38, 0x20, // 'VP8 '
+  ]);
+
+  const result = validateMagicBytes(webpBuffer, 'image/webp');
+  assert.equal(result.valid, true);
+  assert.equal(result.detected, 'image/webp');
+
+  const invalidBuffer = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+  const invalidResult = validateMagicBytes(invalidBuffer, 'image/webp');
+  assert.equal(invalidResult.valid, false);
+});

@@ -79,7 +79,7 @@ export default function LearningExperienceSection() {
               ))}
             </div>
 
-            <LocalizedLink to="/free-trial" locale={locale} className="wn-btn wn-btn--accent wn-btn--block">
+            <LocalizedLink to="/free-trial" locale={locale} className="wn-btn wn-btn--primary wn-btn--block">
               <Sparkles size={16} />
               <span>{isAr ? 'جرّب التجربة بحصة تعريفية' : 'Try the experience'}</span>
             </LocalizedLink>

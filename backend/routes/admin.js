@@ -69,11 +69,13 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
       completedWithoutReports,
       recentTeachers,
       recentAudit,
+      pendingTrialRequests,
+      awaitingPlacementSubscriptions,
     ] = await Promise.all([
       Teacher.countDocuments({ status: { $in: ['pending', 'under-review'] } }),
       Payment.countDocuments({
         provider: 'manual',
-        kind: 'course_enrollment',
+        kind: { $in: ['course_enrollment', 'subscription'] },
         status: 'pending',
       }),
       TeacherLedger.countDocuments({
@@ -107,6 +109,8 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(12)
         .lean(),
+      require('../models/TrialRequest').countDocuments({ status: 'pending' }),
+      require('../models/StudentSubscription').countDocuments({ status: 'awaiting_placement' }),
     ]);
 
     const actions = [
@@ -158,6 +162,20 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         count: completedWithoutReports,
         severity: completedWithoutReports ? 'medium' : 'ok',
         actionUrl: '/admin?tab=sessions&focus=missing-reports',
+      },
+      {
+        id: 'trial-requests',
+        label: 'طلبات حصص تجريبية بانتظار تعيين معلم',
+        count: pendingTrialRequests,
+        severity: pendingTrialRequests ? 'high' : 'ok',
+        actionUrl: '/admin/trials',
+      },
+      {
+        id: 'awaiting-placement',
+        label: 'اشتراكات مدفوعة بانتظار التسكين في حلقة',
+        count: awaitingPlacementSubscriptions,
+        severity: awaitingPlacementSubscriptions ? 'high' : 'ok',
+        actionUrl: '/admin/subscriptions',
       },
     ];
 
@@ -244,6 +262,7 @@ router.get('/session-control', protect, authorize('admin'), async (req, res) => 
       attendanceCount: (session.attendance || []).length,
       reportCount: (session.studentReports || []).length,
       meetingAvailable: Boolean(session.meetingLink),
+      roomId: session.roomId || String(session._id),
       recordingAvailable: Boolean(session.recordingUrl),
       cancellationReason: session.cancellationReason || '',
       createdAt: session.createdAt,
@@ -262,6 +281,40 @@ router.get('/session-control', protect, authorize('admin'), async (req, res) => 
     return res.json({ focus, count: rows.length, sessions: rows });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/session-control/:id/status', protect, authorize('admin'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session id' });
+    }
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: 'الحصة غير موجودة' });
+
+    const { status, reason } = req.body || {};
+    if (!['completed', 'cancelled', 'no-show'].includes(status)) {
+      return res.status(400).json({ error: 'حالة الحصة غير مدعومة' });
+    }
+
+    session.status = status;
+    if (status === 'cancelled' && reason) {
+      session.cancellationReason = String(reason).trim().slice(0, 500);
+    }
+    await session.save();
+
+    await logAdminAction({
+      req,
+      action: `session-control.status.${status}`,
+      entityType: 'session',
+      entityId: String(session._id),
+      reason: String(reason || `تحديث حالة الحصة إلى ${status} من مركز التحكم`).trim().slice(0, 200),
+      metadata: { status },
+    }).catch(() => {});
+
+    return res.json({ success: true, session });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
 });
 
@@ -441,8 +494,8 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
     const teacher = await Teacher.findById(req.params.id);
     if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
 
-    const { name, hourlyRate, status, country, city, phone } = req.body;
-    if (status === 'approved') {
+    const { name, hourlyRate, isFeatured, gender, status, country, city, phone } = req.body;
+    if (status === 'approved' && teacher.status !== 'approved') {
       return res.status(409).json({
         error: 'اعتماد المعلم يتم فقط من مركز المراجعة بعد إكمال Approval Gate',
         code: 'USE_TEACHER_REVIEW_GATE',
@@ -456,7 +509,9 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
     if (phone) teacher.personalInfo.phone = phone;
     if (country) teacher.personalInfo.country = country;
     if (city) teacher.personalInfo.city = city;
-    if (hourlyRate != null) teacher.hourlyRate = hourlyRate;
+    if (gender === 'male' || gender === 'female') teacher.personalInfo.gender = gender;
+    if (hourlyRate != null && Number.isFinite(Number(hourlyRate)) && Number(hourlyRate) >= 0) teacher.hourlyRate = Number(hourlyRate);
+    if (typeof isFeatured === 'boolean') teacher.isFeatured = isFeatured;
     if (status) {
       teacher.status = status;
       teacher.isVerified = false;
@@ -470,7 +525,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       entityId: teacher._id,
       reason: String(req.body.adminReason || '').trim(),
       metadata: {
-        fields: ['name', 'hourlyRate', 'status', 'country', 'city', 'phone']
+        fields: ['name', 'hourlyRate', 'isFeatured', 'gender', 'status', 'country', 'city', 'phone']
           .filter((key) => req.body[key] !== undefined),
       },
     }).catch(() => {});

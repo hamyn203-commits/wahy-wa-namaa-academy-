@@ -4,8 +4,20 @@ const { validateMagicBytes } = require('../utils/magicBytes');
 const PURPOSES = Object.freeze({
   homework: {
     roles: ['student'],
-    types: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a'],
-    maxBytes: 20 * 1024 * 1024,
+    types: [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/ogg',
+      'audio/webm',
+      'audio/mp4',
+      'audio/aac',
+      'audio/x-m4a',
+    ],
+    maxBytes: 25 * 1024 * 1024,
   },
   'recitation-audio': {
     roles: ['student', 'teacher'],
@@ -23,7 +35,7 @@ const PURPOSES = Object.freeze({
     maxBytes: 50 * 1024 * 1024,
   },
   'payment-proof': {
-    roles: ['student'],
+    roles: ['student', 'guardian'],
     types: ['application/pdf', 'image/jpeg', 'image/png'],
     maxBytes: 10 * 1024 * 1024,
   },
@@ -58,6 +70,7 @@ const EXTENSIONS_BY_CONTENT_TYPE = Object.freeze({
   'application/pdf': ['.pdf'],
   'image/jpeg': ['.jpg', '.jpeg', '.jfif'],
   'image/png': ['.png'],
+  'image/webp': ['.webp'],
   'video/mp4': ['.mp4'],
   'video/webm': ['.webm'],
   'video/quicktime': ['.mov'],

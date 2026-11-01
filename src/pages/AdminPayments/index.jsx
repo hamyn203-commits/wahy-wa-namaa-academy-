@@ -19,6 +19,7 @@ export default function AdminPayments() {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
+  const [rejectModal, setRejectModal] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,10 +37,14 @@ export default function AdminPayments() {
     if (ready) load();
   }, [ready, load]);
 
-  const review = async (payment, action) => {
-    const note = action === 'reject'
+  const review = async (payment, action, customNote) => {
+    if (action === 'reject' && customNote === undefined) {
+      setRejectModal({ payment, note: '' });
+      return;
+    }
+    const note = customNote !== undefined ? customNote : (action === 'reject'
       ? window.prompt('سبب الرفض (اختياري):', '') ?? null
-      : '';
+      : '');
     if (note === null) return;
 
     setWorking(payment.id);
@@ -174,6 +179,47 @@ export default function AdminPayments() {
         </div>
       )}
       </div>
+      {rejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">رفض إثبات الدفع اليدوي</h3>
+              <button type="button" onClick={() => setRejectModal(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                <XCircle size={18} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 text-sm text-slate-600">
+              <p>الطالب: <strong>{rejectModal.payment.student?.name || 'طالب'}</strong> — المبلغ: <strong>{amount(rejectModal.payment)}</strong></p>
+              <label className="block text-xs font-semibold text-slate-700 space-y-1">
+                <span>سبب الرفض أو المطلوب من الطالب لتصحيح الإيصال:</span>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  value={rejectModal.note}
+                  onChange={(e) => setRejectModal({ ...rejectModal, note: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm"
+                  placeholder="مثال: صورة الإيصال غير واضحة أو رقم المرجع غير مطابق..."
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <button type="button" onClick={() => setRejectModal(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">إلغاء</button>
+              <button
+                type="button"
+                disabled={working === rejectModal.payment.id}
+                onClick={async () => {
+                  const { payment, note } = rejectModal;
+                  setRejectModal(null);
+                  await review(payment, 'reject', note.trim());
+                }}
+                className="px-4 py-2 text-sm text-white font-semibold rounded-lg bg-red-600 hover:bg-red-700"
+              >
+                تأكيد الرفض
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

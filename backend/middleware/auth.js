@@ -100,6 +100,20 @@ const verifyAccessToken = async (req, res, next) => {
   return next();
 };
 
+// Optional authentication for public endpoints: attaches req.user when a valid
+// access token is present, otherwise continues anonymously (never rejects).
+const readAccessTokenIfValid = (req, _res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      req.user = jwt.verify(authHeader.split(' ')[1], accessSecret());
+    } catch {
+      req.user = undefined;
+    }
+  }
+  return next();
+};
+
 function readCookie(req, name) {
   const raw = String(req.headers.cookie || '');
   for (const part of raw.split(';')) {
@@ -173,6 +187,7 @@ module.exports = {
   verifyAccessToken,
   verifyRefreshToken,
   readRefreshTokenIfValid,
+  readAccessTokenIfValid,
   requireRole,
   attachTeacherProfile,
   protect: verifyAccessToken,

@@ -2,8 +2,35 @@
 
 const mongoose = require('mongoose');
 const Teacher = require('../models/Teacher');
+const { REVIEW_ITEMS } = require('../services/teacherReview');
 const { findMockTeacherByUserId } = require('../mockStore');
 const { isMockMode } = require('../config/runtime');
+
+const REVIEW_LABEL_MAP = new Map(REVIEW_ITEMS.map((item) => [item.key, item.label]));
+
+function extractReviewFeedback(teacher) {
+  if (!teacher) return { reviewNote: '', requestedChanges: [] };
+
+  const notes = Array.isArray(teacher.reviewNotes) ? teacher.reviewNotes : [];
+  let reviewNote = '';
+  for (let i = notes.length - 1; i >= 0; i -= 1) {
+    if (notes[i]?.note && String(notes[i].note).trim()) {
+      reviewNote = String(notes[i].note).trim();
+      break;
+    }
+  }
+
+  const checklist = Array.isArray(teacher.reviewChecklist) ? teacher.reviewChecklist : [];
+  const requestedChanges = checklist
+    .filter((item) => item?.status === 'changes-requested')
+    .map((item) => ({
+      key: item.key,
+      label: REVIEW_LABEL_MAP.get(item.key) || item.key,
+      note: String(item.note || '').trim(),
+    }));
+
+  return { reviewNote, requestedChanges };
+}
 
 function decisionForTeacher(teacher) {
   if (!teacher) {
@@ -12,8 +39,12 @@ function decisionForTeacher(teacher) {
       status: 'pending',
       code: 'TEACHER_APPROVAL_PENDING',
       error: 'Teacher application is pending administration approval',
+      reviewNote: '',
+      requestedChanges: [],
     };
   }
+
+  const { reviewNote, requestedChanges } = extractReviewFeedback(teacher);
 
   if (teacher.status === 'approved' && teacher.isVerified === true) {
     return {
@@ -21,6 +52,8 @@ function decisionForTeacher(teacher) {
       status: 'approved',
       code: null,
       error: null,
+      reviewNote: '',
+      requestedChanges: [],
     };
   }
 
@@ -53,6 +86,8 @@ function decisionForTeacher(teacher) {
     status: teacher.status || 'pending',
     code: selected.code,
     error: selected.error,
+    reviewNote,
+    requestedChanges,
   };
 }
 
@@ -64,7 +99,7 @@ async function getTeacherAccessDecision(userId) {
   }
 
   const teacher = await Teacher.findOne({ user: userId })
-    .select('status isVerified')
+    .select('status isVerified reviewNotes reviewChecklist')
     .lean();
 
   return decisionForTeacher(teacher);
@@ -72,5 +107,6 @@ async function getTeacherAccessDecision(userId) {
 
 module.exports = {
   decisionForTeacher,
+  extractReviewFeedback,
   getTeacherAccessDecision,
 };

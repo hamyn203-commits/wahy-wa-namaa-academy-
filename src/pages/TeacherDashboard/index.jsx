@@ -39,6 +39,9 @@ const emptyEval = {
   fromAyah: '',
   toAyah: '',
   nextHomework: '',
+  recommendedLevel: 'beginner',
+  recommendedTrack: 'memorization',
+  trialRequestId: '',
 };
 const emptyHomework = { type: 'memorization', description: '', dueDate: '' };
 
@@ -122,11 +125,15 @@ export default function TeacherDashboard() {
   });
   const [savingProfileChange, setSavingProfileChange] = useState(false);
   const [attendanceUpdating, setAttendanceUpdating] = useState('');
+  const [myCircles, setMyCircles] = useState([]);
+  const [circleSessionModal, setCircleSessionModal] = useState(null);
+  const [circleSessionForm, setCircleSessionForm] = useState({ scheduledAt: '', duration: 60, notes: '' });
+  const [savingCircleSession, setSavingCircleSession] = useState(false);
 
 
   const load = useCallback(async () => {
     try {
-      const [prof, st, tr, pendReg, sess, done, stud, tsk, balance, tx, analyticsData, updateData, profileChangeData] = await Promise.all([
+      const results = await Promise.allSettled([
         api.get('/api/teachers/dashboard/profile', { auth: true }),
         api.get('/api/teachers/dashboard/stats', { auth: true }),
         api.get('/api/sessions/my-sessions?type=trial&status=pending', { auth: true }),
@@ -140,15 +147,33 @@ export default function TeacherDashboard() {
         api.get('/api/teachers/dashboard/analytics', { auth: true }),
         api.get('/api/teacher-updates/teacher', { auth: true }),
         api.get('/api/teachers/dashboard/profile-change', { auth: true }),
+        api.get('/api/teachers/dashboard/circles', { auth: true }),
       ]);
-      setProfile(prof);
-      setStats(st);
-      setTrials(tr.sessions || []);
-      setPendingRegular(pendReg.sessions || []);
-      setSessions((sess.sessions || []).sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)));
-      setCompletedSessions((done.sessions || []).sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt)));
-      setActiveStudents(stud.students || []);
-      setTasks(tsk.tasks || []);
+
+      const [profRes, stRes, trRes, pendRegRes, sessRes, doneRes, studRes, tskRes, balanceRes, txRes, analyticsRes, updateRes, profileChangeRes] = results;
+
+      if (profRes.status === 'fulfilled' && profRes.value) setProfile(profRes.value);
+      if (stRes.status === 'fulfilled' && stRes.value) setStats(stRes.value);
+
+      const tr = trRes.status === 'fulfilled' ? trRes.value : null;
+      setTrials(tr?.sessions || []);
+
+      const pendReg = pendRegRes.status === 'fulfilled' ? pendRegRes.value : null;
+      setPendingRegular(pendReg?.sessions || []);
+
+      const sess = sessRes.status === 'fulfilled' ? sessRes.value : null;
+      setSessions((sess?.sessions || []).sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt)));
+
+      const done = doneRes.status === 'fulfilled' ? doneRes.value : null;
+      setCompletedSessions((done?.sessions || []).sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt)));
+
+      const stud = studRes.status === 'fulfilled' ? studRes.value : null;
+      setActiveStudents(stud?.students || []);
+
+      const tsk = tskRes.status === 'fulfilled' ? tskRes.value : null;
+      setTasks(tsk?.tasks || []);
+
+      const balance = balanceRes.status === 'fulfilled' ? balanceRes.value : null;
       setFinance(balance || {
         balances: {
           EGP: { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 },
@@ -156,10 +181,24 @@ export default function TeacherDashboard() {
         },
         limits: { minPayoutEGP: 100, minPayoutUSD: 10 },
       });
-      setTransactions(tx.transactions || []);
-      setAnalytics(analyticsData || null);
-      setTeacherUpdates(updateData.updates || []);
+
+      const tx = txRes.status === 'fulfilled' ? txRes.value : null;
+      setTransactions(tx?.transactions || []);
+
+      const analyticsData = analyticsRes.status === 'fulfilled' ? analyticsRes.value : null;
+      if (analyticsData) setAnalytics(analyticsData);
+
+      const updateData = updateRes.status === 'fulfilled' ? updateRes.value : null;
+      setTeacherUpdates(updateData?.updates || []);
+
+      const profileChangeData = profileChangeRes.status === 'fulfilled' ? profileChangeRes.value : null;
       setProfileChange(profileChangeData?.request || null);
+      const circlesRes = results[13];
+      setMyCircles(circlesRes?.status === 'fulfilled' ? (circlesRes.value?.circles || []) : []);
+
+      if (profRes.status === 'rejected') {
+        toast.error('تعذر تحميل الملف التعريفي للمعلم');
+      }
     } catch {
       toast.error('تعذر تحميل بيانات لوحة المعلم');
     } finally {
@@ -322,6 +361,32 @@ export default function TeacherDashboard() {
 
   if (!ready) return null;
 
+  const expectedSessionEarning = Math.round(((Number(profile?.teacher?.hourlyRate || SESSION_RATE) * Math.max(1, Number(evalModal?.duration || 60))) / 60) * 100) / 100;
+
+  const submitGroupCircleSession = async () => {
+    if (!circleSessionModal || !circleSessionForm.scheduledAt) {
+      return toast.error('اختر موعد الحصة الجماعية');
+    }
+    setSavingCircleSession(true);
+    try {
+      await api.post('/api/sessions/group-circle', {
+        circleId: circleSessionModal._id,
+        scheduledAt: circleSessionForm.scheduledAt,
+        timezone: circleSessionModal.timezone || profile?.teacher?.availabilityTimezone || 'Africa/Cairo',
+        duration: Number(circleSessionForm.duration || circleSessionModal.durationMaxMinutes || 60),
+        notes: circleSessionForm.notes?.trim() || '',
+      }, { auth: true });
+      toast.success('تم جدولة حصة الحلقة الجماعية وإشعار الطلاب');
+      setCircleSessionModal(null);
+      setCircleSessionForm({ scheduledAt: '', duration: 60, notes: '' });
+      load();
+    } catch (error) {
+      toast.error(error.message || 'تعذر جدولة حصة الحلقة');
+    } finally {
+      setSavingCircleSession(false);
+    }
+  };
+
     const teacher = profile?.teacher;
 
   const respondTrial = async (id, action, extra = {}) => {
@@ -369,6 +434,20 @@ export default function TeacherDashboard() {
   const openEval = (session) => {
     setEvalModal(session);
     setEvaluation(emptyEval);
+    if (session?.type === 'trial' && session?._id) {
+      api.get(`/api/trials/by-session/${session._id}`, { auth: true })
+        .then((res) => {
+          if (res?.trial) {
+            setEvaluation((prev) => ({
+              ...prev,
+              recommendedLevel: res.trial.currentLevel || 'beginner',
+              recommendedTrack: res.trial.preferredTrack || 'memorization',
+              trialRequestId: res.trial._id || '',
+            }));
+          }
+        })
+        .catch(() => {});
+    }
     setHomeworkList([]);
   };
 
@@ -392,6 +471,10 @@ export default function TeacherDashboard() {
           nextHomework: evaluation.nextHomework?.trim() || homeworkList[0]?.description?.trim() || '',
           overallNotes: evaluation.overallNotes?.trim() || '',
           assignedHomework: homeworkList.filter((item) => item.description?.trim()),
+          ...(evalModal.type === 'trial' ? {
+            recommendedLevel: evaluation.recommendedLevel || 'beginner',
+            recommendedTrack: evaluation.recommendedTrack || 'memorization',
+          } : {}),
         },
       }, { auth: true });
 
@@ -410,7 +493,14 @@ export default function TeacherDashboard() {
         toast.info('تم إنهاء الحصة، لكن تعذر إرسال تقرير المتابعة الخارجي. التقرير محفوظ داخل الحصة.');
       }
 
-      const earnedAmount = Number(completed?.session?.earnings?.amount || SESSION_RATE);
+      const earnedAmount = Number(completed?.session?.earnings?.amount || expectedSessionEarning);
+      if (evalModal.type === 'trial' && evaluation.trialRequestId) {
+        await api.put(`/api/trials/${evaluation.trialRequestId}/assess`, {
+          level: evaluation.recommendedLevel || 'beginner',
+          recommendedTrack: evaluation.recommendedTrack || 'memorization',
+          notes: evaluation.overallNotes?.trim() || '',
+        }, { auth: true }).catch(() => {});
+      }
       toast.success(`تم إنهاء الحصة واعتماد الاستحقاق (+${earnedAmount} ج.م)`);
       setEvalModal(null);
       load();
@@ -576,6 +666,10 @@ export default function TeacherDashboard() {
   };
 
   const openStudent = async (student) => {
+    if (!student?._id) {
+      toast.info('بيانات الطالب غير متوفرة');
+      return;
+    }
     setStudentModal(student);
     setStudentSummary(null);
     setStudentSummaryLoading(true);
@@ -619,7 +713,9 @@ export default function TeacherDashboard() {
     event.preventDefault();
 
     if (!updateForm.title.trim()) return toast.error('اكتب عنوان الرسالة');
-    if (!updateForm.files.length) return toast.error('اختر فيديو واحدًا على الأقل');
+    if (!updateForm.message.trim() && !updateForm.files.length) {
+      return toast.error('اكتب نص الرسالة أو أرفق فيديو');
+    }
     if (updateForm.files.length > 5) return toast.error('الحد الأقصى 5 فيديوهات في الرسالة الواحدة');
     if (updateForm.audienceMode === 'selected' && !updateForm.studentIds.length) {
       return toast.error('اختر طالبًا واحدًا على الأقل');
@@ -775,6 +871,7 @@ export default function TeacherDashboard() {
   const awaitingCompletion = sessions.filter((session) => new Date(session.scheduledAt) <= now);
   const actionCount = trials.length + pendingRegular.length + submittedTasks.length + awaitingCompletion.length;
   const egpBalance = finance?.balances?.EGP || { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 };
+  const usdBalance = finance?.balances?.USD || { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 };
 
   return (
     <DashboardLayout title="لوحة تحكم المعلم" user={user} onLogout={logout}>
@@ -870,16 +967,31 @@ export default function TeacherDashboard() {
               </div>
               {nextSession ? (
                 <>
-                  <strong>{nextSession.student?.name || 'الطالب'}</strong>
+                  <strong>{nextSession.type === 'group_circle' ? (nextSession.circle?.name || 'حلقة جماعية') : (nextSession.student?.name || 'الطالب')}</strong>
                   <p>{formatSessionDateTime(nextSession, 'ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
                   <p>{formatSessionDateTime(nextSession, 'ar-EG', { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextSession, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
                   <div className="wn-teacher-welcome__next-actions">
                     <button type="button" onClick={() => setChatSession(nextSession)}>
                       <MessageSquare size={15} /> محادثة
                     </button>
-                    <button type="button" onClick={() => openStudent(nextSession.student)}>
-                      <UserRound size={15} /> ملف الطالب
-                    </button>
+                    {nextSession.type === 'group_circle' ? (
+                      <button type="button" onClick={() => setTab('sessions')}>
+                        <Users size={15} /> طلاب الحلقة
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (nextSession.student?._id) {
+                            openStudent(nextSession.student);
+                          } else {
+                            toast.info('بيانات الطالب غير متوفرة');
+                          }
+                        }}
+                      >
+                        <UserRound size={15} /> ملف الطالب
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
@@ -975,7 +1087,7 @@ export default function TeacherDashboard() {
                 </div>
 
                 <div className="wn-teacher-stat-grid">
-                  <StatCard label="الرصيد المتاح" value={`${egpBalance.available || 0} ج.م`} icon={Wallet} />
+                  <StatCard label="الرصيد المتاح" value={(usdBalance.available || 0) > 0 ? `${egpBalance.available || 0} ج.م / $${usdBalance.available}` : `${egpBalance.available || 0} ج.م`} icon={Wallet} />
                   <StatCard label="حصص مكتملة" value={stats.totalSessions || 0} icon={Calendar} />
                   <StatCard label="طلاب نشطون" value={activeStudents.length} icon={Users} />
                   <StatCard label="متوسط التقييم" value={stats.averageRating?.toFixed?.(1) || '0'} icon={Star} />
@@ -1157,16 +1269,23 @@ export default function TeacherDashboard() {
                 <div className="wn-teacher-wallet__hero">
                   <div>
                     <span>الرصيد المتاح للسحب</span>
-                    <h3>{egpBalance.available || 0} <small>ج.م</small></h3>
+                    <div className="flex flex-wrap items-baseline gap-3 mt-1">
+                      <h3>{egpBalance.available || 0} <small>ج.م</small></h3>
+                      <div className="text-2xl font-bold text-white/90 flex items-baseline gap-1">
+                        <span>/</span>
+                        <span>{usdBalance.available || 0}</span>
+                        <small className="text-sm font-normal text-white/75">USD</small>
+                      </div>
+                    </div>
                     <p>النظام المالي الجديد يعتمد سجل معاملات واحد لكل استحقاق وسحب.</p>
                   </div>
                   <Wallet size={34} />
                 </div>
 
                 <div className="wn-teacher-wallet__stats">
-                  <div><span>إجمالي المستحقات</span><strong>{egpBalance.totalEarned || 0} ج.م</strong></div>
-                  <div><span>طلبات سحب معلقة</span><strong>{egpBalance.pending || 0} ج.م</strong></div>
-                  <div><span>تم سحبه</span><strong>{egpBalance.withdrawn || 0} ج.م</strong></div>
+                  <div><span>إجمالي المستحقات</span><strong>{egpBalance.totalEarned || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.totalEarned || 0} USD)</span></strong></div>
+                  <div><span>طلبات سحب معلقة</span><strong>{egpBalance.pending || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.pending || 0} USD)</span></strong></div>
+                  <div><span>تم سحبه</span><strong>{egpBalance.withdrawn || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.withdrawn || 0} USD)</span></strong></div>
                 </div>
 
                 <div className="wn-teacher-wallet__grid">
@@ -1175,17 +1294,28 @@ export default function TeacherDashboard() {
                       <div><span>طلب جديد</span><h3>سحب الأرباح</h3></div>
                     </div>
 
-                    <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="grid sm:grid-cols-3 gap-3">
+                      <div>
+                        <label>العملة</label>
+                        <select
+                          value={withdrawForm.currency}
+                          onChange={(event) => setWithdrawForm((current) => ({ ...current, currency: event.target.value }))}
+                          className="input-field w-full"
+                        >
+                          <option value="EGP">جنيه مصري (EGP)</option>
+                          <option value="USD">دولار أمريكي (USD)</option>
+                        </select>
+                      </div>
                       <div>
                         <label>المبلغ</label>
                         <input
                           type="number"
                           required
-                          min={finance?.limits?.minPayoutEGP || 100}
+                          min={withdrawForm.currency === 'USD' ? (finance?.limits?.minPayoutUSD || 10) : (finance?.limits?.minPayoutEGP || 100)}
                           value={withdrawForm.amount}
                           onChange={(event) => setWithdrawForm((current) => ({ ...current, amount: event.target.value }))}
                           className="input-field w-full"
-                          placeholder={`الحد الأدنى ${finance?.limits?.minPayoutEGP || 100} ج.م`}
+                          placeholder={`الحد الأدنى ${withdrawForm.currency === 'USD' ? (finance?.limits?.minPayoutUSD || 10) + ' $' : (finance?.limits?.minPayoutEGP || 100) + ' ج.م'}`}
                         />
                       </div>
                       <div>
@@ -1538,6 +1668,60 @@ export default function TeacherDashboard() {
                   </button>
                 </div>
 
+                {myCircles.length > 0 && (
+                  <section className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div>
+                        <span className="text-xs font-bold text-emerald-700">حلقات الاشتراكات الجماعية</span>
+                        <h4 className="text-base font-bold text-slate-900">حلقاتي الجماعية المسندة إليّ ({myCircles.length})</h4>
+                      </div>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {myCircles.map((circle) => {
+                        const canSchedule = ['active', 'full'].includes(circle.status);
+                        return (
+                          <div key={circle._id} className="rounded-xl border border-slate-200 bg-white p-3.5 flex flex-col justify-between gap-3">
+                            <div>
+                              <div className="flex items-center justify-between gap-2">
+                                <strong className="text-sm text-slate-900">{circle.name}</strong>
+                                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                  canSchedule ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {circle.status === 'active' ? 'نشطة' : circle.status === 'full' ? 'مكتملة العدد' : 'قيد التكوين'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-1">
+                                الطلاب: {circle.currentCount || 0} / {circle.capacity || 10} · المدة: {circle.durationMinMinutes || 30}–{circle.durationMaxMinutes || 60} دقيقة
+                              </p>
+                              {(circle.students || []).length > 0 && (
+                                <p className="text-xs text-slate-500 mt-1 truncate">
+                                  {circle.students.map((st) => st.name).filter(Boolean).join('، ')}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!canSchedule}
+                              onClick={() => {
+                                setCircleSessionModal(circle);
+                                setCircleSessionForm({
+                                  scheduledAt: '',
+                                  duration: Number(circle.durationMaxMinutes || 60),
+                                  notes: '',
+                                });
+                              }}
+                              className="btn-primary text-xs py-2 disabled:opacity-50"
+                            >
+                              <Plus size={14} /> جدولة حصة للحلقة
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                
                 {sessions.length === 0 ? (
                   <div className="wn-teacher-empty-state">
                     <Calendar size={28} />
@@ -1863,7 +2047,7 @@ export default function TeacherDashboard() {
                     <label className="wn-teacher-update-upload">
                       <Upload size={22} />
                       <span>
-                        <strong>اختر فيديوهات</strong>
+                        <strong>اختر فيديوهات (اختياري)</strong>
                         <small>MP4 / WebM / MOV — حتى 5 فيديوهات، 100MB لكل فيديو</small>
                       </span>
                       <input type="file" accept="video/mp4,video/webm,video/quicktime" multiple
@@ -1887,9 +2071,9 @@ export default function TeacherDashboard() {
                       </div>
                     )}
 
-                    <button type="submit" disabled={publishingUpdate || !updateForm.files.length} className="wn-teacher-primary-action">
+                    <button type="submit" disabled={publishingUpdate || !updateForm.title.trim()} className="wn-teacher-primary-action">
                       <Send size={16} />
-                      {publishingUpdate ? 'جاري رفع الفيديوهات والنشر...' : 'نشر وإشعار الطلاب'}
+                      {publishingUpdate ? (updateForm.files.length > 0 ? 'جاري رفع الفيديوهات والنشر...' : 'جاري النشر...') : 'نشر وإشعار الطلاب'}
                     </button>
                   </form>
 
@@ -2181,6 +2365,41 @@ export default function TeacherDashboard() {
 
       {evalModal && (
         <Modal title={`تقييم ${evalModal.student?.name}`} onClose={() => setEvalModal(null)}>
+          {evalModal.type === 'trial' && (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-3">
+              <div>
+                <span className="text-xs font-bold text-emerald-800">تقييم الحصة التجريبية</span>
+                <h4 className="text-sm font-bold text-slate-900">تحديد مستوى الطالب والمسار الموصى به</h4>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-slate-700">
+                  المستوى الحالي للطالب
+                  <select
+                    className="input-field w-full mt-1 text-sm"
+                    value={evaluation.recommendedLevel || 'beginner'}
+                    onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedLevel: e.target.value }))}
+                  >
+                    <option value="beginner">مبتدئ (تأسيس وقصار السور)</option>
+                    <option value="intermediate">متوسط (حفظ مع التجويد الأساسي)</option>
+                    <option value="advanced">متقدم (إتقان ومراجعة مكثفة)</option>
+                    <option value="ijazah">مؤهل لمسار الإجازة والسند</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  المسار التعليمي الموصى به
+                  <select
+                    className="input-field w-full mt-1 text-sm"
+                    value={evaluation.recommendedTrack || 'memorization'}
+                    onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedTrack: e.target.value }))}
+                  >
+                    <option value="memorization">مسار الحفظ والمراجعة</option>
+                    <option value="tajweed_ijazah">مسار التجويد والإجازة</option>
+                    <option value="kids_foundation">مسار تأسيس الأطفال والبراعم</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
           <div className="space-y-4">
             {[
               ['attendance', 'الحضور والانتباه'],
@@ -2305,7 +2524,7 @@ export default function TeacherDashboard() {
                 className="btn-primary w-full"
                 aria-describedby="teacher-eval-submit-note"
               >
-                إنهاء الحصة وإرسال التقرير (+{SESSION_RATE} ج.م)
+                إنهاء الحصة وإرسال التقرير (+{expectedSessionEarning} ج.م)
               </button>
             </div>
           </div>
@@ -2349,6 +2568,50 @@ export default function TeacherDashboard() {
                 {a.description && <p className="text-gray-600 mt-1">{a.description}</p>}
               </div>
             ))}
+          </div>
+        </Modal>
+      )}
+      {circleSessionModal && (
+        <Modal title={`جدولة حصة — ${circleSessionModal.name}`} onClose={() => setCircleSessionModal(null)}>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium">
+              موعد الحصة الجماعية *
+              <input
+                type="datetime-local"
+                className="input-field w-full mt-1"
+                value={circleSessionForm.scheduledAt}
+                onChange={(e) => setCircleSessionForm((p) => ({ ...p, scheduledAt: e.target.value }))}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              مدة الحصة (بالدقائق: {circleSessionModal.durationMinMinutes || 30}–{circleSessionModal.durationMaxMinutes || 60})
+              <input
+                type="number"
+                min={circleSessionModal.durationMinMinutes || 30}
+                max={circleSessionModal.durationMaxMinutes || 60}
+                className="input-field w-full mt-1"
+                value={circleSessionForm.duration}
+                onChange={(e) => setCircleSessionForm((p) => ({ ...p, duration: e.target.value }))}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              ملاحظات أو مقرر الحلقة (اختياري)
+              <textarea
+                rows={2}
+                className="input-field w-full mt-1"
+                placeholder="مثال: تسميع سورة الملك من الآية 1 إلى 15"
+                value={circleSessionForm.notes}
+                onChange={(e) => setCircleSessionForm((p) => ({ ...p, notes: e.target.value }))}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={savingCircleSession}
+              onClick={submitGroupCircleSession}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {savingCircleSession ? 'جاري الجدولة...' : 'تأكيد جدولة الحصة الجماعية'}
+            </button>
           </div>
         </Modal>
       )}

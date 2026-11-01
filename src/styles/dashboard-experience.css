@@ -1219,10 +1219,12 @@
     position: fixed;
     left: .75rem;
     right: .75rem;
-    top: 142px;
+    top: clamp(72px, 12vh, 130px);
     width: auto;
-    max-height: calc(100vh - 160px);
+    max-height: min(78vh, calc(100dvh - 14vh - 20px));
+    max-height: min(78vh, calc(100vh - 14vh - 20px));
     overflow-y: auto;
+    z-index: 60;
   }
 }
 
@@ -7993,4 +7995,115 @@
 @media (max-width: 700px) {
   .wn-admin-teachers-list__actions, .wn-admin-teachers-list__actions button { width: 100%; }
   .wn-admin-dossier__header-actions { justify-content: flex-end; }
+}
+
+
+/* ============================================================================
+   T22 — Comprehensive Dark Mode Support for Internal Dashboards
+   (Teacher, Student, Admin, Guardian Portals)
+   ============================================================================ */
+
+[data-theme="dark"] .wn-dashboard-shell,
+[data-theme="dark"] .wn-teacher-app,
+[data-theme="dark"] .wn-student-app,
+[data-theme="dark"] .wn-admin-app,
+[data-theme="dark"] .wn-guardian-app,
+[data-theme="dark"] .wn-teacher-stage,
+[data-theme="dark"] .wn-student-stage,
+[data-theme="dark"] .wn-admin-stage,
+[data-theme="dark"] .wn-guardian-stage {
+  background: var(--wn-surface-canvas);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-teacher-topbar,
+[data-theme="dark"] .wn-student-topbar,
+[data-theme="dark"] .wn-admin-topbar,
+[data-theme="dark"] .wn-guardian-topbar {
+  background: color-mix(in srgb, var(--wn-surface-card) 88%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--wn-gold) 16%, transparent);
+}
+
+[data-theme="dark"] .wn-dashboard-surface,
+[data-theme="dark"] .wn-teacher-panel,
+[data-theme="dark"] .wn-student-panel,
+[data-theme="dark"] .wn-guardian-panel,
+[data-theme="dark"] .wn-admin-exec-panel,
+[data-theme="dark"] .wn-admin-command-center,
+[data-theme="dark"] .wn-admin-review-gate,
+[data-theme="dark"] .wn-admin-dossier__section,
+[data-theme="dark"] .wn-admin-dossier__header,
+[data-theme="dark"] .wn-admin-dossier__footer,
+[data-theme="dark"] .wn-teacher-stat-card,
+[data-theme="dark"] .wn-student-stat-card,
+[data-theme="dark"] .wn-guardian-stat-card,
+[data-theme="dark"] .wn-admin-exec-metric,
+[data-theme="dark"] .wn-stat-card {
+  background: var(--wn-surface-card);
+  border-color: color-mix(in srgb, var(--wn-gold) 16%, transparent);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier {
+  background: var(--wn-surface-canvas);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-teacher-list-item,
+[data-theme="dark"] .wn-student-list-item,
+[data-theme="dark"] .wn-guardian-list-item,
+[data-theme="dark"] .wn-admin-command-center__actions > button,
+[data-theme="dark"] .wn-admin-review-checklist > article,
+[data-theme="dark"] .wn-admin-dossier__value,
+[data-theme="dark"] .wn-admin-dossier__asset-grid > button,
+[data-theme="dark"] .wn-admin-teachers-list__row,
+[data-theme="dark"] .wn-student-guardian-invitations > div,
+[data-theme="dark"] .wn-guardian-invitations__list > article,
+[data-theme="dark"] .wn-admin-exec-priority-list > button,
+[data-theme="dark"] .wn-admin-exec-quick-actions > button {
+  background: color-mix(in srgb, var(--wn-surface-elevated) 72%, transparent);
+  border-color: color-mix(in srgb, var(--wn-gold) 14%, transparent);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-teachers-list__head h3,
+[data-theme="dark"] .wn-admin-teachers-list__row strong,
+[data-theme="dark"] .wn-admin-command-center__heading h2,
+[data-theme="dark"] .wn-admin-dossier__header h2,
+[data-theme="dark"] .wn-admin-dossier__section-title,
+[data-theme="dark"] .wn-admin-exec-panel__head h3,
+[data-theme="dark"] .wn-admin-exec-section-title h3,
+[data-theme="dark"] .wn-teacher-panel h2,
+[data-theme="dark"] .wn-teacher-panel h3,
+[data-theme="dark"] .wn-student-panel h2,
+[data-theme="dark"] .wn-student-panel h3,
+[data-theme="dark"] .wn-guardian-panel h2,
+[data-theme="dark"] .wn-guardian-panel h3 {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-teachers-list__head p,
+[data-theme="dark"] .wn-admin-teachers-list__row small,
+[data-theme="dark"] .wn-admin-teachers-list__search {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-teachers-list__search input,
+[data-theme="dark"] .wn-admin-global-search__bar,
+[data-theme="dark"] .wn-admin-global-search__bar input,
+[data-theme="dark"] .wn-dashboard-shell .input-field,
+[data-theme="dark"] .wn-teacher-app .input-field,
+[data-theme="dark"] .wn-student-app .input-field,
+[data-theme="dark"] .wn-guardian-app .input-field,
+[data-theme="dark"] .wn-admin-app .input-field {
+  background: color-mix(in srgb, var(--wn-surface-canvas) 85%, transparent);
+  border-color: color-mix(in srgb, var(--wn-gold) 24%, transparent);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-teachers-list__actions .is-secondary,
+[data-theme="dark"] .wn-admin-teacher-public-link {
+  background: color-mix(in srgb, var(--wn-surface-elevated) 90%, transparent);
+  border-color: color-mix(in srgb, var(--wn-gold) 25%, transparent);
+  color: var(--wn-text-primary);
 }

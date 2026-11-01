@@ -254,8 +254,8 @@ assert.ok(fs.existsSync(path.join(root, 'public/images/plans/plan-women.svg')));
 const subscriptionRoutes = read('backend/routes/subscriptions.js');
 const subscriptionModel = read('backend/models/StudentSubscription.js');
 assert.match(subscriptionRoutes, /router\.get\(['"]\/plans['"]/);
-assert.match(subscriptionRoutes, /router\.post\(['"]\/select['"],\s*protect,\s*authorize\(['"]student['"]\)/);
-assert.match(subscriptionRoutes, /router\.post\(['"]\/:id\/renew['"],\s*protect,\s*authorize\(['"]student['"]\)/);
+assert.match(subscriptionRoutes, /router\.post\(['"]\/select['"],\s*protect,\s*authorize\(['"]student['"](?:,\s*['"]guardian['"])?\)/);
+assert.match(subscriptionRoutes, /router\.post\(['"]\/:id\/renew['"],\s*protect,\s*authorize\(['"]student['"](?:,\s*['"]guardian['"])?\)/);
 assert.match(subscriptionRoutes, /SUBSCRIPTION_NOT_RENEWABLE/);
 assert.match(subscriptionRoutes, /RENEWAL_ALREADY_EXISTS/);
 assert.match(subscriptionRoutes, /RENEWAL_PAYMENT_PENDING/);
@@ -519,7 +519,7 @@ assert.match(
 );
 assert.match(
   app,
-  /path=["']payment\/manual["'][\s\S]{0,180}<ProtectedRoute\s+roles=\{\[['"]student['"]\]\}/
+  /path=["']payment\/manual["'][\s\S]{0,180}<ProtectedRoute\s+roles=\{\[['"]student['"](?:,\s*['"]guardian['"])?\]\}/
 );
 assert.match(
   app,
@@ -546,5 +546,38 @@ assert.match(guardianDashboard, /session\.instanceKey/);
 assert.match(guardianDashboard, /\/api\/guardian\/invitations/);
 assert.match(guardianDashboard, /respondToInvitation/);
 assert.match(guardianDashboard, /طلبات ربط جديدة/);
+assert.match(adminDashboardShell, /الحصص التجريبية/);
+assert.match(adminExecutiveHome, /\/admin\/trials/);
+assert.match(adminDashboard, /updateTeacherAdminSettings/);
+assert.match(adminDashboard, /submitPayoutDecision/);
+assert.match(adminDashboard, /toggleCourseStatus/);
+assert.match(adminDashboard, /toggleBlogStatus/);
+assert.match(teacherReviewDossier, /onUpdateAdminSettings/);
+assert.match(adminPayments, /rejectModal/);
+assert.match(guardianDashboard, /حجز حصة تجريبية لابن جديد/);
+assert.match(guardianDashboard, /صلاحيات المتابعة المفعلة لحساب/);
+assert.match(guardianDashboard, /اعتذار طارئ؟/);
+assert.match(plansPage, /targetStudentId/);
+assert.match(subscriptionRoutes, /isGuardianLinkedToStudent/);
+assert.match(adminDashboard, /updateStudentAdminProfile/);
+assert.match(adminDashboard, /reviewPromptModal/);
+assert.match(student360Dossier, /onUpdateStudent/);
+assert.match(student360Dossier, /اشتراكات الباقات والمدفوعات/);
+assert.match(read('src/pages/AdminSubscriptions/SubscriptionCircleCard.jsx'), /toggleCirclePause/);
+assert.match(read('src/pages/AdminDashboard/AdminSessionControl.jsx'), /updateSessionStatus/);
+assert.match(read('src/pages/AdminDashboard/AdminGuardianLinksPanel.jsx'), /statusFilter/);
+assert.match(studentDashboard, /handleStudentRsvp/);
+assert.match(studentDashboard, /deleteHomeworkSubmission/);
+assert.match(studentDashboard, /shareStudentEvaluationViaWhatsApp/);
+assert.match(studentDashboard, /studentExcuseModal/);
+assert.match(studentDashboard, /getSessionLiveRoomPath\(session\)/);
+assert.match(read('backend/routes/live.js'), /const mongoose = require\(['"]mongoose['"]\)/);
+assert.match(read('backend/routes/live.js'), /buildSessionContext/);
+assert.match(read('src/pages/LiveRoom/LiveRoom.jsx'), /handleEndAndEvaluate/);
+assert.match(read('src/pages/LiveRoom/LiveRoom.jsx'), /standalonePreview/);
+assert.match(read('src/components/classroom/CircleTurnManager.jsx'), /rosterStudents/);
+assert.match(read('src/components/classroom/SyncedMushaf.jsx'), /dynamicPageVerses/);
+assert.match(read('src/pages/Meeting/MeetingRoom.jsx'), /dashboardPathForRole/);
+assert.match(liveSessions, /deleteConfirmRoomId/);
 
 

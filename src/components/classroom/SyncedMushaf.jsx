@@ -236,6 +236,7 @@ export default function SyncedMushaf({
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('interactive'); // 'interactive' | 'image'
   const [imageError, setImageError] = useState(false);
+  const [dynamicPageVerses, setDynamicPageVerses] = useState({});
 
   const containerRef = useRef(null);
 
@@ -393,7 +394,48 @@ export default function SyncedMushaf({
   }, [searchQuery]);
 
   // الحصول على الآيات التفاعلية للصفحة الحالية إن وُجدت
-  const pageVerseData = SAMPLE_PAGE_VERSES[currentPage];
+  const pageVerseData = SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage];
+
+  useEffect(() => {
+    if (SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage]) return undefined;
+    let cancelled = false;
+    fetch(`https://api.alquran.cloud/v1/page/${currentPage}/quran-uthmani`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json?.data?.ayahs?.length) return;
+        const ayahs = json.data.ayahs;
+        const firstSurah = ayahs[0]?.surah?.name || '';
+        setDynamicPageVerses((prev) => ({
+          ...prev,
+          [currentPage]: {
+            surahName: firstSurah,
+            isBismillah: false,
+            verses: ayahs.map((a) => ({
+              num: a.numberInSurah,
+              key: `${a.surah?.number || 0}:${a.numberInSurah}`,
+              text: a.text,
+            })),
+          },
+        }));
+      })
+      .catch(() => { /* fallback to image mode if offline */ });
+    return () => { cancelled = true; };
+  }, [currentPage, dynamicPageVerses]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && showSurahModal) {
+        setShowSurahModal(false);
+        return;
+      }
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+      if (!isTeacher && !isIndependentMode) return;
+      if (e.key === 'ArrowLeft') goToNextPage();
+      else if (e.key === 'ArrowRight') goToPrevPage();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSurahModal, isTeacher, isIndependentMode, goToNextPage, goToPrevPage]);
 
   return (
     <div className={`synced-mushaf-container mushaf-theme-${theme}`} ref={containerRef}>
@@ -583,11 +625,12 @@ export default function SyncedMushaf({
           {viewMode === 'interactive' && pageVerseData ? (
             <div className="mushaf-verses-flow">
               {pageVerseData.verses.map((ayah) => {
-                const isHighlighted = highlightedAyah === ayah.num;
+                const ayahIdentifier = ayah.key || ayah.num;
+                const isHighlighted = highlightedAyah === ayahIdentifier || highlightedAyah === ayah.num;
                 return (
                   <span
-                    key={ayah.num}
-                    onClick={() => handleAyahClick(ayah.num)}
+                    key={ayahIdentifier}
+                    onClick={() => handleAyahClick(ayahIdentifier)}
                     className={`mushaf-verse-span ${isHighlighted ? 'mushaf-verse-highlighted' : ''}`}
                     title={isTeacher ? "انقر لتظليل الآية عند جميع طلاب الحلقة" : "آية قرآنية كريمة"}
                   >

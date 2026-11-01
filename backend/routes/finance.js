@@ -4,6 +4,8 @@ const TeacherLedger = require('../models/TeacherLedger');
 const Teacher = require('../models/Teacher');
 const Session = require('../models/Session');
 const User = require('../models/User');
+const Payment = require('../models/Payment');
+const { logAdminAction } = require('../services/adminAudit');
 const { protect, authorize } = require('../middleware/auth');
 const {
   MIN_PAYOUT_EGP,
@@ -268,9 +270,31 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       }
     }
 
-    // Total gross revenue derived from student pricing rules
-    const grossRevenueEGP = egyptianAttendees * STUDENT_RATE_EGP;
-    const grossRevenueUSD = expatriateAttendees * STUDENT_RATE_USD;
+    // Calculate collected revenue from total successful payments for subscriptions and courses (Payment with status 'succeeded')
+    const paymentAgg = await Payment.aggregate([
+      {
+        $match: {
+          status: 'succeeded',
+          kind: { $in: ['subscription', 'course_enrollment'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$currency',
+          totalMinor: { $sum: '$amountMinor' },
+        },
+      },
+    ]);
+
+    const revenue = { EGP: 0, USD: 0 };
+    for (const item of paymentAgg) {
+      const curr = item._id ? String(item._id).toUpperCase() : 'EGP';
+      const major = (item.totalMinor || 0) / 100;
+      revenue[curr] = (revenue[curr] || 0) + major;
+    }
+
+    const grossRevenueEGP = revenue.EGP || 0;
+    const grossRevenueUSD = revenue.USD || 0;
 
     // 2. Aggregate TeacherLedger data for dues and payouts
     const ledgerAgg = await TeacherLedger.aggregate([
@@ -399,6 +423,20 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
     }
 
     if (isMockMode) {
+      await logAdminAction({
+        req,
+        action: 'payout_processed',
+        entityType: 'TeacherLedger',
+        entityId: req.params.id,
+        reason: notes || `معالجة سحب أرباح (${targetStatus})`,
+        metadata: {
+          status: targetStatus,
+          referenceNumber: referenceNumber || '',
+          receiptUrl: receiptUrl || '',
+          notes: notes || '',
+        },
+      }).catch(() => {});
+
       return res.json({
         success: true,
         message: 'تمت معالجة وتحديث طلب السحب بنجاح',
@@ -442,6 +480,23 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
         $inc: { 'earnings.withdrawnEarnings': payout.amount },
       });
     }
+
+    await logAdminAction({
+      req,
+      action: 'payout_processed',
+      entityType: 'TeacherLedger',
+      entityId: payout._id,
+      reason: notes || `معالجة سحب أرباح (${targetStatus})`,
+      metadata: {
+        status: targetStatus,
+        amount: payout.amount,
+        currency: payout.currency,
+        teacherId: payout.teacher?._id || payout.teacher,
+        payoutMethod: payout.payoutMethod,
+        recipientAccount: payout.recipientAccount,
+        referenceNumber: payout.referenceNumber,
+      },
+    }).catch(() => {});
 
     res.json({
       success: true,

@@ -27,6 +27,15 @@ import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../..
 const emptyReview = { rating: 5, comment: '', wouldContinue: true };
 const emptyBook = { date: '', time: '', notes: '' };
 
+function getSessionLiveRoomPath(session) {
+  if (!session) return '/live';
+  if (typeof session.meetingLink === 'string' && session.meetingLink.startsWith('/live/')) {
+    return session.meetingLink;
+  }
+  const identifier = session.roomId || session._id;
+  return identifier ? `/live/${identifier}` : '/live';
+}
+
 function guardianRelationshipLabel(value, locale) {
   const ar = { father: 'الأب', mother: 'الأم', guardian: 'ولي الأمر / الوصي', other: 'ولي أمر' };
   const en = { father: 'Father', mother: 'Mother', guardian: 'Guardian', other: 'Guardian' };
@@ -216,6 +225,9 @@ export default function StudentDashboard() {
   const [homework, setHomework] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [discoverTeachers, setDiscoverTeachers] = useState([]);
+  // Sections whose request failed on the last load, so the UI can show
+  // "could not load + retry" instead of a misleading empty state.
+  const [loadErrors, setLoadErrors] = useState({});
   const [evaluations, setEvaluations] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -248,6 +260,9 @@ export default function StudentDashboard() {
   const [chatSession, setChatSession] = useState(null);
   const consumedChatSessionRef = useRef(null);
   const [booking, setBooking] = useState(false);
+  const [studentExcuseModal, setStudentExcuseModal] = useState(null);
+  const [studentExcuseReason, setStudentExcuseReason] = useState('');
+  const [submittingRsvp, setSubmittingRsvp] = useState(false);
 
   // In-Browser Voice Recording Studio
   const [recordModalHw, setRecordModalHw] = useState(null);
@@ -262,7 +277,7 @@ export default function StudentDashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [prof, st, tr, sess, hw, tch, ev, rev, enrollments, ref, discovery, updateData, guardianData, subscriptionData] = await Promise.all([
+      const results = await Promise.allSettled([
         api.get('/api/students/dashboard/profile', { auth: true }),
         api.get('/api/students/dashboard/stats', { auth: true }),
         api.get('/api/sessions/my-sessions?type=trial&limit=50', { auth: true }),
@@ -271,30 +286,84 @@ export default function StudentDashboard() {
         api.get('/api/students/dashboard/teachers', { auth: true }),
         api.get('/api/students/dashboard/evaluations', { auth: true }),
         api.get('/api/reviews/student', { auth: true }),
-        api.get('/api/courses/my-courses', { auth: true }).catch(() => []),
-        api.get('/api/referrals/my', { auth: true }).catch(() => ({ code: '', stats: {}, referrals: [] })),
-        api.get('/api/teachers?limit=8&sortBy=rating&sortOrder=desc').catch(() => ({ teachers: [] })),
-        api.get('/api/teacher-updates/student', { auth: true }).catch(() => ({ updates: [] })),
-        api.get('/api/students/dashboard/guardian-invitations', { auth: true }).catch(() => ({ invitations: [], linkedGuardians: [] })),
-        api.get('/api/subscriptions/me', { auth: true }).catch(() => null),
+        api.get('/api/courses/my-courses', { auth: true }),
+        api.get('/api/referrals/my', { auth: true }),
+        api.get('/api/teachers?limit=8&sortBy=rating&sortOrder=desc'),
+        api.get('/api/teacher-updates/student', { auth: true }),
+        api.get('/api/students/dashboard/guardian-invitations', { auth: true }),
+        api.get('/api/subscriptions/me', { auth: true }),
       ]);
-      setProfile(prof);
-      setStats(st);
-      setTrials(tr.sessions || []);
-      setSessions((sess.sessions || []).filter((item) => item.type !== 'trial'));
-      setHomework(hw.homework || []);
-      setTeachers(tch.teachers || []);
-      setDiscoverTeachers(discovery.teachers || []);
-      setEvaluations(ev.evaluations || []);
-      setReviews(Array.isArray(rev) ? rev : rev.reviews || []);
-      setCourses(Array.isArray(enrollments) ? enrollments : []);
-      setReferral(ref);
-      setTeacherUpdates(updateData.updates || []);
-      setGuardianInvitations(guardianData.invitations || []);
-      setLinkedGuardians(guardianData.linkedGuardians || []);
-      if (subscriptionData) {
-        setSubscriptions(subscriptionData.subscriptions || []);
-        setSubscriptionsLoaded(true);
+
+      const [
+        profRes,
+        stRes,
+        trRes,
+        sessRes,
+        hwRes,
+        tchRes,
+        evRes,
+        revRes,
+        enrollRes,
+        refRes,
+        discRes,
+        updRes,
+        guardRes,
+        subRes,
+      ] = results;
+
+      if (profRes.status === 'fulfilled' && profRes.value) {
+        setProfile(profRes.value);
+      }
+      if (stRes.status === 'fulfilled' && stRes.value) {
+        setStats(stRes.value);
+      }
+      if (trRes.status === 'fulfilled' && trRes.value) {
+        setTrials(trRes.value.sessions || []);
+      }
+      if (sessRes.status === 'fulfilled' && sessRes.value) {
+        setSessions((sessRes.value.sessions || []).filter((item) => item.type !== 'trial'));
+      }
+      if (hwRes.status === 'fulfilled' && hwRes.value) {
+        setHomework(hwRes.value.homework || []);
+      }
+      if (tchRes.status === 'fulfilled' && tchRes.value) {
+        setTeachers(tchRes.value.teachers || []);
+      }
+      if (discRes.status === 'fulfilled' && discRes.value) {
+        setDiscoverTeachers(discRes.value.teachers || []);
+      }
+      if (evRes.status === 'fulfilled' && evRes.value) {
+        setEvaluations(evRes.value.evaluations || []);
+      }
+      if (revRes.status === 'fulfilled' && revRes.value) {
+        const rev = revRes.value;
+        setReviews(Array.isArray(rev) ? rev : rev.reviews || []);
+      }
+      if (enrollRes.status === 'fulfilled' && enrollRes.value) {
+        setCourses(Array.isArray(enrollRes.value) ? enrollRes.value : []);
+      }
+      if (refRes.status === 'fulfilled' && refRes.value) {
+        setReferral(refRes.value);
+      }
+      if (updRes.status === 'fulfilled' && updRes.value) {
+        setTeacherUpdates(updRes.value.updates || []);
+      }
+      if (guardRes.status === 'fulfilled' && guardRes.value) {
+        setGuardianInvitations(guardRes.value.invitations || []);
+        setLinkedGuardians(guardRes.value.linkedGuardians || []);
+      }
+      if (subRes.status === 'fulfilled' && subRes.value) {
+        setSubscriptions(subRes.value.subscriptions || []);
+      }
+      setSubscriptionsLoaded(true);
+      setLoadErrors({
+        discover: discRes.status === 'rejected',
+        trials: trRes.status === 'rejected',
+        sessions: sessRes.status === 'rejected',
+      });
+
+      if (profRes.status === 'rejected' && stRes.status === 'rejected') {
+        toast.error(locale === 'id' ? 'Gagal memuat data dasbor siswa' : locale === 'ar' ? 'تعذر تحميل بيانات لوحة الطالب' : 'Failed to load student dashboard data');
       }
     } catch {
       toast.error(locale === 'id' ? 'Gagal memuat data dasbor siswa' : locale === 'ar' ? 'تعذر تحميل بيانات لوحة الطالب' : 'Failed to load student dashboard data');
@@ -459,8 +528,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (!subscriptionsLoaded || defaultStudentTabRef.current) return;
     defaultStudentTabRef.current = true;
-    if (currentSubscription && !searchParams.get('tab')) setTab('sessions');
-  }, [subscriptionsLoaded, currentSubscription, searchParams]);
+  }, [subscriptionsLoaded]);
 
   if (!ready) return null;
 
@@ -576,6 +644,52 @@ export default function StudentDashboard() {
     }
   };
 
+  const handleStudentRsvp = async (sessionId, status, reason = '') => {
+    if (!sessionId) return;
+    setSubmittingRsvp(true);
+    try {
+      const res = await api.post(`/api/sessions/${sessionId}/rsvp`, {
+        status,
+        excuseReason: reason,
+      }, { auth: true });
+      toast.success(res.message || (status === 'confirmed'
+        ? (locale === 'ar' ? 'تم تأكيد حضورك للحصة بنجاح' : 'Attendance confirmed')
+        : (locale === 'ar' ? 'تم تسجيل اعتذارك عن الحصة' : 'Excuse recorded')));
+      setStudentExcuseModal(null);
+      setStudentExcuseReason('');
+      await syncSessions();
+    } catch (err) {
+      toast.error(err.message || (locale === 'ar' ? 'تعذر تحديث حالة الحضور' : 'Failed to update RSVP'));
+    } finally {
+      setSubmittingRsvp(false);
+    }
+  };
+
+  const deleteHomeworkSubmission = async (hw) => {
+    try {
+      const endpoint = hw.isTask
+        ? `/api/homework/tasks/${hw._id}/submission`
+        : `/api/homework/submissions/${hw.submissionId || hw._id}`;
+      await api.delete(endpoint, { auth: true });
+      toast.success(locale === 'ar' ? 'تم فتح الواجب لإعادة التسجيل أو رفع ملف جديد' : 'Submission cleared for re-upload');
+      await load();
+    } catch (err) {
+      toast.error(err.message || (locale === 'ar' ? 'تعذر إعادة فتح الواجب' : 'Could not reset homework'));
+    }
+  };
+
+  const shareStudentEvaluationViaWhatsApp = (s, reportSurah, reportFromAyah, reportToAyah, ev, reportNotes) => {
+    const tName = s.teacher?.user?.name || s.teacher?.personalInfo?.fullName || 'المعلم';
+    const text = `🌟 *بطاقة تقييم حلقة القرآن الكريم — أكاديمية وَحْيٌ وَنَمَاء* 🌟\n`
+      + `👤 *الطالب:* ${studentName || 'طالب الأكاديمية'}\n`
+      + `🎓 *المعلم:* ${tName}\n`
+      + (reportSurah ? `📖 *السورة:* ${reportSurah} (${reportFromAyah || 1} - ${reportToAyah || 'آخرها'})\n` : '')
+      + `⭐ *الحفظ:* ${ev.memorization ?? '—'}/5 · *التجويد:* ${ev.tajweed ?? '—'}/5\n`
+      + (reportNotes ? `💬 *ملاحظات المعلم:* ${reportNotes}\n` : '');
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const submitHomework = async (homeworkId, file, sessionId) => {
     if (!file) return;
     try {
@@ -622,7 +736,17 @@ export default function StudentDashboard() {
 
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = setInterval(() => {
-        setRecordSeconds((s) => s + 1);
+        setRecordSeconds((s) => {
+          if (s + 1 >= 600) {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              mediaRecorderRef.current.stop();
+            }
+            setIsRecording(false);
+            if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+            return 600;
+          }
+          return s + 1;
+        });
       }, 1000);
     } catch {
       toast.error('يرجى السماح بالوصول إلى الميكروفون لتسجيل تلاوتك');
@@ -1204,8 +1328,124 @@ export default function StudentDashboard() {
 
             {tab === 'support' && <SupportChat />}
 
-            {tab === 'overview' && subscriptionsLoaded && !currentSubscription && (
+            {tab === 'overview' && subscriptionsLoaded && (
               <div className="wn-student-overview">
+                {currentSubscription && (
+                  <section className="wn-student-active-subscription-card rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/40 p-5 shadow-sm mb-6">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 text-white text-xs font-bold px-3 py-1">
+                            <Sparkles size={13} />
+                            {locale === 'ar' ? 'اشتراك نشط' : 'Active Subscription'}
+                          </span>
+                          <span className="rounded-full bg-emerald-100/80 text-emerald-900 text-xs font-semibold px-2.5 py-0.5">
+                            {locale === 'ar' ? subscriptionStatusCopy?.ar : subscriptionStatusCopy?.en}
+                          </span>
+                        </div>
+                        <h3 className="mt-2 text-xl font-black text-slate-900">
+                          {currentSubscription.pricingSnapshot?.nameAr
+                            ? (locale === 'ar'
+                                ? currentSubscription.pricingSnapshot.nameAr
+                                : currentSubscription.pricingSnapshot.nameEn || currentSubscription.pricingSnapshot.nameAr)
+                            : (locale === 'ar' ? 'باقة الأكاديمية' : 'Academy Package')}
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {currentSubscriptionTeacherName
+                            ? (locale === 'ar' ? `مع المعلم ${currentSubscriptionTeacherName}` : `With tutor ${currentSubscriptionTeacherName}`)
+                            : (locale === 'ar' ? 'معلم معتمد من الأكاديمية' : 'Approved Academy tutor')}
+                          {currentSubscription.circle?.name ? ` · ${locale === 'ar' ? 'حلقة:' : 'Circle:'} ${currentSubscription.circle.name}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTab('sessions')}
+                          className="wn-student-primary-action text-sm"
+                        >
+                          <Calendar size={16} />
+                          {locale === 'ar' ? 'عرض حصصي' : 'My Sessions'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTab('homework')}
+                          className="wn-student-secondary-action text-sm"
+                        >
+                          <FileText size={16} />
+                          {locale === 'ar' ? 'الواجبات' : 'Homework'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-emerald-100/80 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
+                        <span className="text-xs text-slate-500 block mb-1">
+                          {locale === 'ar' ? 'الحصص المتبقية' : 'Remaining Sessions'}
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <strong className="text-2xl font-black text-emerald-800">
+                            {currentSubscription.sessionsRemaining}
+                          </strong>
+                          <span className="text-xs text-slate-500">
+                            / {currentSubscription.sessionCount} {locale === 'ar' ? 'حصة' : 'sessions'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
+                        <span className="text-xs text-slate-500 block mb-1">
+                          {locale === 'ar' ? 'الحصص المنجزة' : 'Completed Sessions'}
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <strong className="text-2xl font-black text-slate-800">
+                            {currentSubscription.sessionsUsed || 0}
+                          </strong>
+                          <span className="text-xs text-slate-500">
+                            {locale === 'ar' ? 'حصة مستخدمة' : 'used'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
+                        <span className="text-xs text-slate-500 block mb-1">
+                          {locale === 'ar' ? 'نسبة الاستهلاك' : 'Progress'}
+                        </span>
+                        <div className="flex flex-col justify-center h-full">
+                          <progress
+                            className="w-full h-2.5 rounded-full overflow-hidden accent-emerald-600"
+                            value={currentSubscription.sessionsUsed || 0}
+                            max={currentSubscription.sessionCount || 1}
+                            aria-label={locale === 'ar' ? 'الحصص المستخدمة' : 'Used sessions'}
+                          />
+                          <span className="text-[11px] text-slate-500 mt-1 font-semibold text-end">
+                            {Math.round(((currentSubscription.sessionsUsed || 0) / (currentSubscription.sessionCount || 1)) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {currentSubscription.status === 'active' && Number(currentSubscription.sessionsRemaining) <= 2 && !renewalSubscription && (
+                      <div role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs sm:text-sm font-semibold text-amber-900 flex items-center justify-between flex-wrap gap-2" data-testid="low-balance-alert-overview">
+                        <span>
+                          {locale === 'ar'
+                            ? `متبقي لك ${currentSubscription.sessionsRemaining} حصة فقط في باقتك. جدّد الآن لضمان استمرار الحلقات دون انقطاع.`
+                            : `You only have ${currentSubscription.sessionsRemaining} lessons left. Renew now to ensure uninterrupted learning.`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => renewSubscription(currentSubscription)}
+                          disabled={renewingSubscription}
+                          className="wn-student-primary-action text-xs py-1.5 px-3"
+                        >
+                          <RotateCcw size={14} />
+                          {renewingSubscription ? (locale === 'ar' ? 'جاري التجديد...' : 'Renewing...') : (locale === 'ar' ? 'تجديد الاشتراك' : 'Renew')}
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
+
                 <div className="wn-student-overview__grid">
                   <section className="wn-student-session-panel">
                     <div className="wn-student-section-heading">
@@ -1242,15 +1482,13 @@ export default function StudentDashboard() {
                             {nextSessionDate?.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
-                        <a
-                          href={nextActiveSession.meetingLink
-                            ? localizeInternalHref(nextActiveSession.meetingLink, locale)
-                            : lp(`/meeting/${nextActiveSession._id}`)}
+                        <Link
+                          to={localizedPath(getSessionLiveRoomPath(nextActiveSession), locale)}
                           className="wn-student-join-action"
                         >
                           <Video size={17} />
                           {locale === 'ar' ? 'دخول الحصة' : 'Join session'}
-                        </a>
+                        </Link>
                       </div>
                     ) : (
                       <div className="wn-student-empty-session">
@@ -1258,7 +1496,11 @@ export default function StudentDashboard() {
                         <div>
                           <h4>{locale === 'ar' ? 'لا توجد حصة قادمة' : 'No upcoming session'}</h4>
                           <p>
-                            {postTrialSession
+                            {currentSubscription
+                              ? (locale === 'ar'
+                                ? 'سيقوم معلمك أو إدارة الأكاديمية بجدولة حصصك القادمة قريباً.'
+                                : 'Your tutor or academy administration will schedule your upcoming sessions soon.')
+                              : postTrialSession
                               ? (locale === 'ar'
                                 ? (trialRemaining > 0 ? `اشترك للاستمرار، أو استخدم واحدة من ${trialRemaining} تجريبية متبقية.` : 'اشترك للاستمرار مع معلمك.')
                                 : (trialRemaining > 0 ? `Subscribe to continue, or use one of ${trialRemaining} remaining trials.` : 'Subscribe to continue with your tutor.'))
@@ -1267,10 +1509,12 @@ export default function StudentDashboard() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => postTrialSession?.teacher ? navigate(lp('/plans')) : setTab('discover')}
+                          onClick={() => currentSubscription ? setTab('sessions') : postTrialSession?.teacher ? navigate(lp('/plans')) : setTab('discover')}
                           className="wn-student-primary-action"
                         >
-                          {postTrialSession
+                          {currentSubscription
+                            ? (locale === 'ar' ? 'عرض جدول الحصص' : 'View session schedule')
+                            : postTrialSession
                             ? (locale === 'ar' ? 'اشتراك' : 'Subscribe')
                             : (locale === 'ar' ? 'اختر معلمك' : 'Find a tutor')}
                         </button>
@@ -1312,7 +1556,15 @@ export default function StudentDashboard() {
 
                 <div className="wn-student-stat-grid">
                   <StatCard label={locale === 'ar' ? 'حصص قادمة' : 'Upcoming sessions'} value={stats.upcomingSessions || 0} icon={Calendar} />
-                  <StatCard label={locale === 'ar' ? 'تجريبيات متبقية' : 'Trials remaining'} value={trialRemaining} icon={Clock} />
+                  {currentSubscription ? (
+                    <StatCard
+                      label={locale === 'ar' ? 'حصص متبقية بالباقة' : 'Remaining package sessions'}
+                      value={currentSubscription.sessionsRemaining ?? 0}
+                      icon={Clock}
+                    />
+                  ) : (
+                    <StatCard label={locale === 'ar' ? 'تجريبيات متبقية' : 'Trials remaining'} value={trialRemaining} icon={Clock} />
+                  )}
                   <StatCard label={locale === 'ar' ? 'حصص مكتملة' : 'Completed sessions'} value={stats.completedSessions || 0} icon={CheckCircle} />
                   <StatCard label={locale === 'ar' ? 'واجبات تم تسليمها' : 'Homework submitted'} value={stats.homeworkSubmitted || 0} icon={FileText} />
                 </div>
@@ -1407,7 +1659,7 @@ export default function StudentDashboard() {
             )}
 
             {tab === 'discover' && (
-              <StudentTeacherMarketplace teachers={discoverTeachers} locale={locale} />
+              <StudentTeacherMarketplace teachers={discoverTeachers} locale={locale} loadFailed={Boolean(loadErrors.discover)} onRetry={load} />
             )}
 
             {tab === 'account' && (
@@ -1582,15 +1834,6 @@ export default function StudentDashboard() {
               </div>
             )}
 
-            {tab === 'overview' && currentSubscription && <section className="space-y-3 p-4">
-              <h3 className="font-bold">{locale === 'ar' ? 'متابعة دراستك' : 'Your study workspace'}</h3>
-              <div className="flex flex-wrap gap-3">
-                <button className="wn-student-primary-action" onClick={() => setTab('sessions')}>{locale === 'ar' ? 'حصصي' : 'My lessons'}</button>
-                <button className="wn-student-secondary-action" onClick={() => setTab('homework')}>{locale === 'ar' ? 'واجباتي' : 'Homework'}</button>
-                <button className="wn-student-secondary-action" onClick={() => setTab('evaluations')}>{locale === 'ar' ? 'التقارير والتقييمات' : 'Reports and feedback'}</button>
-              </div>
-            </section>}
-
             {tab === 'trials' && (
               <div className="space-y-3">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1601,13 +1844,19 @@ export default function StudentDashboard() {
                       : `${trialRemaining} of 3 trials remaining`}
                   </span>
                 </div>
-                {trials.length === 0 ? (
+                {trials.length === 0 && loadErrors.trials ? (
+                  <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 px-4 py-6 text-center">
+                    <p className="font-bold text-red-800">{locale === 'ar' ? 'تعذر تحميل طلباتك التجريبية' : 'We could not load your trial requests'}</p>
+                    <p className="mt-1 text-sm text-red-700">{locale === 'ar' ? 'قد تكون لديك طلبات بالفعل. أعد المحاولة بعد لحظات.' : 'You may already have requests. Please try again in a moment.'}</p>
+                    <button type="button" onClick={load} className="btn-primary mt-3 inline-block text-sm">{locale === 'ar' ? 'إعادة المحاولة' : 'Try again'}</button>
+                  </div>
+                ) : trials.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="text-gray-500 mb-3">{locale === 'id' ? 'Tidak ada permintaan uji coba' : locale === 'ar' ? 'لا طلبات تجريبية' : 'No trial requests'}</p>
-                    <Link to={lp('/teachers')} className="btn-primary inline-block text-sm">{locale === 'id' ? 'Pesan Sesi Uji Coba' : locale === 'ar' ? 'احجز تجريبية' : 'Book a Trial'}</Link>
+                    <p className="text-gray-500 mb-3">{locale === 'id' ? 'Tidak ada permintaan uji coba' : locale === 'ar' ? 'لم تحجز حصة تجريبية بعد' : 'You have not booked a trial yet'}</p>
+                    <button type="button" onClick={() => setTab('discover')} className="btn-primary inline-block text-sm">{locale === 'id' ? 'Pesan Sesi Uji Coba' : locale === 'ar' ? 'اختر معلمًا واحجز تجريبيتك' : 'Choose a tutor and book a trial'}</button>
                   </div>
                 ) : trials.map((s) => (
-                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} />
+                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')} currentUserId={user?._id || user?.id} />
                 ))}
               </div>
             )}
@@ -1618,7 +1867,7 @@ export default function StudentDashboard() {
                 {sessions.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Tidak ada sesi reguler — Selesaikan kelas uji coba terlebih dahulu, lalu pesan dari menu akun' : locale === 'ar' ? (currentSubscription ? (currentSubscription.status === 'active' ? 'لا توجد حصص مجدولة حتى الآن. ستظهر هنا بعد جدولة الإدارة أو المعلم.' : subscriptionStatusCopy?.ar) : 'لا حصص منتظمة — أكمل تجريبية ثم احجز من «حسابي»') : (currentSubscription ? (currentSubscription.status === 'active' ? 'No lessons scheduled yet. They will appear after your tutor or administration schedules them.' : subscriptionStatusCopy?.en) : 'No regular sessions — complete a trial first, then book from your account tab')}</p>
                 ) : sessions.map((s) => (
-                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} />
+                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')} currentUserId={user?._id || user?.id} />
                 ))}
               </div>
             )}
@@ -1654,6 +1903,16 @@ export default function StudentDashboard() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded ${st.cls}`}>{st.label}</span>
+                        {hw.status === 'submitted' && (
+                          <button
+                            type="button"
+                            onClick={() => deleteHomeworkSubmission(hw)}
+                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-semibold transition"
+                          >
+                            <RotateCcw size={13} />
+                            <span>{locale === 'ar' ? 'إعادة التسليم / استبدال الملف' : 'Replace submission'}</span>
+                          </button>
+                        )}
                         {hw.status === 'pending' && (
                           <div className="flex items-center gap-2">
                             <button
@@ -1667,7 +1926,7 @@ export default function StudentDashboard() {
                               <Mic size={14} className="text-amber-300" />
                               <span>{locale === 'id' ? 'Rekam Suara 🎙️' : locale === 'ar' ? 'سجّل تلاوتك الآن 🎙️' : 'Record Audio 🎙️'}</span>
                             </button>
-                            <input type="file" accept="audio/*" className="hidden" id={`hw-${hw._id}`}
+                            <input type="file" accept="audio/*,application/pdf,image/jpeg,image/png,image/webp" className="hidden" id={`hw-${hw._id}`}
                               onChange={(e) => submitHomework(hw._id, e.target.files?.[0], hw.sessionId)} />
                             <label htmlFor={`hw-${hw._id}`} className="cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg">
                               <Upload size={13} /> {locale === 'id' ? 'Unggah File' : locale === 'ar' ? 'رفع ملف' : 'Upload File'}
@@ -1929,7 +2188,19 @@ export default function StudentDashboard() {
                             )} · {sessionTimeZone(s)}
                           </p>
                         </div>
-                        {!hasReviewed(s._id) && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => shareStudentEvaluationViaWhatsApp(s, reportSurah, reportFromAyah, reportToAyah, ev, reportNotes)}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold hover:bg-emerald-100 transition"
+                          >
+                            {locale === 'ar' ? 'مشاركة التقييم 📲' : 'Share 📲'}
+                          </button>
+                          {!hasReviewed(s._id) && (
+                            <button onClick={() => openReview(s)} className="text-sm text-orange-600 hover:underline">{locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}</button>
+                          )}
+                        </div>
+                        {false && !hasReviewed(s._id) && (
                           <button onClick={() => openReview(s)} className="text-sm text-orange-600 hover:underline">{locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}</button>
                         )}
                       </div>
@@ -2213,11 +2484,58 @@ export default function StudentDashboard() {
           </div>
         </Modal>
       )}
+      {studentExcuseModal && (
+        <Modal
+          title={locale === 'ar' ? 'الاعتذار المسبق عن حضور الحصة' : 'Advance Session Excuse'}
+          onClose={() => { setStudentExcuseModal(null); setStudentExcuseReason(''); }}
+        >
+          <div className="space-y-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              {locale === 'ar'
+                ? 'تقديم الاعتذار قبل موعد الحصة بـ 6 ساعات على الأقل يحفظ حقك في حصة تعويضية مجانية دون خصم من رصيدك.'
+                : 'Submitting an excuse at least 6 hours before the session preserves your free makeup session.'}
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                {locale === 'ar' ? 'سبب الاعتذار (اختياري)' : 'Excuse reason (optional)'}
+              </label>
+              <textarea
+                rows={3}
+                value={studentExcuseReason}
+                onChange={(e) => setStudentExcuseReason(e.target.value)}
+                placeholder={locale === 'ar' ? 'مثال: ظرف طارئ، اختبار، سفر...' : 'Reason...'}
+                className="input-field w-full"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setStudentExcuseModal(null); setStudentExcuseReason(''); }}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600"
+              >
+                {locale === 'ar' ? 'تراجع' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={submittingRsvp}
+                onClick={() => handleStudentRsvp(studentExcuseModal._id, 'excused', studentExcuseReason)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {submittingRsvp ? (locale === 'ar' ? 'جاري التسجيل...' : 'Saving...') : (locale === 'ar' ? 'تأكيد الاعتذار' : 'Confirm Excuse')}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </DashboardLayout>
   );
 }
 
-function SessionCard({ session, onReview, hasReviewed, onChat }) {
+function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUserId }) {
+  const studentAttendanceEntry = (session.attendance || []).find(
+    (entry) => String(entry.student?._id || entry.student || '') === String(currentUserId || '')
+  );
+  const studentRsvpStatus = studentAttendanceEntry?.status || '';
   const { locale } = useI18n();
   const teacherName = session.teacher?.user?.name || session.teacher?.personalInfo?.fullName || (locale === 'id' ? 'Guru' : locale === 'ar' ? 'المعلم' : 'Tutor');
   const isTrial = session.type === 'trial';
@@ -2233,7 +2551,7 @@ function SessionCard({ session, onReview, hasReviewed, onChat }) {
     : null;
   const acceptedExpired = joinWindow?.phase === 'expired';
   const acceptedEarly = joinWindow?.phase === 'early';
-  const canJoin = Boolean(session.meetingLink && session.status === 'accepted' && (session.lifecycle?.joinOpen ?? joinWindow?.within));
+  const canJoin = Boolean((session.meetingLink || session.roomId || session._id) && session.status === 'accepted' && (session.lifecycle?.joinOpen ?? joinWindow?.within));
   const statusText = acceptedExpired
     ? (locale === 'ar' ? 'انتهى موعد الدخول — بانتظار التقرير' : locale === 'id' ? 'Waktu masuk selesai — menunggu laporan' : 'Join window ended — awaiting report')
     : getStatusLabel(session.status, locale);
@@ -2277,10 +2595,23 @@ function SessionCard({ session, onReview, hasReviewed, onChat }) {
         )}
         {canJoin && (
           <div className="flex flex-wrap gap-2 mt-2">
-            <a href={localizeInternalHref(session.meetingLink, locale)} target="_blank" rel="noreferrer"
-              className="text-sm text-emerald-600 font-semibold hover:underline">
+            <a
+              href={localizedPath(getSessionLiveRoomPath(session), locale)}
+              className="text-sm text-emerald-600 font-semibold hover:underline inline-flex items-center gap-1"
+            >
+              <Video size={15} />
               {locale === 'id' ? 'Masuk Kelas' : locale === 'ar' ? 'انضم للحصة' : 'Join Session'}
             </a>
+            {session.meetingLink && /^https?:\/\//i.test(session.meetingLink) ? (
+              <a
+                href={localizeInternalHref(session.meetingLink, locale)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-slate-600 font-semibold hover:underline inline-flex items-center gap-1"
+              >
+                {locale === 'ar' ? 'الرابط الخارجي الاحتياطي' : 'External fallback link'}
+              </a>
+            ) : null}
             <Link to={localizedPath(`/meeting/${session._id}`, locale)}
               className="text-sm text-purple-600 font-semibold hover:underline flex items-center gap-1">
               🌐 {locale === 'id' ? 'Dengan Terjemahan' : locale === 'ar' ? 'مع ترجمة' : 'With Translation'}
@@ -2289,6 +2620,36 @@ function SessionCard({ session, onReview, hasReviewed, onChat }) {
         )}
       </div>
       <div className="flex flex-wrap gap-2">
+        {session.status === 'accepted' && !acceptedExpired && onRsvp && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {studentRsvpStatus === 'confirmed' ? (
+              <span className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
+                {locale === 'ar' ? '✓ مؤكد الحضور' : '✓ Confirmed'}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onRsvp(session, 'confirmed')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+              >
+                {locale === 'ar' ? 'تأكيد الحضور' : 'Confirm Attendance'}
+              </button>
+            )}
+            {studentRsvpStatus === 'excused' ? (
+              <span className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
+                {locale === 'ar' ? 'معتذر عن الحصة' : 'Excused'}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onRsvp(session, 'excused')}
+                className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold transition"
+              >
+                {locale === 'ar' ? 'اعتذار مسبق' : 'Advance Excuse'}
+              </button>
+            )}
+          </div>
+        )}
         {!['rejected', 'cancelled'].includes(session.status) && (
           <button
             type="button"
@@ -2309,9 +2670,16 @@ function SessionCard({ session, onReview, hasReviewed, onChat }) {
 }
 
 function Modal({ title, onClose, children }) {
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative">
+      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 dark:border dark:border-slate-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative">
         <button onClick={onClose} className="absolute left-4 top-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
         <h3 className="text-lg font-bold mb-4">{title}</h3>
         {children}
@@ -2322,7 +2690,7 @@ function Modal({ title, onClose, children }) {
 
 function InfoRow({ label, value }) {
   return (
-    <div className="bg-white rounded-lg p-3">
+    <div className="bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg p-3">
       <span className="text-slate-500 text-xs">{label}</span>
       <p className="font-semibold">{value || '—'}</p>
     </div>

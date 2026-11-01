@@ -10,6 +10,7 @@ const User = require('../models/User');
 const Payment = require('../models/Payment');
 const StudentSubscription = require('../models/StudentSubscription');
 const Teacher = require('../models/Teacher');
+const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
 const {
   normalizeCurrency,
@@ -349,7 +350,7 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
 });
 
 
-router.post('/subscription/:id/manual', protect, authorize('student'), async (req, res) => {
+router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'), async (req, res) => {
   if (!manualPayments.isConfigured()) {
     return res.status(503).json({
       error: 'Manual payment is not configured yet',
@@ -378,6 +379,17 @@ router.post('/subscription/:id/manual', protect, authorize('student'), async (re
   }
 
   const preferredTeacherId = cleanText(req.body?.preferredTeacherId, 80);
+  if (req.user.role === 'guardian') {
+    const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
+    const linked = targetSub && (
+      await Guardian.exists({ user: req.user.id, 'children.student': targetSub.student })
+      || await User.exists({ _id: req.user.id, children: targetSub.student })
+    );
+    if (!linked) {
+      return res.status(403).json({ error: 'غير مصرح بسداد اشتراك هذا الطالب' });
+    }
+    req.user = { ...req.user, id: String(targetSub.student) };
+  }
   const teacher = await Teacher.findOne({
     _id: preferredTeacherId,
     status: 'approved',

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Info, Lock, Mail, Eye, EyeOff, ArrowLeft, ArrowRight,
-  CheckCircle2, Clock, Shield, Video,
+  CheckCircle2, Clock, Shield, Video, AlertTriangle,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -11,7 +11,10 @@ import SEOHead from '../../components/SEOHead';
 import { useTeacherForm } from './useTeacherForm';
 import StepProgress from './StepProgress';
 import FileBox from './FileBox';
-import { STEPS, COUNTRIES, VIDEO_GUIDE } from './constants';
+import {
+  STEPS, COUNTRIES, VIDEO_GUIDE,
+  SPECIALIZATION_OPTIONS, LANGUAGE_OPTIONS,
+} from './constants';
 import '../../styles/public-experience.css';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
@@ -27,6 +30,7 @@ export default function TeacherRegistration() {
     const approved = f.applicationStatus === 'approved';
     const underReview = f.applicationStatus === 'under-review';
     const rejected = f.applicationStatus === 'rejected';
+    const hasRequestedChanges = (f.applicationRequestedChanges || []).length > 0;
 
     return (
       <>
@@ -51,16 +55,38 @@ export default function TeacherRegistration() {
                   : rejected
                     ? 'تعذر اعتماد الطلب في الوقت الحالي'
                     : underReview
-                      ? 'طلبك قيد المراجعة ويحتاج متابعة الإدارة'
+                      ? (hasRequestedChanges ? 'طلبت الإدارة استكمال بعض المرفقات أو البيانات' : 'طلبك قيد المراجعة ويحتاج متابعة الإدارة')
                       : 'طلبك الآن في انتظار موافقة الإدارة'}
               </p>
               <p className="text-sm">
                 {approved
                   ? 'تم تحديث الحالة تلقائيًا بدون الحاجة لعمل Refresh. استخدم نفس البريد وكلمة المرور للدخول.'
                   : rejected
-                    ? 'راجع البريد الإلكتروني أو تواصل مع إدارة الأكاديمية لمعرفة الخطوة التالية.'
+                    ? 'راجع ملاحظة الإدارة أدناه أو تواصل مع إدارة الأكاديمية لمعرفة الخطوة التالية.'
                     : <>تتحدث هذه الصفحة تلقائيًا كل عدة ثوانٍ. سنرسل تحديث الحالة أيضًا إلى <strong>{f.credentials.email}</strong>.</>}
               </p>
+
+              {f.applicationReviewNote ? (
+                <div className="mt-3 rounded-lg bg-white/80 border border-current/15 p-3 text-right text-sm">
+                  <strong className="block mb-1">ملاحظة الإدارة:</strong>
+                  <p>{f.applicationReviewNote}</p>
+                </div>
+              ) : null}
+
+              {hasRequestedChanges ? (
+                <div className="mt-3 rounded-lg bg-white/80 border border-amber-300 p-3 text-right text-sm">
+                  <strong className="flex items-center gap-1.5 text-amber-900 mb-1.5">
+                    <AlertTriangle size={16} /> بنود مطلوبة للاستكمال:
+                  </strong>
+                  <ul className="space-y-1 text-xs text-slate-700">
+                    {f.applicationRequestedChanges.map((item) => (
+                      <li key={item.key}>
+                        • <strong>{item.label}:</strong> {item.note || 'يرجى المراجعة وإعادة الرفع'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             {!approved && !rejected && (
@@ -71,8 +97,13 @@ export default function TeacherRegistration() {
 
             <div className="flex flex-col gap-3">
               <Link to={localizedPath('/login', locale)} className="btn-primary">
-                {approved ? 'الدخول إلى لوحة المعلم' : 'تسجيل الدخول'}
+                {approved ? 'الدخول إلى لوحة المعلم' : 'تسجيل الدخول لمتابعة أو تعديل الطلب'}
               </Link>
+              {(underReview || rejected) && (
+                <button type="button" onClick={f.resetSubmittedApplication} className="btn-secondary">
+                  تعديل البيانات وإعادة رفع الملفات
+                </button>
+              )}
               <Link to={localizedPath('/', locale)} className="btn-secondary">العودة للرئيسية</Link>
             </div>
           </div>
@@ -113,15 +144,25 @@ export default function TeacherRegistration() {
               )}
 
               {f.step === 1 && (
-                <div className="space-y-4">
+                <div className="space-y-5">
                   <div className="flex gap-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800">
                     <Info size={18} className="shrink-0 mt-0.5" />
-                    <span>أدخل بياناتك الأساسية — سيتم تأكيد البريد الإلكتروني في الخطوة التالية</span>
+                    <span>أدخل بياناتك الأساسية والقرآنية بدقة — سيتم تأكيد البريد الإلكتروني في الخطوة التالية</span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <Field label="الاسم الكامل *">
                       <input className={inputCls} value={f.formData.personalInfo.fullName}
                         onChange={(e) => f.update('personalInfo', 'fullName', e.target.value)} placeholder="الاسم رباعي" />
+                    </Field>
+                    <Field label="النوع (القسم التعليمي) *">
+                      <select
+                        className={inputCls}
+                        value={f.formData.personalInfo.gender || 'male'}
+                        onChange={(e) => f.update('personalInfo', 'gender', e.target.value)}
+                      >
+                        <option value="male">معلم (حلقات الرجال والبنين)</option>
+                        <option value="female">معلمة (قسم السيدات والفتيات والأطفال)</option>
+                      </select>
                     </Field>
                     <Field label="السن *">
                       <input type="number" min={18} max={80} className={inputCls} value={f.formData.personalInfo.age}
@@ -131,7 +172,7 @@ export default function TeacherRegistration() {
                       <input className={inputCls} value={f.formData.personalInfo.address}
                         onChange={(e) => f.update('personalInfo', 'address', e.target.value)} placeholder="المدينة، الشارع..." />
                     </Field>
-                    <Field label="خريج أي (الجامعة) *">
+                    <Field label="خريج أي (الجامعة / المعهد) *">
                       <input className={inputCls} value={f.formData.academicInfo.university}
                         onChange={(e) => f.update('academicInfo', 'university', e.target.value)} />
                     </Field>
@@ -159,6 +200,88 @@ export default function TeacherRegistration() {
                       <input className={inputCls} placeholder="@username" value={f.formData.personalInfo.telegram}
                         onChange={(e) => f.update('personalInfo', 'telegram', e.target.value)} />
                     </Field>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4 space-y-4">
+                    <p className="font-semibold text-slate-800">الخبرة القرآنية والتخصصات</p>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <Field label="سنوات الخبرة في التحفيظ">
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          className={inputCls}
+                          value={f.formData.quranInfo?.teachingExperience ?? 0}
+                          onChange={(e) => f.update('quranInfo', 'teachingExperience', e.target.value)}
+                        />
+                      </Field>
+                      <Field label="عدد الأجزاء المحفوظة">
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          className={inputCls}
+                          value={f.formData.quranInfo?.memorizedParts ?? 30}
+                          onChange={(e) => f.update('quranInfo', 'memorizedParts', e.target.value)}
+                        />
+                      </Field>
+                      <Field label="عدد الإجازات القرآنية">
+                        <input
+                          type="number"
+                          min={0}
+                          max={20}
+                          className={inputCls}
+                          value={f.formData.quranInfo?.numberOfIjazat ?? 0}
+                          onChange={(e) => f.update('quranInfo', 'numberOfIjazat', e.target.value)}
+                        />
+                      </Field>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">المسارات والتخصصات المتقنة (اختر واحدًا أو أكثر)</label>
+                      <div className="flex flex-wrap gap-2">
+                        {SPECIALIZATION_OPTIONS.map((opt) => {
+                          const active = (f.formData.quranInfo?.specializations || ['tajweed']).includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => f.toggleSpecialization(opt.id)}
+                              className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                                active
+                                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-400'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">لغات التدريس المتاحة</label>
+                      <div className="flex flex-wrap gap-2">
+                        {LANGUAGE_OPTIONS.map((opt) => {
+                          const active = (f.formData.languages || ['arabic']).includes(opt.id);
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => f.toggleLanguage(opt.id)}
+                              className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                                active
+                                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-400'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -421,14 +544,17 @@ export default function TeacherRegistration() {
                   <div className="grid sm:grid-cols-2 gap-4 text-sm">
                     <ReviewBlock title="البيانات" items={[
                       f.formData.personalInfo.fullName,
+                      f.formData.personalInfo.gender === 'female' ? 'معلمة (قسم السيدات والفتيات)' : 'معلم (قسم الرجال والبنين)',
                       `السن: ${f.formData.personalInfo.age}`,
                       f.formData.personalInfo.address,
                       `${f.formData.personalInfo.country}`,
                       f.formData.personalInfo.phone,
                     ]} />
-                    <ReviewBlock title="التعليم" items={[
+                    <ReviewBlock title="التعليم والخبرة القرآنية" items={[
                       f.formData.academicInfo.university,
                       `تخرج ${f.formData.academicInfo.graduationYear}`,
+                      `الخبرة: ${f.formData.quranInfo?.teachingExperience || 0} سنوات · الحفظ: ${f.formData.quranInfo?.memorizedParts || 30} جزء`,
+                      `الإجازات: ${f.formData.quranInfo?.numberOfIjazat || 0}`,
                     ]} />
                     <ReviewBlock title="الحساب" items={[f.credentials.email]} />
                     <ReviewBlock title="الملفات" items={[

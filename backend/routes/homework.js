@@ -143,9 +143,10 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
         student: req.user.id,
         homeworkId: { $in: sessionHomeworkIds },
       }).select('homeworkId status');
+      const subObjMap = Object.fromEntries(subs.map((s) => [s.homeworkId, s]));
       const subMap = Object.fromEntries(subs.map((s) => [s.homeworkId, s.status]));
       homework.forEach((hw) => {
-        if (subMap[hw._id]) hw.status = subMap[hw._id] === 'submitted' ? 'submitted' : hw.status;
+        if (subMap[hw._id]) { hw.status = subMap[hw._id] === 'submitted' ? 'submitted' : hw.status; hw.submissionId = subObjMap[hw._id]?._id; }
       });
     }
 
@@ -161,6 +162,7 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
         type: t.type,
         teacherFeedback: t.teacherFeedback || '',
         reviewedAt: t.reviewedAt,
+        isTask: true,
       });
     });
 

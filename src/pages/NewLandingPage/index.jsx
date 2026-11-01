@@ -11,6 +11,7 @@ import ImmersiveLearningSection from './sections/ImmersiveLearningSection';
 import ProductShowcaseSection from './sections/ProductShowcaseSection';
 import StudentJourneySection from './sections/StudentJourneySection';
 import TeachersSection from './sections/TeachersSection';
+import AlAzharHeritageSection from './sections/AlAzharHeritageSection';
 import TargetAudiencesSection from './sections/TargetAudiencesSection';
 import PricingCalculatorSection from './sections/PricingCalculatorSection';
 import TrustSignalsSection from './sections/TrustSignalsSection';
@@ -31,6 +32,9 @@ export default function NewLandingPage() {
 
   return (
     <>
+      <a href="#main-content" className="wn-skip-link">
+        {isAr ? 'تخطي إلى المحتوى الرئيسي' : 'Skip to main content'}
+      </a>
       <SEOHead
         page={{
           title: pageTitle,
@@ -41,7 +45,7 @@ export default function NewLandingPage() {
       />
       <GlobalHeader />
       <HomepageMotionController />
-      <main className="wn-approved-home">
+      <main className="wn-approved-home" id="main-content" tabIndex={-1}>
         <HeroSection />
         <ProgramsSection />
         <WhyWahyNamaaSection />
@@ -49,6 +53,7 @@ export default function NewLandingPage() {
         <ProductShowcaseSection />
         <StudentJourneySection />
         <TeachersSection />
+        <AlAzharHeritageSection />
         <TargetAudiencesSection />
         <PricingCalculatorSection />
         <TrustSignalsSection />

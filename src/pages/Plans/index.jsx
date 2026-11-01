@@ -107,6 +107,7 @@ export default function PlansPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const renewalId = searchParams.get('renew') || '';
+  const targetStudentId = searchParams.get('student') || '';
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const [audience, setAudience] = useState('general');
@@ -139,7 +140,7 @@ export default function PlansPage() {
   }, []);
 
   useEffect(() => {
-    if (!renewalId || !isAuthenticated || user?.role !== 'student') return;
+    if (!renewalId || !isAuthenticated || !['student', 'guardian'].includes(user?.role)) return;
 
     let cancelled = false;
     api.get('/api/subscriptions/' + encodeURIComponent(renewalId), { auth: true })
@@ -202,7 +203,7 @@ export default function PlansPage() {
       return;
     }
 
-    if (user?.role !== 'student') {
+    if (user?.role !== 'student' && !(user?.role === 'guardian' && (targetStudentId || renewalId))) {
       toast.warning(isAr ? 'اختيار باقات الطلاب متاح من حساب الطالب.' : 'Student packages can only be selected from a student account.');
       return;
     }
@@ -217,6 +218,7 @@ export default function PlansPage() {
           )
         : await api.post('/api/subscriptions/select', {
             planKey: plan.id,
+            studentId: targetStudentId || undefined,
             section: enrolledSection || (audience === 'women' ? 'ladies' : 'men_children'),
             sessionCount,
           }, { auth: true });
@@ -237,6 +239,7 @@ export default function PlansPage() {
           localizedPath('/payment/manual', locale)
           + '?subscription='
           + encodeURIComponent(data.subscription._id)
+          + (targetStudentId ? '&student=' + encodeURIComponent(targetStudentId) : '')
         );
       }
     } catch (error) {

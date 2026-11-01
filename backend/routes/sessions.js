@@ -937,6 +937,36 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       session.earnings.amount = SESSION_RATE;
       session.earnings.status = 'pending';
       await session.save();
+      if (session.type === 'trial') {
+        const validLevels = ['beginner', 'intermediate', 'advanced', 'ijazah'];
+        const validTracks = ['memorization', 'tajweed_ijazah', 'kids_foundation'];
+        const recLevel = validLevels.includes(evaluation?.recommendedLevel) ? evaluation.recommendedLevel : undefined;
+        const recTrack = validTracks.includes(evaluation?.recommendedTrack) ? evaluation.recommendedTrack : undefined;
+        if (session.student && (recLevel || recTrack)) {
+          const userUpdate = {};
+          if (recLevel) userUpdate.currentLevel = recLevel;
+          if (recTrack) userUpdate.preferredTrack = recTrack;
+          await User.findByIdAndUpdate(session.student, { $set: userUpdate }).catch(() => {});
+        }
+        try {
+          const TrialRequest = require('../models/TrialRequest');
+          await TrialRequest.findOneAndUpdate(
+            { scheduledSession: session._id },
+            {
+              $set: {
+                status: 'completed',
+                'assessment.evaluatedBy': teacher._id,
+                ...(recLevel ? { 'assessment.level': recLevel } : {}),
+                ...(recTrack ? { 'assessment.recommendedTrack': recTrack } : {}),
+                ...(evaluation?.overallNotes ? { 'assessment.notes': String(evaluation.overallNotes).slice(0, 2000) } : {}),
+                'assessment.evaluatedAt': new Date(),
+              },
+            }
+          );
+        } catch { /* ignore if no TrialRequest */ }
+      }
+      if (false)
+      await session.save();
     }
 
     // Ledger is the canonical source of truth for all new teacher earnings.

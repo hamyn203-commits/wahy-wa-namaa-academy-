@@ -1,7 +1,9 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const { AccessToken } = require('livekit-server-sdk');
 const LiveSession = require('../models/LiveSession');
+const User = require('../models/User');
 const Session = require('../models/Session');
 const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
@@ -120,6 +122,44 @@ function presentLiveSession(liveSession, access) {
   };
 }
 
+async function buildSessionContext(liveSession, bookedSession) {
+  if (!liveSession) return null;
+  const studentIds = new Set();
+  if (bookedSession?.student) {
+    studentIds.add(String(bookedSession.student));
+  }
+  if (Array.isArray(bookedSession?.attendance)) {
+    for (const entry of bookedSession.attendance) {
+      if (entry?.student) studentIds.add(String(entry.student));
+    }
+  }
+  if (bookedSession?.circle) {
+    const circle = await GroupCircle.findById(bookedSession.circle).select('students title').lean().catch(() => null);
+    if (Array.isArray(circle?.students)) {
+      for (const sid of circle.students) {
+        if (sid) studentIds.add(String(sid));
+      }
+    }
+  }
+  let roster = [];
+  if (studentIds.size > 0) {
+    const users = await User.find({ _id: { $in: Array.from(studentIds) } }).select('_id name').lean().catch(() => []);
+    roster = users.map((u) => ({
+      id: `student:${u._id}`,
+      name: String(u.name || 'طالب').trim(),
+      avatar: String(u.name || 'ط').trim().charAt(0) || 'ط',
+    }));
+  }
+  return {
+    sessionId: bookedSession?._id ? String(bookedSession._id) : null,
+    title: liveSession.title || 'حلقة تعليمية',
+    subject: liveSession.subject || 'quran',
+    scheduledAt: bookedSession?.scheduledAt || liveSession.scheduledAt || null,
+    duration: bookedSession?.duration || 60,
+    roster,
+  };
+}
+
 async function syncBookedSessionLiveLink(bookedSession, roomId) {
   if (!bookedSession?._id || !roomId) return;
   await Session.updateOne(
@@ -134,7 +174,10 @@ async function syncBookedSessionLiveLink(bookedSession, roomId) {
 }
 
 async function canManageRoom(roomId, user) {
-  const liveSession = await LiveSession.findOne({ roomId });
+  let liveSession = await LiveSession.findOne({ roomId });
+  if (!liveSession && mongoose.Types.ObjectId.isValid(roomId)) {
+    liveSession = await LiveSession.findOne({ session: roomId });
+  }
   if (!liveSession) return { liveSession: null, access: null };
 
   const access = await getRoomAccess(liveSession, user);
@@ -178,7 +221,32 @@ router.post('/token', verifyAccessToken, async (req, res) => {
       return res.status(503).json({ message: 'LiveKit is not configured' });
     }
 
-    const liveSession = await LiveSession.findOne({ roomId: roomName });
+    let liveSession = await LiveSession.findOne({ roomId: roomName });
+    if (!liveSession && mongoose.Types.ObjectId.isValid(roomName)) {
+      liveSession = await LiveSession.findOne({ session: roomName });
+    }
+
+    if (!liveSession && mongoose.Types.ObjectId.isValid(roomName)) {
+      const bookedSession = await Session.findById(roomName).select('_id student circle teacher scheduledAt duration status');
+      if (bookedSession && bookedSession.status === 'accepted') {
+        const accessWindow = sessionParticipantWindow(bookedSession);
+        if (accessWindow.within) {
+          const roomId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+          liveSession = await LiveSession.create({
+            roomId,
+            session: bookedSession._id,
+            createdBy: req.user.id,
+            title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
+            description: 'غرفة الأكاديمية المباشرة الموحدة',
+            subject: 'quran',
+            isLive: false,
+            participants: 0,
+          });
+          await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
+        }
+      }
+    }
+
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
 
     const access = await getRoomAccess(liveSession, req.user);
@@ -188,12 +256,18 @@ router.post('/token', verifyAccessToken, async (req, res) => {
 
     const role = req.user.role;
     const canPublish = role === 'student' || role === 'teacher' || role === 'admin';
-    const participantName = String(req.user.email || role).slice(0, 80);
+    // Never expose the account email to other participants; use the display name.
+    const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
+    const participantName = String(participantUser?.name || req.body?.participantName || role).trim().slice(0, 80) || role;
     const identity = `${role}:${req.user.id}`;
 
-    const token = await createToken({ roomName, identity, participantName, canPublish });
+    const token = await createToken({ roomName: liveSession.roomId, identity, participantName, canPublish });
+    const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
     return res.json({
       token,
+      roomId: liveSession.roomId,
+      serverUrl: LIVEKIT_URL,
+      sessionContext,
       permissions: {
         role,
         isHost: access.isHost,
@@ -299,7 +373,10 @@ router.post('/sessions', verifyAccessToken, requireRole('teacher', 'admin'), asy
 
 router.get('/sessions/:roomId', verifyAccessToken, async (req, res) => {
   try {
-    const liveSession = await LiveSession.findOne({ roomId: req.params.roomId });
+    let liveSession = await LiveSession.findOne({ roomId: req.params.roomId });
+    if (!liveSession && mongoose.Types.ObjectId.isValid(req.params.roomId)) {
+      liveSession = await LiveSession.findOne({ session: req.params.roomId });
+    }
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
 
     const access = await getRoomAccess(liveSession, req.user);
@@ -307,7 +384,8 @@ router.get('/sessions/:roomId', verifyAccessToken, async (req, res) => {
       return res.status(403).json({ message: 'You are not assigned to this live session' });
     }
 
-    return res.json(presentLiveSession(liveSession, access));
+    const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
+    return res.json({ ...presentLiveSession(liveSession, access), sessionContext });
   } catch {
     return res.status(500).json({ message: 'Failed to get session' });
   }
@@ -335,7 +413,8 @@ router.patch('/sessions/:roomId/live', verifyAccessToken, requireRole('teacher',
     liveSession.isLive = Boolean(req.body.isLive);
     await liveSession.save();
 
-    return res.json(presentLiveSession(liveSession, access));
+    const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
+    return res.json({ ...presentLiveSession(liveSession, access), sessionContext });
   } catch {
     return res.status(500).json({ message: 'Failed to update session' });
   }

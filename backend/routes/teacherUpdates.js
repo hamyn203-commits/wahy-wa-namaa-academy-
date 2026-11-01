@@ -170,8 +170,8 @@ router.post('/teacher', authorize('teacher'), async (req, res) => {
     if (!title) return res.status(400).json({ error: 'عنوان الرسالة مطلوب' });
     if (title.length > 140) return res.status(400).json({ error: 'العنوان طويل جدًا' });
     if (message.length > 2000) return res.status(400).json({ error: 'نص الرسالة طويل جدًا' });
-    if (videos.length < 1 || videos.length > MAX_VIDEOS_PER_UPDATE) {
-      return res.status(400).json({ error: 'يمكن نشر من فيديو واحد إلى 5 فيديوهات في الرسالة الواحدة' });
+    if (videos.length > MAX_VIDEOS_PER_UPDATE) {
+      return res.status(400).json({ error: 'لا يمكن نشر أكثر من فيديوهات في الرسالة الواحدة' });
     }
 
     const normalizedVideos = [];

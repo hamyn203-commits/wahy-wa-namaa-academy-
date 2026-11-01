@@ -17,6 +17,7 @@ const { sendEmail } = require('../services/notificationDispatcher');
 const { notifyAdmins, notifyUser } = require('../utils/notify');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { logAdminAction } = require('../services/adminAudit');
+const { extractReviewFeedback } = require('../utils/teacherAccess');
 const {
   REVIEW_ITEMS,
   buildTeacherReviewGate,
@@ -581,9 +582,8 @@ router.post(
       }
 
       const existingTeacher = await Teacher.findOne({ user: userId });
-      if (existingTeacher) {
-        return res.status(400).json({ error: 'Teacher profile already exists' });
-      }
+      const canResubmitExisting = Boolean(existingTeacher && req.user?.id && String(req.user.id) === String(userId) && ['pending', 'under-review', 'rejected'].includes(existingTeacher.status));
+      if (existingTeacher && !canResubmitExisting) { return res.status(400).json({ error: 'Teacher profile already exists' }); }
 
       const directRef = directReference;
       const directPublic = (value) => {
@@ -661,7 +661,7 @@ router.post(
         });
       }
 
-    const teacher = await Teacher.create({
+    const teacherPayload = {
       user: userId,
       personalInfo: {
         ...parsedPersonal,
@@ -687,9 +687,22 @@ router.post(
       documents,
       media,
       storageOwner: externalStorage && uploadOwner ? String(uploadOwner) : undefined,
-      hourlyRate: 50,
-    });
-
+      hourlyRate: existingTeacher?.hourlyRate || 50,
+    };
+    let teacher;
+    if (canResubmitExisting && existingTeacher) {
+      Object.assign(existingTeacher, teacherPayload);
+      existingTeacher.status = 'pending';
+      existingTeacher.isVerified = false;
+      if (Array.isArray(existingTeacher.reviewChecklist)) {
+        existingTeacher.reviewChecklist.forEach((item) => {
+          if (item.status === 'changes-requested') item.status = 'pending';
+        });
+      }
+      teacher = await existingTeacher.save();
+    } else {
+      teacher = await Teacher.create(teacherPayload);
+    }
     await User.findByIdAndUpdate(userId, { $set: { role: 'teacher', 'onboarding.teacherApplicationReady': true } });
 
     notifyAdmins({
@@ -769,7 +782,7 @@ router.post('/application-status', async (req, res) => {
     const teacher = await Teacher.findOne({
       _id: payload.teacherId,
       user: payload.userId,
-    }).select('status isVerified updatedAt').lean();
+    }).select('status isVerified updatedAt reviewNotes reviewChecklist').lean();
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher application not found' });
@@ -779,6 +792,7 @@ router.post('/application-status', async (req, res) => {
       applicationStatus: teacher.status || 'pending',
       approved: teacher.status === 'approved' && teacher.isVerified === true,
       updatedAt: teacher.updatedAt || null,
+      ...extractReviewFeedback(teacher),
     });
   } catch (error) {
     const status = error?.name === 'TokenExpiredError' ? 401 : 400;

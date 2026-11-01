@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Users, TrendingUp, BookOpen, Award, Bell, FileText, CalendarCheck, 
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, MessageCircle, 
-  Phone, ShieldCheck, Star, UserPlus, Sparkles, Check, ChevronLeft, ArrowRight, Share2
+  Phone, ShieldCheck, Star, UserPlus, Sparkles, Check, ChevronLeft, ArrowRight, Share2,
+  CreditCard, Wallet, RefreshCw
 } from 'lucide-react';
 import DashboardLayout, { StatCard, TabBar } from '../../components/dashboard/DashboardLayout';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
+import { useI18n } from '../../i18n';
+import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import GuardianOverviewCenter from './GuardianOverviewCenter';
 import Skeleton from '../../components/shared/Skeleton';
@@ -26,9 +30,31 @@ function invitationRelationshipLabel(value) {
   return labels[value] || 'طلب ربط';
 }
 
+const subscriptionStatusLabels = {
+  active: { label: 'نشط', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  placed: { label: 'مُسكّن بالحلقة', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  awaiting_placement: { label: 'بانتظار التسكين', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  pending_payment: { label: 'بانتظار السداد', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  payment_review: { label: 'قيد مراجعة التحويل', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  renewal_queued: { label: 'في طابور التجديد', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+  paused: { label: 'موقوف مؤقتاً', bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' },
+  completed: { label: 'مكتمل', bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' },
+  expired: { label: 'منتهي الصلاحية', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
+  cancelled: { label: 'ملغي', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' }
+};
+
+const planLabels = {
+  community: 'حلقة عامة',
+  group: 'حلقة مجموعات (باقة 5-10 طلاب)',
+  focused: 'حلقة مركزة (باقة 3-5 طلاب)',
+  mini: 'حلقة مصغرة (باقة 2-3 طلاب)',
+  private: 'حلقة خاصة (فردية 1:1)',
+};
+
 export default function GuardianDashboard() {
   const { user, ready, logout } = useRequireAuth(['guardian']);
   const toast = useToast();
+  const { locale } = useI18n();
 
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('family');
@@ -45,7 +71,7 @@ export default function GuardianDashboard() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
 
-  const shareReportViaWhatsApp = (rep, childName) => {
+  const shareReportViaWhatsApp = async (rep, childName) => {
     const text = `🌸 *تقرير إنجاز الطالب في حلقة القرآن الكريم* 🌸\n` +
       `🏛️ *أكاديمية وَحْيٌ وَنَمَاء للقرآن الكريم*\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
@@ -57,6 +83,21 @@ export default function GuardianDashboard() {
       (rep.notes ? `💬 *ملاحظات المعلم:* ${rep.notes}\n` : '') +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🌱 *نتعلم القرآن، نحفظه، وننمو به.*`;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `تقرير إنجاز ${childName || 'الطالب'} - أكاديمية وَحْيٌ وَنَمَاء`,
+          text,
+        });
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
@@ -346,6 +387,15 @@ export default function GuardianDashboard() {
               </button>
             </div>
 
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2 relative z-10">
+              <Link
+                to={localizedPath('/free-trial', locale)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-50 border border-white/20 text-xs font-bold transition"
+              >
+                <Sparkles size={14} className="text-amber-300" />
+                <span>حجز حصة تجريبية لابن جديد</span>
+              </Link>
+            </div>
             {/* Child Selector Pills */}
             {children.length > 0 && (
               <div className="mt-6 pt-5 border-t border-emerald-700/60 flex flex-wrap items-center gap-3">
@@ -628,7 +678,16 @@ export default function GuardianDashboard() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
               <Users className="mx-auto text-amber-500 mb-2" size={36} />
               <h3 className="font-bold text-gray-800 text-lg">لم يتم ربط أي طالب بحسابك بعد</h3>
-              <p className="text-sm text-gray-600 mt-1">اضغط على زر &quot;ربط ابن جديد&quot; وأدخل كود الطالب أو بريده الإلكتروني للبدء بمتابعة دراسته.</p>
+              <p className="text-sm text-gray-600 mt-1">اضغط على زر &quot;ربط ابن جديد&quot; وأدخل كود الطالب للبدء بمتابعة دراسته، أو احجز حصة تجريبية مجانية لابن جديد.</p>
+              <div className="mt-3">
+                <Link
+                  to={localizedPath('/free-trial', locale)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-emerald-300 text-emerald-800 rounded-lg font-bold text-xs hover:bg-emerald-50 transition"
+                >
+                  <Sparkles size={14} className="text-emerald-600" />
+                  <span>حجز حصة تجريبية لابن جديد</span>
+                </Link>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowLinkModal(true)}
@@ -661,7 +720,102 @@ export default function GuardianDashboard() {
             {/* TAB 1: OVERVIEW & UPCOMING SESSIONS */}
             {tab === 'overview' && (
               <div className="space-y-6 mt-4">
-                
+
+                {/* Student Subscription & Session Balance Card */}
+                {(() => {
+                  const childSub = currentChild?.subscription;
+                  const sessionsRemaining = childSub?.sessionsRemaining ?? 0;
+                  const sessionsUsed = childSub?.sessionsUsed ?? 0;
+                  const totalSessionsCount = childSub?.sessionCount ?? (sessionsRemaining + sessionsUsed || 8);
+                  const isLowBalance = childSub ? (sessionsRemaining <= 2 && childSub.status !== 'completed') : true;
+
+                  const subStatusInfo = (childSub?.status && subscriptionStatusLabels[childSub.status]) || {
+                    label: childSub ? 'قيد المتابعة' : 'لا يوجد اشتراك نشط',
+                    bg: 'bg-slate-50',
+                    text: 'text-slate-600',
+                    border: 'border-slate-200'
+                  };
+
+                  const planName = (childSub?.planKey && planLabels[childSub.planKey])
+                    || currentChild?.studentProfile?.plan
+                    || 'حلقات القرآن الكريم';
+
+                  return (
+                    <div className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50/70 via-white to-teal-50/50 p-5 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <CreditCard size={24} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-bold text-gray-900 text-base font-arabic">
+                                اشتراك وحصص الطالب {currentChild?.name}
+                              </h4>
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${subStatusInfo.bg} ${subStatusInfo.text} ${subStatusInfo.border}`}>
+                                {subStatusInfo.label}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5 font-arabic">
+                              الباقة: <strong className="text-gray-700">{planName}</strong>
+                              {currentChild?.circle ? ` · ${currentChild.circle.name}` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center flex-wrap gap-2">
+                          <Link
+                            to={localizedPath(`/plans?student=${currentChild?.studentId}${childSub && ['active', 'completed'].includes(childSub.status) ? `&renew=${childSub._id}` : ''}`, locale)}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition shadow-sm active:scale-95"
+                          >
+                            <RefreshCw size={15} />
+                            <span>تجديد أو شحن الحصص</span>
+                          </Link>
+                          <Link
+                            to={childSub?._id && ['pending_payment', 'payment_review'].includes(childSub.status) ? localizedPath(`/payment/manual?student=${currentChild?.studentId}&subscription=${childSub._id}`, locale) : localizedPath(`/plans?student=${currentChild?.studentId}`, locale)}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-semibold transition"
+                          >
+                            <Wallet size={14} />
+                            <span>{childSub?._id && ['pending_payment', 'payment_review'].includes(childSub.status) ? 'إتمام سداد الاشتراك المختار' : 'التحويل البنكي المباشر'}</span>
+                          </Link>
+                        </div>
+                      </div>
+
+                      {/* Balance breakdown */}
+                      <div className="mt-4 pt-4 border-t border-emerald-100/60 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="bg-white/80 rounded-xl p-3 border border-emerald-100/60">
+                          <span className="text-[11px] text-gray-500 block font-arabic">الحصص المتبقية</span>
+                          <span className="text-2xl font-black text-emerald-700">{sessionsRemaining}</span>
+                          <span className="text-[11px] text-gray-400 mr-1 font-arabic">حصة</span>
+                        </div>
+                        <div className="bg-white/80 rounded-xl p-3 border border-emerald-100/60">
+                          <span className="text-[11px] text-gray-500 block font-arabic">الحصص المستهلكة</span>
+                          <span className="text-2xl font-black text-gray-800">{sessionsUsed}</span>
+                          <span className="text-[11px] text-gray-400 mr-1 font-arabic">حصة</span>
+                        </div>
+                        <div className="bg-white/80 rounded-xl p-3 border border-emerald-100/60 col-span-2 sm:col-span-1">
+                          <span className="text-[11px] text-gray-500 block font-arabic">إجمالي باقة الاشتراك</span>
+                          <span className="text-2xl font-black text-slate-700">{totalSessionsCount}</span>
+                          <span className="text-[11px] text-gray-400 mr-1 font-arabic">حصة</span>
+                        </div>
+                      </div>
+
+                      {/* Low balance alert */}
+                      {isLowBalance && (
+                        <div className="mt-3 flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                          <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                          <span>
+                            {sessionsRemaining === 0
+                              ? 'رصيد الحصص نفد بالكامل. يرجى التجديد وشحن الحصص لاستمرار الحلقات دون انقطاع.'
+                              : `رصيد الحصص قارب على الانتهاء (${sessionsRemaining} حصة متبقية). يرجى التجديد لضمان حجز المواعيد القادمة.`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Upcoming Quran Sessions Section */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -759,15 +913,29 @@ export default function GuardianDashboard() {
                                 </>
                               ) : (
                                 <div className="w-full flex items-center justify-between text-xs text-gray-500">
-                                  <span>تم تسجيل ردك بنجاح في سجل الحلقة</span>
-                                  {(session.meetingLink || session.meetingUrl) ? (
-                                    <a
-                                      href={session.meetingLink || session.meetingUrl}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span>{isConfirmed ? 'تم تأكيد الحضور في سجل الحلقة' : 'تم تسجيل الاعتذار في سجل الحلقة'}</span>
+                                    {isConfirmed && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setExcuseModalSession(session)}
+                                        disabled={submittingRsvp}
+                                        className="text-red-600 hover:text-red-700 font-bold underline"
+                                      >
+                                        اعتذار طارئ؟
+                                      </button>
+                                    )}
+                                  </div>
+                                  {(session.meetingLink || session.meetingUrl || session._id) ? (
+                                    <Link
+                                      to={typeof session.meetingLink === 'string' && session.meetingLink.startsWith('/live/')
+                                        ? localizedPath(session.meetingLink, locale)
+                                        : localizedPath(`/live/${session.roomId || session._id}`, locale)}
                                       className="inline-flex items-center gap-1 text-emerald-700 font-bold hover:underline"
                                     >
                                       <span>دخول الغرفة كمراقب صامت</span>
                                       <ArrowRight size={14} />
-                                    </a>
+                                    </Link>
                                   ) : (
                                     <span className="text-slate-400">تتاح غرفة المتابعة عند بدء الحصة</span>
                                   )}
@@ -1002,6 +1170,42 @@ export default function GuardianDashboard() {
                     <li>في حال تم تقديم الاعتذار قبل موعد الحصة بـ <strong>6 ساعات على الأقل</strong>، يحفظ للطالب حقه في حصة تعويضية مجانية.</li>
                     <li>الغياب المفاجئ دون اعتذار مسبق يُسجل كغياب وتُعطى الأولوية للطلاب الحاضرين.</li>
                   </ul>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div>
+                      <span className="text-xs font-bold text-emerald-700">إعدادات الربط والرقابة</span>
+                      <h4 className="font-bold text-gray-800 text-base font-arabic">
+                        صلاحيات المتابعة المفعلة لحساب {currentChild?.name || 'الطالب'}
+                      </h4>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+                      <ShieldCheck size={14} />
+                      حساب مرتبط وموثق
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-xs">
+                    {[
+                      { key: 'viewProgress', label: 'متابعة الحفظ والتقدم', enabled: currentChild?.permissions?.viewProgress !== false },
+                      { key: 'viewGrades', label: 'الاطلاع على تقييمات التسميع', enabled: currentChild?.permissions?.viewGrades !== false },
+                      { key: 'viewAttendance', label: 'سجل الحضور والاعتذارات', enabled: currentChild?.permissions?.viewAttendance !== false },
+                      { key: 'receiveNotifications', label: 'إشعارات الحصص والتقارير', enabled: currentChild?.permissions?.receiveNotifications !== false },
+                      { key: 'approveEnrollments', label: 'إدارة الاشتراكات والتجديد', enabled: currentChild?.permissions?.approveEnrollments !== false },
+                    ].map((perm) => (
+                      <div
+                        key={perm.key}
+                        className={`flex items-center justify-between gap-2 p-3 rounded-lg border ${
+                          perm.enabled ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' : 'bg-gray-50 border-gray-200 text-gray-500'
+                        }`}
+                      >
+                        <span className="font-bold">{perm.label}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${perm.enabled ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                          {perm.enabled ? 'مفعّل' : 'مقيد'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

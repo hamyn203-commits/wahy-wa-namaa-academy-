@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { id: 'teachers', label: 'المعلمون', icon: GraduationCap },
   { id: 'people', label: 'الطلاب والأسر', icon: Users },
   { id: 'sessions', label: 'مركز الحصص', icon: CalendarClock },
+  { id: 'trials', label: 'الحصص التجريبية', icon: Sparkles, route: 'trials' },
   { id: 'payments', label: 'المدفوعات', icon: CreditCard, route: 'payments' },
   { id: 'subscriptions', label: 'الاشتراكات والتسكين', icon: UserRoundCheck, route: 'subscriptions' },
   { id: 'withdrawals', label: 'السحوبات والمالية', icon: WalletCards },

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   LiveKitRoom, 
@@ -17,7 +17,7 @@ import '../../components/classroom/classroom.css';
 import { 
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, 
   PhoneOff, Users, MessageSquare, Send, X, ArrowRight, 
-  Languages, BookOpen, Shield, Sparkles, AlertTriangle, Eye
+  Languages, BookOpen, Shield, Sparkles, AlertTriangle, Eye, Clock, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '../../components/BrandLogo';
@@ -27,12 +27,13 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { LangSelect } from '../../components/live/SessionTranslateChat';
 import { translateText } from '../../lib/translateApi';
 import { detectBrowserLocale, localizedPath } from '../../lib/locale';
+import { dashboardPathForRole } from '../../lib/navigation';
 import { useI18n } from '../../i18n';
 import SyncedMushaf from '../../components/classroom/SyncedMushaf';
 import CircleTurnManager from '../../components/classroom/CircleTurnManager';
 import { inspectMessage } from '../../components/classroom/ChatSafetyFilter';
 
-function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
+function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionContext, onEndAndEvaluate }) {
   const { t } = useAppContext();
   
   // شاشات الفصل الذكي (المصحف المتزامن / حلقة الـ 10 طلاب / شبكة الكاميرات)
@@ -43,6 +44,9 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [safetyWarning, setSafetyWarning] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const chatEndRef = useRef(null);
 
   // الترجمة الفورية
   const [myLang, setMyLang] = useState(detectBrowserLocale());
@@ -72,7 +76,34 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
       timestamp: new Date().toLocaleTimeString(),
       isMe,
     }]);
-  }, [autoTranslate, myLang]);
+    if (!showChat && !isMe) {
+      setUnreadCount((c) => c + 1);
+    }
+  }, [autoTranslate, myLang, showChat]);
+
+  useEffect(() => {
+    if (showChat) {
+      setUnreadCount(0);
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [showChat, chatMessages.length]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isHost && roomId) {
+      api.patch('/api/live/sessions/' + encodeURIComponent(roomId) + '/live', { isLive: true }, { auth: true }).catch(() => {});
+    }
+  }, [isHost, roomId]);
+
+  const formatElapsed = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     if (!room) return;
@@ -169,7 +200,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
           <BrandLogo size={40} variant="light" />
           <div className="live-room-info">
             <div className="flex items-center gap-2">
-              <h2>{t.live.title}</h2>
+              <h2>{sessionContext?.title || t.live.title}</h2>
               {isObserver ? (
                 <span className="observer-badge">
                   <Shield size={12} />
@@ -193,7 +224,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
               </span>
               <span className="participants-count">
                 <Users size={16} />
-                {participants.length} {t.live.participants}
+                {participants.length} {t.live.participants} • <Clock size={13} className="inline ml-1" />{formatElapsed(elapsedSeconds)}
               </span>
             </div>
           </div>
@@ -224,15 +255,26 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
           </button>
         </div>
 
-        <div className="live-room-header-left">
+        <div className="live-room-header-left flex items-center gap-2">
+          {isHost && onEndAndEvaluate && (
+            <button
+              type="button"
+              onClick={onEndAndEvaluate}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition"
+              title="إنهاء البث والانتقال للوحة المعلم لرصد التقييم"
+            >
+              <CheckCircle2 size={15} />
+              <span>إنهاء الحصة والتقييم</span>
+            </button>
+          )}
           <button 
             className={`chat-toggle-btn ${showChat ? 'active' : ''}`}
-            onClick={() => setShowChat(!showChat)}
+            onClick={() => { setShowChat((v) => !v); setUnreadCount(0); }}
             title="المحادثة الفورية"
           >
             <MessageSquare size={20} />
-            {chatMessages.length > 0 && (
-              <span className="chat-badge">{chatMessages.length}</span>
+            {unreadCount > 0 && (
+              <span className="chat-badge">{unreadCount}</span>
             )}
           </button>
         </div>
@@ -262,6 +304,8 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
                 isTeacher={isHost}
                 isObserver={isObserver}
                 currentUserName={participantName}
+                rosterStudents={sessionContext?.roster || []}
+                onMuteLocalMic={() => localParticipant?.localParticipant?.setMicrophoneEnabled(false)}
               />
             </div>
           )}
@@ -323,6 +367,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId }) {
                         <span className="message-time">{msg.timestamp}</span>
                       </div>
                       <p className="message-text">{msg.text}</p>
+                      <span ref={chatEndRef} />
                       {msg.original && msg.original !== msg.text && (
                         <p className="text-xs text-gray-400 mt-1 italic">{msg.original}</p>
                       )}
@@ -419,6 +464,10 @@ export default function LiveRoom() {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sessionContext, setSessionContext] = useState(null);
+  const [resolvedServerUrl, setResolvedServerUrl] = useState('');
+  const [standalonePreview, setStandalonePreview] = useState(false);
+  const [previewTab, setPreviewTab] = useState('mushaf');
 
   const role = user?.role || '';
   const isHost = role === 'teacher' || role === 'admin';
@@ -444,8 +493,13 @@ export default function LiveRoom() {
         }, { auth: true });
 
         setToken(data.token);
+        if (data.sessionContext) setSessionContext(data.sessionContext);
+        if (data.serverUrl) setResolvedServerUrl(data.serverUrl);
       } catch (err) {
         setError(err.message || 'Failed to get token');
+        api.get('/api/live/sessions/' + encodeURIComponent(roomId), { auth: true })
+          .then((s) => { if (s?.sessionContext) setSessionContext(s.sessionContext); })
+          .catch(() => {});
       } finally {
         setLoading(false);
       }
@@ -464,16 +518,110 @@ export default function LiveRoom() {
     );
   }
 
+  const handleEndAndEvaluate = async () => {
+    if (isHost && roomId) {
+      await api.patch('/api/live/sessions/' + encodeURIComponent(roomId) + '/live', { isLive: false }, { auth: true }).catch(() => {});
+    }
+    navigate(dashboardPathForRole(role, locale));
+  };
+
+  if (standalonePreview) {
+    return (
+      <div className="live-room-container">
+        <div className="live-room-header">
+          <div className="live-room-header-right">
+            <BrandLogo size={40} variant="light" />
+            <div className="live-room-info">
+              <div className="flex items-center gap-2">
+                <h2>{sessionContext?.title || t.live.title}</h2>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900">
+                  وضع الفصل التفاعلي الذكي
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="live-room-tabs">
+            <button
+              className={`room-tab-btn ${previewTab === 'mushaf' ? 'active' : ''}`}
+              onClick={() => setPreviewTab('mushaf')}
+            >
+              <BookOpen size={16} />
+              <span>المصحف المتزامن</span>
+            </button>
+            <button
+              className={`room-tab-btn ${previewTab === 'circle' ? 'active' : ''}`}
+              onClick={() => setPreviewTab('circle')}
+            >
+              <Users size={16} />
+              <span>حلقة التسميع</span>
+            </button>
+          </div>
+          <div className="live-room-header-left">
+            <button
+              type="button"
+              onClick={() => navigate(dashboardPathForRole(role, locale))}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5"
+            >
+              <ArrowRight size={15} />
+              <span>العودة للوحة التحكم</span>
+            </button>
+          </div>
+        </div>
+        <div className="live-room-main">
+          <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-900">
+            {previewTab === 'mushaf' ? (
+              <div className="w-full h-full p-2 flex flex-col">
+                <SyncedMushaf room={null} localParticipant={null} isTeacher={isHost} isObserver={isObserver} />
+              </div>
+            ) : (
+              <div className="w-full h-full p-3 flex flex-col overflow-y-auto">
+                <CircleTurnManager
+                  room={null}
+                  localParticipant={null}
+                  participants={[]}
+                  isTeacher={isHost}
+                  isObserver={isObserver}
+                  currentUserName={participantName}
+                  rosterStudents={sessionContext?.roster || []}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="live-room-error">
         <BrandLogo size={72} variant="light" />
         <h2>{t.live.error}</h2>
         <p>{error}</p>
-        <button onClick={() => navigate(localizedPath('/', locale))} className="btn-premium">
-          <ArrowRight size={20} />
-          {t.common.backHome}
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
+          <button type="button" onClick={() => setStandalonePreview(true)} className="btn-premium">
+            <BookOpen size={18} />
+            <span>فتح الفصل الذكي (المصحف وحلقة التسميع)</span>
+          </button>
+          {sessionContext?.sessionId && (
+            <button
+              type="button"
+              onClick={() => navigate(localizedPath(`/meeting/${sessionContext.sessionId}`, locale))}
+              className="px-4 py-2.5 rounded-xl border border-white/20 text-white font-semibold hover:bg-white/10 inline-flex items-center gap-2"
+            >
+              <Languages size={18} />
+              <span>غرفة الاجتماع والترجمة البديلة</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate(dashboardPathForRole(role, locale))}
+            className="px-4 py-2.5 rounded-xl border border-white/20 text-white font-semibold hover:bg-white/10 inline-flex items-center gap-2"
+          >
+            <ArrowRight size={18} />
+            <span>العودة للوحة التحكم</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -482,7 +630,7 @@ export default function LiveRoom() {
     return null;
   }
 
-  const serverUrl = import.meta.env.VITE_LIVEKIT_URL || 'wss://your-livekit-server.livekit.cloud';
+  const serverUrl = resolvedServerUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://your-livekit-server.livekit.cloud';
 
   return (
     <LiveKitRoom
@@ -491,13 +639,15 @@ export default function LiveRoom() {
       token={token}
       serverUrl={serverUrl}
       data-lk-theme="default"
-      onDisconnected={() => navigate(localizedPath('/', locale))}
+      onDisconnected={() => navigate(dashboardPathForRole(role, locale))}
     >
       <LiveRoomContent 
         isHost={isHost} 
         isObserver={isObserver}
         participantName={participantName}
         roomId={roomId}
+        sessionContext={sessionContext}
+        onEndAndEvaluate={isHost ? handleEndAndEvaluate : null}
       />
     </LiveKitRoom>
   );

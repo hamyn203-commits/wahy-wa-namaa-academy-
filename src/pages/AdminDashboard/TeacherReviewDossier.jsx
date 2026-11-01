@@ -55,6 +55,7 @@ export default function TeacherReviewDossier({
   onOpenProfileChangeMedia,
   onProfileChangeReview,
   onPreviewPublic,
+  onUpdateAdminSettings,
 }) {
   const teacher = dossier?.teacher;
   const gate = dossier?.gate;
@@ -76,6 +77,31 @@ export default function TeacherReviewDossier({
     return true;
   };
 
+  const [promptModal, setPromptModal] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [rateInput, setRateInput] = useState('');
+  const [featuredInput, setFeaturedInput] = useState(null);
+  const [genderInput, setGenderInput] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const effectiveRate = rateInput !== '' ? rateInput : (teacher?.hourlyRate ?? 50);
+  const effectiveFeatured = featuredInput !== null ? featuredInput : Boolean(teacher?.isFeatured);
+  const effectiveGender = genderInput || teacher?.personalInfo?.gender || 'male';
+
+  const saveAdminSettings = async () => {
+    if (!onUpdateAdminSettings || !teacher?._id) return;
+    setSavingSettings(true);
+    try {
+      await onUpdateAdminSettings(teacher._id, {
+        hourlyRate: Number(effectiveRate) || 50,
+        isFeatured: Boolean(effectiveFeatured),
+        gender: effectiveGender,
+      });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const specializations = useMemo(
     () => (teacher?.quranInfo?.specializations || []).join('، '),
     [teacher?.quranInfo?.specializations]
@@ -84,9 +110,18 @@ export default function TeacherReviewDossier({
   if (!teacher && !loading) return null;
 
   const requestChanges = (item) => {
-    const note = window.prompt(`اكتب المطلوب تعديله في: ${item.label}`, item.note || '') ?? '';
-    if (!note.trim()) return;
-    onChecklist(teacher._id, item.key, 'changes-requested', note.trim());
+    setPromptModal({
+      title: 'طلب تعديل في ملف المعلم',
+      label: `المطلوب تعديله في: ${item.label}`,
+      initialValue: item.note || '',
+      confirmText: 'إرسال طلب التعديل',
+      isDanger: false,
+      onConfirm: (note) => {
+        setPromptModal(null);
+        if (!note.trim()) return;
+        onChecklist(teacher._id, item.key, 'changes-requested', note.trim());
+      },
+    });
   };
 
   const finalDecision = (action) => {
@@ -96,10 +131,19 @@ export default function TeacherReviewDossier({
       return;
     }
 
-    const label = action === 'reject' ? 'سبب رفض الطلب' : 'المطلوب من المعلم استكماله';
-    const note = window.prompt(label, '') ?? '';
-    if (!note.trim()) return;
-    onReview(teacher._id, action, note.trim());
+    const isReject = action === 'reject';
+    setPromptModal({
+      title: isReject ? 'رفض طلب المعلم' : 'طلب استكمال الملف',
+      label: isReject ? 'اكتب سبب رفض الطلب:' : 'اكتب المطلوب من المعلم استكماله:',
+      initialValue: '',
+      confirmText: isReject ? 'تأكيد الرفض' : 'إرسال الطلب',
+      isDanger: isReject,
+      onConfirm: (note) => {
+        setPromptModal(null);
+        if (!note.trim()) return;
+        onReview(teacher._id, action, note.trim());
+      },
+    });
   };
 
   return (
@@ -218,14 +262,37 @@ export default function TeacherReviewDossier({
                       type="button"
                       className="wn-btn wn-btn--primary"
                       onClick={() => {
-                        if (window.confirm('هل راجعت كل التعديلات والوسائط وتريد نشرها الآن؟')) {
-                          onProfileChangeReview?.(teacher._id, 'approve', 'تمت مراجعة التعديلات واعتمادها للنشر.');
-                        }
+                        setConfirmModal({
+                          title: 'اعتماد ونشر التعديلات',
+                          message: 'هل راجعت كل التعديلات والوسائط وتريد نشرها الآن في الملف العام للمعلم؟',
+                          confirmText: 'نعم، انشر الآن',
+                          onConfirm: () => {
+                            setConfirmModal(null);
+                            onProfileChangeReview?.(teacher._id, 'approve', 'تمت مراجعة التعديلات واعتمادها للنشر.');
+                          },
+                        });
                       }}
                     >
                       <CheckCircle2 size={16} /> اعتماد ونشر التعديلات
                     </button>
-                    <button type="button" className="wn-btn wn-btn--secondary" onClick={() => onProfileChangeReview?.(teacher._id, 'reject', '')}>
+                    <button
+                      type="button"
+                      className="wn-btn wn-btn--secondary"
+                      onClick={() => {
+                        setPromptModal({
+                          title: 'رفض تعديل ملف المعلم',
+                          label: 'اكتب سبب رفض التعديل أو المطلوب من المعلم:',
+                          initialValue: '',
+                          confirmText: 'تأكيد الرفض',
+                          isDanger: true,
+                          onConfirm: (note) => {
+                            setPromptModal(null);
+                            if (!note.trim()) return;
+                            onProfileChangeReview?.(teacher._id, 'reject', note.trim());
+                          },
+                        });
+                      }}
+                    >
                       <XCircle size={16} /> رفض وإعادة للمعلم
                     </button>
                   </div>
@@ -335,6 +402,51 @@ export default function TeacherReviewDossier({
                 <Value label="متوسط التقييم" value={teacher.rating?.average || 0} />
                 <Value label="عدد التقييمات" value={teacher.rating?.count || 0} />
               </div>
+              {onUpdateAdminSettings ? (
+                <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                  <label className="text-xs font-bold text-slate-700 space-y-1">
+                    <span>أجر الساعة (ج.م/ساعة)</span>
+                    <input
+                      type="number"
+                      min="10"
+                      max="1000"
+                      value={effectiveRate}
+                      onChange={(e) => setRateInput(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-slate-700 space-y-1">
+                    <span>القسم / النوع</span>
+                    <select
+                      value={effectiveGender}
+                      onChange={(e) => setGenderInput(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="male">ذكر (معلم)</option>
+                      <option value="female">أنثى (معلمة)</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 py-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={effectiveFeatured}
+                      onChange={(e) => setFeaturedInput(e.target.checked)}
+                      className="w-4 h-4 accent-emerald-700"
+                    />
+                    <span>معلم مميز في الصفحة الرئيسية</span>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={savingSettings}
+                    onClick={saveAdminSettings}
+                    className="wn-btn wn-btn--primary text-xs py-2"
+                  >
+                    {savingSettings ? 'جارٍ الحفظ...' : 'حفظ إعدادات المعلم'}
+                  </button>
+                </div>
+              ) : null}
+              <div className="hidden">
+              </div>
             </section>
 
             <section className="wn-admin-dossier__section">
@@ -377,6 +489,98 @@ export default function TeacherReviewDossier({
           loader={selectedAsset.category === 'document' ? onOpenDocument : selectedAsset.category === 'profile-change' ? onOpenProfileChangeMedia : onOpenMedia}
         />
       )}
+
+      {promptModal && (
+        <DossierPromptModal
+          title={promptModal.title}
+          label={promptModal.label}
+          initialValue={promptModal.initialValue}
+          confirmText={promptModal.confirmText}
+          isDanger={promptModal.isDanger}
+          onClose={() => setPromptModal(null)}
+          onConfirm={promptModal.onConfirm}
+        />
+      )}
+
+      {confirmModal && (
+        <DossierConfirmModal
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText={confirmModal.confirmText}
+          onClose={() => setConfirmModal(null)}
+          onConfirm={confirmModal.onConfirm}
+        />
+      )}
+    </div>
+  );
+}
+
+function DossierPromptModal({ title, label, initialValue, confirmText, isDanger, onClose, onConfirm }) {
+  const [val, setVal] = useState(initialValue || '');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="font-bold text-slate-800 text-base">{title}</h3>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <label className="block text-xs font-semibold text-slate-600">{label}</label>
+          <textarea
+            autoFocus
+            rows={4}
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="اكتب الملاحظة هنا..."
+          />
+        </div>
+        <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition">
+            إلغاء
+          </button>
+          <button
+            type="button"
+            disabled={!val.trim()}
+            onClick={() => onConfirm(val.trim())}
+            className={`px-4 py-2 text-sm text-white font-medium rounded-lg transition disabled:opacity-50 ${isDanger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          >
+            {confirmText || 'تأكيد'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DossierConfirmModal({ title, message, confirmText, onClose, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="font-bold text-slate-800 text-base">{title}</h3>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-4 text-sm text-slate-600">
+          <p>{message}</p>
+        </div>
+        <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition">
+            إلغاء
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm text-white font-medium rounded-lg transition bg-emerald-600 hover:bg-emerald-700"
+          >
+            {confirmText || 'تأكيد'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

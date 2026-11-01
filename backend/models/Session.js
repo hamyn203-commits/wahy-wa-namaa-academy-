@@ -63,6 +63,8 @@ const SessionSchema = new mongoose.Schema({
     toAyah: { type: Number, min: 1 },
     nextHomework: { type: String, maxlength: 1500 },
     overallNotes: { type: String, maxlength: 3000 },
+    recommendedLevel: { type: String, enum: ['beginner', 'intermediate', 'advanced', 'ijazah'] },
+    recommendedTrack: { type: String, enum: ['memorization', 'tajweed_ijazah', 'kids_foundation'] },
     assignedHomework: [{
       type: { type: String, enum: ['memorization', 'review-recent', 'review-far', 'review', 'audio', 'test'] },
       description: String,

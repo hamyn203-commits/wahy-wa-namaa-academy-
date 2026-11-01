@@ -6,6 +6,7 @@ import SessionTranslateChat from '../../components/live/SessionTranslateChat';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import { dashboardPathForRole } from '../../lib/navigation';
 import api from '../../lib/api';
 import '../../styles/session-experience.css';
 
@@ -36,7 +37,7 @@ export default function MeetingRoom() {
         setMyLang(langData.student?.lang || user.preferences?.language || 'id');
         setPartnerLang(langData.teacher?.lang || 'ar');
       }
-    }).catch(() => navigate(localizedPath('/student/dashboard', locale))).finally(() => setLoading(false));
+    }).catch(() => navigate(dashboardPathForRole(user?.role, locale))).finally(() => setLoading(false));
   }, [ready, sessionId, navigate, user, locale]);
 
   if (!ready || loading) {
@@ -50,7 +51,7 @@ export default function MeetingRoom() {
       <GlobalHeader />
       <div className="wn-meeting-bar">
         <span className="flex items-center gap-2"><Languages size={16} /> {isAr ? 'جلسة مع ترجمة فورية' : 'Session with live translation'}</span>
-        <Link to={localizedPath('/student/dashboard', locale)} className="wn-meeting-back">
+        <Link to={dashboardPathForRole(user?.role, locale)} className="wn-meeting-back">
           <ArrowRight size={14} /> {isAr ? 'لوحة التحكم' : 'Dashboard'}
         </Link>
       </div>

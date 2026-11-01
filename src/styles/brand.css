@@ -33,6 +33,7 @@
   --wn-ivory-deep: #f3f0e6;
   --wn-gold: #d4af6b;
   --wn-gold-dark: #8f6b2a;        /* gold text on light (AA on ivory) */
+  --wn-text-gold: #8f6b2a;        /* adaptive gold TEXT — 4.63:1 on ivory */
   --wn-gold-soft: #f6eedb;
   --wn-sand: #e8dcc3;
   --wn-white: #ffffff;
@@ -51,12 +52,16 @@
   --wn-surface-mint: var(--wn-mint-soft);
   --wn-surface-sunken: var(--wn-ivory-deep);
   --wn-surface-dark: var(--wn-emerald-deep);
+  /* Section background contract — every landing band maps to one of these */
+  --wn-surface-canvas: var(--wn-bg);
+  --wn-surface-subtle: var(--wn-surface-sunken);
 
   --wn-border: #e6e0d0;
   --wn-border-strong: #d5ccb6;
   --wn-border-mint: #c9e3d9;
-  --wn-focus: var(--wn-teal);
-  --wn-focus-ring: 0 0 0 3px rgba(86, 179, 166, 0.45);
+  --wn-focus: var(--wn-emerald);
+  /* Dual-ring focus: canvas gap + solid emerald ring (WCAG 2.4.11 / 2.4.13) */
+  --wn-focus-ring: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-emerald);
 
   --wn-danger: #b42318;
   --wn-danger-soft: #fdecea;
@@ -64,11 +69,12 @@
   --wn-warning: #b54708;
 
   /* ── Typography ───────────────────────────────────────────────── */
-  --wn-font-ui-ar: 'IBM Plex Sans Arabic', 'Manrope', system-ui, sans-serif;
-  --wn-font-ui-en: 'Manrope', 'IBM Plex Sans Arabic', system-ui, sans-serif;
-  --wn-font-display-ar: 'Noto Naskh Arabic', 'IBM Plex Sans Arabic', serif;
-  --wn-font-display-en: 'Playfair Display', Georgia, serif;
-  --wn-font-quran: 'Amiri', 'Noto Naskh Arabic', serif;
+  /* Only families actually loaded in index.html (Tajawal, Cairo, Amiri). */
+  --wn-font-ui-ar: 'Tajawal', 'Cairo', system-ui, -apple-system, sans-serif;
+  --wn-font-ui-en: 'Cairo', 'Tajawal', system-ui, -apple-system, sans-serif;
+  --wn-font-display-ar: 'Amiri', 'Cairo', serif;
+  --wn-font-display-en: 'Amiri', Georgia, serif;
+  --wn-font-quran: 'Amiri', serif;
   --wn-font-ui: var(--wn-font-ui-ar);
   --wn-font-display: var(--wn-font-display-ar);
 
@@ -122,6 +128,9 @@
   --wn-z-header: 50;
   --wn-z-overlay: 60;
   --wn-z-modal: 70;
+
+  /* ── Mobile chrome ────────────────────────────────────────────── */
+  --wn-mobile-bar-h: 72px;        /* sticky bar height incl. padding */
 
   /* ═══ Legacy aliases → one token each (do not use in new code) ═══ */
   --athar-navy: var(--wn-emerald-deep);
@@ -197,6 +206,9 @@
   --wn-border: #23392f;
   --wn-border-strong: #2f4a3e;
   --wn-border-mint: #2a4a3f;
+  --wn-text-gold: #d4af6b;        /* 8.92:1 on the dark canvas — AAA */
+  --wn-surface-canvas: var(--wn-bg);
+  --wn-surface-subtle: var(--wn-surface);
   --wn-emerald-soft: #173a2e;
   --wn-gold-soft: #2b2617;
   --wn-mint-soft: #163028;

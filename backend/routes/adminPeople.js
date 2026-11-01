@@ -15,6 +15,7 @@ const Progress = require('../models/Progress');
 const Notification = require('../models/Notification');
 const TeacherUpdate = require('../models/TeacherUpdate');
 const AdminAuditLog = require('../models/AdminAuditLog');
+const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
 const { maskPhone } = require('../utils/phone');
 const { logAdminAction } = require('../services/adminAudit');
@@ -304,6 +305,7 @@ router.get('/students/:id', async (req, res) => {
       progress,
       notifications,
       updates,
+      subscriptions,
       audit,
     ] = await Promise.all([
       Session.find({
@@ -347,7 +349,8 @@ router.get('/students/:id', async (req, res) => {
         .lean(),
       Payment.find({ student: studentId })
         .populate('course', 'title slug')
-        .select('kind provider providerReference course amountMinor currency status manual.method manual.submittedAt manual.reviewedAt manual.reviewAction manual.reviewNote createdAt settledAt failedAt cancelledAt refundedAt')
+        .populate('subscription', 'planKey sessionCount pricingSnapshot')
+        .select('kind provider providerReference course subscription amountMinor currency status manual.method manual.submittedAt manual.reviewedAt manual.reviewAction manual.reviewNote createdAt settledAt failedAt cancelledAt refundedAt')
         .sort({ createdAt: -1 })
         .limit(100)
         .lean(),
@@ -366,6 +369,16 @@ router.get('/students/:id', async (req, res) => {
         .populate('teacher', 'personalInfo.fullName')
         .select('teacher title message videos.name videos.size videos.contentType publishedAt createdAt')
         .sort({ publishedAt: -1 })
+        .limit(50)
+        .lean(),
+      StudentSubscription.find({ student: studentId })
+        .populate('circle', 'name code status')
+        .populate({
+          path: 'preferredTeacher',
+          select: 'personalInfo.fullName user',
+          populate: { path: 'user', select: 'name' },
+        })
+        .sort({ createdAt: -1 })
         .limit(50)
         .lean(),
       AdminAuditLog.find({ entityType: 'student', entityId: String(studentId) })
@@ -433,11 +446,13 @@ router.get('/students/:id', async (req, res) => {
         guardians: guardianRows.length,
         activeEnrollments: enrollments.filter((entry) => entry.status === 'active').length,
         settledPayments: payments.filter((entry) => Boolean(entry.settledAt)).length,
+        activeSubscriptions: subscriptions.filter((sub) => ['active', 'placed', 'awaiting_placement'].includes(sub.status)).length,
       },
       guardians: guardianRows,
       guardianInvitations: invitationRows,
       sessions: sessionRows,
       homework: taskRows,
+      subscriptions,
       enrollments,
       payments,
       progress,
@@ -455,6 +470,43 @@ router.get('/students/:id', async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/students/:id', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student id' });
+    }
+    const student = await User.findOne({ _id: req.params.id, role: 'student' });
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+
+    const { currentLevel, preferredTrack, memorizedJuz, memorizationDetails, isActive, adminReason } = req.body || {};
+    if (typeof currentLevel === 'string' && currentLevel.trim()) student.currentLevel = currentLevel.trim();
+    if (typeof preferredTrack === 'string' && preferredTrack.trim()) student.preferredTrack = preferredTrack.trim();
+    if (memorizedJuz !== undefined && Number.isFinite(Number(memorizedJuz))) {
+      student.memorizedJuz = Math.max(0, Math.min(30, Number(memorizedJuz)));
+    }
+    if (typeof memorizationDetails === 'string') student.memorizationDetails = memorizationDetails.trim().slice(0, 500);
+    if (typeof isActive === 'boolean') student.isActive = isActive;
+
+    await student.save();
+
+    await logAdminAction({
+      req,
+      action: 'student.admin-profile.updated',
+      entityType: 'student',
+      entityId: String(student._id),
+      reason: String(adminReason || 'تحديث ملف الطالب من Student 360').trim().slice(0, 200),
+      metadata: {
+        fields: ['currentLevel', 'preferredTrack', 'memorizedJuz', 'memorizationDetails', 'isActive']
+          .filter((key) => req.body?.[key] !== undefined),
+      },
+    }).catch(() => {});
+
+    return res.json({ success: true, student });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
 });
 

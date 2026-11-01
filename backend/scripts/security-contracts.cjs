@@ -878,7 +878,7 @@ requireContains(
 requireContains(
   'backend/config/uploadPolicy.js',
   'payment proofs must be restricted to student private upload policy',
-  /['"]payment-proof['"]:\s*\{[\s\S]{0,180}roles:\s*\[['"]student['"]\]/
+  /['"]payment-proof['"]:\s*\{[\s\S]{0,180}roles:\s*\[['"]student['"](?:,\s*['"]guardian['"])?\]/
 );
 requireContains(
   'backend/routes/payments.js',
@@ -1261,6 +1261,28 @@ requireContains(
   '.github/dependabot.yml',
   'Dependabot configuration must monitor root and backend npm ecosystems',
   /package-ecosystem:\s*["']npm["'][\s\S]{0,400}directory:\s*["']\/backend["']/
+);
+
+// Backend Wave 4 (AI upload magic-bytes, role guards, prototype pollution, leaderboard allowlist):
+requireContains(
+  'backend/routes/ai.js',
+  'AI recitation audio upload must verify binary magic bytes',
+  /validateMagicBytes\(req\.file\.buffer,\s*mime\)[\s\S]{0,200}!magicCheck\.valid[\s\S]{0,200}INVALID_AUDIO_MAGIC_BYTES/
+);
+requireContains(
+  'backend/routes/ai.js',
+  'AI status endpoint must be restricted to admin role',
+  /router\.get\(['"]\/status['"],\s*protect,\s*authorize\(['"]admin['"]\)/
+);
+requireContains(
+  'backend/app.js',
+  'request sanitizer must block prototype pollution keys (__proto__, constructor, prototype)',
+  /cleanKey\s*===\s*['"]__proto__['"][\s\S]{0,120}cleanKey\s*===\s*['"]constructor['"]/
+);
+requireContains(
+  'backend/routes/gamification.js',
+  'leaderboard endpoint must validate type and timeframe against an explicit allowlist',
+  /\['points',\s*'streak',\s*'courses',\s*'quizzes'\]\.includes\(type\)/
 );
 
 if (failures.length) {

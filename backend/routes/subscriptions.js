@@ -5,6 +5,15 @@ const StudentSubscription = require('../models/StudentSubscription');
 const User = require('../models/User');
 const GroupCircle = require('../models/GroupCircle');
 const Teacher = require('../models/Teacher');
+const Guardian = require('../models/Guardian');
+
+async function isGuardianLinkedToStudent(guardianUserId, studentId) {
+  if (!guardianUserId || !studentId) return false;
+  const guardianDoc = await Guardian.findOne({ user: guardianUserId, 'children.student': studentId }).select('_id').lean();
+  if (guardianDoc) return true;
+  const userDoc = await User.findOne({ _id: guardianUserId, children: studentId }).select('_id').lean();
+  return Boolean(userDoc);
+}
 const { protect, authorize } = require('../middleware/auth');
 const {
   placeSubscription,
@@ -86,7 +95,14 @@ router.get('/me', protect, authorize('student'), async (req, res) => {
   }
 });
 
-router.post('/:id/renew', protect, authorize('student'), async (req, res) => {
+router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req, res) => {
+  if (req.user.role === 'guardian') {
+    const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
+    if (!targetSub || !(await isGuardianLinkedToStudent(req.user.id, targetSub.student))) {
+      return res.status(403).json({ error: 'غير مصرح بتجديد اشتراك هذا الطالب' });
+    }
+    req.user = { ...req.user, id: String(targetSub.student) };
+  }
   try {
     const source = await StudentSubscription.findOne({
       _id: req.params.id,
@@ -183,7 +199,14 @@ router.post('/:id/renew', protect, authorize('student'), async (req, res) => {
   }
 });
 
-router.post('/select', protect, authorize('student'), async (req, res) => {
+router.post('/select', protect, authorize('student', 'guardian'), async (req, res) => {
+  if (req.user.role === 'guardian') {
+    const requestedStudentId = String(req.body.studentId || '').trim();
+    if (!requestedStudentId || !(await isGuardianLinkedToStudent(req.user.id, requestedStudentId))) {
+      return res.status(403).json({ error: 'غير مصرح باختيار باقة لهذا الطالب' });
+    }
+    req.user = { ...req.user, id: requestedStudentId };
+  }
   try {
     const planKey = String(req.body.planKey || '').trim();
     const section = String(req.body.section || '').trim();
@@ -411,6 +434,36 @@ router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req,
   }
 });
 
+router.put('/admin/circles/:id/status', protect, authorize('admin'), async (req, res) => {
+  try {
+    const circle = await GroupCircle.findById(req.params.id);
+    if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+
+    const requestedStatus = String(req.body?.status || '').trim();
+    if (!['active', 'paused'].includes(requestedStatus)) {
+      return res.status(400).json({ error: 'الحالة المطلوبة غير صحيحة' });
+    }
+
+    const plan = getPlan(circle.subscriptionPlanKey);
+    const nextStatus = requestedStatus === 'paused' ? 'paused' : circleStatusForCount(circle, plan);
+    circle.status = nextStatus === 'paused' ? 'paused' : (circle.startedAt ? 'active' : nextStatus);
+    await circle.save();
+
+    await logAdminAction({
+      req,
+      action: requestedStatus === 'paused' ? 'subscription-circle.paused' : 'subscription-circle.resumed',
+      entityType: 'group-circle',
+      entityId: String(circle._id),
+      reason: String(req.body?.reason || (requestedStatus === 'paused' ? 'إيقاف مؤقت للحلقة من الإدارة' : 'استئناف الحلقة من الإدارة')).slice(0, 200),
+      metadata: { status: circle.status },
+    }).catch(() => {});
+
+    return res.json({ success: true, circle });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل تحديث حالة الحلقة' });
+  }
+});
+
 router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) => {
   try {
     const result = await placeSubscription({
@@ -511,7 +564,7 @@ router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) =>
   }
 });
 
-router.get('/:id', protect, authorize('student', 'admin'), async (req, res) => {
+router.get('/:id', protect, authorize('student', 'guardian', 'admin'), async (req, res) => {
   try {
     const subscription = await StudentSubscription.findById(req.params.id)
       .populate({
@@ -525,7 +578,8 @@ router.get('/:id', protect, authorize('student', 'admin'), async (req, res) => {
       return res.status(404).json({ error: 'الاشتراك غير موجود', code: 'SUBSCRIPTION_NOT_FOUND' });
     }
 
-    if (req.user.role !== 'admin' && String(subscription.student) !== String(req.user.id)) {
+    const isLinkedGuardian = req.user.role === 'guardian' && (await isGuardianLinkedToStudent(req.user.id, subscription.student));
+    if (req.user.role !== 'admin' && !isLinkedGuardian && String(subscription.student) !== String(req.user.id)) {
       return res.status(403).json({ error: 'غير مصرح بعرض هذا الاشتراك' });
     }
 

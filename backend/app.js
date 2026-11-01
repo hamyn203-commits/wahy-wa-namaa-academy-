@@ -133,6 +133,8 @@ app.use(cors({
 // explicitly trusted browser Origin in production to prevent cross-site use.
 app.use('/api/auth/refresh', requireTrustedOrigin);
 app.use('/api/auth/logout', requireTrustedOrigin);
+app.use('/api/auth/logout-all', requireTrustedOrigin);
+app.use('/api/auth/change-password', requireTrustedOrigin);
 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true, limit: '4mb' }));
@@ -151,6 +153,7 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/contact', publicSubmissionLimiter);
   app.use('/api/careers/apply', publicSubmissionLimiter);
   app.use('/api/donations', publicSubmissionLimiter);
+  app.use('/api/ai', rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.AI_RATE_LIMIT_MAX || 25), message: { error: 'Too many AI assistant requests. Please try again later.' }, standardHeaders: true, legacyHeaders: false }));
 }
 
 app.use(require('./middleware/detectMarket'));
@@ -174,6 +177,7 @@ function sanitizeObject(obj, parentKey = '') {
   const sanitized = Array.isArray(obj) ? [] : {};
   for (const key in obj) {
     const cleanKey = key.replace(/[.$]/g, '_');
+    if (cleanKey === '__proto__' || cleanKey === 'constructor' || cleanKey === 'prototype' || !Object.prototype.hasOwnProperty.call(obj, key)) continue;
     sanitized[cleanKey] = sanitizeObject(obj[key], cleanKey);
   }
   return sanitized;

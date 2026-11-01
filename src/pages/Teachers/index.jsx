@@ -590,7 +590,7 @@ export default function Teachers() {
                     const ratingCount = Number(teacher.rating?.count || 0);
                     const ratingAverage = Number(teacher.rating?.average || 0);
                     const specializations = Array.isArray(teacher.quranInfo?.specializations) ? teacher.quranInfo.specializations.slice(0, 4) : [];
-                    const languages = Array.isArray(teacher.personalInfo?.languages) ? teacher.personalInfo.languages.slice(0, 3) : [];
+                    const languages = Array.isArray(teacher.languages || teacher.personalInfo?.languages) ? (teacher.languages || teacher.personalInfo?.languages).slice(0, 3) : [];
                     const price = teacher.hourlyRate;
                     const country = teacher.personalInfo?.country;
                     const experience = teacher.quranInfo?.teachingExperience;

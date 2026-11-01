@@ -4,6 +4,9 @@ import {
   RefreshCw, UserRound, Video,
 } from 'lucide-react';
 import api from '../../lib/api';
+import { useToast } from '../../context/ToastProvider';
+import { useI18n } from '../../i18n';
+import { localizedPath } from '../../lib/locale';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 
 const FOCUS_META = {
@@ -44,7 +47,26 @@ export default function AdminSessionControl({
 }) {
   const safeInitial = FOCUS_META[initialFocus] ? initialFocus : 'all';
   const [focus, setFocus] = useState(safeInitial);
+  const toast = useToast();
+  const { locale } = useI18n();
   const [sessions, setSessions] = useState([]);
+  const [updatingSessionId, setUpdatingSessionId] = useState('');
+
+  const updateSessionStatus = async (sessionId, nextStatus) => {
+    setUpdatingSessionId(sessionId);
+    try {
+      await api.put(`/api/admin/session-control/${sessionId}/status`, {
+        status: nextStatus,
+        reason: nextStatus === 'completed' ? 'إغلاق حصة متأخرة من مركز التحكم' : 'إلغاء حصة من مركز التحكم',
+      }, { auth: true });
+      toast.success(nextStatus === 'completed' ? 'تم إغلاق الحصة كمكتملة' : 'تم إلغاء الحصة');
+      await load();
+    } catch (err) {
+      toast.error(err.message || 'تعذر تحديث حالة الحصة');
+    } finally {
+      setUpdatingSessionId('');
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -153,7 +175,39 @@ export default function AdminSessionControl({
                 {session.recordingAvailable ? <span><Video size={13} /> تسجيل متاح</span> : null}
               </div>
 
-              <code>{session._id}</code>
+              <div className="flex flex-wrap items-center gap-2">
+                {['accepted', 'pending'].includes(session.status) ? (
+                  <a
+                    href={localizedPath(`/live/${session.roomId || session._id}`, locale)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition"
+                  >
+                    دخول الغرفة كمراقب
+                  </a>
+                ) : null}
+                {session.status === 'accepted' ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={updatingSessionId === session._id}
+                      onClick={() => updateSessionStatus(session._id, 'completed')}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition"
+                    >
+                      إغلاق كمكتملة
+                    </button>
+                    <button
+                      type="button"
+                      disabled={updatingSessionId === session._id}
+                      onClick={() => updateSessionStatus(session._id, 'cancelled')}
+                      className="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 transition"
+                    >
+                      إلغاء الحصة
+                    </button>
+                  </>
+                ) : null}
+                <code>{session._id}</code>
+              </div>
             </article>
           ))}
         </div>
