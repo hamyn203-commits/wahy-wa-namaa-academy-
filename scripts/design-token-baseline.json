@@ -2,8 +2,8 @@
   "generatedBy": "scripts/design-token-scan.mjs",
   "totals": {
     "important": 115,
-    "hex": 1150,
-    "rgba": 1002,
+    "hex": 1132,
+    "rgba": 981,
     "fontSize": 801,
     "radiusPx": 468
   },
@@ -81,8 +81,8 @@
       "hex": 1
     },
     "src/pages/NewLandingPage/approved-homepage.css": {
-      "hex": 69,
-      "rgba": 249,
+      "hex": 51,
+      "rgba": 228,
       "fontSize": 99,
       "radiusPx": 73,
       "important": 10
