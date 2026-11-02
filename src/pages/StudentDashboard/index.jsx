@@ -364,7 +364,9 @@ export default function StudentDashboard() {
       if (subRes.status === 'fulfilled' && subRes.value) {
         setSubscriptions(subRes.value.subscriptions || []);
       }
-      setSubscriptionsLoaded(true);
+      // Only a successful response confirms the package state; on failure the
+      // dashboard shows a retry notice instead of new-student onboarding.
+      setSubscriptionsLoaded(subRes.status === 'fulfilled');
       setLoadErrors({
         discover: discRes.status === 'rejected',
         trials: trRes.status === 'rejected',
@@ -537,7 +539,9 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (!subscriptionsLoaded || defaultStudentTabRef.current) return;
     defaultStudentTabRef.current = true;
-  }, [subscriptionsLoaded]);
+    // Subscribers land on their sessions and circle schedule by default.
+    if (currentSubscription && !searchParams.get('tab')) setTab('sessions');
+  }, [subscriptionsLoaded, currentSubscription, searchParams]);
 
   if (!ready) return null;
 

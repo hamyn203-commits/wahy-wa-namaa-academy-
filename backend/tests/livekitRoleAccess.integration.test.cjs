@@ -75,6 +75,9 @@ const originalTeacherFindOne = Teacher.findOne;
 const originalSessionFindById = Session.findById;
 const originalGuardianFindOne = Guardian.findOne;
 const originalLiveFindOne = LiveSession.findOne;
+const originalUserFindById = User.findById;
+const originalUserFind = User.find;
+const originalSessionUpdateOne = Session.updateOne;
 
 Teacher.findOne = (filter = {}) => {
   if (filter.user && String(filter.user) === ids.teacherUser) return q(teacherProfile);
@@ -102,6 +105,30 @@ Guardian.findOne = (filter = {}) => {
 };
 
 LiveSession.findOne = (filter = {}) => q(filter.roomId === liveSession.roomId ? liveSession : null);
+
+// The token route looks up the participant display name. Without this stub the
+// query waits on a database that does not exist and the request never returns.
+User.findById = (id) => {
+  const found = Object.values(users).find((item) => String(item._id) === String(id));
+  const value = found ? { _id: found._id, name: found.role + ' qa' } : null;
+  const query = {
+    select() { return query; },
+    lean() { return query; },
+    catch() { return Promise.resolve(value); },
+    then(resolve, reject) { return Promise.resolve(value).then(resolve, reject); },
+  };
+  return query;
+};
+User.find = () => {
+  const query = {
+    select() { return query; },
+    lean() { return query; },
+    catch() { return Promise.resolve([]); },
+    then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
+  };
+  return query;
+};
+Session.updateOne = async () => ({ acknowledged: true, modifiedCount: 0 });
 
 delete require.cache[require.resolve('../routes/live')];
 const liveRouter = require('../routes/live');
@@ -142,6 +169,9 @@ test('LiveKit room permissions are server-derived and fail closed', async (t) =>
     Session.findById = originalSessionFindById;
     Guardian.findOne = originalGuardianFindOne;
     LiveSession.findOne = originalLiveFindOne;
+    User.findById = originalUserFindById;
+    User.find = originalUserFind;
+    Session.updateOne = originalSessionUpdateOne;
     mongoose.connection.readyState = originalReadyState;
     delete require.cache[require.resolve('../routes/live')];
   });

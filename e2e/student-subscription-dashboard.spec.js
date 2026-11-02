@@ -32,7 +32,8 @@ test('subscriber sees package, used credits and two-lesson warning after login a
   await expect(card.getByText('الباقة: 8 حصص · المستخدم: 6 · المتبقي: 2')).toBeVisible();
   await expect(page.locator('.wn-student-welcome')).toHaveCount(0);
   await page.goto('/ar/student/dashboard?tab=overview');
-  await expect(page.getByRole('heading', { name: 'متابعة دراستك' })).toBeVisible();
+  // The overview's study workspace is now the active-subscription card.
+  await expect(page.locator('.wn-student-active-subscription-card')).toBeVisible();
   await expect(page.getByText('ابدأ بخطوة واضحة: اختر المعلم المناسب واحجز حصتك التجريبية.')).toHaveCount(0);
 });
 
