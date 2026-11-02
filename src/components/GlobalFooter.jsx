@@ -9,8 +9,14 @@ import { SOCIAL_LINKS, CONTACT } from '../config/social';
 import BrandLogo from './BrandLogo';
 import MobileStickyBar from './MobileStickyBar';
 import { prefetchRoute } from '../lib/routePrefetch';
+import { usePublicChromeHidden } from '../lib/publicChrome';
 
 export default function GlobalFooter() {
+  const hidden = usePublicChromeHidden();
+  return hidden ? null : <PublicGlobalFooter />;
+}
+
+function PublicGlobalFooter() {
   const { t, locale } = useI18n();
   const { locale: paramLocale } = useParams();
   const activeLocale = paramLocale || locale || DEFAULT_LOCALE;

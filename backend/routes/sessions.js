@@ -11,6 +11,11 @@ const meetingService = require('../services/meetingService');
 const { meetingVisibleToRole, sessionParticipantWindow } = require('../services/sessionAccess');
 const { calculateSessionEarning, ensureSessionEarning } = require('../services/teacherFinance');
 const { settleSubscriptionUsageForSession } = require('../services/subscriptionUsage');
+const {
+  findStudentTeacherLock,
+  isTeacherAllowedForLock,
+  teacherLockedResponse,
+} = require('../utils/studentTeacherLock');
 const { getPlan } = require('../config/subscriptionPlans');
 const {
   parseRequestedDateTime,
@@ -183,6 +188,11 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found or not available' });
+    }
+
+    const teacherLock = await findStudentTeacherLock(req.user.id);
+    if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
+      return res.status(409).json(teacherLockedResponse(teacherLock));
     }
 
     const trialUsed = await Session.countDocuments({
@@ -449,6 +459,11 @@ router.post('/regular', protect, async (req, res) => {
     const teacher = await Teacher.findOne({ _id: teacherId, status: 'approved', isVerified: true });
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found or not available' });
+    }
+
+    const teacherLock = await findStudentTeacherLock(req.user.id);
+    if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
+      return res.status(409).json(teacherLockedResponse(teacherLock));
     }
 
     const prior = await Session.findOne({

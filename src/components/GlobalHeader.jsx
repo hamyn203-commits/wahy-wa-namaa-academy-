@@ -11,8 +11,14 @@ import ThemeToggle from './shared/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 import { prefetchRoute } from '../lib/routePrefetch';
 import { isOnboardingPath } from '../lib/navigation';
+import { usePublicChromeHidden } from '../lib/publicChrome';
 
 export default function GlobalHeader() {
+  const hidden = usePublicChromeHidden();
+  return hidden ? null : <PublicGlobalHeader />;
+}
+
+function PublicGlobalHeader() {
   const { t, locale } = useI18n();
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;

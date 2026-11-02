@@ -23,6 +23,7 @@ import SupportChat, { SupportLauncher } from '../../components/support/SupportCh
 import Skeleton from '../../components/shared/Skeleton';
 import { StudentInspirationStrip } from '../../components/dashboard/QuranJourneyWidgets';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
+import { teacherLockFromSubscriptions } from '../../lib/studentTeacherLock';
 
 const emptyReview = { rating: 5, comment: '', wouldContinue: true };
 const emptyBook = { date: '', time: '', notes: '' };
@@ -217,7 +218,7 @@ export default function StudentDashboard() {
   const toast = useToast();
   const { stats: gameStats, badges } = useGamificationApi();
 
-  const [tab, setTab] = useState('overview');
+  const [requestedTab, setTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState({});
   const [trials, setTrials] = useState([]);
@@ -246,6 +247,14 @@ export default function StudentDashboard() {
   const [guardianInviteForm, setGuardianInviteForm] = useState({ guardianPhone: '', relationship: 'father' });
   const [savingGuardianInvite, setSavingGuardianInvite] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Once a tutor is chosen on a subscription the student stays with that tutor:
+  // the tutor marketplace is closed and only the chosen tutor is listed.
+  const teacherLock = teacherLockFromSubscriptions(subscriptions);
+  const tab = teacherLock && requestedTab === 'discover' ? 'overview' : requestedTab;
+  const myTeachers = teacherLock
+    ? teachers.filter((item) => String(item._id) === teacherLock.teacherId)
+    : teachers;
 
   const [reviewModal, setReviewModal] = useState(null);
   const [reviewForm, setReviewForm] = useState(emptyReview);
@@ -969,7 +978,7 @@ export default function StudentDashboard() {
     { id: 'trials', label: locale === 'id' ? 'Uji Coba' : locale === 'ar' ? 'التجريبية' : 'Trials', icon: Clock, badge: pendingTrials.length + upcomingTrials.length },
     { id: 'sessions', label: locale === 'id' ? 'Sesi' : locale === 'ar' ? 'حصصي' : 'Sessions', icon: Calendar, badge: upcomingSessions.length + pendingSessions.length },
     { id: 'homework', label: locale === 'id' ? 'Tugas' : locale === 'ar' ? 'واجباتي' : 'Homework', icon: FileText, badge: stats.homeworkPending || 0 },
-  ];
+  ].filter((item) => !(teacherLock && item.id === 'discover'));
 
   const secondaryNavItems = [
     {
@@ -1178,6 +1187,17 @@ export default function StudentDashboard() {
                     </span>
                   ) : null}
                 </div>
+                {teacherLock ? (
+                  <p className="mt-3 text-xs font-semibold text-slate-600" data-testid="teacher-lock-note">
+                    {locale === 'ar'
+                      ? 'تم اعتماد معلمك لهذه الرحلة. لتغيير المعلم تواصل مع إدارة الأكاديمية.'
+                      : 'Your tutor is confirmed for this journey. To change tutor, contact the academy.'}
+                    {' '}
+                    <button type="button" onClick={() => setTab('support')} className="font-bold text-emerald-700 underline">
+                      {locale === 'ar' ? 'تواصل مع الإدارة' : 'Contact support'}
+                    </button>
+                  </p>
+                ) : null}
               <div className="mt-4 space-y-3" data-testid="subscription-details">
                 <p className="text-sm font-semibold">{locale === 'ar' ? 'سعر الحصة:' : 'Price per lesson:'} {Number(currentSubscription.pricePerSessionMinor || 0) / 100} {currentSubscription.currency || 'EGP'}</p>
                 <progress className="w-full" value={currentSubscription.sessionsUsed || 0} max={currentSubscription.sessionCount} aria-label={locale === 'ar' ? 'الحصص المستخدمة' : 'Used sessions'} />
@@ -1530,10 +1550,12 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                     <div className="wn-student-quick-grid">
-                      <button type="button" onClick={() => setTab('discover')} className="wn-student-quick-card">
-                        <Users size={20} />
-                        <span>{locale === 'ar' ? 'اختر معلمك' : 'Find tutor'}</span>
-                      </button>
+                      {!teacherLock && (
+                        <button type="button" onClick={() => setTab('discover')} className="wn-student-quick-card">
+                          <Users size={20} />
+                          <span>{locale === 'ar' ? 'اختر معلمك' : 'Find tutor'}</span>
+                        </button>
+                      )}
                       <button type="button" onClick={() => setTab('sessions')} className="wn-student-quick-card">
                         <Calendar size={20} />
                         <span>{locale === 'ar' ? 'حصصي' : 'My sessions'}</span>
@@ -1606,7 +1628,7 @@ export default function StudentDashboard() {
                       </button>
                       <button type="button" onClick={() => setTab('account')}>
                         <span>{locale === 'ar' ? 'المعلمون في رحلتك' : 'Your tutors'}</span>
-                        <strong>{teachers.length}</strong>
+                        <strong>{myTeachers.length}</strong>
                       </button>
                     </div>
                   </section>
@@ -1643,11 +1665,13 @@ export default function StudentDashboard() {
                           ? (locale === 'ar' ? 'طلبك التجريبي في انتظار رد المعلم' : 'Your trial request is awaiting a response')
                           : stats.homeworkPending
                             ? (locale === 'ar' ? 'لديك واجب يحتاج إلى التسليم' : 'You have homework waiting')
-                            : (locale === 'ar' ? 'استكشف المعلمين واختر الأنسب لك' : 'Explore tutors and find your match')}
+                            : teacherLock
+                              ? (locale === 'ar' ? 'تابع حصصك مع معلمك' : 'Follow your sessions with your tutor')
+                              : (locale === 'ar' ? 'استكشف المعلمين واختر الأنسب لك' : 'Explore tutors and find your match')}
                       </h3>
                       <button
                         type="button"
-                        onClick={() => setTab(pendingTrials.length ? 'trials' : stats.homeworkPending ? 'homework' : 'discover')}
+                        onClick={() => setTab(pendingTrials.length ? 'trials' : stats.homeworkPending ? 'homework' : teacherLock ? 'sessions' : 'discover')}
                         className="wn-student-primary-action"
                       >
                         {locale === 'ar' ? 'ابدأ الآن' : 'Continue'}
@@ -1807,12 +1831,14 @@ export default function StudentDashboard() {
 
                 <div>
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold flex items-center gap-2"><Users size={18} /> {locale === 'id' ? 'Guru Saya' : locale === 'ar' ? 'معلمي' : 'My Tutors'} ({teachers.length})</h3>
-                    <Link to={lp('/teachers')} className="text-sm text-emerald-600 hover:underline">{locale === 'id' ? 'Cari Guru' : locale === 'ar' ? 'ابحث عن معلم' : 'Find a Tutor'}</Link>
+                    <h3 className="font-bold flex items-center gap-2"><Users size={18} /> {locale === 'id' ? 'Guru Saya' : locale === 'ar' ? 'معلمي' : 'My Tutors'} ({myTeachers.length})</h3>
+                    {!teacherLock && (
+                      <Link to={lp('/teachers')} className="text-sm text-emerald-600 hover:underline">{locale === 'id' ? 'Cari Guru' : locale === 'ar' ? 'ابحث عن معلم' : 'Find a Tutor'}</Link>
+                    )}
                   </div>
-                  {teachers.length === 0 ? (
+                  {myTeachers.length === 0 ? (
                     <p className="text-center text-gray-500 py-6">{locale === 'id' ? 'Pesan sesi uji coba gratis dari halaman guru' : locale === 'ar' ? 'احجز حصة تجريبية من صفحة المعلمين' : 'Book a trial session from the teachers page'}</p>
-                  ) : teachers.map((t) => (
+                  ) : myTeachers.map((t) => (
                     <div key={t._id} className="border rounded-lg p-4 mb-2 flex flex-wrap justify-between items-center gap-3">
                       <div>
                         <h4 className="font-bold">{t.name}</h4>
@@ -1853,7 +1879,9 @@ export default function StudentDashboard() {
                 ) : trials.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-gray-500 mb-3">{locale === 'id' ? 'Tidak ada permintaan uji coba' : locale === 'ar' ? 'لم تحجز حصة تجريبية بعد' : 'You have not booked a trial yet'}</p>
-                    <button type="button" onClick={() => setTab('discover')} className="btn-primary inline-block text-sm">{locale === 'id' ? 'Pesan Sesi Uji Coba' : locale === 'ar' ? 'اختر معلمًا واحجز تجريبيتك' : 'Choose a tutor and book a trial'}</button>
+                    {!teacherLock && (
+                      <button type="button" onClick={() => setTab('discover')} className="btn-primary inline-block text-sm">{locale === 'id' ? 'Pesan Sesi Uji Coba' : locale === 'ar' ? 'اختر معلمًا واحجز تجريبيتك' : 'Choose a tutor and book a trial'}</button>
+                    )}
                   </div>
                 ) : trials.map((s) => (
                   <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')} currentUserId={user?._id || user?.id} />

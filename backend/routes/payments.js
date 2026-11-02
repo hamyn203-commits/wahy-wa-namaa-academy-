@@ -22,6 +22,11 @@ const objectStorage = require('../services/objectStorage');
 const { processPaymobWebhook } = require('../services/paymentSettlement');
 const { processManualPaymentReview } = require('../services/manualPaymentSettlement');
 const { placeSubscription } = require('../services/subscriptionPlacement');
+const {
+  findStudentTeacherLock,
+  isTeacherAllowedForLock,
+  teacherLockedResponse,
+} = require('../utils/studentTeacherLock');
 const { notifyCourseEnrollment, notifyAdmins, notifyUser } = require('../utils/notify');
 const { logAdminAction } = require('../services/adminAudit');
 
@@ -436,6 +441,11 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
       error: 'هذا الاشتراك لم يعد في مرحلة الدفع',
       code: 'SUBSCRIPTION_PAYMENT_NOT_ALLOWED',
     });
+  }
+
+  const teacherLock = await findStudentTeacherLock(req.user.id);
+  if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
+    return res.status(409).json(teacherLockedResponse(teacherLock));
   }
 
   if (

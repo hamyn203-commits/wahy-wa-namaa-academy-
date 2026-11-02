@@ -62,7 +62,8 @@ export default function ManualPayment() {
           const currentSubscription = subscriptionResult.subscription;
           setSubscription(currentSubscription);
 
-          if (currentSubscription?.renewalOf && currentSubscription?.preferredTeacher) {
+          // A tutor already recorded on the subscription is final for the student.
+          if (currentSubscription?.preferredTeacher) {
             const lockedTeacher = currentSubscription.preferredTeacher;
             setTeachers([lockedTeacher]);
             setPreferredTeacherId(lockedTeacher?._id || lockedTeacher || '');

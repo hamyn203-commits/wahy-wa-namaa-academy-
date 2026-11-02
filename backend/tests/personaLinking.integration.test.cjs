@@ -16,6 +16,7 @@ const LiveSession = require('../models/LiveSession');
 const Notification = require('../models/Notification');
 const TeacherLedger = require('../models/TeacherLedger');
 const AdminAuditLog = require('../models/AdminAuditLog');
+const StudentSubscription = require('../models/StudentSubscription');
 const app = require('../app');
 const { generateAccessToken } = require('../middleware/auth');
 
@@ -197,6 +198,8 @@ Guardian.find = (filter = {}) => {
   return query([]);
 };
 LiveSession.find = () => query([]);
+// The QA student has not chosen a tutor on any subscription, so no tutor lock applies.
+StudentSubscription.findOne = () => query(null);
 const notifications = [];
 Notification.createAndSend = async (userId, payload) => {
   notifications.push({ userId: String(userId), ...payload });

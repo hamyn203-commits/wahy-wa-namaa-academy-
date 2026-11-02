@@ -12,6 +12,7 @@ const QuranChatWidget = lazy(() => import('./components/QuranChatWidget'));
 const PwaInstallPrompt = lazy(() => import('./components/PwaInstallPrompt'));
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import { StudentPublicRedirect, StudentShell } from './components/StudentArea';
 
 const LandingPage = lazy(() => import('./pages/NewLandingPage'));
 const StudentJourney = lazy(() => import('./pages/StudentJourney'));
@@ -82,43 +83,45 @@ function pageRoutes() {
     <>
       <Route index element={<AuthenticatedLanding><LandingPage /></AuthenticatedLanding>} />
       <Route path="login" element={<AuthenticatedLanding><Login /></AuthenticatedLanding>} />
-      <Route path="start" element={<StartPage />} />
-      <Route path="journey" element={<StudentJourney />} />
+      {/* Signed-in students never see public marketing pages: they are sent to their dashboard. */}
+      <Route path="start" element={<StudentPublicRedirect><StartPage /></StudentPublicRedirect>} />
+      <Route path="journey" element={<StudentShell><StudentJourney /></StudentShell>} />
       <Route path="forgot-password" element={<ForgotPassword />} />
       <Route path="reset-password" element={<ResetPassword />} />
-      <Route path="register" element={<Register />} />
-      <Route path="register/student" element={<Register />} />
-      <Route path="register/guardian" element={<Register />} />
-      <Route path="register/teacher" element={<TeacherRegistration />} />
-      <Route path="about" element={<About />} />
-      <Route path="faq" element={<FAQPage />} />
-      <Route path="privacy" element={<Privacy />} />
-      <Route path="terms" element={<Terms />} />
-      <Route path="courses" element={<Courses />} />
-      <Route path="courses/:slug" element={<CourseDetail />} />
+      <Route path="register" element={<StudentPublicRedirect><Register /></StudentPublicRedirect>} />
+      <Route path="register/student" element={<StudentPublicRedirect><Register /></StudentPublicRedirect>} />
+      <Route path="register/guardian" element={<StudentPublicRedirect><Register /></StudentPublicRedirect>} />
+      <Route path="register/teacher" element={<StudentPublicRedirect><TeacherRegistration /></StudentPublicRedirect>} />
+      <Route path="about" element={<StudentPublicRedirect><About /></StudentPublicRedirect>} />
+      <Route path="faq" element={<StudentPublicRedirect tab="support"><FAQPage /></StudentPublicRedirect>} />
+      <Route path="privacy" element={<StudentShell><Privacy /></StudentShell>} />
+      <Route path="terms" element={<StudentShell><Terms /></StudentShell>} />
+      <Route path="courses" element={<StudentShell><Courses /></StudentShell>} />
+      <Route path="courses/:slug" element={<StudentShell><CourseDetail /></StudentShell>} />
       <Route path="courses/:slug/learn" element={<CourseLearn />} />
       <Route path="courses/:slug/learn/:lessonId" element={<CourseLearn />} />
-      <Route path="blog" element={<Blog />} />
-      <Route path="blog/:slug" element={<BlogDetail />} />
-      <Route path="contact" element={<Contact />} />
-      <Route path="verify-certificate/:certificateId" element={<CertificateView />} />
+      <Route path="blog" element={<StudentPublicRedirect><Blog /></StudentPublicRedirect>} />
+      <Route path="blog/:slug" element={<StudentPublicRedirect><BlogDetail /></StudentPublicRedirect>} />
+      <Route path="contact" element={<StudentPublicRedirect tab="support"><Contact /></StudentPublicRedirect>} />
+      <Route path="verify-certificate/:certificateId" element={<StudentShell><CertificateView /></StudentShell>} />
       <Route path="profile/setup" element={<ProtectedRoute roles={['student', 'teacher', 'guardian']}><ProfileSetup /></ProtectedRoute>} />
       <Route path="student" element={<StudentLegacyRedirect />} />
       <Route path="student/dashboard" element={<ProtectedRoute roles={['student']}><StudentDashboard /></ProtectedRoute>} />
       <Route path="guardian" element={<GuardianLegacyRedirect />} />
       <Route path="guardian/dashboard" element={<ProtectedRoute roles={['guardian']}><GuardianDashboard /></ProtectedRoute>} />
       <Route path="teacher" element={<TeacherLegacyRedirect />} />
-      <Route path="teacher/register" element={<TeacherRegistration />} />
+      <Route path="teacher/register" element={<StudentPublicRedirect><TeacherRegistration /></StudentPublicRedirect>} />
       <Route path="teacher/dashboard" element={<ProtectedRoute roles={['teacher']}><TeacherDashboard /></ProtectedRoute>} />
-      <Route path="teachers" element={<Teachers />} />
-      <Route path="teachers/:id" element={<TeacherProfile />} />
-      <Route path="free-trial" element={<FreeTrial />} />
-      <Route path="plans" element={<PlansPage />} />
-      <Route path="trial" element={<FreeTrial />} />
-      <Route path="book-trial/:teacherId" element={<BookSession />} />
-      <Route path="global-platform" element={<GlobalPlatform />} />
-      <Route path="markets" element={<MarketsIndex />} />
-      <Route path="markets/:slug" element={<MarketDetail />} />
+      {/* Students who already chose a tutor cannot browse or book other tutors. */}
+      <Route path="teachers" element={<StudentShell lockPolicy="block"><Teachers /></StudentShell>} />
+      <Route path="teachers/:id" element={<StudentShell lockPolicy="own-teacher"><TeacherProfile /></StudentShell>} />
+      <Route path="free-trial" element={<StudentPublicRedirect tab="discover"><FreeTrial /></StudentPublicRedirect>} />
+      <Route path="plans" element={<StudentShell lockPolicy="block-unless-renewal"><PlansPage /></StudentShell>} />
+      <Route path="trial" element={<StudentPublicRedirect tab="discover"><FreeTrial /></StudentPublicRedirect>} />
+      <Route path="book-trial/:teacherId" element={<StudentShell lockPolicy="block"><BookSession /></StudentShell>} />
+      <Route path="global-platform" element={<StudentPublicRedirect><GlobalPlatform /></StudentPublicRedirect>} />
+      <Route path="markets" element={<StudentPublicRedirect><MarketsIndex /></StudentPublicRedirect>} />
+      <Route path="markets/:slug" element={<StudentPublicRedirect><MarketDetail /></StudentPublicRedirect>} />
       <Route path="admin/dashboard" element={<ProtectedRoute roles={['admin']}><AdminLegacyRedirect /></ProtectedRoute>} />
       <Route path="admin" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
       <Route path="admin/payments" element={<ProtectedRoute roles={['admin']}><AdminPayments /></ProtectedRoute>} />
@@ -127,21 +130,21 @@ function pageRoutes() {
       <Route path="live" element={<ProtectedRoute><LiveSessions /></ProtectedRoute>} />
       <Route path="live/:roomId" element={<ProtectedRoute><LiveRoom /></ProtectedRoute>} />
       <Route path="meeting/:sessionId" element={<ProtectedRoute><MeetingRoom /></ProtectedRoute>} />
-      <Route path="ai" element={<AIHub />} />
-      <Route path="donate" element={<Donate />} />
-      <Route path="payment/return" element={<ProtectedRoute roles={['student', 'admin']}><PaymentReturn /></ProtectedRoute>} />
-      <Route path="payment/manual" element={<ProtectedRoute roles={['student', 'guardian']}><ManualPayment /></ProtectedRoute>} />
-      <Route path="women" element={<WomenPortal />} />
-      <Route path="library" element={<VideoLibrary />} />
-      <Route path="careers" element={<Careers />} />
-      <Route path="programs/reverts" element={<RevertsProgram />} />
-      <Route path="programs/kids" element={<KidsProgram />} />
-      <Route path="kids" element={<KidsProgram />} />
-      <Route path="tracks" element={<TracksPage />} />
-      <Route path="leaderboard" element={<LeaderboardPage />} />
-      <Route path="app" element={<MobileAppPage />} />
-      <Route path="notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
-      <Route path="settings/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
+      <Route path="ai" element={<StudentShell><AIHub /></StudentShell>} />
+      <Route path="donate" element={<StudentPublicRedirect><Donate /></StudentPublicRedirect>} />
+      <Route path="payment/return" element={<ProtectedRoute roles={['student', 'admin']}><StudentShell><PaymentReturn /></StudentShell></ProtectedRoute>} />
+      <Route path="payment/manual" element={<ProtectedRoute roles={['student', 'guardian']}><StudentShell><ManualPayment /></StudentShell></ProtectedRoute>} />
+      <Route path="women" element={<StudentPublicRedirect><WomenPortal /></StudentPublicRedirect>} />
+      <Route path="library" element={<StudentShell><VideoLibrary /></StudentShell>} />
+      <Route path="careers" element={<StudentPublicRedirect><Careers /></StudentPublicRedirect>} />
+      <Route path="programs/reverts" element={<StudentPublicRedirect><RevertsProgram /></StudentPublicRedirect>} />
+      <Route path="programs/kids" element={<StudentPublicRedirect><KidsProgram /></StudentPublicRedirect>} />
+      <Route path="kids" element={<StudentPublicRedirect><KidsProgram /></StudentPublicRedirect>} />
+      <Route path="tracks" element={<StudentPublicRedirect><TracksPage /></StudentPublicRedirect>} />
+      <Route path="leaderboard" element={<StudentShell><LeaderboardPage /></StudentShell>} />
+      <Route path="app" element={<StudentPublicRedirect><MobileAppPage /></StudentPublicRedirect>} />
+      <Route path="notifications" element={<ProtectedRoute><StudentShell><NotificationsPage /></StudentShell></ProtectedRoute>} />
+      <Route path="settings/notifications" element={<ProtectedRoute><StudentShell><NotificationSettings /></StudentShell></ProtectedRoute>} />
     </>
   );
 }
