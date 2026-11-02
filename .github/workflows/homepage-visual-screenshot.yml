@@ -84,7 +84,7 @@ jobs:
           rm capture-homepage.mjs
 
       - name: Upload screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wahy-namaa-homepage-screenshot
           path: |
