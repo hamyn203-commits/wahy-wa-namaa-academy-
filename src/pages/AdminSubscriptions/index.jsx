@@ -87,7 +87,6 @@ export default function AdminSubscriptions() {
         ? {
             existingCircleId: form.existingCircleId,
             allowFlexibleCircle: form.mode === 'flexible',
-            circleName: form.circleName?.trim() || undefined,
             schedule: schedulePayload,
             timezone: form.timezone || 'Africa/Cairo',
             startImmediately: Boolean(form.setScheduleNow && form.startImmediately),

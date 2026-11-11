@@ -45,7 +45,7 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
       await api.post('/api/subscriptions/admin/circles/' + circle._id + '/start', {
         schedule,
         timezone,
-        allowUnderMinimum: true,
+        allowUnderMinimum: Boolean(circle.missingToStart > 0),
       }, { auth: true });
       toast.success('تم بدء الحلقة وتفعيل اشتراكات الطلاب. يمكنك الآن جدولة الحصص.');
       await onChanged();
