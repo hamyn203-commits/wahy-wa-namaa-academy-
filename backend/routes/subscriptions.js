@@ -18,6 +18,7 @@ const { protect, authorize } = require('../middleware/auth');
 const {
   placeSubscription,
   startSubscriptionCircle,
+  normalizeSchedule,
   circleGenderForStudent,
   ageGroupForStudent,
 } = require('../services/subscriptionPlacement');
@@ -337,18 +338,17 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
       .populate('circle', 'name code status capacity students schedule timezone subscriptionPlanKey teacher')
       .lean();
 
-    const teacherIds = subscriptions
-      .map((item) => item.preferredTeacher?._id)
-      .filter(Boolean);
-
-    const circles = teacherIds.length
-      ? await GroupCircle.find({
-          teacher: { $in: teacherIds },
-          status: { $nin: ['completed', 'paused'] },
-        })
+    const [allOpenCircles, approvedTeachers] = await Promise.all([
+      GroupCircle.find({
+        status: { $nin: ['completed'] },
+      })
         .select('name code status capacity students schedule timezone subscriptionPlanKey subscriptionSection teacher gender targetAgeGroup track level')
-        .lean()
-      : [];
+        .lean(),
+      Teacher.find({ status: 'approved', isVerified: true })
+        .select('personalInfo.fullName personalInfo.gender user')
+        .populate('user', 'name email')
+        .lean(),
+    ]);
 
     const rows = subscriptions.map((subscription) => {
       const student = subscription.student || {};
@@ -357,7 +357,7 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
       const expectedTrack = student.preferredTrack || 'memorization';
       const expectedLevel = student.currentLevel || 'beginner';
 
-      const compatibleCircles = circles
+      const compatibleCircles = allOpenCircles
         .filter((circle) => (
           String(circle.teacher) === String(subscription.preferredTeacher?._id || '')
           && circle.subscriptionPlanKey === subscription.planKey
@@ -366,6 +366,7 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
           && circle.targetAgeGroup === expectedAgeGroup
           && circle.track === expectedTrack
           && circle.level === expectedLevel
+          && !['completed', 'paused'].includes(circle.status)
           && (circle.students || []).length < operationalCapacity(circle)
         ))
         .map((circle) => ({
@@ -378,6 +379,28 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
           availableSeats: Math.max(0, operationalCapacity(circle) - (circle.students || []).length),
           schedule: circle.schedule || [],
           timezone: circle.timezone,
+          isFlexible: false,
+        }));
+
+      const compatibleIds = new Set(compatibleCircles.map((c) => String(c._id)));
+      const flexibleCircles = allOpenCircles
+        .filter((circle) => (
+          !compatibleIds.has(String(circle._id))
+          && (circle.students || []).length < operationalCapacity(circle)
+        ))
+        .map((circle) => ({
+          _id: circle._id,
+          name: circle.name,
+          code: circle.code,
+          status: circle.status,
+          teacherId: circle.teacher,
+          planKey: circle.subscriptionPlanKey,
+          capacity: operationalCapacity(circle),
+          currentCount: (circle.students || []).length,
+          availableSeats: Math.max(0, operationalCapacity(circle) - (circle.students || []).length),
+          schedule: circle.schedule || [],
+          timezone: circle.timezone,
+          isFlexible: true,
         }));
 
       return {
@@ -385,10 +408,18 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
         student: subscription.student,
         preferredTeacher: subscription.preferredTeacher,
         compatibleCircles,
+        flexibleCircles,
       };
     });
 
-    return res.json({ subscriptions: rows });
+    return res.json({
+      subscriptions: rows,
+      teachers: approvedTeachers.map((t) => ({
+        _id: t._id,
+        name: t.personalInfo?.fullName || t.user?.name || 'معلم',
+        gender: t.personalInfo?.gender || 'male',
+      })),
+    });
   } catch (error) {
     return res.status(500).json({ error: 'فشل تحميل طلبات التسكين', details: error.message });
   }
@@ -396,31 +427,83 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
 
 router.get('/admin/circles', protect, authorize('admin'), async (_req, res) => {
   try {
-    const circles = await GroupCircle.find({ subscriptionPlanKey: { $in: ['community', 'group', 'focused', 'mini', 'private'] }, status: { $ne: 'completed' } })
-      .sort({ createdAt: -1 }).limit(100)
-      .populate({ path: 'teacher', select: 'personalInfo user', populate: { path: 'user', select: 'name' } })
-      .lean();
+    const [circles, approvedTeachers, allStudents] = await Promise.all([
+      GroupCircle.find({ subscriptionPlanKey: { $in: ['community', 'group', 'focused', 'mini', 'private'] }, status: { $ne: 'completed' } })
+        .sort({ createdAt: -1 }).limit(100)
+        .populate({ path: 'teacher', select: 'personalInfo user', populate: { path: 'user', select: 'name' } })
+        .populate('students', 'name email phone gender age currentLevel')
+        .lean(),
+      Teacher.find({ status: 'approved', isVerified: true })
+        .select('personalInfo.fullName personalInfo.gender user')
+        .populate('user', 'name email')
+        .lean(),
+      User.find({ role: 'student', isActive: { $ne: false } })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .select('name email phone gender age currentLevel circle')
+        .lean(),
+    ]);
     const subscriptions = await StudentSubscription.find({ circle: { $in: circles.map(item => item._id) }, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } })
       .populate('student', 'name email').lean();
-    return res.json({ success: true, circles: circles.map(circle => {
-      const plan = getPlan(circle.subscriptionPlanKey);
-      const roster = subscriptions.filter(item => String(item.circle) === String(circle._id) && (circle.students || []).some(id => String(id) === String(item.student?._id)));
-      return { _id: circle._id, name: circle.name, code: circle.code, status: circleStatusForCount(circle, plan),
-        teacher: circle.teacher, plan, section: circle.subscriptionSection || roster[0]?.section,
-        studentCount: (circle.students || []).length, capacity: operationalCapacity(circle, plan),
-        minimumToStart: plan.minStudents, missingToStart: Math.max(0, plan.minStudents - (circle.students || []).length),
-        schedule: circle.schedule, timezone: circle.timezone, startedAt: circle.startedAt || null,
-        roster: roster.map(item => ({ ...serializeSubscription(item), student: item.student })),
-      };
-    }) });
+    return res.json({
+      success: true,
+      teachers: approvedTeachers.map((t) => ({
+        _id: t._id,
+        name: t.personalInfo?.fullName || t.user?.name || 'معلم',
+        gender: t.personalInfo?.gender || 'male',
+      })),
+      students: allStudents.map((s) => ({
+        _id: s._id,
+        name: s.name,
+        email: s.email,
+        gender: s.gender,
+        currentLevel: s.currentLevel,
+        circleId: s.circle || null,
+      })),
+      circles: circles.map(circle => {
+        const plan = getPlan(circle.subscriptionPlanKey || 'group');
+        const rawStudentDocs = Array.isArray(circle.students) ? circle.students : [];
+        const subRoster = subscriptions.filter(item => String(item.circle) === String(circle._id) && rawStudentDocs.some(s => String(s?._id || s) === String(item.student?._id)));
+        const subStudentIds = new Set(subRoster.map(item => String(item.student?._id)));
+        const fallbackRoster = rawStudentDocs
+          .filter(s => s && typeof s === 'object' && s._id && !subStudentIds.has(String(s._id)))
+          .map(s => ({
+            _id: `direct-${s._id}`,
+            student: { _id: s._id, name: s.name, email: s.email },
+            status: ['active', 'full'].includes(circle.status) ? 'active' : 'placed',
+            sessionsRemaining: plan?.defaultSessions || 8,
+            sessionCount: plan?.defaultSessions || 8,
+            sessionsUsed: 0,
+          }));
+        const fullRoster = [
+          ...subRoster.map(item => ({ ...serializeSubscription(item), student: item.student })),
+          ...fallbackRoster,
+        ];
+        return {
+          _id: circle._id, name: circle.name, code: circle.code, status: circleStatusForCount(circle, plan),
+          teacher: circle.teacher, plan, section: circle.subscriptionSection || subRoster[0]?.section,
+          studentCount: rawStudentDocs.length, capacity: operationalCapacity(circle, plan),
+          minimumToStart: plan.minStudents, missingToStart: Math.max(0, plan.minStudents - rawStudentDocs.length),
+          schedule: circle.schedule, timezone: circle.timezone, startedAt: circle.startedAt || null,
+          roster: fullRoster,
+        };
+      }),
+    });
   } catch (error) { return res.status(500).json({ error: 'فشل تحميل الحلقات', details: error.message }); }
 });
 
 router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req, res) => {
   try {
-    const result = await startSubscriptionCircle({ circleId: req.params.id, schedule: req.body.schedule, timezone: req.body.timezone });
+    const allowUnderMinimum = Boolean(req.body?.allowUnderMinimum);
+    const result = await startSubscriptionCircle({
+      circleId: req.params.id,
+      schedule: req.body.schedule,
+      timezone: req.body.timezone,
+      allowUnderMinimum,
+    });
     await logAdminAction({ req, action: 'subscription-circle.started', entityType: 'group-circle', entityId: result.circleId,
-      reason: 'تم تحديد المواعيد وبدء الحلقة بعد اكتمال الاشتراكات المدفوعة.', metadata: { studentCount: result.activatedStudentIds.length } }).catch(() => {});
+      reason: allowUnderMinimum ? 'تم تحديد المواعيد وبدء الحلقة بقرار إداري قبل اكتمال الحد الأدنى.' : 'تم تحديد المواعيد وبدء الحلقة بعد اكتمال الاشتراكات المدفوعة.',
+      metadata: { studentCount: result.activatedStudentIds.length, allowUnderMinimum } }).catch(() => {});
     const recipients = [...result.activatedStudentIds, result.teacherUserId].filter(Boolean);
     await Promise.allSettled(recipients.map(id => notifyUser(id, {
       type: 'system', title: { ar: 'تم بدء الحلقة وتحديد مواعيدها', en: 'Your circle has started' },
@@ -431,6 +514,324 @@ router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req,
   } catch (error) {
     return res.status(error.code === 'CIRCLE_NOT_FOUND' ? 404 : error.code?.includes('INVALID') ? 400 : 409)
       .json({ error: error.message || 'فشل بدء الحلقة', code: error.code || 'CIRCLE_START_FAILED' });
+  }
+});
+
+router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const circle = await GroupCircle.findById(req.params.id);
+    if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+
+    const { name, teacherId, schedule, timezone, capacity } = req.body || {};
+    const changedFields = [];
+
+    if (typeof name === 'string' && name.trim()) {
+      circle.name = name.trim().slice(0, 120);
+      changedFields.push('name');
+    }
+
+    if (teacherId && String(teacherId) !== String(circle.teacher)) {
+      const nextTeacher = await Teacher.findById(teacherId);
+      if (!nextTeacher) {
+        return res.status(404).json({ error: 'المعلم المختار غير موجود' });
+      }
+      circle.teacher = nextTeacher._id;
+      await StudentSubscription.updateMany(
+        { circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
+        { $set: { preferredTeacher: nextTeacher._id } }
+      );
+      changedFields.push('teacher');
+    }
+
+    if (capacity !== undefined && Number.isFinite(Number(capacity)) && Number(capacity) >= 1 && Number(capacity) <= 20) {
+      circle.capacity = Number(capacity);
+      changedFields.push('capacity');
+    }
+
+    if (timezone && typeof timezone === 'string' && timezone.trim()) {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: timezone.trim() }).format();
+        circle.timezone = timezone.trim();
+        changedFields.push('timezone');
+      } catch {
+        return res.status(400).json({ error: 'المنطقة الزمنية غير صحيحة', code: 'CIRCLE_TIMEZONE_INVALID' });
+      }
+    }
+
+    if (Array.isArray(schedule)) {
+      const rows = normalizeSchedule(schedule);
+      if (schedule.length > 0 && (!rows.length || rows.length !== schedule.length)) {
+        return res.status(400).json({
+          error: 'حدد أيامًا وأوقاتًا صحيحة، على أن تكون النهاية بعد البداية',
+          code: 'CIRCLE_SCHEDULE_INVALID',
+        });
+      }
+      const seen = new Set();
+      for (const row of rows) {
+        if (seen.has(row.day)) {
+          return res.status(400).json({ error: 'حدد موعدًا واحدًا لكل يوم', code: 'CIRCLE_SCHEDULE_INVALID' });
+        }
+        seen.add(row.day);
+      }
+      circle.schedule = rows;
+      changedFields.push('schedule');
+    }
+
+    await circle.save();
+
+    await logAdminAction({
+      req,
+      action: 'subscription-circle.updated',
+      entityType: 'group-circle',
+      entityId: String(circle._id),
+      reason: 'تعديل بيانات أو مواعيد أو معلم الحلقة من الإدارة',
+      metadata: { changedFields, circleName: circle.name },
+    }).catch(() => {});
+
+    if (changedFields.includes('schedule') && (circle.students || []).length > 0) {
+      await Promise.allSettled(
+        circle.students.map((studentId) => notifyUser(studentId, {
+          type: 'system',
+          title: { ar: 'تحديث مواعيد الحلقة', en: 'Circle schedule updated' },
+          message: {
+            ar: `تم تحديث مواعيد حلقة ${circle.name}. راجع المواعيد الجديدة في لوحة المتابعة.`,
+            en: `The schedule for ${circle.name} has been updated.`,
+          },
+          data: { actionUrl: '/student/dashboard', metadata: { circleId: String(circle._id) } },
+          priority: 'high',
+        }))
+      );
+    }
+
+    return res.json({ success: true, circle });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل تحديث بيانات الحلقة' });
+  }
+});
+
+router.post('/admin/circles/:id/students', protect, authorize('admin'), async (req, res) => {
+  try {
+    const circle = await GroupCircle.findById(req.params.id);
+    if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+
+    const { studentId, sessionCount = 8 } = req.body || {};
+    if (!studentId) return res.status(400).json({ error: 'اختر الطالب المراد إضافته للحلقة' });
+
+    const student = await User.findOne({ _id: studentId, role: 'student' });
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+
+    const plan = getPlan(circle.subscriptionPlanKey || 'group');
+    const maxCap = operationalCapacity(circle, plan);
+    const alreadyInCircle = (circle.students || []).some((id) => String(id) === String(student._id));
+
+    if (!alreadyInCircle) {
+      if ((circle.students || []).length >= maxCap) {
+        return res.status(409).json({ error: 'الحلقة مكتملة العدد بالفعل', code: 'CIRCLE_FULL' });
+      }
+      circle.students.push(student._id);
+    }
+
+    const isRunning = ['active', 'full'].includes(circle.status) || Boolean(circle.startedAt);
+    const targetSubStatus = isRunning ? 'active' : 'placed';
+    const now = new Date();
+
+    let sub = await StudentSubscription.findOne({
+      student: student._id,
+      status: { $in: ['awaiting_placement', 'placed', 'active'] },
+    }).sort({ createdAt: -1 });
+
+    if (sub) {
+      if (sub.circle && String(sub.circle) !== String(circle._id)) {
+        await GroupCircle.updateOne({ _id: sub.circle }, { $pull: { students: student._id } });
+      }
+      sub.circle = circle._id;
+      sub.preferredTeacher = circle.teacher;
+      sub.placedAt = sub.placedAt || now;
+      sub.status = targetSubStatus;
+      if (targetSubStatus === 'active' && !sub.startedAt) sub.startedAt = now;
+      await sub.save();
+    } else {
+      const validCount = [4, 8, 12, 24].includes(Number(sessionCount)) ? Number(sessionCount) : 8;
+      const pricePerSessionMinor = plan?.pricePerSessionMinor || 5500;
+      sub = await StudentSubscription.create({
+        student: student._id,
+        planKey: circle.subscriptionPlanKey || 'group',
+        section: circle.subscriptionSection || (student.gender === 'female' ? 'ladies' : 'men_children'),
+        sessionCount: validCount,
+        sessionsUsed: 0,
+        sessionsRemaining: validCount,
+        currency: 'EGP',
+        pricePerSessionMinor,
+        totalAmountMinor: pricePerSessionMinor * validCount,
+        status: targetSubStatus,
+        preferredTeacher: circle.teacher,
+        circle: circle._id,
+        paidAt: now,
+        placedAt: now,
+        startedAt: targetSubStatus === 'active' ? now : undefined,
+        pricingSnapshot: plan ? {
+          minStudents: plan.minStudents,
+          maxStudents: plan.maxStudents,
+          durationMinMinutes: plan.durationMinMinutes,
+          durationMaxMinutes: plan.durationMaxMinutes,
+          nameAr: plan.name?.ar || plan.nameAr,
+          nameEn: plan.name?.en || plan.nameEn,
+          durationLabelAr: plan.durationLabel?.ar || plan.durationLabelAr,
+          durationLabelEn: plan.durationLabel?.en || plan.durationLabelEn,
+        } : undefined,
+      });
+    }
+
+    circle.status = circleStatusForCount(circle, plan);
+    await circle.save();
+
+    student.circle = circle._id;
+    await student.save();
+
+    await logAdminAction({
+      req,
+      action: 'subscription-circle.student-added',
+      entityType: 'group-circle',
+      entityId: String(circle._id),
+      reason: 'إضافة طالب إلى الحلقة من الإدارة',
+      metadata: { studentId: String(student._id), studentName: student.name },
+    }).catch(() => {});
+
+    return res.json({ success: true, circle, subscription: serializeSubscription(sub) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل إضافة الطالب للحلقة' });
+  }
+});
+
+router.delete('/admin/circles/:id/students/:studentId', protect, authorize('admin'), async (req, res) => {
+  try {
+    const circle = await GroupCircle.findById(req.params.id);
+    if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+
+    const { studentId } = req.params;
+    circle.students = (circle.students || []).filter((id) => String(id) !== String(studentId));
+
+    const plan = getPlan(circle.subscriptionPlanKey || 'group');
+    circle.status = circleStatusForCount(circle, plan);
+    await circle.save();
+
+    await Promise.all([
+      User.updateOne({ _id: studentId, circle: circle._id }, { $unset: { circle: 1 } }),
+      StudentSubscription.updateMany(
+        { student: studentId, circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
+        { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+    ]);
+
+    await logAdminAction({
+      req,
+      action: 'subscription-circle.student-removed',
+      entityType: 'group-circle',
+      entityId: String(circle._id),
+      reason: 'إزالة طالب من الحلقة من الإدارة وإعادته لطابور التسكين',
+      metadata: { studentId: String(studentId) },
+    }).catch(() => {});
+
+    return res.json({ success: true, circle });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل إزالة الطالب من الحلقة' });
+  }
+});
+
+router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
+  try {
+    const {
+      name,
+      teacherId,
+      planKey = 'group',
+      section = 'men_children',
+      track = 'memorization',
+      level = 'beginner',
+      gender = 'men',
+      targetAgeGroup = 'adults',
+      schedule = [],
+      timezone = 'Africa/Cairo',
+    } = req.body || {};
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'اسم المجموعة مطلوب' });
+    }
+    if (!teacherId) {
+      return res.status(400).json({ error: 'اختر المعلم المسؤول عن المجموعة' });
+    }
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ error: 'المعلم غير موجود' });
+    }
+
+    const plan = getPlan(planKey) || getPlan('group');
+    const normalizedSchedule = normalizeSchedule(schedule);
+
+    const circle = await GroupCircle.create({
+      name: String(name).trim().slice(0, 120),
+      track: ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(track) ? track : 'memorization',
+      level: ['beginner', 'intermediate', 'advanced', 'ijazah'].includes(level) ? level : 'beginner',
+      gender: ['boys', 'girls', 'men', 'women', 'kids_mixed'].includes(gender) ? gender : (section === 'ladies' ? 'women' : 'men'),
+      targetAgeGroup: ['kids_4_7', 'kids_8_12', 'teens_13_17', 'adults'].includes(targetAgeGroup) ? targetAgeGroup : 'adults',
+      capacity: plan.maxStudents || 8,
+      subscriptionSection: section === 'ladies' ? 'ladies' : 'men_children',
+      teacher: teacher._id,
+      students: [],
+      schedule: normalizedSchedule,
+      timezone: String(timezone || 'Africa/Cairo').trim().slice(0, 80) || 'Africa/Cairo',
+      status: 'forming',
+      pricePerSession: {
+        egp: (plan.pricePerSessionMinor || 5500) / 100,
+        usd: 1,
+      },
+      subscriptionPlanKey: plan.key,
+    });
+
+    await logAdminAction({
+      req,
+      action: 'subscription-circle.created-by-admin',
+      entityType: 'group-circle',
+      entityId: String(circle._id),
+      reason: 'إنشاء مجموعة جديدة من لوحة الإدارة',
+      metadata: { name: circle.name, planKey: circle.subscriptionPlanKey },
+    }).catch(() => {});
+
+    return res.status(201).json({ success: true, circle });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل إنشاء المجموعة' });
+  }
+});
+
+router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const circle = await GroupCircle.findById(req.params.id);
+    if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+
+    const circleId = circle._id;
+    const circleName = circle.name;
+
+    await Promise.all([
+      User.updateMany({ circle: circleId }, { $unset: { circle: 1 } }),
+      StudentSubscription.updateMany(
+        { circle: circleId, status: { $in: ['placed', 'active', 'paused'] } },
+        { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+    ]);
+
+    await GroupCircle.findByIdAndDelete(circleId);
+
+    await logAdminAction({
+      req,
+      action: 'subscription-circle.deleted-by-admin',
+      entityType: 'group-circle',
+      entityId: String(circleId),
+      reason: 'حذف الحلقة من الإدارة وإعادة الطلاب لطابور التسكين',
+      metadata: { circleName },
+    }).catch(() => {});
+
+    return res.json({ success: true, deletedId: String(circleId) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'فشل حذف الحلقة' });
   }
 });
 
@@ -472,7 +873,21 @@ router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) =>
       circleName: req.body?.circleName,
       schedule: req.body?.schedule,
       timezone: req.body?.timezone,
+      teacherId: req.body?.teacherId,
+      allowFlexibleCircle: Boolean(req.body?.allowFlexibleCircle),
     });
+
+    if (req.body?.startImmediately && Array.isArray(req.body?.schedule) && req.body.schedule.length > 0 && !['active', 'full'].includes(result.circleStatus)) {
+      const started = await startSubscriptionCircle({
+        circleId: result.circleId,
+        schedule: req.body.schedule,
+        timezone: req.body.timezone || 'Africa/Cairo',
+        allowUnderMinimum: true,
+      });
+      result.circleStatus = started.circleStatus || 'active';
+      result.subscriptionStatus = 'active';
+      result.activatedStudentIds = started.activatedStudentIds || [result.studentId];
+    }
 
     await logAdminAction({
       req,

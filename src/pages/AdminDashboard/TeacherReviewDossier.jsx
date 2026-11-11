@@ -1,10 +1,31 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import TeacherAssetViewer from './TeacherAssetViewer';
 import './TeacherReviewDossier.css';
 import {
   AlertTriangle, CheckCircle2, Circle, FileText, GraduationCap, Headphones,
-  IdCard, ShieldCheck, UserRound, Video, X, XCircle, Clock3, History, Eye,
+  IdCard, ShieldCheck, UserRound, Video, X, XCircle, Clock3, History, Eye, Trash2, Save,
 } from 'lucide-react';
+
+const SPECIALIZATION_OPTIONS = [
+  { key: 'tajweed', label: 'التجويد وأحكام التلاوة' },
+  { key: 'children', label: 'تحفيظ الأطفال' },
+  { key: 'adults', label: 'تحفيظ الكبار' },
+  { key: 'women', label: 'حلقات النساء' },
+  { key: 'ijaza', label: 'الإجازة والسند' },
+  { key: 'non-arabic', label: 'غير الناطقين بالعربية' },
+  { key: 'arabic-language', label: 'اللغة العربية والقاعدة النورانية' },
+];
+
+const LANGUAGE_OPTIONS = [
+  { key: 'arabic', label: 'العربية' },
+  { key: 'english', label: 'الإنجليزية' },
+  { key: 'french', label: 'الفرنسية' },
+  { key: 'german', label: 'الألمانية' },
+  { key: 'turkish', label: 'التركية' },
+  { key: 'urdu', label: 'الأردية' },
+  { key: 'indonesian', label: 'الإندونيسية' },
+  { key: 'malay', label: 'الملايوية' },
+];
 
 const MEDIA_ITEMS = [
   { key: 'profilePhoto', label: 'الصورة الشخصية', icon: UserRound },
@@ -56,6 +77,7 @@ export default function TeacherReviewDossier({
   onProfileChangeReview,
   onPreviewPublic,
   onUpdateAdminSettings,
+  onDeleteTeacher,
 }) {
   const teacher = dossier?.teacher;
   const gate = dossier?.gate;
@@ -79,24 +101,105 @@ export default function TeacherReviewDossier({
 
   const [promptModal, setPromptModal] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
-  const [rateInput, setRateInput] = useState('');
-  const [featuredInput, setFeaturedInput] = useState(null);
-  const [genderInput, setGenderInput] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    whatsapp: '',
+    telegram: '',
+    age: 30,
+    gender: 'male',
+    country: '',
+    city: '',
+    address: '',
+    bio: '',
+    newPassword: '',
+    university: '',
+    faculty: '',
+    graduationYear: 2015,
+    specialization: '',
+    qualification: '',
+    memorizedParts: 30,
+    teachingExperience: 5,
+    numberOfIjazat: 0,
+    ijazaType: '',
+    sheikhName: '',
+    sanad: '',
+    specializations: ['tajweed'],
+    languages: ['arabic'],
+    hourlyRate: 50,
+    status: 'pending',
+    isVerified: false,
+    isFeatured: false,
+    isActive: true,
+  });
 
-  const effectiveRate = rateInput !== '' ? rateInput : (teacher?.hourlyRate ?? 50);
-  const effectiveFeatured = featuredInput !== null ? featuredInput : Boolean(teacher?.isFeatured);
-  const effectiveGender = genderInput || teacher?.personalInfo?.gender || 'male';
+  useEffect(() => {
+    if (!teacher) return;
+    setEditForm({
+      fullName: teacher.personalInfo?.fullName || teacher.user?.name || '',
+      email: teacher.user?.email || '',
+      phone: teacher.personalInfo?.phone || teacher.user?.phone || '',
+      whatsapp: teacher.personalInfo?.whatsapp || teacher.user?.whatsappPhone || '',
+      telegram: teacher.personalInfo?.telegram || '',
+      age: teacher.personalInfo?.age ?? 30,
+      gender: teacher.personalInfo?.gender || 'male',
+      country: teacher.personalInfo?.country || 'مصر',
+      city: teacher.personalInfo?.city || 'القاهرة',
+      address: teacher.personalInfo?.address || '',
+      bio: teacher.user?.bio || '',
+      newPassword: '',
+      university: teacher.academicInfo?.university || '',
+      faculty: teacher.academicInfo?.faculty || '',
+      graduationYear: teacher.academicInfo?.graduationYear ?? 2015,
+      specialization: teacher.academicInfo?.specialization || '',
+      qualification: teacher.academicInfo?.qualification || '',
+      memorizedParts: teacher.quranInfo?.memorizedParts ?? 30,
+      teachingExperience: teacher.quranInfo?.teachingExperience ?? 0,
+      numberOfIjazat: teacher.quranInfo?.numberOfIjazat ?? 0,
+      ijazaType: teacher.quranInfo?.ijazaType || '',
+      sheikhName: teacher.quranInfo?.sheikhName || '',
+      sanad: teacher.quranInfo?.sanad || '',
+      specializations: Array.isArray(teacher.quranInfo?.specializations) && teacher.quranInfo.specializations.length
+        ? teacher.quranInfo.specializations
+        : ['tajweed'],
+      languages: Array.isArray(teacher.languages) && teacher.languages.length
+        ? teacher.languages
+        : ['arabic'],
+      hourlyRate: teacher.hourlyRate ?? 50,
+      status: teacher.status || 'pending',
+      isVerified: Boolean(teacher.isVerified),
+      isFeatured: Boolean(teacher.isFeatured),
+      isActive: teacher.user?.isActive !== false,
+    });
+  }, [teacher]);
+
+  const toggleArrayValue = (field, value) => {
+    setEditForm((prev) => {
+      const current = Array.isArray(prev[field]) ? prev[field] : [];
+      const exists = current.includes(value);
+      const next = exists ? current.filter((item) => item !== value) : [...current, value];
+      return { ...prev, [field]: next.length ? next : current };
+    });
+  };
 
   const saveAdminSettings = async () => {
     if (!onUpdateAdminSettings || !teacher?._id) return;
     setSavingSettings(true);
     try {
       await onUpdateAdminSettings(teacher._id, {
-        hourlyRate: Number(effectiveRate) || 50,
-        isFeatured: Boolean(effectiveFeatured),
-        gender: effectiveGender,
+        ...editForm,
+        name: editForm.fullName,
+        age: Number(editForm.age) || 30,
+        graduationYear: Number(editForm.graduationYear) || 2015,
+        memorizedParts: Number(editForm.memorizedParts) || 0,
+        teachingExperience: Number(editForm.teachingExperience) || 0,
+        numberOfIjazat: Number(editForm.numberOfIjazat) || 0,
+        hourlyRate: Number(editForm.hourlyRate) || 50,
+        adminDirectOverride: true,
       });
+      setEditForm((prev) => ({ ...prev, newPassword: '' }));
     } finally {
       setSavingSettings(false);
     }
@@ -403,46 +506,362 @@ export default function TeacherReviewDossier({
                 <Value label="عدد التقييمات" value={teacher.rating?.count || 0} />
               </div>
               {onUpdateAdminSettings ? (
-                <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                  <label className="text-xs font-bold text-slate-700 space-y-1">
-                    <span>أجر الساعة (ج.م/ساعة)</span>
-                    <input
-                      type="number"
-                      min="10"
-                      max="1000"
-                      value={effectiveRate}
-                      onChange={(e) => setRateInput(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
-                    />
-                  </label>
-                  <label className="text-xs font-bold text-slate-700 space-y-1">
-                    <span>القسم / النوع</span>
-                    <select
-                      value={effectiveGender}
-                      onChange={(e) => setGenderInput(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                <div className="mt-5 pt-5 border-t border-slate-200 space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">تعديل شامل لملف المعلم وإعدادات الحساب</h4>
+                      <p className="text-xs text-slate-500">يمكنك تعديل أي تفصيلة في حساب المعلم (البيانات الشخصية، المؤهل، الإجازات، حالة الحساب، أو كلمة المرور).</p>
+                    </div>
+                    {onDeleteTeacher ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTeacher(teacher._id, teacher.personalInfo?.fullName || teacher.user?.name || 'المعلم')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                      >
+                        <Trash2 size={14} /> حذف حساب المعلم
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الاسم الكامل</span>
+                      <input
+                        type="text"
+                        value={editForm.fullName}
+                        onChange={(e) => setEditForm((p) => ({ ...p, fullName: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>البريد الإلكتروني</span>
+                      <input
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>رقم الهاتف</span>
+                      <input
+                        type="text"
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>واتساب</span>
+                      <input
+                        type="text"
+                        value={editForm.whatsapp}
+                        onChange={(e) => setEditForm((p) => ({ ...p, whatsapp: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>تيليجرام</span>
+                      <input
+                        type="text"
+                        value={editForm.telegram}
+                        onChange={(e) => setEditForm((p) => ({ ...p, telegram: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>السن</span>
+                      <input
+                        type="number"
+                        min="18"
+                        max="80"
+                        value={editForm.age}
+                        onChange={(e) => setEditForm((p) => ({ ...p, age: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>القسم / النوع</span>
+                      <select
+                        value={editForm.gender}
+                        onChange={(e) => setEditForm((p) => ({ ...p, gender: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="male">ذكر (معلم)</option>
+                        <option value="female">أنثى (معلمة)</option>
+                      </select>
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>تعيين كلمة مرور جديدة (اختياري)</span>
+                      <input
+                        type="password"
+                        placeholder="اتركه فارغاً لعدم التغيير"
+                        value={editForm.newPassword}
+                        onChange={(e) => setEditForm((p) => ({ ...p, newPassword: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الدولة</span>
+                      <input
+                        type="text"
+                        value={editForm.country}
+                        onChange={(e) => setEditForm((p) => ({ ...p, country: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>المدينة</span>
+                      <input
+                        type="text"
+                        value={editForm.city}
+                        onChange={(e) => setEditForm((p) => ({ ...p, city: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>العنوان التفصيلي</span>
+                      <input
+                        type="text"
+                        value={editForm.address}
+                        onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الجامعة</span>
+                      <input
+                        type="text"
+                        value={editForm.university}
+                        onChange={(e) => setEditForm((p) => ({ ...p, university: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الكلية</span>
+                      <input
+                        type="text"
+                        value={editForm.faculty}
+                        onChange={(e) => setEditForm((p) => ({ ...p, faculty: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>سنة التخرج</span>
+                      <input
+                        type="number"
+                        min="1970"
+                        max="2030"
+                        value={editForm.graduationYear}
+                        onChange={(e) => setEditForm((p) => ({ ...p, graduationYear: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>التخصص الأكاديمي</span>
+                      <input
+                        type="text"
+                        value={editForm.specialization}
+                        onChange={(e) => setEditForm((p) => ({ ...p, specialization: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>المؤهل العلمي</span>
+                      <input
+                        type="text"
+                        value={editForm.qualification}
+                        onChange={(e) => setEditForm((p) => ({ ...p, qualification: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الأجزاء المحفوظة (0-30)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        value={editForm.memorizedParts}
+                        onChange={(e) => setEditForm((p) => ({ ...p, memorizedParts: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>سنوات الخبرة</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={editForm.teachingExperience}
+                        onChange={(e) => setEditForm((p) => ({ ...p, teachingExperience: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>عدد الإجازات</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        value={editForm.numberOfIjazat}
+                        onChange={(e) => setEditForm((p) => ({ ...p, numberOfIjazat: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>نوع الإجازة / القراءة</span>
+                      <input
+                        type="text"
+                        value={editForm.ijazaType}
+                        onChange={(e) => setEditForm((p) => ({ ...p, ijazaType: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>الشيخ المجيز</span>
+                      <input
+                        type="text"
+                        value={editForm.sheikhName}
+                        onChange={(e) => setEditForm((p) => ({ ...p, sheikhName: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>السند القرآني</span>
+                      <textarea
+                        rows={2}
+                        value={editForm.sanad}
+                        onChange={(e) => setEditForm((p) => ({ ...p, sanad: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>النبذة التعريفية للمعلم</span>
+                      <textarea
+                        rows={2}
+                        value={editForm.bio}
+                        onChange={(e) => setEditForm((p) => ({ ...p, bio: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <span className="block text-xs font-bold text-slate-700">التخصصات التعليمية</span>
+                      <div className="flex flex-wrap gap-2">
+                        {SPECIALIZATION_OPTIONS.map((opt) => {
+                          const active = (editForm.specializations || []).includes(opt.key);
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => toggleArrayValue('specializations', opt.key)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+                                active ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-300'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="block text-xs font-bold text-slate-700">لغات التدريس</span>
+                      <div className="flex flex-wrap gap-2">
+                        {LANGUAGE_OPTIONS.map((opt) => {
+                          const active = (editForm.languages || []).includes(opt.key);
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => toggleArrayValue('languages', opt.key)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+                                active ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-300'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>أجر الساعة (ج.م/ساعة)</span>
+                      <input
+                        type="number"
+                        min="10"
+                        max="2000"
+                        value={editForm.hourlyRate}
+                        onChange={(e) => setEditForm((p) => ({ ...p, hourlyRate: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-slate-700 space-y-1">
+                      <span>حالة اعتماد المعلم</span>
+                      <select
+                        value={editForm.status}
+                        onChange={(e) => {
+                          const nextStatus = e.target.value;
+                          setEditForm((p) => ({
+                            ...p,
+                            status: nextStatus,
+                            isVerified: nextStatus === 'approved',
+                          }));
+                        }}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="approved">معتمد ومنشور (Approved)</option>
+                        <option value="pending">بانتظار المراجعة (Pending)</option>
+                        <option value="under-review">قيد المراجعة (Under Review)</option>
+                        <option value="suspended">موقوف مؤقتاً (Suspended)</option>
+                        <option value="rejected">مرفوض (Rejected)</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 py-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isFeatured}
+                        onChange={(e) => setEditForm((p) => ({ ...p, isFeatured: e.target.checked }))}
+                        className="w-4 h-4 accent-emerald-700"
+                      />
+                      <span>معلم مميز بالصفحة الرئيسية</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 py-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isActive}
+                        onChange={(e) => setEditForm((p) => ({ ...p, isActive: e.target.checked }))}
+                        className="w-4 h-4 accent-emerald-700"
+                      />
+                      <span>حساب المعلم نشط للدخول</span>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={savingSettings}
+                      onClick={saveAdminSettings}
+                      className="wn-btn wn-btn--primary text-xs py-2.5 inline-flex items-center justify-center gap-1.5"
                     >
-                      <option value="male">ذكر (معلم)</option>
-                      <option value="female">أنثى (معلمة)</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 py-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={effectiveFeatured}
-                      onChange={(e) => setFeaturedInput(e.target.checked)}
-                      className="w-4 h-4 accent-emerald-700"
-                    />
-                    <span>معلم مميز في الصفحة الرئيسية</span>
-                  </label>
-                  <button
-                    type="button"
-                    disabled={savingSettings}
-                    onClick={saveAdminSettings}
-                    className="wn-btn wn-btn--primary text-xs py-2"
-                  >
-                    {savingSettings ? 'جارٍ الحفظ...' : 'حفظ إعدادات المعلم'}
-                  </button>
+                      <Save size={14} />
+                      {savingSettings ? 'جارٍ الحفظ...' : 'حفظ كافة تعديلات المعلم'}
+                    </button>
+                  </div>
                 </div>
               ) : null}
               <div className="hidden">

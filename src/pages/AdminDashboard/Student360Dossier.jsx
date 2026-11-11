@@ -1,6 +1,6 @@
 import {
   X, UserRound, Users, Calendar, BookOpen, CreditCard, Bell, GraduationCap,
-  PlayCircle, CheckCircle2, AlertTriangle, History, MessageSquare, TrendingUp,
+  PlayCircle, CheckCircle2, AlertTriangle, History, MessageSquare, TrendingUp, Trash2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
@@ -50,21 +50,47 @@ export default function Student360Dossier({
   onOpenHomeworkAudio,
   onMessageStudent,
   onUpdateStudent,
+  onDeleteStudent,
 }) {
   const student = dossier?.student;
   const summary = dossier?.summary || {};
-  const [adminLevel, setAdminLevel] = useState(student?.currentLevel || 'beginner');
-  const [adminTrack, setAdminTrack] = useState(student?.preferredTrack || 'memorization');
-  const [adminJuz, setAdminJuz] = useState(student?.memorizedJuz ?? 0);
-  const [adminActive, setAdminActive] = useState(student?.isActive !== false);
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    whatsappPhone: '',
+    age: 12,
+    gender: 'male',
+    enrollmentSection: 'men_children',
+    currentLevel: 'beginner',
+    customLevel: '',
+    preferredTrack: 'memorization',
+    memorizedJuz: 0,
+    memorizationDetails: '',
+    newPassword: '',
+    isActive: true,
+  });
   const [savingStudent, setSavingStudent] = useState(false);
 
   useEffect(() => {
-    setAdminLevel(student?.currentLevel || 'beginner');
-    setAdminTrack(student?.preferredTrack || 'memorization');
-    setAdminJuz(student?.memorizedJuz ?? 0);
-    setAdminActive(student?.isActive !== false);
-  }, [student?._id, student?.currentLevel, student?.preferredTrack, student?.memorizedJuz, student?.isActive]);
+    if (!student) return;
+    setForm({
+      name: student.name || '',
+      email: student.email || '',
+      phone: student.phone || '',
+      whatsappPhone: student.whatsappPhone || '',
+      age: student.age ?? 12,
+      gender: student.gender || 'male',
+      enrollmentSection: student.enrollmentSection || (student.gender === 'female' ? 'ladies' : 'men_children'),
+      currentLevel: student.currentLevel || 'beginner',
+      customLevel: student.customLevel || '',
+      preferredTrack: student.preferredTrack || 'memorization',
+      memorizedJuz: student.memorizedJuz ?? 0,
+      memorizationDetails: student.memorizationDetails || '',
+      newPassword: '',
+      isActive: student.isActive !== false,
+    });
+  }, [student]);
 
   const handleSaveStudent = async (e) => {
     e.preventDefault();
@@ -72,11 +98,12 @@ export default function Student360Dossier({
     setSavingStudent(true);
     try {
       await onUpdateStudent(student._id, {
-        currentLevel: adminLevel,
-        preferredTrack: adminTrack,
-        memorizedJuz: Number(adminJuz) || 0,
-        isActive: Boolean(adminActive),
+        ...form,
+        age: Number(form.age) || 12,
+        memorizedJuz: Number(form.memorizedJuz) || 0,
+        isActive: Boolean(form.isActive),
       });
+      setForm((prev) => ({ ...prev, newPassword: '' }));
     } finally {
       setSavingStudent(false);
     }
@@ -129,20 +156,69 @@ export default function Student360Dossier({
               </div>
               {onUpdateStudent && student?._id ? (
                 <form onSubmit={handleSaveStudent} className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
-                  <div className="font-bold text-xs text-emerald-900">تحديث بيانات الطالب وحالة الحساب (إدارة مباشرة)</div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-bold text-xs text-emerald-900">تعديل شامل لبيانات الطالب وحالة الحساب (إدارة مباشرة)</div>
+                    {onDeleteStudent ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteStudent(student._id, student.name || 'الطالب')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                      >
+                        <Trash2 size={14} /> حذف حساب الطالب
+                      </button>
+                    ) : null}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                     <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">اسم الطالب</span>
+                      <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">البريد الإلكتروني</span>
+                      <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">رقم الهاتف</span>
+                      <input type="text" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">رقم واتساب</span>
+                      <input type="text" value={form.whatsappPhone} onChange={(e) => setForm((p) => ({ ...p, whatsappPhone: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">العمر</span>
+                      <input type="number" min="4" max="100" value={form.age} onChange={(e) => setForm((p) => ({ ...p, age: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">الجنس</span>
+                      <select value={form.gender} onChange={(e) => setForm((p) => ({ ...p, gender: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                        <option value="male">ذكر</option>
+                        <option value="female">أنثى</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">القسم الدراسي</span>
+                      <select value={form.enrollmentSection} onChange={(e) => setForm((p) => ({ ...p, enrollmentSection: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                        <option value="men_children">قسم الرجال والأطفال</option>
+                        <option value="ladies">قسم السيدات</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">كلمة مرور جديدة (اختياري)</span>
+                      <input type="password" placeholder="اتركه فارغاً لعدم التغيير" value={form.newPassword} onChange={(e) => setForm((p) => ({ ...p, newPassword: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">المستوى</span>
-                      <select value={adminLevel} onChange={(e) => setAdminLevel(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                      <select value={form.currentLevel} onChange={(e) => setForm((p) => ({ ...p, currentLevel: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
                         <option value="beginner">مبتدئ (beginner)</option>
                         <option value="intermediate">متوسط (intermediate)</option>
                         <option value="advanced">متقدم (advanced)</option>
-                        <option value="hafiz">خاتم / مجاز (hafiz)</option>
+                        <option value="ijazah">خاتم / مجاز (ijazah)</option>
                       </select>
                     </label>
                     <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">المسار</span>
-                      <select value={adminTrack} onChange={(e) => setAdminTrack(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                      <select value={form.preferredTrack} onChange={(e) => setForm((p) => ({ ...p, preferredTrack: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
                         <option value="memorization">الحفظ والمراجعة</option>
                         <option value="tajweed_ijazah">التجويد والإجازة</option>
                         <option value="kids_foundation">تأسيس الأطفال</option>
@@ -150,14 +226,24 @@ export default function Student360Dossier({
                     </label>
                     <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">الأجزاء المحفوظة</span>
-                      <input type="number" min="0" max="30" value={adminJuz} onChange={(e) => setAdminJuz(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                      <input type="number" min="0" max="30" value={form.memorizedJuz} onChange={(e) => setForm((p) => ({ ...p, memorizedJuz: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
                     </label>
                     <label className="block space-y-1">
                       <span className="font-semibold text-slate-700">حالة الحساب</span>
-                      <select value={adminActive ? 'active' : 'suspended'} onChange={(e) => setAdminActive(e.target.value === 'active')} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
+                      <select value={form.isActive ? 'active' : 'suspended'} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.value === 'active' }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white">
                         <option value="active">نشط (مفعّل)</option>
                         <option value="suspended">موقوف مؤقتاً</option>
                       </select>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">ملاحظة المستوى الخاص (اختياري)</span>
+                      <input type="text" value={form.customLevel} onChange={(e) => setForm((p) => ({ ...p, customLevel: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="font-semibold text-slate-700">تفاصيل الحفظ والمراجعة</span>
+                      <input type="text" value={form.memorizationDetails} onChange={(e) => setForm((p) => ({ ...p, memorizationDetails: e.target.value }))} className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white" />
                     </label>
                   </div>
                   <div className="flex justify-end">

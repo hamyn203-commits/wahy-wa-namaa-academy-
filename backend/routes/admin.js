@@ -15,6 +15,8 @@ const Payment = require('../models/Payment');
 const TeacherLedger = require('../models/TeacherLedger');
 const ContactMessage = require('../models/ContactMessage');
 const GuardianInvitation = require('../models/GuardianInvitation');
+const GroupCircle = require('../models/GroupCircle');
+const StudentSubscription = require('../models/StudentSubscription');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { protect, authorize } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
@@ -428,33 +430,91 @@ router.get('/donations', protect, authorize('admin'), async (req, res) => {
   }
 });
 
+const VALID_TEACHER_SPECIALIZATIONS = new Set([
+  'children', 'adults', 'women', 'non-arabic', 'tajweed', 'ijaza', 'arabic-language',
+]);
+const VALID_TEACHER_LANGUAGES = new Set([
+  'arabic', 'english', 'french', 'german', 'turkish', 'urdu', 'indonesian', 'malay',
+]);
+const VALID_TEACHER_STATUSES = new Set([
+  'pending', 'under-review', 'approved', 'rejected', 'suspended',
+]);
+
 router.post('/teachers', protect, authorize('admin'), async (req, res) => {
   try {
     const {
-      name, email, password, phone = '+201000000000', country = 'مصر', city = 'القاهرة',
-      gender = 'male', age = 30, university = 'الأزهر', specialization = 'تحفيظ',
-      hourlyRate = 50, autoApprove = false,
+      name, email, password, phone = '+201000000000', whatsapp = '', telegram = '',
+      country = 'مصر', city = 'القاهرة', address = '',
+      gender = 'male', age = 30, bio = '',
+      university = 'الأزهر', faculty = 'الشريعة', graduationYear = 2015,
+      specialization = 'تحفيظ', qualification = 'إجازة في القرآن',
+      memorizedParts = 30, teachingExperience = 5, numberOfIjazat = 0,
+      ijazaType = '', sheikhName = '', sanad = '',
+      specializations = ['tajweed', 'children'],
+      languages = ['arabic', 'english'],
+      hourlyRate = 50, isFeatured = false, autoApprove = false,
     } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'الاسم والبريد وكلمة المرور مطلوبة' });
     }
-    if (await User.findOne({ email: email.toLowerCase() })) {
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
+    }
+    if (await User.findOne({ email: String(email).toLowerCase().trim() })) {
       return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
     }
 
-    const user = await User.create({ name, email, password, phone, role: 'teacher' });
+    const normalizedSpecs = Array.isArray(specializations)
+      ? specializations.filter((item) => VALID_TEACHER_SPECIALIZATIONS.has(item))
+      : ['tajweed', 'children'];
+    const normalizedLangs = Array.isArray(languages)
+      ? languages.filter((item) => VALID_TEACHER_LANGUAGES.has(item))
+      : ['arabic', 'english'];
+
+    const user = await User.create({
+      name: String(name).trim(),
+      email: String(email).toLowerCase().trim(),
+      password,
+      phone: String(phone || '+201000000000').trim(),
+      whatsappPhone: String(whatsapp || phone || '').trim(),
+      gender: gender === 'female' ? 'female' : 'male',
+      age: Math.min(80, Math.max(18, Number(age) || 30)),
+      bio: String(bio || '').trim().slice(0, 500),
+      role: 'teacher',
+      isActive: true,
+      emailVerified: true,
+    });
+
     const teacher = await Teacher.create({
       user: user._id,
-      personalInfo: { fullName: name, age, gender, country, city, phone },
-      academicInfo: {
-        university,
-        faculty: 'الشريعة',
-        graduationYear: 2015,
-        specialization,
-        qualification: 'إجازة في القرآن',
+      personalInfo: {
+        fullName: String(name).trim(),
+        age: Math.min(80, Math.max(18, Number(age) || 30)),
+        gender: gender === 'female' ? 'female' : 'male',
+        country: String(country || 'مصر').trim(),
+        city: String(city || 'القاهرة').trim(),
+        address: String(address || '').trim(),
+        phone: String(phone || '+201000000000').trim(),
+        whatsapp: String(whatsapp || phone || '').trim(),
+        telegram: String(telegram || '').trim(),
       },
-      quranInfo: { memorizedParts: 30, teachingExperience: 5, specializations: ['tajweed', 'children'] },
+      academicInfo: {
+        university: String(university || 'الأزهر').trim(),
+        faculty: String(faculty || 'الشريعة').trim(),
+        graduationYear: Number(graduationYear) || 2015,
+        specialization: String(specialization || 'تحفيظ').trim(),
+        qualification: String(qualification || 'إجازة في القرآن').trim(),
+      },
+      quranInfo: {
+        memorizedParts: Math.min(30, Math.max(0, Number(memorizedParts ?? 30))),
+        teachingExperience: Math.max(0, Number(teachingExperience ?? 5)),
+        numberOfIjazat: Math.max(0, Number(numberOfIjazat ?? 0)),
+        ijazaType: String(ijazaType || '').trim(),
+        sheikhName: String(sheikhName || '').trim(),
+        sanad: String(sanad || '').trim(),
+        specializations: normalizedSpecs.length ? normalizedSpecs : ['tajweed', 'children'],
+      },
       documents: { idCard: PLACEHOLDER, graduationCertificate: PLACEHOLDER },
       media: {
         profilePhoto: PLACEHOLDER,
@@ -464,9 +524,17 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       },
       status: 'pending',
       isVerified: false,
-      hourlyRate,
-      languages: ['arabic', 'english'],
+      hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
+      isFeatured: Boolean(isFeatured),
+      languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
     });
+
+    if (autoApprove) {
+      teacher.status = 'approved';
+      teacher.isVerified = true;
+      teacher.reviewCompletedAt = new Date();
+      await teacher.save();
+    }
 
     await logAdminAction({
       req,
@@ -474,15 +542,15 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       entityType: 'teacher',
       entityId: teacher._id,
       reason: autoApprove
-        ? 'تم تجاهل autoApprove؛ يجب إكمال مراجعة الملف قبل الاعتماد.'
+        ? 'تم إنشاء ملف معلم من الإدارة مع اعتماد مباشر.'
         : 'تم إنشاء ملف معلم من الإدارة بحالة pending.',
-      metadata: { requestedAutoApprove: Boolean(autoApprove) },
+      metadata: { requestedAutoApprove: Boolean(autoApprove), status: teacher.status },
     }).catch(() => {});
 
     res.status(201).json({
-      user: { id: user._id, name, email },
+      user: { id: user._id, name: user.name, email: user.email },
       teacher,
-      reviewRequired: true,
+      reviewRequired: !autoApprove,
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -494,28 +562,176 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
     const teacher = await Teacher.findById(req.params.id);
     if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
 
-    const { name, hourlyRate, isFeatured, gender, status, country, city, phone } = req.body;
-    if (status === 'approved' && teacher.status !== 'approved') {
+    const {
+      name, fullName, email, newPassword, bio, isActive,
+      hourlyRate, isFeatured, gender, status, isVerified,
+      country, city, address, phone, whatsapp, telegram, age,
+      university, faculty, graduationYear, specialization, qualification,
+      memorizedParts, teachingExperience, numberOfIjazat, ijazaType, sheikhName, sanad,
+      specializations, languages, availabilityTimezone,
+      personalInfo = {}, academicInfo = {}, quranInfo = {},
+      adminDirectOverride = false,
+    } = req.body;
+
+    if (status === 'approved' && teacher.status !== 'approved' && !adminDirectOverride) {
       return res.status(409).json({
         error: 'اعتماد المعلم يتم فقط من مركز المراجعة بعد إكمال Approval Gate',
         code: 'USE_TEACHER_REVIEW_GATE',
       });
     }
 
-    if (name) {
-      await User.findByIdAndUpdate(teacher.user, { name, phone });
-      teacher.personalInfo.fullName = name;
+    const userDoc = await User.findById(teacher.user).select('+password');
+    const resolvedName = String(fullName ?? name ?? personalInfo.fullName ?? '').trim();
+    const resolvedEmail = email !== undefined ? String(email).toLowerCase().trim() : undefined;
+    const resolvedPhone = phone ?? personalInfo.phone;
+    const resolvedWhatsapp = whatsapp ?? personalInfo.whatsapp;
+    const resolvedTelegram = telegram ?? personalInfo.telegram;
+    const resolvedCountry = country ?? personalInfo.country;
+    const resolvedCity = city ?? personalInfo.city;
+    const resolvedAddress = address ?? personalInfo.address;
+    const resolvedGender = gender ?? personalInfo.gender;
+    const resolvedAge = age ?? personalInfo.age;
+
+    if (userDoc) {
+      if (resolvedEmail && resolvedEmail !== userDoc.email) {
+        const existingEmail = await User.findOne({ email: resolvedEmail, _id: { $ne: userDoc._id } });
+        if (existingEmail) {
+          return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر' });
+        }
+        userDoc.email = resolvedEmail;
+      }
+      if (resolvedName) userDoc.name = resolvedName;
+      if (resolvedPhone !== undefined && String(resolvedPhone).trim()) {
+        userDoc.phone = String(resolvedPhone).trim();
+      }
+      if (resolvedWhatsapp !== undefined) {
+        userDoc.whatsappPhone = String(resolvedWhatsapp || '').trim();
+      }
+      if (bio !== undefined) {
+        userDoc.bio = String(bio || '').trim().slice(0, 500);
+      }
+      if (resolvedGender === 'male' || resolvedGender === 'female') {
+        userDoc.gender = resolvedGender;
+      }
+      if (resolvedAge !== undefined && Number.isFinite(Number(resolvedAge))) {
+        userDoc.age = Math.min(80, Math.max(18, Number(resolvedAge)));
+      }
+      if (typeof isActive === 'boolean') {
+        userDoc.isActive = isActive;
+      }
+      if (newPassword && String(newPassword).trim()) {
+        if (String(newPassword).trim().length < 8) {
+          return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
+        }
+        userDoc.password = String(newPassword).trim();
+      }
+      await userDoc.save();
     }
-    if (phone) teacher.personalInfo.phone = phone;
-    if (country) teacher.personalInfo.country = country;
-    if (city) teacher.personalInfo.city = city;
-    if (gender === 'male' || gender === 'female') teacher.personalInfo.gender = gender;
-    if (hourlyRate != null && Number.isFinite(Number(hourlyRate)) && Number(hourlyRate) >= 0) teacher.hourlyRate = Number(hourlyRate);
+
+    if (resolvedName) teacher.personalInfo.fullName = resolvedName;
+    if (resolvedPhone !== undefined && String(resolvedPhone).trim()) {
+      teacher.personalInfo.phone = String(resolvedPhone).trim();
+    }
+    if (resolvedWhatsapp !== undefined) {
+      teacher.personalInfo.whatsapp = String(resolvedWhatsapp || '').trim();
+    }
+    if (resolvedTelegram !== undefined) {
+      teacher.personalInfo.telegram = String(resolvedTelegram || '').trim();
+    }
+    if (resolvedCountry !== undefined && String(resolvedCountry).trim()) {
+      teacher.personalInfo.country = String(resolvedCountry).trim();
+    }
+    if (resolvedCity !== undefined && String(resolvedCity).trim()) {
+      teacher.personalInfo.city = String(resolvedCity).trim();
+    }
+    if (resolvedAddress !== undefined) {
+      teacher.personalInfo.address = String(resolvedAddress || '').trim();
+    }
+    if (resolvedGender === 'male' || resolvedGender === 'female') {
+      teacher.personalInfo.gender = resolvedGender;
+    }
+    if (resolvedAge !== undefined && Number.isFinite(Number(resolvedAge))) {
+      teacher.personalInfo.age = Math.min(80, Math.max(18, Number(resolvedAge)));
+    }
+
+    const resolvedUniversity = university ?? academicInfo.university;
+    const resolvedFaculty = faculty ?? academicInfo.faculty;
+    const resolvedGradYear = graduationYear ?? academicInfo.graduationYear;
+    const resolvedSpec = specialization ?? academicInfo.specialization;
+    const resolvedQual = qualification ?? academicInfo.qualification;
+
+    if (resolvedUniversity !== undefined && String(resolvedUniversity).trim()) {
+      teacher.academicInfo.university = String(resolvedUniversity).trim();
+    }
+    if (resolvedFaculty !== undefined && String(resolvedFaculty).trim()) {
+      teacher.academicInfo.faculty = String(resolvedFaculty).trim();
+    }
+    if (resolvedGradYear !== undefined && Number.isFinite(Number(resolvedGradYear))) {
+      teacher.academicInfo.graduationYear = Number(resolvedGradYear);
+    }
+    if (resolvedSpec !== undefined && String(resolvedSpec).trim()) {
+      teacher.academicInfo.specialization = String(resolvedSpec).trim();
+    }
+    if (resolvedQual !== undefined && String(resolvedQual).trim()) {
+      teacher.academicInfo.qualification = String(resolvedQual).trim();
+    }
+
+    const resolvedMemParts = memorizedParts ?? quranInfo.memorizedParts;
+    const resolvedExp = teachingExperience ?? quranInfo.teachingExperience;
+    const resolvedIjazatCount = numberOfIjazat ?? quranInfo.numberOfIjazat;
+    const resolvedIjazaType = ijazaType ?? quranInfo.ijazaType;
+    const resolvedSheikh = sheikhName ?? quranInfo.sheikhName;
+    const resolvedSanad = sanad ?? quranInfo.sanad;
+    const resolvedSpecsList = specializations ?? quranInfo.specializations;
+
+    if (resolvedMemParts !== undefined && Number.isFinite(Number(resolvedMemParts))) {
+      teacher.quranInfo.memorizedParts = Math.min(30, Math.max(0, Number(resolvedMemParts)));
+    }
+    if (resolvedExp !== undefined && Number.isFinite(Number(resolvedExp))) {
+      teacher.quranInfo.teachingExperience = Math.max(0, Number(resolvedExp));
+    }
+    if (resolvedIjazatCount !== undefined && Number.isFinite(Number(resolvedIjazatCount))) {
+      teacher.quranInfo.numberOfIjazat = Math.max(0, Number(resolvedIjazatCount));
+    }
+    if (resolvedIjazaType !== undefined) {
+      teacher.quranInfo.ijazaType = String(resolvedIjazaType || '').trim();
+    }
+    if (resolvedSheikh !== undefined) {
+      teacher.quranInfo.sheikhName = String(resolvedSheikh || '').trim();
+    }
+    if (resolvedSanad !== undefined) {
+      teacher.quranInfo.sanad = String(resolvedSanad || '').trim();
+    }
+    if (Array.isArray(resolvedSpecsList)) {
+      teacher.quranInfo.specializations = resolvedSpecsList.filter((item) => VALID_TEACHER_SPECIALIZATIONS.has(item));
+    }
+
+    if (Array.isArray(languages)) {
+      const filteredLangs = languages.filter((item) => VALID_TEACHER_LANGUAGES.has(item));
+      if (filteredLangs.length) teacher.languages = filteredLangs;
+    }
+    if (availabilityTimezone && String(availabilityTimezone).trim()) {
+      teacher.availabilityTimezone = String(availabilityTimezone).trim();
+    }
+    if (hourlyRate != null && Number.isFinite(Number(hourlyRate)) && Number(hourlyRate) >= 0) {
+      teacher.hourlyRate = Number(hourlyRate);
+    }
     if (typeof isFeatured === 'boolean') teacher.isFeatured = isFeatured;
-    if (status) {
+
+    if (status && VALID_TEACHER_STATUSES.has(status)) {
       teacher.status = status;
-      teacher.isVerified = false;
+      if (typeof isVerified === 'boolean') {
+        teacher.isVerified = isVerified;
+      } else {
+        teacher.isVerified = status === 'approved';
+      }
+      if (status === 'approved' && !teacher.reviewCompletedAt) {
+        teacher.reviewCompletedAt = new Date();
+      }
+    } else if (typeof isVerified === 'boolean') {
+      teacher.isVerified = isVerified;
     }
+
     await teacher.save();
 
     await logAdminAction({
@@ -523,16 +739,87 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       action: 'teacher.admin-profile.updated',
       entityType: 'teacher',
       entityId: teacher._id,
-      reason: String(req.body.adminReason || '').trim(),
+      reason: String(req.body.adminReason || 'تحديث شامل لملف المعلم من الإدارة').trim(),
       metadata: {
-        fields: ['name', 'hourlyRate', 'isFeatured', 'gender', 'status', 'country', 'city', 'phone']
-          .filter((key) => req.body[key] !== undefined),
+        fields: Object.keys(req.body).filter((key) => !['newPassword', 'password', 'adminReason'].includes(key)),
+        passwordChanged: Boolean(newPassword && String(newPassword).trim()),
       },
     }).catch(() => {});
 
-    res.json(teacher);
+    const populatedTeacher = await Teacher.findById(teacher._id)
+      .populate('user', 'name email phone whatsappPhone avatar bio isActive createdAt lastLogin');
+    res.json(populatedTeacher || teacher);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const teacher = await Teacher.findById(req.params.id).populate('user', 'name email role');
+    if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
+
+    const replacementTeacherId = req.body?.replacementTeacherId || req.query?.replacementTeacherId;
+    const forceDelete = Boolean(req.body?.force || req.query?.force === 'true');
+    const teacherCircles = await GroupCircle.find({ teacher: teacher._id });
+
+    if (teacherCircles.length > 0) {
+      if (replacementTeacherId) {
+        const replacement = await Teacher.findById(replacementTeacherId);
+        if (!replacement) {
+          return res.status(404).json({ error: 'المعلم البديل غير موجود' });
+        }
+        await GroupCircle.updateMany({ teacher: teacher._id }, { $set: { teacher: replacement._id } });
+      } else {
+        const activeWithStudents = teacherCircles.filter((c) => Array.isArray(c.students) && c.students.length > 0);
+        if (activeWithStudents.length > 0 && !forceDelete) {
+          return res.status(409).json({
+            error: `لا يمكن حذف المعلم لأن لديه ${activeWithStudents.length} حلقة مسجل بها طلاب. يمكنك تغيير معلم الحلقة أولاً أو تأكيد الحذف الشامل.`,
+            code: 'TEACHER_HAS_ACTIVE_CIRCLES',
+            circlesCount: activeWithStudents.length,
+          });
+        }
+        const circleIds = teacherCircles.map((c) => c._id);
+        await User.updateMany({ circle: { $in: circleIds } }, { $unset: { circle: 1 } });
+        await StudentSubscription.updateMany(
+          { circle: { $in: circleIds }, status: { $in: ['placed', 'active', 'paused'] } },
+          { $set: { circle: null, status: 'awaiting_placement' } }
+        );
+        await GroupCircle.deleteMany({ _id: { $in: circleIds } });
+      }
+    }
+
+    await StudentSubscription.updateMany(
+      { preferredTeacher: teacher._id },
+      { $set: { preferredTeacher: null } }
+    );
+    await Session.updateMany(
+      { teacher: teacher._id, status: { $in: ['pending', 'accepted', 'scheduled'] } },
+      { $set: { status: 'cancelled' } }
+    );
+
+    const teacherId = String(teacher._id);
+    const teacherName = teacher.personalInfo?.fullName || teacher.user?.name || '';
+    const teacherEmail = teacher.user?.email || '';
+    const linkedUserId = teacher.user?._id || teacher.user;
+
+    await Teacher.findByIdAndDelete(teacher._id);
+    if (linkedUserId) {
+      await User.deleteOne({ _id: linkedUserId, role: 'teacher' });
+    }
+
+    await logAdminAction({
+      req,
+      action: 'teacher.deleted-by-admin',
+      entityType: 'teacher',
+      entityId: teacherId,
+      reason: String(req.body?.reason || req.query?.reason || 'حذف حساب المعلم من الإدارة').trim(),
+      metadata: { teacherName, teacherEmail, forceDelete },
+    }).catch(() => {});
+
+    return res.json({ success: true, deletedId: teacherId });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
   }
 });
 

@@ -140,7 +140,9 @@ function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, 
       quranInfo: raw.quranInfo,
       languages: raw.languages || [],
       hourlyRate: raw.hourlyRate,
+      isFeatured: Boolean(raw.isFeatured),
       availabilityTimezone: raw.availabilityTimezone,
+      availability: raw.availability || [],
       status: raw.status,
       isVerified: raw.isVerified,
       reviewNotes: raw.reviewNotes || [],
@@ -1092,7 +1094,7 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
 router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req, res) => {
   try {
     const teacher = await Teacher.findById(req.params.id)
-      .populate('user', 'name email phone avatar bio createdAt lastLogin')
+      .populate('user', 'name email phone whatsappPhone avatar bio isActive createdAt lastLogin')
       .populate('reviewChecklist.reviewedBy', 'name email')
       .populate('reviewNotes.admin', 'name email');
 
