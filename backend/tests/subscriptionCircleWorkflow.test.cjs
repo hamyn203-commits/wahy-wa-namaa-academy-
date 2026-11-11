@@ -102,6 +102,20 @@ test('circle start requires paid minimum and valid plan duration, then activates
   assert.equal((await startSubscriptionCircle(valid)).alreadyStarted, true);
 });
 
+test('admin early start (allowUnderMinimum) activates circle and student subscriptions before minimum count', async () => {
+  const h = harness(2);
+  const { startSubscriptionCircle } = h.service('subscriptionPlacement');
+  const valid = { circleId: 'circle', schedule: [{ day: 'Monday', startTime: '17:00', endTime: '18:00' }], timezone: 'Africa/Cairo' };
+  await assert.rejects(startSubscriptionCircle(valid), { code: 'CIRCLE_MINIMUM_NOT_MET' });
+  const earlyResult = await startSubscriptionCircle({ ...valid, allowUnderMinimum: true });
+  assert.equal(earlyResult.activatedStudentIds.length, 2);
+  assert.equal(h.circle.status, 'active');
+  assert.equal(h.circle.schedule[0].day, 'Monday');
+  assert.equal(h.circle.schedule[0].startTime, '17:00');
+  assert.equal(h.circle.schedule[0].endTime, '18:00');
+  assert.ok(h.subscriptions.every(sub => sub.status === 'active'));
+});
+
 test('settlement replay cannot debit the renewal activated by the same completed session', async () => {
   const h = harness(1);
   h.circle.status = 'active';

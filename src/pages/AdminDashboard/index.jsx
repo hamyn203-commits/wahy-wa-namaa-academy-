@@ -458,9 +458,10 @@ export default function AdminDashboard() {
   const addTeacher = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/api/admin/teachers', { ...teacherForm, autoApprove: false }, { auth: true });
-      toast.success('تم إنشاء ملف المعلم وإرساله إلى مركز المراجعة');
-      setTeacherForm({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة', gender: 'male', hourlyRate: 50 });
+      const autoApprove = teacherForm.autoApprove !== false;
+      await api.post('/api/admin/teachers', { ...teacherForm, autoApprove }, { auth: true });
+      toast.success(autoApprove ? 'تم إنشاء واعتماد حساب المعلم فوراً' : 'تم إنشاء ملف المعلم وإرساله إلى مركز المراجعة');
+      setTeacherForm({ name: '', email: '', password: '', phone: '', country: 'مصر', city: 'القاهرة', gender: 'male', hourlyRate: 50, autoApprove: true });
       load();
     } catch (e) { toast.error(e.message); }
   };
@@ -583,11 +584,24 @@ export default function AdminDashboard() {
   };
 
   const executeDeleteItem = async (type, id) => {
-    const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
+    const paths = {
+      course: `/api/admin/courses/${id}`,
+      lesson: `/api/admin/lessons/${id}`,
+      blog: `/api/admin/blog/${id}`,
+      message: `/api/contact/${id}`,
+      teacher: `/api/admin/teachers/${id}?force=true`,
+      student: `/api/admin/people/students/${id}`,
+    };
     try {
       await api.delete(paths[type], { auth: true });
       toast.success('تم الحذف بنجاح');
       setConfirmDeleteModal(null);
+      if (type === 'teacher' && String(teacherDossier?.teacher?._id) === String(id)) {
+        setTeacherDossier(null);
+      }
+      if (type === 'student' && String(studentDossier?.student?._id) === String(id)) {
+        setStudentDossier(null);
+      }
       if (type === 'lesson') loadLessons(selectedCourse);
       else if (type === 'course') loadCourses();
       else if (type === 'blog') loadBlog();
@@ -732,7 +746,7 @@ export default function AdminDashboard() {
               {focus === 'guardian-links' ? (
                 <AdminGuardianLinksPanel onOpenStudent={openStudentDossier} />
               ) : null}
-              <AdminPeopleDirectory selectedRole={peopleRole} onOpenStudent={openStudentDossier} onOpenGuardian={openFamilyDossier} />
+              <AdminPeopleDirectory selectedRole={peopleRole} onOpenStudent={openStudentDossier} onOpenGuardian={openFamilyDossier} approvedTeachers={approved} />
               <section className="wn-admin-people-home">
               <div className="wn-admin-people-home__intro">
                 <span>STUDENT & FAMILY INTELLIGENCE</span>
@@ -894,13 +908,24 @@ export default function AdminDashboard() {
                   </select>
                   <input type="number" min="10" max="1000" placeholder="أجر الساعة (ج.م)" value={teacherForm.hourlyRate ?? 50} onChange={(e) => setTeacherForm((p) => ({ ...p, hourlyRate: Number(e.target.value) }))} className="border rounded-lg px-3 py-2 text-sm" />
                 </div>
-                <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm">إنشاء ملف للمراجعة</button>
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 py-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={teacherForm.autoApprove !== false}
+                    onChange={(e) => setTeacherForm((p) => ({ ...p, autoApprove: e.target.checked }))}
+                    className="w-4 h-4 accent-emerald-700"
+                  />
+                  <span>اعتماد مباشر ونشر حساب المعلم فوراً (بدون انتظار مراجعة)</span>
+                </label>
+                <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">
+                  {teacherForm.autoApprove !== false ? 'إضافة واعتماد المعلم فوراً' : 'إنشاء ملف للمراجعة'}
+                </button>
               </form>
               <div className="wn-dashboard-surface wn-admin-teachers-list">
                 <div className="wn-admin-teachers-list__head">
                   <div>
                     <h3>المعلمون المعتمدون ({approved.length})</h3>
-                    <p>فتح ملف Teacher 360 داخل الإدارة، مع معاينة مستقلة للملف العام عند الحاجة.</p>
+                    <p>فتح ملف Teacher 360 داخل الإدارة للتعديل الشامل، مع إمكانية الحذف أو معاينة الملف العام.</p>
                   </div>
                   <button type="button" className="wn-btn wn-btn--secondary" onClick={loadCore}>تحديث القائمة</button>
                 </div>
@@ -928,8 +953,16 @@ export default function AdminDashboard() {
                           <small>{teacher.user?.email || 'البريد غير متاح'}</small>
                         </div>
                         <div className="wn-admin-teachers-list__actions">
-                          <button type="button" className="is-primary" onClick={() => openTeacherDossier(teacher._id)}>إدارة المعلم</button>
+                          <button type="button" className="is-primary" onClick={() => openTeacherDossier(teacher._id)}>إدارة وتعديل المعلم</button>
                           <button type="button" className="is-secondary" onClick={() => previewPublicTeacher(teacher._id)}>الملف العام</button>
+                          <button
+                            type="button"
+                            onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || 'المعلم')}
+                            className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold inline-flex items-center gap-1"
+                            title="حذف المعلم"
+                          >
+                            <Trash2 size={13} /> حذف
+                          </button>
                         </div>
                       </article>
                     ))}
@@ -1311,6 +1344,7 @@ export default function AdminDashboard() {
           onProfileChangeReview={reviewTeacherProfileChange}
           onPreviewPublic={previewPublicTeacher}
           onUpdateAdminSettings={updateTeacherAdminSettings}
+          onDeleteTeacher={(id, label) => deleteItem('teacher', id, label)}
         />
       )}
 
@@ -1324,6 +1358,7 @@ export default function AdminDashboard() {
           onOpenHomeworkAudio={openStudentHomeworkAudio}
           onMessageStudent={(studentId) => { setStudentDossier(null); setSupportStudent(studentId); setTab('messages'); }}
           onUpdateStudent={updateStudentAdminProfile}
+          onDeleteStudent={(id, label) => deleteItem('student', id, label)}
         />
       )}
 

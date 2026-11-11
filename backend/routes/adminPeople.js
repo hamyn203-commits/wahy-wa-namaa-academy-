@@ -16,6 +16,8 @@ const Notification = require('../models/Notification');
 const TeacherUpdate = require('../models/TeacherUpdate');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const StudentSubscription = require('../models/StudentSubscription');
+const GroupCircle = require('../models/GroupCircle');
+const { getSubscriptionPlan } = require('../config/subscriptionPlans');
 const { protect, authorize } = require('../middleware/auth');
 const { maskPhone } = require('../utils/phone');
 const { logAdminAction } = require('../services/adminAudit');
@@ -278,7 +280,7 @@ router.get('/students/:id', async (req, res) => {
     }
 
     const student = await User.findOne({ _id: req.params.id, role: 'student' })
-      .select('name email phone whatsappPhone gender age currentLevel customLevel memorizedJuz memorizationDetails preferredTrack circle avatar bio isActive emailVerified lastLogin preferences createdAt updatedAt')
+      .select('name email phone whatsappPhone gender enrollmentSection age currentLevel customLevel memorizedJuz memorizationDetails preferredTrack circle avatar bio isActive emailVerified lastLogin preferences createdAt updatedAt')
       .populate('circle', 'name status')
       .lean();
 
@@ -473,22 +475,191 @@ router.get('/students/:id', async (req, res) => {
   }
 });
 
+const VALID_STUDENT_LEVELS = new Set(['beginner', 'intermediate', 'advanced', 'ijazah']);
+const VALID_STUDENT_TRACKS = new Set(['memorization', 'tajweed_ijazah', 'kids_foundation']);
+const VALID_ENROLLMENT_SECTIONS = new Set(['men_children', 'ladies']);
+
+router.post('/students', async (req, res) => {
+  try {
+    const {
+      name, email, password, phone = '', whatsappPhone = '',
+      gender = 'male', age = 12, enrollmentSection,
+      currentLevel = 'beginner', customLevel = '',
+      preferredTrack = 'memorization', memorizedJuz = 0,
+      memorizationDetails = '', bio = '', isActive = true,
+      createSubscription = false, planKey = 'group', sessionCount = 8, preferredTeacherId = null,
+    } = req.body || {};
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'الاسم والبريد الإلكتروني وكلمة المرور مطلوبة' });
+    }
+    if (String(password).trim().length < 8) {
+      return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
+    }
+    const normalizedEmail = String(email).toLowerCase().trim();
+    if (await User.findOne({ email: normalizedEmail })) {
+      return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
+    }
+
+    const resolvedGender = gender === 'female' ? 'female' : 'male';
+    const resolvedSection = VALID_ENROLLMENT_SECTIONS.has(enrollmentSection)
+      ? enrollmentSection
+      : (resolvedGender === 'female' ? 'ladies' : 'men_children');
+
+    const student = await User.create({
+      name: String(name).trim(),
+      email: normalizedEmail,
+      password: String(password).trim(),
+      phone: String(phone || '').trim() || undefined,
+      whatsappPhone: String(whatsappPhone || phone || '').trim(),
+      role: 'student',
+      gender: resolvedGender,
+      enrollmentSection: resolvedSection,
+      age: Math.min(100, Math.max(4, Number(age) || 12)),
+      currentLevel: VALID_STUDENT_LEVELS.has(currentLevel) ? currentLevel : 'beginner',
+      customLevel: String(customLevel || '').trim().slice(0, 120),
+      preferredTrack: VALID_STUDENT_TRACKS.has(preferredTrack) ? preferredTrack : 'memorization',
+      memorizedJuz: Math.max(0, Math.min(30, Number(memorizedJuz) || 0)),
+      memorizationDetails: String(memorizationDetails || '').trim().slice(0, 500),
+      bio: String(bio || '').trim().slice(0, 500),
+      isActive: Boolean(isActive),
+      emailVerified: true,
+      onboarding: {
+        required: false,
+        completed: true,
+        trackSelected: true,
+      },
+    });
+
+    let createdSubscription = null;
+    if (createSubscription) {
+      const plan = getSubscriptionPlan(planKey);
+      const validCount = [4, 8, 12, 24].includes(Number(sessionCount)) ? Number(sessionCount) : 8;
+      if (plan) {
+        const pricePerSessionMinor = plan.pricePerSessionEgp * 100;
+        createdSubscription = await StudentSubscription.create({
+          student: student._id,
+          planKey: plan.key,
+          section: resolvedSection,
+          sessionCount: validCount,
+          sessionsUsed: 0,
+          sessionsRemaining: validCount,
+          currency: 'EGP',
+          pricePerSessionMinor,
+          totalAmountMinor: pricePerSessionMinor * validCount,
+          status: 'awaiting_placement',
+          preferredTeacher: preferredTeacherId && mongoose.Types.ObjectId.isValid(preferredTeacherId)
+            ? preferredTeacherId
+            : null,
+          paidAt: new Date(),
+          pricingSnapshot: {
+            minStudents: plan.minStudents,
+            maxStudents: plan.maxStudents,
+            durationMinMinutes: plan.durationMinMinutes,
+            durationMaxMinutes: plan.durationMaxMinutes,
+            nameAr: plan.nameAr,
+            nameEn: plan.nameEn,
+            durationLabelAr: plan.durationLabelAr,
+            durationLabelEn: plan.durationLabelEn,
+          },
+        });
+      }
+    }
+
+    await logAdminAction({
+      req,
+      action: 'student.created-by-admin',
+      entityType: 'student',
+      entityId: String(student._id),
+      reason: 'إضافة حساب طالب جديد من لوحة الإدارة',
+      metadata: {
+        gender: student.gender,
+        currentLevel: student.currentLevel,
+        preferredTrack: student.preferredTrack,
+        subscriptionCreated: Boolean(createdSubscription),
+      },
+    }).catch(() => {});
+
+    return res.status(201).json({
+      success: true,
+      student,
+      subscription: createdSubscription,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
 router.put('/students/:id', async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
-    const student = await User.findOne({ _id: req.params.id, role: 'student' });
+    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('+password');
     if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
 
-    const { currentLevel, preferredTrack, memorizedJuz, memorizationDetails, isActive, adminReason } = req.body || {};
-    if (typeof currentLevel === 'string' && currentLevel.trim()) student.currentLevel = currentLevel.trim();
-    if (typeof preferredTrack === 'string' && preferredTrack.trim()) student.preferredTrack = preferredTrack.trim();
+    const {
+      name, email, newPassword, phone, whatsappPhone,
+      gender, age, enrollmentSection,
+      currentLevel, customLevel, preferredTrack,
+      memorizedJuz, memorizationDetails, bio, isActive, adminReason,
+    } = req.body || {};
+
+    if (typeof name === 'string' && name.trim()) {
+      student.name = name.trim();
+    }
+    if (typeof email === 'string' && email.trim()) {
+      const normalizedEmail = email.toLowerCase().trim();
+      if (normalizedEmail !== student.email) {
+        const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: student._id } });
+        if (existing) {
+          return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر' });
+        }
+        student.email = normalizedEmail;
+      }
+    }
+    if (phone !== undefined) {
+      student.phone = String(phone || '').trim() || undefined;
+    }
+    if (whatsappPhone !== undefined) {
+      student.whatsappPhone = String(whatsappPhone || '').trim();
+    }
+    if (gender === 'male' || gender === 'female') {
+      student.gender = gender;
+    }
+    if (enrollmentSection !== undefined && VALID_ENROLLMENT_SECTIONS.has(enrollmentSection)) {
+      student.enrollmentSection = enrollmentSection;
+    }
+    if (age !== undefined && Number.isFinite(Number(age))) {
+      student.age = Math.min(100, Math.max(4, Number(age)));
+    }
+    if (typeof currentLevel === 'string' && VALID_STUDENT_LEVELS.has(currentLevel.trim())) {
+      student.currentLevel = currentLevel.trim();
+    }
+    if (typeof customLevel === 'string') {
+      student.customLevel = customLevel.trim().slice(0, 120);
+    }
+    if (typeof preferredTrack === 'string' && VALID_STUDENT_TRACKS.has(preferredTrack.trim())) {
+      student.preferredTrack = preferredTrack.trim();
+    }
     if (memorizedJuz !== undefined && Number.isFinite(Number(memorizedJuz))) {
       student.memorizedJuz = Math.max(0, Math.min(30, Number(memorizedJuz)));
     }
-    if (typeof memorizationDetails === 'string') student.memorizationDetails = memorizationDetails.trim().slice(0, 500);
-    if (typeof isActive === 'boolean') student.isActive = isActive;
+    if (typeof memorizationDetails === 'string') {
+      student.memorizationDetails = memorizationDetails.trim().slice(0, 500);
+    }
+    if (typeof bio === 'string') {
+      student.bio = bio.trim().slice(0, 500);
+    }
+    if (typeof isActive === 'boolean') {
+      student.isActive = isActive;
+    }
+    if (newPassword && String(newPassword).trim()) {
+      if (String(newPassword).trim().length < 8) {
+        return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
+      }
+      student.password = String(newPassword).trim();
+    }
 
     await student.save();
 
@@ -499,12 +670,55 @@ router.put('/students/:id', async (req, res) => {
       entityId: String(student._id),
       reason: String(adminReason || 'تحديث ملف الطالب من Student 360').trim().slice(0, 200),
       metadata: {
-        fields: ['currentLevel', 'preferredTrack', 'memorizedJuz', 'memorizationDetails', 'isActive']
-          .filter((key) => req.body?.[key] !== undefined),
+        fields: Object.keys(req.body || {}).filter((key) => !['newPassword', 'password', 'adminReason'].includes(key)),
+        passwordChanged: Boolean(newPassword && String(newPassword).trim()),
       },
     }).catch(() => {});
 
     return res.json({ success: true, student });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete('/students/:id', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student id' });
+    }
+    const student = await User.findOne({ _id: req.params.id, role: 'student' });
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+
+    const studentId = student._id;
+    const studentName = student.name;
+    const studentEmail = student.email;
+
+    await Promise.all([
+      GroupCircle.updateMany({ students: studentId }, { $pull: { students: studentId } }),
+      Guardian.updateMany({ 'children.student': studentId }, { $pull: { children: { student: studentId } } }),
+      User.updateMany({ children: studentId }, { $pull: { children: studentId } }),
+      StudentSubscription.updateMany(
+        { student: studentId, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { status: 'cancelled', circle: null } }
+      ),
+      Session.updateMany(
+        { student: studentId, type: { $ne: 'group' }, status: { $in: ['pending', 'accepted', 'scheduled'] } },
+        { $set: { status: 'cancelled' } }
+      ),
+    ]);
+
+    await User.findByIdAndDelete(studentId);
+
+    await logAdminAction({
+      req,
+      action: 'student.deleted-by-admin',
+      entityType: 'student',
+      entityId: String(studentId),
+      reason: String(req.body?.reason || req.query?.reason || 'حذف حساب الطالب من الإدارة').trim().slice(0, 200),
+      metadata: { studentName, studentEmail },
+    }).catch(() => {});
+
+    return res.json({ success: true, deletedId: String(studentId) });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

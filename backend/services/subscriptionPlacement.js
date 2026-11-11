@@ -44,6 +44,8 @@ async function placeSubscription({
   circleName,
   schedule,
   timezone = 'Africa/Cairo',
+  teacherId,
+  allowFlexibleCircle = false,
 }) {
   const dbSession = await mongoose.startSession();
   let result;
@@ -61,7 +63,10 @@ async function placeSubscription({
         error.code = 'SUBSCRIPTION_NOT_READY_FOR_PLACEMENT';
         throw error;
       }
-      if (!subscription.preferredTeacher) {
+      if (teacherId && mongoose.Types.ObjectId.isValid(teacherId)) {
+        subscription.preferredTeacher = teacherId;
+      }
+      if (!subscription.preferredTeacher && !existingCircleId) {
         const error = new Error('Preferred teacher is missing');
         error.code = 'PREFERRED_TEACHER_REQUIRED';
         throw error;
@@ -74,27 +79,23 @@ async function placeSubscription({
         throw error;
       }
 
-      const [student, teacher] = await Promise.all([
-        User.findById(subscription.student)
-          .select('name gender age preferredTrack currentLevel circle')
-          .session(dbSession),
-        Teacher.findOne({
-          _id: subscription.preferredTeacher,
-          status: 'approved',
-          isVerified: true,
-        }).session(dbSession),
-      ]);
+      const student = await User.findById(subscription.student)
+        .select('name gender age preferredTrack currentLevel circle')
+        .session(dbSession);
 
       if (!student) {
         const error = new Error('Student not found');
         error.code = 'STUDENT_NOT_FOUND';
         throw error;
       }
-      if (!teacher) {
-        const error = new Error('Preferred teacher is not available');
-        error.code = 'PREFERRED_TEACHER_UNAVAILABLE';
-        throw error;
-      }
+
+      let teacher = subscription.preferredTeacher
+        ? await Teacher.findOne({
+            _id: subscription.preferredTeacher,
+            status: 'approved',
+            isVerified: true,
+          }).session(dbSession)
+        : null;
 
       let circle;
       const expectedGender = circleGenderForStudent(student, subscription.section);
@@ -103,24 +104,55 @@ async function placeSubscription({
       const expectedLevel = student.currentLevel || 'beginner';
 
       if (existingCircleId) {
-        circle = await GroupCircle.findOne({
-          _id: existingCircleId,
-          teacher: teacher._id,
-          subscriptionPlanKey: plan.key,
-          $or: [{ subscriptionSection: subscription.section }, { subscriptionSection: { $exists: false } }],
-          gender: expectedGender,
-          targetAgeGroup: expectedAgeGroup,
-          track: expectedTrack,
-          level: expectedLevel,
-          status: { $nin: ['completed', 'paused'] },
-        }).session(dbSession);
+        if (allowFlexibleCircle) {
+          circle = await GroupCircle.findOne({
+            _id: existingCircleId,
+            status: { $nin: ['completed'] },
+          }).session(dbSession);
+          if (circle && (!teacher || String(circle.teacher) !== String(teacher._id))) {
+            teacher = await Teacher.findOne({ _id: circle.teacher }).session(dbSession);
+            if (teacher) subscription.preferredTeacher = teacher._id;
+          }
+        } else {
+          if (!teacher) {
+            const error = new Error('Preferred teacher is not available');
+            error.code = 'PREFERRED_TEACHER_UNAVAILABLE';
+            throw error;
+          }
+          circle = await GroupCircle.findOne({
+            _id: existingCircleId,
+            teacher: teacher._id,
+            subscriptionPlanKey: plan.key,
+            $or: [{ subscriptionSection: subscription.section }, { subscriptionSection: { $exists: false } }],
+            gender: expectedGender,
+            targetAgeGroup: expectedAgeGroup,
+            track: expectedTrack,
+            level: expectedLevel,
+            status: { $nin: ['completed', 'paused'] },
+          }).session(dbSession);
+        }
 
         if (!circle) {
           const error = new Error('Selected circle is not compatible with this subscription');
           error.code = 'CIRCLE_NOT_COMPATIBLE';
           throw error;
         }
+        if (circleName && String(circleName).trim()) {
+          circle.name = String(circleName).trim().slice(0, 120);
+        }
+        if (Array.isArray(schedule) && schedule.length > 0) {
+          const normalizedSchedule = normalizeSchedule(schedule);
+          if (normalizedSchedule.length > 0) {
+            circle.schedule = normalizedSchedule;
+            circle.timezone = String(timezone || circle.timezone || 'Africa/Cairo').trim().slice(0, 80) || 'Africa/Cairo';
+          }
+        }
       } else {
+        if (!teacher) {
+          const error = new Error('Preferred teacher is not available');
+          error.code = 'PREFERRED_TEACHER_UNAVAILABLE';
+          throw error;
+        }
         const normalizedSchedule = normalizeSchedule(schedule);
         const created = await GroupCircle.create([{
           name: String(circleName || '').trim().slice(0, 120)
@@ -145,17 +177,19 @@ async function placeSubscription({
         circle = created[0];
       }
 
-      const otherSection = await StudentSubscription.exists({
-        circle: circle._id,
-        status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] },
-        section: { $ne: subscription.section },
-      }).session(dbSession);
-      if (otherSection) {
-        const error = new Error('الحلقة تابعة لقسم مختلف');
-        error.code = 'CIRCLE_NOT_COMPATIBLE';
-        throw error;
+      if (!allowFlexibleCircle) {
+        const otherSection = await StudentSubscription.exists({
+          circle: circle._id,
+          status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] },
+          section: { $ne: subscription.section },
+        }).session(dbSession);
+        if (otherSection) {
+          const error = new Error('الحلقة تابعة لقسم مختلف');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
       }
-      circle.subscriptionSection = subscription.section;
+      circle.subscriptionSection = circle.subscriptionSection || subscription.section;
       circle.capacity = operationalCapacity(circle, plan);
 
       const alreadyInCircle = (circle.students || []).some(
@@ -211,7 +245,7 @@ async function placeSubscription({
   }
 }
 
-async function startSubscriptionCircle({ circleId, schedule, timezone = 'Africa/Cairo' }) {
+async function startSubscriptionCircle({ circleId, schedule, timezone = 'Africa/Cairo', allowUnderMinimum = false }) {
   const rows = normalizeSchedule(schedule);
   const fail = (code, message) => { const error = new Error(message); error.code = code; throw error; };
   if (!Array.isArray(schedule) || !rows.length || rows.length !== schedule.length) {
@@ -238,26 +272,36 @@ async function startSubscriptionCircle({ circleId, schedule, timezone = 'Africa/
       if (!['forming', 'ready'].includes(circle.status)) {
         fail('CIRCLE_NOT_READY', 'الحلقة بدأت بالفعل أو غير متاحة للبدء');
       }
-      const plan = getPlan(circle.subscriptionPlanKey);
+      const plan = getPlan(circle.subscriptionPlanKey || 'group');
       if (!plan) fail('SUBSCRIPTION_PLAN_INVALID', 'خطة الحلقة غير صحيحة');
-      const teacher = await Teacher.findOne({ _id: circle.teacher, status: 'approved', isVerified: true }).session(dbSession);
+      const teacher = allowUnderMinimum
+        ? await Teacher.findOne({ _id: circle.teacher }).session(dbSession)
+        : await Teacher.findOne({ _id: circle.teacher, status: 'approved', isVerified: true }).session(dbSession);
       if (!teacher) fail('PREFERRED_TEACHER_UNAVAILABLE', 'معلم الحلقة غير متاح');
-      const placed = await StudentSubscription.find({
-        circle: circle._id, student: { $in: circle.students }, status: 'placed', sessionsRemaining: { $gt: 0 },
-        planKey: plan.key, preferredTeacher: circle.teacher,
-      }).session(dbSession);
-      const studentIds = [...new Set(placed.map(item => String(item.student)))];
+      const placed = await StudentSubscription.find(
+        allowUnderMinimum
+          ? { circle: circle._id, student: { $in: circle.students }, status: { $in: ['placed', 'active'] }, sessionsRemaining: { $gt: 0 } }
+          : {
+              circle: circle._id, student: { $in: circle.students }, status: 'placed', sessionsRemaining: { $gt: 0 },
+              planKey: plan.key, preferredTeacher: circle.teacher,
+            }
+      ).session(dbSession);
+      const studentIds = allowUnderMinimum
+        ? [...new Set((circle.students || []).map(item => String(item)))]
+        : [...new Set(placed.map(item => String(item.student)))];
       circle.capacity = operationalCapacity(circle, plan);
-      if (new Set(placed.map(item => item.section)).size > 1 || placed.some(item => circle.subscriptionSection && item.section !== circle.subscriptionSection)) {
+      if (!allowUnderMinimum && (new Set(placed.map(item => item.section)).size > 1 || placed.some(item => circle.subscriptionSection && item.section !== circle.subscriptionSection))) {
         fail('CIRCLE_NOT_COMPATIBLE', 'اشتراكات الحلقة تابعة لأقسام مختلفة');
       }
-      if (studentIds.length !== circle.students.length || studentIds.length < plan.minStudents || studentIds.length > circle.capacity) {
+      if ((!allowUnderMinimum && (studentIds.length !== circle.students.length || studentIds.length < plan.minStudents)) || studentIds.length < 1 || studentIds.length > circle.capacity) {
         fail('CIRCLE_MINIMUM_NOT_MET', `تحتاج الحلقة إلى ${plan.minStudents} طالبًا باشتراكات مدفوعة ومتوافقة قبل البدء`);
       }
       for (const row of rows) {
         const minutes = time => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
         const duration = minutes(row.endTime) - minutes(row.startTime);
-        if (duration < (plan.durationMinMinutes || 1) || duration > plan.durationMaxMinutes) {
+        const minDuration = allowUnderMinimum ? 15 : (plan.durationMinMinutes || 1);
+        const maxDuration = allowUnderMinimum ? 240 : plan.durationMaxMinutes;
+        if (duration < minDuration || duration > maxDuration) {
           fail('CIRCLE_SCHEDULE_INVALID', 'مدة الموعد غير متوافقة مع خطة الحلقة');
         }
       }
@@ -268,8 +312,10 @@ async function startSubscriptionCircle({ circleId, schedule, timezone = 'Africa/
       circle.startedAt = now;
       circle.status = studentIds.length >= circle.capacity ? 'full' : 'active';
       await circle.save({ session: dbSession });
-      await StudentSubscription.updateMany({ _id: { $in: placed.map(item => item._id) }, status: 'placed' },
-        { $set: { status: 'active', startedAt: now } }, { session: dbSession });
+      if (placed.length > 0) {
+        await StudentSubscription.updateMany({ _id: { $in: placed.map(item => item._id) }, status: 'placed' },
+          { $set: { status: 'active', startedAt: now } }, { session: dbSession });
+      }
       result = { circleId: String(circle._id), circleName: circle.name, circleStatus: circle.status,
         studentIds, activatedStudentIds: studentIds, teacherUserId: teacher.user ? String(teacher.user) : null };
     });
