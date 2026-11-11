@@ -94,6 +94,17 @@ export function ProgressRing({ percent = 0, size = 76, strokeWidth = 7, label })
   );
 }
 
+export function getDailyQuranicDua(locale = 'ar') {
+  const isAr = locale === 'ar';
+  const dayIndex = new Date().getDay();
+  const dua = DAILY_DUAS[dayIndex % DAILY_DUAS.length];
+  return {
+    text: isAr ? dua.ar : dua.en,
+    source: isAr ? dua.sourceAr : dua.sourceEn,
+    greeting: getTimeGreeting(locale),
+  };
+}
+
 export function StudentInspirationStrip({
   studentFirstName,
   locale = 'ar',
@@ -129,14 +140,24 @@ export function StudentInspirationStrip({
             {greeting}، {studentFirstName}
           </span>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-800">
-              <Flame size={13} className="text-amber-600" />
-              {streak} {isAr ? 'يوم استمرارية' : 'day streak'}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-extrabold text-emerald-800">
-              <Trophy size={13} className="text-emerald-600" />
-              {totalPoints} {isAr ? 'نقطة' : 'pts'}
-            </span>
+            {Number(streak) > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-800">
+                <Flame size={13} className="text-amber-600" />
+                {streak} {isAr ? 'يوم استمرارية' : 'day streak'}
+              </span>
+            )}
+            {Number(totalPoints) > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-extrabold text-emerald-800">
+                <Trophy size={13} className="text-emerald-600" />
+                {totalPoints} {isAr ? 'نقطة' : 'pts'}
+              </span>
+            )}
+            {Number(streak) === 0 && Number(totalPoints) === 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-white/90 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                <BookOpen size={13} className="text-emerald-600" />
+                {isAr ? 'رحلة قرآنية مباركة' : 'Blessed Quran journey'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -165,10 +186,12 @@ export function StudentInspirationStrip({
                 <BookOpen size={13} className="text-emerald-700" />
                 {subscription
                   ? (isAr ? 'تقدم باقة الحصص' : 'Package sessions')
-                  : (isAr ? 'هدف الحصص الشهري' : 'Monthly session goal')}
+                  : (isAr ? 'الحصص المنجزة' : 'Completed sessions')}
               </span>
               <span className="text-emerald-800">
-                {sessionsUsed} / {sessionTarget} {isAr ? 'حصص' : 'sessions'}
+                {subscription
+                  ? `${sessionsUsed} / ${sessionTarget} ${isAr ? 'حصص' : 'sessions'}`
+                  : `${sessionsUsed} ${isAr ? 'حصة مكتملة' : 'completed'}`}
               </span>
             </div>
             <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-emerald-100">

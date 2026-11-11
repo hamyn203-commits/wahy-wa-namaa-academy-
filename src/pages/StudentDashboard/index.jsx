@@ -21,7 +21,7 @@ import StudentTeacherMarketplace from './TeacherMarketplace';
 import SessionChatModal from '../../components/session/SessionChatModal';
 import SupportChat, { SupportLauncher } from '../../components/support/SupportChat';
 import Skeleton from '../../components/shared/Skeleton';
-import { StudentInspirationStrip } from '../../components/dashboard/QuranJourneyWidgets';
+import { StudentInspirationStrip, getDailyQuranicDua } from '../../components/dashboard/QuranJourneyWidgets';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 import { teacherLockFromSubscriptions } from '../../lib/studentTeacherLock';
 
@@ -1031,9 +1031,41 @@ export default function StudentDashboard() {
     { id: 'support', label: locale === 'ar' ? 'تواصل مع الإدارة' : 'Support', icon: Send, description: locale === 'ar' ? 'رسائلك مع إدارة الأكاديمية' : 'Messages with the academy' },
   ];
 
+  const dailyDua = getDailyQuranicDua(locale);
+  const hasAnyTrialActivity = pendingTrials.length > 0 || upcomingTrials.length > 0 || completedTrials.length > 0;
+  const hasCompletedTrial = completedTrials.length > 0;
+  const isBrandNewStudent = !currentSubscription
+    && (stats.completedSessions || 0) === 0
+    && (stats.upcomingSessions || 0) === 0
+    && (stats.homeworkSubmitted || 0) === 0;
+  const onboardingSteps = [
+    {
+      key: 'account',
+      done: true,
+      title: locale === 'ar' ? 'إنشاء الحساب' : 'Create account',
+      subtitle: locale === 'ar' ? 'تم تفعيل حسابك بنجاح' : 'Your account is active',
+    },
+    {
+      key: 'tutor',
+      done: hasAnyTrialActivity,
+      title: locale === 'ar' ? 'اختيار معلم وحجز تجريبية' : 'Choose a tutor & book trial',
+      subtitle: hasAnyTrialActivity
+        ? (locale === 'ar' ? 'تم اختيار المعلم وطلب الحصة' : 'Tutor selected & trial requested')
+        : (locale === 'ar' ? `لديك ${trialRemaining || 3} حصص تجريبية مجانية` : `${trialRemaining || 3} free trial sessions available`),
+    },
+    {
+      key: 'trial',
+      done: hasCompletedTrial,
+      title: locale === 'ar' ? 'الحصة التجريبية والاشتراك' : 'Complete trial & subscribe',
+      subtitle: hasCompletedTrial
+        ? (locale === 'ar' ? 'أكملت التجريبية — اختر باقتك' : 'Trial completed — choose your plan')
+        : (locale === 'ar' ? 'تقييم مستواك وتحديد الخطة مع المعلم' : 'Level assessment with your tutor'),
+    },
+  ];
+  const completedOnboardingCount = onboardingSteps.filter((step) => step.done).length;
+
   return (
     <DashboardLayout title={locale === 'id' ? 'Dasbor Siswa' : locale === 'ar' ? 'لوحة الطالب' : 'Student Dashboard'} user={user} onLogout={logout}>
-      <SupportLauncher onOpen={() => setTab('support')} />
       {loading ? (
         <div className="space-y-4 py-6" role="status" aria-live="polite">
           <span className="sr-only">{locale === 'ar' ? 'جاري تحميل لوحة الطالب...' : 'Loading student dashboard...'}</span>
@@ -1049,17 +1081,19 @@ export default function StudentDashboard() {
       ) : (
         <>
           {tab !== 'support' && <>
-          <StudentInspirationStrip
-            studentFirstName={studentFirstName}
-            locale={locale}
-            streak={gameStats?.streak?.current || profile?.studentProfile?.streak || 0}
-            totalPoints={gameStats?.points?.total || profile?.studentProfile?.points || 0}
-            completedSessions={stats.completedSessions || 0}
-            homeworkSubmitted={stats.homeworkSubmitted || 0}
-            homeworkPending={stats.homeworkPending || 0}
-            subscription={currentSubscription}
-          />
-          {subscriptionsLoaded && !currentSubscription && <section className="wn-student-welcome">
+          {tab === 'overview' && (Boolean(currentSubscription) || (stats.completedSessions || 0) > 0) && (
+            <StudentInspirationStrip
+              studentFirstName={studentFirstName}
+              locale={locale}
+              streak={gameStats?.streak?.current || profile?.studentProfile?.streak || 0}
+              totalPoints={gameStats?.points?.total || profile?.studentProfile?.points || 0}
+              completedSessions={stats.completedSessions || 0}
+              homeworkSubmitted={stats.homeworkSubmitted || 0}
+              homeworkPending={stats.homeworkPending || 0}
+              subscription={currentSubscription}
+            />
+          )}
+          {subscriptionsLoaded && !currentSubscription && tab === 'overview' && <section className="wn-student-welcome">
             <div className="wn-student-welcome__content">
               <span className="wn-student-welcome__eyebrow">
                 <Sparkles size={15} />
@@ -1085,6 +1119,11 @@ export default function StudentDashboard() {
                           : 'Your trials are complete. Subscribe to continue with your tutor.'))
                       : (locale === 'ar' ? 'ابدأ بخطوة واضحة: اختر المعلم المناسب واحجز حصتك التجريبية.' : 'Start with one clear step: choose a tutor and book your trial.')}
               </p>
+
+              <blockquote className="my-3 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2.5 text-xs text-emerald-50/95">
+                <p className="font-arabic text-sm font-bold leading-relaxed text-white">{dailyDua.text}</p>
+                <footer className="mt-0.5 text-[11px] font-semibold text-amber-200/90">{dailyDua.source}</footer>
+              </blockquote>
 
               <div className="wn-student-welcome__actions">
                 <button
@@ -1114,41 +1153,37 @@ export default function StudentDashboard() {
                         ? (locale === 'ar' ? 'اشتراك والاستمرار' : 'Subscribe & continue')
                         : (locale === 'ar' ? 'اختر معلمك' : 'Find your tutor')}
                 </button>
-                <button type="button" onClick={() => setTab('homework')} className="wn-student-secondary-action">
-                  <FileText size={16} />
-                  {locale === 'ar'
-                    ? `واجباتي${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`
-                    : `Homework${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`}
-                </button>
+                {((stats.homeworkPending || 0) > 0 || (stats.completedSessions || 0) > 0) && (
+                  <button type="button" onClick={() => setTab('homework')} className="wn-student-secondary-action">
+                    <FileText size={16} />
+                    {locale === 'ar'
+                      ? `واجباتي${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`
+                      : `Homework${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`}
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="wn-student-welcome__summary">
-              <div className="wn-student-welcome__metric">
-                <Calendar size={18} />
-                <div>
-                  <small>{locale === 'ar' ? 'الحصة القادمة' : 'Next session'}</small>
-                  <strong>
-                    {nextSessionDate
-                      ? nextSessionDate.toLocaleDateString(dateLocale, { day: 'numeric', month: 'short' })
-                      : (locale === 'ar' ? 'لا يوجد موعد' : 'No session')}
-                  </strong>
-                </div>
+            <div className="wn-student-welcome__summary" data-testid="student-onboarding-checklist">
+              <div className="mb-1 flex items-center justify-between text-xs font-bold text-emerald-100">
+                <span>{locale === 'ar' ? 'خطوات البداية' : 'Getting started'}</span>
+                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] text-amber-200">
+                  {completedOnboardingCount} / 3 {locale === 'ar' ? 'مكتمل' : 'done'}
+                </span>
               </div>
-              <div className="wn-student-welcome__metric">
-                <FileText size={18} />
-                <div>
-                  <small>{locale === 'ar' ? 'واجبات مطلوبة' : 'Homework due'}</small>
-                  <strong>{stats.homeworkPending || 0}</strong>
+              {onboardingSteps.map((step) => (
+                <div key={step.key} className="wn-student-welcome__metric">
+                  {step.done ? (
+                    <CheckCircle size={18} className="text-emerald-300 shrink-0" />
+                  ) : (
+                    <Clock size={18} className="text-amber-200/80 shrink-0" />
+                  )}
+                  <div>
+                    <strong className="block text-sm">{step.title}</strong>
+                    <small className="opacity-85">{step.subtitle}</small>
+                  </div>
                 </div>
-              </div>
-              <div className="wn-student-welcome__metric">
-                <Trophy size={18} />
-                <div>
-                  <small>{locale === 'ar' ? 'نقاطك' : 'Your points'}</small>
-                  <strong>{gameStats?.points?.total || 0}</strong>
-                </div>
-              </div>
+              ))}
             </div>
           </section>}
 
@@ -1580,20 +1615,22 @@ export default function StudentDashboard() {
                   </aside>
                 </div>
 
-                <div className="wn-student-stat-grid">
-                  <StatCard label={locale === 'ar' ? 'حصص قادمة' : 'Upcoming sessions'} value={stats.upcomingSessions || 0} icon={Calendar} />
-                  {currentSubscription ? (
-                    <StatCard
-                      label={locale === 'ar' ? 'حصص متبقية بالباقة' : 'Remaining package sessions'}
-                      value={currentSubscription.sessionsRemaining ?? 0}
-                      icon={Clock}
-                    />
-                  ) : (
-                    <StatCard label={locale === 'ar' ? 'تجريبيات متبقية' : 'Trials remaining'} value={trialRemaining} icon={Clock} />
-                  )}
-                  <StatCard label={locale === 'ar' ? 'حصص مكتملة' : 'Completed sessions'} value={stats.completedSessions || 0} icon={CheckCircle} />
-                  <StatCard label={locale === 'ar' ? 'واجبات تم تسليمها' : 'Homework submitted'} value={stats.homeworkSubmitted || 0} icon={FileText} />
-                </div>
+                {!isBrandNewStudent && (
+                  <div className="wn-student-stat-grid">
+                    <StatCard label={locale === 'ar' ? 'حصص قادمة' : 'Upcoming sessions'} value={stats.upcomingSessions || 0} icon={Calendar} />
+                    {currentSubscription ? (
+                      <StatCard
+                        label={locale === 'ar' ? 'حصص متبقية بالباقة' : 'Remaining package sessions'}
+                        value={currentSubscription.sessionsRemaining ?? 0}
+                        icon={Clock}
+                      />
+                    ) : (
+                      <StatCard label={locale === 'ar' ? 'تجريبيات متبقية' : 'Trials remaining'} value={trialRemaining} icon={Clock} />
+                    )}
+                    <StatCard label={locale === 'ar' ? 'حصص مكتملة' : 'Completed sessions'} value={stats.completedSessions || 0} icon={CheckCircle} />
+                    <StatCard label={locale === 'ar' ? 'واجبات تم تسليمها' : 'Homework submitted'} value={stats.homeworkSubmitted || 0} icon={FileText} />
+                  </div>
+                )}
 
                 {teacherUpdates[0] && (
                   <section className="wn-student-teacher-update-preview">
@@ -1610,32 +1647,34 @@ export default function StudentDashboard() {
                 )}
 
                 <div className="wn-student-overview__lower">
-                  <section className="wn-student-journey-card">
-                    <div className="wn-student-section-heading">
-                      <div>
-                        <span>{locale === 'ar' ? 'ملخص رحلتك' : 'Journey snapshot'}</span>
-                        <h3>{locale === 'ar' ? 'تقدمك في مكان واحد' : 'Your progress in one place'}</h3>
+                  {!isBrandNewStudent && (
+                    <section className="wn-student-journey-card">
+                      <div className="wn-student-section-heading">
+                        <div>
+                          <span>{locale === 'ar' ? 'ملخص رحلتك' : 'Journey snapshot'}</span>
+                          <h3>{locale === 'ar' ? 'تقدمك في مكان واحد' : 'Your progress in one place'}</h3>
+                        </div>
                       </div>
-                    </div>
-                    <div className="wn-student-journey-list">
-                      <button type="button" onClick={() => setTab('sessions')}>
-                        <span>{locale === 'ar' ? 'الحصص المكتملة' : 'Completed sessions'}</span>
-                        <strong>{stats.completedSessions || 0}</strong>
-                      </button>
-                      <button type="button" onClick={() => setTab('homework')}>
-                        <span>{locale === 'ar' ? 'الواجبات المسلمة' : 'Submitted homework'}</span>
-                        <strong>{stats.homeworkSubmitted || 0}</strong>
-                      </button>
-                      <button type="button" onClick={() => setTab('account')}>
-                        <span>{locale === 'ar' ? 'الدورات المسجلة' : 'Enrolled courses'}</span>
-                        <strong>{courses.length}</strong>
-                      </button>
-                      <button type="button" onClick={() => setTab('account')}>
-                        <span>{locale === 'ar' ? 'المعلمون في رحلتك' : 'Your tutors'}</span>
-                        <strong>{myTeachers.length}</strong>
-                      </button>
-                    </div>
-                  </section>
+                      <div className="wn-student-journey-list">
+                        <button type="button" onClick={() => setTab('sessions')}>
+                          <span>{locale === 'ar' ? 'الحصص المكتملة' : 'Completed sessions'}</span>
+                          <strong>{stats.completedSessions || 0}</strong>
+                        </button>
+                        <button type="button" onClick={() => setTab('homework')}>
+                          <span>{locale === 'ar' ? 'الواجبات المسلمة' : 'Submitted homework'}</span>
+                          <strong>{stats.homeworkSubmitted || 0}</strong>
+                        </button>
+                        <button type="button" onClick={() => setTab('account')}>
+                          <span>{locale === 'ar' ? 'الدورات المسجلة' : 'Enrolled courses'}</span>
+                          <strong>{courses.length}</strong>
+                        </button>
+                        <button type="button" onClick={() => setTab('account')}>
+                          <span>{locale === 'ar' ? 'المعلمون في رحلتك' : 'Your tutors'}</span>
+                          <strong>{myTeachers.length}</strong>
+                        </button>
+                      </div>
+                    </section>
+                  )}
 
                   {referral?.code ? (
                     <section className="wn-student-referral-card">
@@ -2302,6 +2341,12 @@ export default function StudentDashboard() {
             )}
           </div>
         </>
+      )}
+
+      {tab !== 'support' && (
+        <div className="mt-6">
+          <SupportLauncher onOpen={() => setTab('support')} />
+        </div>
       )}
 
       {chatSession && (
