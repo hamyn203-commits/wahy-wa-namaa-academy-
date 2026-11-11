@@ -33,6 +33,8 @@ const {
   findMockUserById,
   addMockTeacher,
   findMockTeacherByUserId,
+  findMockTeacherById,
+  updateMockTeacher,
   tasks: mockTasks,
   withdrawals: mockWithdrawals,
 } = require('../mockStore');
@@ -912,6 +914,9 @@ router.get('/featured', async (req, res) => {
 });
 
 router.get('/admin/profile-changes/pending', protect, authorize('admin'), async (_req, res) => {
+  if (isMockMode && !isDBConnected()) {
+    return res.json({ requests: [] });
+  }
   try {
     const requests = await TeacherProfileChangeRequest.find({ status: 'pending' })
       .populate({
@@ -1092,6 +1097,33 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
 });
 
 router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req, res) => {
+  if (isMockMode && !isDBConnected()) {
+    const mockTeacher = findMockTeacherById(req.params.id);
+    if (!mockTeacher) return res.status(404).json({ error: 'Teacher not found' });
+    const mockUser = findMockUserById(mockTeacher.user?._id || mockTeacher.user) || {
+      _id: mockTeacher.user || 'mock-teacher-user',
+      name: mockTeacher.personalInfo?.fullName || 'معلم الأكاديمية',
+      email: 'teacher@wahy.com',
+      phone: mockTeacher.personalInfo?.phone || '+201000000000',
+      isActive: true,
+    };
+    const hydrated = {
+      ...mockTeacher,
+      user: mockUser,
+      documents: mockTeacher.documents || {},
+      media: mockTeacher.media || {},
+      reviewChecklist: mockTeacher.reviewChecklist || [],
+      reviewNotes: mockTeacher.reviewNotes || [],
+    };
+    const gate = buildTeacherReviewGate(hydrated);
+    return res.json(teacherDossierPayload(
+      hydrated,
+      gate,
+      [],
+      { totalSessions: 0, completedSessions: 0, acceptedSessions: 0, distinctStudents: 0 },
+      null,
+    ));
+  }
   try {
     const teacher = await Teacher.findById(req.params.id)
       .populate('user', 'name email phone whatsappPhone avatar bio isActive createdAt lastLogin')
@@ -1536,6 +1568,10 @@ router.put('/admin/:id/review', protect, authorize('admin'), async (req, res) =>
   }
 
   if (isMockMode && !isDBConnected()) {
+    updateMockTeacher(req.params.id, {
+      status: statusMap[action],
+      isVerified: action === 'approve',
+    });
     return res.json({
       success: true,
       teacher: {

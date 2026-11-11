@@ -1,19 +1,10 @@
-const CACHE_NAME = 'wahy-wa-namaa-v2';
-const RUNTIME_CACHE = 'wahy-wa-namaa-runtime-v1';
+const CACHE_NAME = 'wahy-wa-namaa-v3';
+const RUNTIME_CACHE = 'wahy-wa-namaa-runtime-v2';
 
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/favicon.svg',
   '/assets/logo.png',
-  '/ar',
-  '/ar/app',
-  '/ar/leaderboard',
-  '/ar/donate',
-  '/ar/library',
-  '/ar/ai',
-  '/ar/programs/kids',
 ];
 
 self.addEventListener('install', (event) => {
@@ -42,10 +33,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   if (url.origin === location.origin) {
-    // Never cache API responses. They may contain authenticated, user-specific
-    // data and must always reflect the current account and session state.
-    if (url.pathname.startsWith('/api/')) {
-      event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    // Never intercept API or hashed build asset requests in the Service Worker.
+    // Letting the browser handle them directly prevents stale chunk mismatches
+    // and Service Worker fetch rejections ("Failed to fetch").
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/') || url.pathname.startsWith('/assets/')) {
       return;
     }
     if (event.request.mode === 'navigate' || event.request.destination === 'document') {
@@ -54,12 +45,11 @@ self.addEventListener('fetch', (event) => {
           .then((response) => {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-              cache.put('/index.html', response.clone());
+              cache.put('/index.html', responseToCache);
             });
             return response;
           })
-          .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+          .catch(() => caches.match('/index.html'))
       );
       return;
     }
@@ -79,10 +69,6 @@ self.addEventListener('fetch', (event) => {
           });
 
           return response;
-        }).catch(() => {
-          if (event.request.destination === 'document') {
-            return caches.match('/index.html');
-          }
         });
       })
     );
