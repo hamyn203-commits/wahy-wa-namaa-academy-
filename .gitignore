@@ -71,5 +71,7 @@ uploads/
 backend/uploads/
 
 .vercel
+.agents/
+
 
 
