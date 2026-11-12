@@ -1,9 +1,37 @@
 #!/usr/bin/env node
 /** إرسال روابط Sitemap إلى Bing IndexNow (202 = مقبول) */
-const SITE = 'https://wahy-wa-namaa-academy.vercel.app';
+const SITE = String(process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://wahywanamaa.com').replace(/\/$/, '');
+const HOST = new URL(SITE).hostname;
 const KEY = 'wahywanamaa2026indexnow01';
 const LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
-const PAGES = ['', '/free-trial', '/teachers', '/courses', '/blog', '/contact', '/about', '/start', '/login', '/faq'];
+const PAGES = [
+  '',
+  '/free-trial',
+  '/teachers',
+  '/courses',
+  '/tracks',
+  '/plans',
+  '/blog',
+  '/library',
+  '/programs/kids',
+  '/programs/reverts',
+  '/women',
+  '/markets',
+  '/about',
+  '/contact',
+  '/start',
+  '/faq',
+];
+
+const shouldRun =
+  process.argv.includes('--force')
+  || process.env.VERCEL_ENV === 'production'
+  || process.env.INDEXNOW_SUBMIT === 'true';
+
+if (!shouldRun) {
+  console.log('IndexNow skipped (run with --force or INDEXNOW_SUBMIT=true in production)');
+  process.exit(0);
+}
 
 const urls = [];
 LOCALES.forEach((loc) => {
@@ -28,21 +56,20 @@ for (let i = 0; i < urls.length; i += chunkSize) {
   }));
 }
 
-// POST batch لـ IndexNow (بعض الشبكات)
 try {
   const r = await fetch('https://api.indexnow.org/indexnow', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({
-      host: 'wahy-wa-namaa-academy.vercel.app',
+      host: HOST,
       key: KEY,
       keyLocation: `${SITE}/${KEY}.txt`,
-      urlList: urls.slice(0, 10),
+      urlList: urls.slice(0, 100),
     }),
   });
   console.log(`IndexNow batch POST: ${r.status}`);
-} catch (e) {
+} catch {
   console.log('IndexNow batch POST: skipped');
 }
 
-console.log(`Bing IndexNow — ${ok} OK, ${fail} fail, ${urls.length} total URLs`);
+console.log(`Bing IndexNow (${HOST}) — ${ok} OK, ${fail} fail, ${urls.length} total URLs`);

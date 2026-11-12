@@ -53,7 +53,7 @@ export default function Teachers() {
   const { locale } = useI18n();
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || searchParams.get('search') || '');
   const [sortBy, setSortBy] = useState('rating');
   const [filters, setFilters] = useState({
     market: searchParams.get('market') || '',

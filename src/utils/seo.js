@@ -1,13 +1,18 @@
+import { SITE_URL, DEFAULT_OG_IMAGE, LOGO_URL, toAbsoluteUrl } from '../seo/brand';
+
 export const generateMetaTags = ({
   title,
   description,
   keywords,
   image,
   url,
-  type = 'website'
+  type = 'website',
+  noindex = false,
 }) => {
-  const defaultImage = '/images/hero-reference-prompt10.png';
-  const defaultUrl = 'https://wahy-wa-namaa-academy.vercel.app';
+  const defaultImage = DEFAULT_OG_IMAGE;
+  const defaultUrl = SITE_URL;
+  const resolvedImage = image ? toAbsoluteUrl(image) : defaultImage;
+  const resolvedUrl = url ? toAbsoluteUrl(url) : defaultUrl;
   
   return {
     title: `${title} | أكاديمية وَحْيٌ وَنَمَاء`,
@@ -15,13 +20,13 @@ export const generateMetaTags = ({
       { name: 'description', content: description },
       { name: 'keywords', content: keywords },
       { name: 'author', content: 'أكاديمية وَحْيٌ وَنَمَاء | WAHY WA NAMAA' },
-      { name: 'robots', content: 'index, follow' },
+      { name: 'robots', content: noindex ? 'noindex, follow' : 'index, follow' },
       
       // Open Graph
       { property: 'og:title', content: title },
       { property: 'og:description', content: description },
-      { property: 'og:image', content: image || defaultImage },
-      { property: 'og:url', content: url || defaultUrl },
+      { property: 'og:image', content: resolvedImage },
+      { property: 'og:url', content: resolvedUrl },
       { property: 'og:type', content: type },
       { property: 'og:locale', content: 'ar_EG' },
       { property: 'og:site_name', content: 'أكاديمية وَحْيٌ وَنَمَاء' },
@@ -30,7 +35,7 @@ export const generateMetaTags = ({
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: title },
       { name: 'twitter:description', content: description },
-      { name: 'twitter:image', content: image || defaultImage },
+      { name: 'twitter:image', content: resolvedImage },
       
       // Arabic specific
       { name: 'language', content: 'Arabic' },
@@ -48,8 +53,8 @@ export const generateStructuredData = ({
       '@context': 'https://schema.org',
       '@type': 'EducationalOrganization',
       name: 'أكاديمية وَحْيٌ وَنَمَاء',
-      url: 'https://wahy-wa-namaa-academy.vercel.app',
-      logo: 'https://wahy-wa-namaa-academy.vercel.app/favicon.svg',
+      url: SITE_URL,
+      logo: LOGO_URL,
       description: 'أكاديمية رقمية لتعلّم القرآن الكريم والحفظ والتجويد عبر برامج ومسارات تعليمية.',
       address: {
         '@type': 'PostalAddress',
@@ -60,7 +65,7 @@ export const generateStructuredData = ({
       '@context': 'https://schema.org',
       '@type': 'Person',
       name: data.name,
-      image: data.image,
+      image: data.image ? toAbsoluteUrl(data.image) : undefined,
       jobTitle: 'معلم قرآن كريم',
       worksFor: {
         '@type': 'EducationalOrganization',
@@ -83,7 +88,7 @@ export const generateStructuredData = ({
       provider: {
         '@type': 'EducationalOrganization',
         name: 'أكاديمية وَحْيٌ وَنَمَاء',
-        url: 'https://wahy-wa-namaa-academy.vercel.app'
+        url: SITE_URL
       },
       educationalLevel: data.level,
       inLanguage: 'ar',

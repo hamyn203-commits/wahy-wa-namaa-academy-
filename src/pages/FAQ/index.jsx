@@ -5,10 +5,12 @@ import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import '../../styles/public-experience.css';
 
 export default function FAQPage() {
   const { t, locale } = useI18n();
+  const { createFAQSchema } = useSEO();
   const isAr = locale === 'ar';
   const [open, setOpen] = useState(null);
   const [query, setQuery] = useState('');
@@ -32,9 +34,17 @@ export default function FAQPage() {
     ? allFaqs.filter((item) => `${item.q} ${item.a}`.toLowerCase().includes(trimmedQuery))
     : allFaqs;
 
+  const faqSchema = createFAQSchema(allFaqs.map((item) => ({ question: item.q, answer: item.a })));
+
   return (
     <>
-      <SEOHead page={{ title: t.faq?.title || (isAr ? 'الأسئلة الشائعة' : 'FAQ'), description: t.faq?.subtitle, url: '/faq', type: 'website' }} />
+      <SEOHead page={{
+        title: t.faq?.title || (isAr ? 'الأسئلة الشائعة' : 'FAQ'),
+        description: t.faq?.subtitle,
+        url: '/faq',
+        type: 'website',
+        schema: faqSchema,
+      }} />
       <GlobalHeader />
       <main className="wn-public-shell">
         <section className="wn-public-hero">

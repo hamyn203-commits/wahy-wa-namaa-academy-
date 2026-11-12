@@ -1,16 +1,39 @@
 # robots.txt for Wahy Wa Namaa Academy
-# https://wahy-wa-namaa-academy.vercel.app
+# https://wahywanamaa.com
 User-agent: *
 Allow: /
 Disallow: /admin
+Disallow: /*/admin
 Disallow: /api
 Disallow: /student/dashboard
+Disallow: /*/student/dashboard
 Disallow: /teacher/dashboard
+Disallow: /*/teacher/dashboard
 Disallow: /guardian/dashboard
+Disallow: /*/guardian/dashboard
 Disallow: /settings
+Disallow: /*/settings
+Disallow: /live
+Disallow: /*/live
+Disallow: /meeting
+Disallow: /*/meeting
+Disallow: /payment
+Disallow: /*/payment
+Disallow: /profile/setup
+Disallow: /*/profile/setup
+Disallow: /notifications
+Disallow: /*/notifications
+Disallow: /login
+Disallow: /*/login
+Disallow: /forgot-password
+Disallow: /*/forgot-password
+Disallow: /reset-password
+Disallow: /*/reset-password
 Disallow: /.git
 Disallow: /node_modules
-Sitemap: https://wahy-wa-namaa-academy.vercel.app/sitemap.xml
+
+Sitemap: https://wahywanamaa.com/sitemap.xml
+
 User-agent: GPTBot
 Disallow: /
 User-agent: CCBot

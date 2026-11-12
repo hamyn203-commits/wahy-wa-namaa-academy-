@@ -6,6 +6,7 @@ import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import { teacherPublicImage, teacherPublicVideo, teacherImageFallback } from '../../lib/teacherMedia';
@@ -16,6 +17,7 @@ export default function TeacherProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { locale } = useI18n();
+  const { createTeacherSchema, createBreadcrumbSchema } = useSEO();
   const isAr = locale === 'ar';
   const { isAuthenticated } = useAuth();
   const [teacher, setTeacher] = useState(null);
@@ -156,9 +158,32 @@ export default function TeacherProfile() {
       .filter(Boolean),
   ));
 
+  const profileImage = teacherPublicImage(media.profilePhoto || teacher.user?.avatar);
+  const profileDescription = teacher.user?.bio || (isAr ? 'ملف معلم في أكاديمية وحي ونماء' : 'Teacher profile at Wahy Wa Namaa Academy');
+  const teacherSchema = createTeacherSchema({
+    name,
+    url: '/teachers/' + id,
+    image: profileImage,
+    specialty: specializations.map(specName).join(' • ') || (isAr ? 'معلم قرآن كريم وتجويد' : 'Quran & Tajweed Teacher'),
+    bio: profileDescription,
+    languages: languages.map(languageName),
+  });
+  const breadcrumbSchema = createBreadcrumbSchema([
+    { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+    { name: isAr ? 'المعلمون' : 'Teachers', url: '/teachers' },
+    { name, url: '/teachers/' + id },
+  ]);
+
   return (
     <>
-      <SEOHead page={{ title: name, description: teacher.user?.bio || (isAr ? 'ملف معلم في أكاديمية وحي ونماء' : 'Teacher profile at Wahy Wa Namaa Academy'), url: '/teachers/' + id, type: 'profile' }} />
+      <SEOHead page={{
+        title: name,
+        description: profileDescription,
+        image: profileImage,
+        url: '/teachers/' + id,
+        type: 'profile',
+        schema: [teacherSchema, breadcrumbSchema],
+      }} />
       <GlobalHeader />
 
       <main className="wn-detail-shell">

@@ -1,5 +1,18 @@
 /** هوية الأكاديمية الرسمية + بيانات SEO العالمية — وَحْيٌ وَنَمَاء */
-export const SITE_URL = 'https://wahy-wa-namaa-academy.vercel.app';
+const envSiteUrl = typeof import.meta !== 'undefined' && import.meta.env
+  ? import.meta.env.VITE_SITE_URL
+  : '';
+
+export const SITE_URL = (envSiteUrl || 'https://wahywanamaa.com').replace(/\/$/, '');
+export const DEFAULT_OG_IMAGE = `${SITE_URL}/images/hero-wahy-namaa.jpg`;
+export const LOGO_URL = `${SITE_URL}/assets/logo.png`;
+
+export function toAbsoluteUrl(pathOrUrl = '') {
+  const value = String(pathOrUrl || '').trim();
+  if (!value) return DEFAULT_OG_IMAGE;
+  if (/^https?:\/\//i.test(value)) return value;
+  return `${SITE_URL}${value.startsWith('/') ? value : `/${value}`}`;
+}
 
 export const SEO_LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
 

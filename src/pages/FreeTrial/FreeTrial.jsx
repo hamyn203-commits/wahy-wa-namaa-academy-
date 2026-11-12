@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
+import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
 import { localizedPath, DEFAULT_LOCALE } from '../../lib/locale';
 import { SOCIAL_LINKS } from '../../config/social';
@@ -477,6 +478,12 @@ export default function FreeTrial() {
 
   return (
     <div className="wn-trial-surface min-h-screen flex flex-col" dir={isRTL ? 'rtl' : 'ltr'}>
+      <SEOHead page={{
+        title: text.title,
+        description: text.subtitle,
+        url: '/free-trial',
+        type: 'website',
+      }} />
       <GlobalHeader />
 
       {/* ═══ الخلفية الأزهرية الفاخرة مع النمط الإسلامي ═══ */}

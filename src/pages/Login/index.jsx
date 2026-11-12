@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import BrandLogo from '../../components/BrandLogo';
 import GoogleSignIn from '../../components/GoogleSignIn';
+import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import { postAuthDestination } from '../../lib/navigation';
@@ -123,6 +124,7 @@ export default function Login() {
 
   return (
     <main className="wn-public-shell">
+      <SEOHead page={{ title: isAr ? 'تسجيل الدخول' : 'Sign in', url: '/login', noindex: true }} />
       <div className="wn-auth-layout">
         <section className="wn-auth-visual">
           <div className="wn-auth-visual__content">
