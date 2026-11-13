@@ -3,6 +3,7 @@
 
 User-agent: *
 Allow: /
+Allow: /api/seo/sitemap.xml
 Allow: /register/teacher
 Allow: /*/register/teacher
 Disallow: /admin

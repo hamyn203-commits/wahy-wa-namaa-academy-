@@ -95,7 +95,8 @@ test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid J
 
     assert.match(sitemapIndex, /<sitemapindex\b/);
     assert.match(sitemapIndex, /https:\/\/wahywanamaa\.com\/sitemap-static\.xml/);
-    assert.match(sitemapIndex, /https:\/\/wahywanamaa\.com\/api\/seo\/sitemap\.xml/);
+    assert.match(sitemapIndex, /https:\/\/wahywanamaa\.com\/sitemap-dynamic\.xml/);
+    assert.equal(/<link[^>]+rel=["']canonical["']/.test(templateHtml), false);
 
     const samples = [
       { file: 'ar.html', locale: 'ar', expectedUrl: 'https://wahywanamaa.com/ar', isHome: true },
@@ -147,13 +148,15 @@ test('vercel.json, manifest.json, and robots.txt satisfy launch SEO configuratio
   assert.equal(vercel.trailingSlash, false);
   const spaRewrite = vercel.rewrites.find((r) => r.destination === '/index');
   assert.ok(spaRewrite, 'vercel.json SPA fallback must target extensionless /index when cleanUrls is true');
+  assert.ok(vercel.rewrites.some((r) => r.source === '/sitemap-dynamic.xml' && r.destination === 'https://api.wahywanamaa.com/api/seo/sitemap.xml'));
   assert.ok(vercel.rewrites.some((r) => r.source === '/api/:path*' && r.destination === 'https://api.wahywanamaa.com/api/:path*'));
   assert.ok(vercel.rewrites.some((r) => r.source === '/uploads/:path*' && r.destination === 'https://api.wahywanamaa.com/uploads/:path*'));
 
   const noindexSources = vercel.headers
     .filter((h) => h.headers?.some((kv) => kv.key === 'X-Robots-Tag' && kv.value.includes('noindex')))
     .map((h) => h.source);
-  assert.ok(noindexSources.includes('/api/(.*)'));
+  assert.ok(noindexSources.includes('/api/((?!seo/).*)'));
+  assert.ok(!noindexSources.includes('/api/(.*)'));
   assert.ok(!noindexSources.some((src) => src.includes('register/teacher')));
 
   const manifest = JSON.parse(readFileSync(resolve(ROOT, 'public/manifest.json'), 'utf8'));
@@ -168,6 +171,7 @@ test('vercel.json, manifest.json, and robots.txt satisfy launch SEO configuratio
   }
 
   const robots = readFileSync(resolve(ROOT, 'public/robots.txt'), 'utf8');
+  assert.match(robots, /Allow:\s*\/api\/seo\/sitemap\.xml/);
   assert.match(robots, /Allow:\s*\/\*\/register\/teacher/);
   assert.match(robots, /Disallow:\s*\/register\$/);
   assert.match(robots, /User-agent:\s*OAI-SearchBot/);

@@ -7,6 +7,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
+    { "source": "/sitemap-dynamic.xml", "destination": "https://api.wahywanamaa.com/api/seo/sitemap.xml" },
     { "source": "/api/:path*", "destination": "https://api.wahywanamaa.com/api/:path*" },
     { "source": "/uploads/:path*", "destination": "https://api.wahywanamaa.com/uploads/:path*" },
     { "source": "/:path((?!.*\\.).*)", "destination": "/index" }
@@ -45,7 +46,7 @@
       ]
     },
     {
-      "source": "/api/(.*)",
+      "source": "/api/((?!seo/).*)",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]

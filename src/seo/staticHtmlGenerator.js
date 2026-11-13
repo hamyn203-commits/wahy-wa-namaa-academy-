@@ -76,7 +76,7 @@ export function generateSitemapIndex(siteUrl) {
     <lastmod>${currentDate}</lastmod>
   </sitemap>
   <sitemap>
-    <loc>${escapeXml(`${baseUrl}/api/seo/sitemap.xml`)}</loc>
+    <loc>${escapeXml(`${baseUrl}/sitemap-dynamic.xml`)}</loc>
     <lastmod>${currentDate}</lastmod>
   </sitemap>
 </sitemapindex>
