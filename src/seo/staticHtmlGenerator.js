@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
+  ALTERNATE_NAMES,
   DEFAULT_SITE_URL,
   LOCALE_BRAND,
   OG_LOCALE,
@@ -88,7 +89,7 @@ function buildRouteSchemas({ baseUrl, locale, pathSuffix, canonicalUrl, title, d
     '@context': 'https://schema.org',
     '@type': 'EducationalOrganization',
     name: brand.appNameFull,
-    alternateName: ['وَحْيٌ وَنَمَاء', 'WAHY WA NAMAA', 'Wahy Wa Namaa Academy'],
+    alternateName: ALTERNATE_NAMES,
     description: brand.seoDescription,
     slogan: brand.slogan,
     url: baseUrl,
@@ -101,8 +102,8 @@ function buildRouteSchemas({ baseUrl, locale, pathSuffix, canonicalUrl, title, d
   const websiteSchema = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: brand.appName,
-    alternateName: ['WAHY WA NAMAA', 'Wahy Wa Namaa Academy', 'وَحْيٌ وَنَمَاء'],
+    name: brand.appNameFull,
+    alternateName: ALTERNATE_NAMES,
     url: baseUrl,
     inLanguage: SEO_LOCALES,
     potentialAction: {
@@ -177,14 +178,18 @@ export function renderStaticRouteHtml(templateHtml, route, locale, siteUrl) {
   html = replaceOrInsertMeta(html, 'name', 'description', description);
   html = replaceOrInsertMeta(html, 'name', 'keywords', brand.seoKeywords);
   html = replaceOrInsertMeta(html, 'name', 'author', brand.appNameFull);
-  html = replaceOrInsertMeta(html, 'name', 'application-name', brand.appName);
+  html = replaceOrInsertMeta(html, 'name', 'application-name', brand.appNameFull);
   html = replaceOrInsertMeta(html, 'name', 'robots', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1');
   html = replaceOrInsertMeta(html, 'name', 'googlebot', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1');
+
+  const ogSiteName = /wahy wa namaa/i.test(brand.appNameFull)
+    ? brand.appNameFull
+    : `${brand.appNameFull} | WAHY WA NAMAA`;
 
   html = replaceOrInsertMeta(html, 'property', 'og:title', title);
   html = replaceOrInsertMeta(html, 'property', 'og:description', description);
   html = replaceOrInsertMeta(html, 'property', 'og:url', canonicalUrl);
-  html = replaceOrInsertMeta(html, 'property', 'og:site_name', `${brand.appName} | WAHY WA NAMAA`);
+  html = replaceOrInsertMeta(html, 'property', 'og:site_name', ogSiteName);
   html = replaceOrInsertMeta(html, 'property', 'og:locale', OG_LOCALE[locale] || locale);
   html = replaceOrInsertMeta(html, 'property', 'og:image', ogImage);
   html = replaceOrInsertMeta(html, 'property', 'og:image:alt', title);

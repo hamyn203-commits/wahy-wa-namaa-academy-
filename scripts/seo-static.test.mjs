@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ALTERNATE_NAMES,
+  LOCALE_BRAND,
   SEO_LOCALES,
   RTL_LOCALES,
   STATIC_SEO_ROUTES,
@@ -135,6 +137,25 @@ test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid J
       } else {
         assert.match(html, /"@type":"BreadcrumbList"/);
         assert.match(html, /<noscript>/);
+      }
+    }
+
+    for (const locale of SEO_LOCALES) {
+      const homePath = resolve(distTmp, `${locale}.html`);
+      assert.ok(existsSync(homePath), `Missing localized home shell: ${locale}.html`);
+      const homeHtml = readFileSync(homePath, 'utf8');
+      const fullBrand = LOCALE_BRAND[locale].appNameFull;
+      assert.ok(homeHtml.includes(`<title>${fullBrand}`), `Title missing full academy brand for ${locale}`);
+      assert.ok(homeHtml.includes(`<h1>${fullBrand}</h1>`), `H1 missing full academy brand for ${locale}`);
+      const ldJsonList = [...homeHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+        .map(([, raw]) => JSON.parse(raw));
+      const org = ldJsonList.find((item) => item['@type'] === 'EducationalOrganization');
+      const web = ldJsonList.find((item) => item['@type'] === 'WebSite');
+      assert.equal(org?.name, fullBrand, `EducationalOrganization.name mismatch for ${locale}`);
+      assert.equal(web?.name, fullBrand, `WebSite.name mismatch for ${locale}`);
+      for (const variant of ALTERNATE_NAMES) {
+        assert.ok(org?.alternateName?.includes(variant), `Org missing ${variant} on ${locale}`);
+        assert.ok(web?.alternateName?.includes(variant), `WebSite missing ${variant} on ${locale}`);
       }
     }
   } finally {

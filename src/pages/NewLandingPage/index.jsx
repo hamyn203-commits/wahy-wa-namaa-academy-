@@ -24,17 +24,9 @@ export default function NewLandingPage() {
   const { createWebPageSchema } = useSEO();
   const isAr = locale === 'ar';
 
-  const pageTitle = isAr
-    ? 'وَحْيٌ وَنَمَاء | نتعلم القرآن، نحفظه، وننمو به'
-    : locale === 'en'
-      ? 'Wahy Wa Namaa Academy | Learn. Memorize. Grow.'
-      : `${t.common.appName} | ${t.common.slogan}`;
-
-  const pageDesc = isAr
-    ? 'أكاديمية وحي ونماء لتعليم القرآن الكريم بتجربة حديثة، هادئة، وموثوقة للأطفال والناشئة والبالغين.'
-    : locale === 'en'
-      ? 'Wahy Wa Namaa Academy offers modern, trusted Quran learning for children, youth, and adults.'
-      : (t.common.seoDescription || t.hero?.subtitle || '');
+  const cleanSlogan = String(t.common.slogan || '').replace(/[.۔]+$/, '');
+  const pageTitle = `${t.common.appNameFull || t.common.appName} | ${cleanSlogan}`;
+  const pageDesc = t.common.seoDescription || t.hero?.subtitle || '';
 
   return (
     <>
