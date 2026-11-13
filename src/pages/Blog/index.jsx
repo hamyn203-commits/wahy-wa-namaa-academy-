@@ -8,6 +8,7 @@ import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
+import { useSEO } from '../../hooks/useSEO';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
 
@@ -34,6 +35,7 @@ function BlogCardSkeleton() {
 export default function Blog() {
   const { locale } = useI18n();
   const isAr = locale === 'ar';
+  const { createCollectionSchema, createBreadcrumbSchema } = useSEO();
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,13 +71,35 @@ export default function Blog() {
     });
   }, [articles, searchQuery, selectedCategory]);
 
+  const pageTitle = isAr ? 'مكتبة المقالات' : 'Articles';
+  const pageDescription = isAr
+    ? 'مقالات منشورة من أكاديمية وحي ونماء حول تعلم القرآن واللغة العربية.'
+    : 'Published articles from Wahy Wa Namaa about Quran and Arabic learning.';
+
   return (
     <>
       <SEOHead page={{
-        title: isAr ? 'مكتبة المقالات' : 'Articles',
-        description: isAr ? 'مقالات منشورة من أكاديمية وحي ونماء حول تعلم القرآن واللغة العربية.' : 'Published articles from Wahy Wa Namaa about Quran and Arabic learning.',
+        title: pageTitle,
+        description: pageDescription,
         url: '/blog',
         type: 'website',
+        schema: [
+          createCollectionSchema({
+            name: pageTitle,
+            description: pageDescription,
+            url: '/blog',
+            items: articles
+              .filter((article) => article?.title && article?.slug)
+              .map((article) => ({
+                name: article.title,
+                url: `/blog/${article.slug}`,
+              })),
+          }),
+          createBreadcrumbSchema([
+            { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+            { name: pageTitle, url: '/blog' },
+          ]),
+        ],
       }} />
       <GlobalHeader />
 

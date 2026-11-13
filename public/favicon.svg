@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
   <defs>
     <linearGradient id="wnFavGreen" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#14533e" />
-      <stop offset="55%" stopColor="#0e382b" />
-      <stop offset="100%" stopColor="#08231b" />
+      <stop offset="0%" stop-color="#14533e" />
+      <stop offset="55%" stop-color="#0e382b" />
+      <stop offset="100%" stop-color="#08231b" />
     </linearGradient>
     <linearGradient id="wnFavGold" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#dfbe75" />
-      <stop offset="50%" stopColor="#c5a059" />
-      <stop offset="100%" stopColor="#967432" />
+      <stop offset="0%" stop-color="#dfbe75" />
+      <stop offset="50%" stop-color="#c5a059" />
+      <stop offset="100%" stop-color="#967432" />
     </linearGradient>
   </defs>
   <!-- Background Shield -->

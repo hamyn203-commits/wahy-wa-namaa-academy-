@@ -5,6 +5,7 @@ import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import SEOHead from '../../components/SEOHead';
 import api from '../../lib/api';
 import VideoLesson from '../../components/lms/VideoLesson';
 import TextLesson from '../../components/lms/TextLesson';
@@ -103,6 +104,7 @@ export default function CourseLearn() {
 
   return (
     <div className="wn-learn-shell">
+      <SEOHead page={{ url: '/courses', noindex: true, canonical: false }} />
       <aside className={'wn-learn-sidebar ' + (sidebarOpen ? '' : 'is-closed')}>
         <div className="wn-learn-sidebar__head">
           <Link to={localizedPath('/courses/' + slug, locale)} className="wn-learn-back">

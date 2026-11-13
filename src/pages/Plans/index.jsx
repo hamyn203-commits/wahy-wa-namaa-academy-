@@ -10,6 +10,7 @@ import SEOHead from '../../components/SEOHead';
 import LocalizedLink from '../../components/LocalizedLink';
 import { useI18n } from '../../i18n';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { useSEO } from '../../hooks/useSEO';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { localizedPath } from '../../lib/locale';
@@ -103,6 +104,7 @@ const PLAN_DEFS = [
 export default function PlansPage() {
   const { locale } = useI18n();
   const { user, isAuthenticated, isLoading } = useAuth();
+  const { createOfferCatalogSchema, createBreadcrumbSchema } = useSEO();
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -252,17 +254,42 @@ export default function PlansPage() {
   const pageTitle = isAr
     ? 'خطط الاشتراك | أكاديمية وحي ونماء'
     : 'Subscription Plans | Wahy Wa Namaa Academy';
+  const pageDescription = isAr
+    ? 'خطط مرنة لتعلّم القرآن تبدأ من 10 جنيه للحصة مع حلقات جماعية، مجموعات مركزة، وحصص فردية، وقسم سيدات مستقل.'
+    : 'Flexible Quran learning plans starting from 10 EGP per session, with group, focused, private, and women-only learning options.';
+  const plansSchemas = [
+    createOfferCatalogSchema({
+      name: pageTitle,
+      description: pageDescription,
+      url: '/plans',
+      offers: PLAN_DEFS.map((plan) => ({
+        name: isAr ? plan.nameAr : plan.nameEn,
+        description: [
+          isAr ? plan.studentsAr : plan.studentsEn,
+          isAr ? plan.durationAr : plan.durationEn,
+          ...((isAr ? plan.featuresAr : plan.featuresEn) || []),
+        ]
+          .filter(Boolean)
+          .join(' • '),
+        price: plan.price,
+        currency: 'EGP',
+      })),
+    }),
+    createBreadcrumbSchema([
+      { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+      { name: isAr ? 'خطط الاشتراك' : 'Plans & Pricing', url: '/plans' },
+    ]),
+  ];
 
   return (
     <>
       <SEOHead
         page={{
           title: pageTitle,
-          description: isAr
-            ? 'خطط مرنة لتعلّم القرآن تبدأ من 10 جنيه للحصة مع حلقات جماعية، مجموعات مركزة، وحصص فردية، وقسم سيدات مستقل.'
-            : 'Flexible Quran learning plans starting from 10 EGP per session, with group, focused, private, and women-only learning options.',
+          description: pageDescription,
           url: '/plans',
           type: 'website',
+          schema: plansSchemas,
         }}
       />
       <GlobalHeader />

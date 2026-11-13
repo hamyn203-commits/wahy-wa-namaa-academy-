@@ -53,7 +53,7 @@ export default function ResetPassword() {
 
   return (
     <main className="wn-public-shell min-h-screen grid place-items-center p-4">
-      <SEOHead page={{ title: isAr ? 'تعيين كلمة مرور جديدة' : 'Set a new password', url: '/reset-password' }} />
+      <SEOHead page={{ title: isAr ? 'تعيين كلمة مرور جديدة' : 'Set a new password', url: '/reset-password', noindex: true }} />
       <div className="wn-public-form-card">
         <div className="wn-public-form-card__header">
           <div className="flex justify-center">

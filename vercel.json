@@ -4,16 +4,170 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "vite",
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://wahy-wa-namaa-api.vercel.app/api/:path*" },
-    { "source": "/uploads/:path*", "destination": "https://wahy-wa-namaa-api.vercel.app/uploads/:path*" },
-    { "source": "/:path((?!.*\\.).*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "https://api.wahywanamaa.com/api/:path*" },
+    { "source": "/uploads/:path*", "destination": "https://api.wahywanamaa.com/uploads/:path*" },
+    { "source": "/:path((?!.*\\.).*)", "destination": "/index" }
   ],
   "headers": [
     {
       "source": "/assets/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/images/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/sitemap(.*).xml",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/admin(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/student/dashboard(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/teacher/dashboard(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/guardian/dashboard(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/login",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/register",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/register/:role(student|guardian)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/forgot-password",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/reset-password",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/live(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/meeting(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/payment(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/profile(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/settings(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/notifications(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/ai",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/journey",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/verify-certificate/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/book-trial/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/courses/:slug/learn(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
     }
   ]

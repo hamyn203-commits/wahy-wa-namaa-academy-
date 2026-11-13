@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import BrandLogo from '../../components/BrandLogo';
 import GoogleSignIn from '../../components/GoogleSignIn';
+import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
 import { useMarket } from '../../context/MarketProvider';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -278,6 +279,7 @@ export default function Register() {
 
   return (
     <div className="wn-register-shell flex items-center justify-center" dir={isRtl ? 'rtl' : 'ltr'}>
+      <SEOHead page={{ title: locale === 'ar' ? 'إنشاء حساب' : 'Create account', url: '/register', noindex: true }} />
       <div className="w-full max-w-6xl grid lg:grid-cols-12 gap-8 items-stretch">
         
         {/* Left Column: Brand Intro & Plan Details */}

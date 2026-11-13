@@ -3,6 +3,7 @@ import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import { localizedPath } from '../../lib/locale';
 import { motion } from 'framer-motion';
 import {
@@ -23,6 +24,7 @@ import '../../styles/public-experience.css';
 export default function About() {
   const { locale } = useI18n();
   const isAr = locale === 'ar';
+  const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const lp = (path) => localizedPath(path, locale);
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
 
@@ -92,16 +94,31 @@ export default function About() {
     },
   ];
 
+  const pageTitle = isAr ? 'عن أكاديمية وَحْيٌ وَنَمَاء' : 'About Wahy Wa Namaa Academy';
+  const pageDescription = isAr
+    ? 'تعرف على رؤية ورسالة ومنهجية أكاديمية وحي ونماء لتعليم القرآن.'
+    : 'Learn about the vision, mission, and methodology behind Wahy Wa Namaa Academy.';
+
   return (
     <>
       <SEOHead
         page={{
-          title: isAr ? 'عن أكاديمية وَحْيٌ وَنَمَاء' : 'About Wahy Wa Namaa Academy',
-          description: isAr
-            ? 'تعرف على رؤية ورسالة ومنهجية أكاديمية وحي ونماء لتعليم القرآن.'
-            : 'Learn about the vision, mission, and methodology behind Wahy Wa Namaa Academy.',
+          title: pageTitle,
+          description: pageDescription,
           url: '/about',
           type: 'website',
+          schema: [
+            createWebPageSchema({
+              name: pageTitle,
+              description: pageDescription,
+              url: '/about',
+              type: 'AboutPage',
+            }),
+            createBreadcrumbSchema([
+              { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+              { name: pageTitle, url: '/about' },
+            ]),
+          ],
         }}
       />
       <GlobalHeader />

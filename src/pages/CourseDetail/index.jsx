@@ -8,6 +8,7 @@ import SEOHead from '../../components/SEOHead';
 import LocalizedLink from '../../components/LocalizedLink';
 import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import { localizedPath } from '../../lib/locale';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
@@ -23,6 +24,7 @@ export default function CourseDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { locale } = useI18n();
+  const { createCourseSchema, createBreadcrumbSchema } = useSEO();
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const toast = useToast();
@@ -173,9 +175,34 @@ export default function CourseDetail() {
     (completed) => completed.lesson?.toString?.() === lessonId || completed.lesson === lessonId
   );
 
+  const courseSchema = createCourseSchema({
+    name: title,
+    description,
+    url: '/courses/' + slug,
+    image: course.thumbnail || course.coverImage,
+    level: course.level,
+    price: course.price,
+    currency: course.currency || 'USD',
+    ratingValue: ratingAverage,
+    ratingCount,
+  });
+
+  const breadcrumbSchema = createBreadcrumbSchema([
+    { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+    { name: isAr ? 'الدورات' : 'Courses', url: '/courses' },
+    { name: title, url: '/courses/' + slug },
+  ]);
+
   return (
     <>
-      <SEOHead page={{ title, description, url: '/courses/' + slug, type: 'course' }} />
+      <SEOHead page={{
+        title,
+        description,
+        image: course.thumbnail || course.coverImage,
+        url: '/courses/' + slug,
+        type: 'course',
+        schema: [courseSchema, breadcrumbSchema],
+      }} />
       <GlobalHeader />
 
       <main className="wn-detail-shell">

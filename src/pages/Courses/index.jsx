@@ -20,6 +20,7 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import { useSEO } from '../../hooks/useSEO';
 import Skeleton from '../../components/shared/Skeleton';
 import { useMarket } from '../../context/MarketProvider';
 import api from '../../lib/api';
@@ -109,6 +110,7 @@ const CourseCard = memo(function CourseCard({ course, locale }) {
 
 export default function Courses() {
   const { t, locale } = useI18n();
+  const { createCollectionSchema, createBreadcrumbSchema } = useSEO();
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const [courses, setCourses] = useState([]);
@@ -179,6 +181,21 @@ export default function Courses() {
         url: '/courses',
         keywords: 'quran courses, arabic courses, tajweed, islamic studies, online learning',
         type: 'website',
+        schema: [
+          createCollectionSchema({
+            name: t.courses.title,
+            description: t.courses.subtitle,
+            url: '/courses',
+            items: sortedCourses.slice(0, 12).map((course) => ({
+              name: localizedValue(course.title, locale),
+              url: '/courses/' + (course.slug || course.id),
+            })),
+          }),
+          createBreadcrumbSchema([
+            { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+            { name: t.courses.title, url: '/courses' },
+          ]),
+        ],
       }} />
 
       <GlobalHeader />

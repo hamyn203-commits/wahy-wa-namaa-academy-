@@ -234,7 +234,7 @@ app.get('/', (_req, res) => {
     status: 'ok',
     runtime: process.env.VERCEL ? 'serverless' : 'node',
     health: '/api/health',
-    frontend: process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app',
+    frontend: process.env.FRONTEND_URL || 'https://wahywanamaa.com',
   });
 });
 
@@ -328,6 +328,7 @@ app.get('/api/launch-readiness', async (_req, res) => {
 });
 
 app.use('/api/markets', require('./routes/markets'));
+app.use('/api/seo', require('./routes/seo'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/auth', require('./routes/verification'));
 app.use('/api/students/dashboard', require('./routes/studentDashboard'));

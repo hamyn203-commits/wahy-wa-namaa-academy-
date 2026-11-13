@@ -1,81 +1,28 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import viteCompression from 'vite-plugin-compression';
-import { mkdirSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { emitStaticSeoAssets } from './src/seo/staticHtmlGenerator.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// دالة لإنشاء sitemap ديناميكي
-function generateSitemap() {
-  const baseUrl = 'https://wahy-wa-namaa-academy.vercel.app';
-  const currentDate = new Date().toISOString().split('T')[0];
-  
-  const pages = [
-    { url: '/', priority: '1.0', changefreq: 'weekly' },
-    { url: '/free-trial', priority: '1.0', changefreq: 'weekly' },
-    { url: '/teachers', priority: '0.9', changefreq: 'daily' },
-    { url: '/courses', priority: '0.9', changefreq: 'weekly' },
-    { url: '/blog', priority: '0.8', changefreq: 'daily' },
-    { url: '/contact', priority: '0.7', changefreq: 'monthly' },
-    { url: '/about', priority: '0.7', changefreq: 'monthly' },
-    { url: '/start', priority: '0.9', changefreq: 'monthly' },
-    { url: '/register/guardian', priority: '0.8', changefreq: 'monthly' },
-    { url: '/register/student', priority: '0.8', changefreq: 'monthly' },
-    { url: '/login', priority: '0.6', changefreq: 'monthly' },
-    { url: '/faq', priority: '0.6', changefreq: 'monthly' },
-    { url: '/privacy', priority: '0.3', changefreq: 'yearly' },
-    { url: '/terms', priority: '0.3', changefreq: 'yearly' },
-  ];
-
-  const languages = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
-  
-  let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
-`;
-
-  pages.forEach(page => {
-    languages.forEach(lang => {
-      sitemap += `  <url>
-    <loc>${baseUrl}/${lang}${page.url === '/' ? '' : page.url}</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>${page.changefreq}</changefreq>
-    <priority>${page.priority}</priority>
-`;
-      
-      // إضافة hreflang tags للروابط متعددة اللغات
-      languages.forEach(altLang => {
-        sitemap += `    <xhtml:link rel="alternate" hreflang="${altLang}" href="${baseUrl}/${altLang}${page.url === '/' ? '' : page.url}" />\n`;
-      });
-      sitemap += `    <xhtml:link rel="alternate" hreflang="x-default" href="${baseUrl}/ar${page.url === '/' ? '' : page.url}" />\n`;
-      
-      sitemap += `  </url>\n`;
-    });
-  });
-
-  sitemap += `</urlset>`;
-  
-  return sitemap;
-}
-
-// Plugin لإنشاء sitemap أثناء البناء
-const sitemapPlugin = {
-  name: 'sitemap-generator',
+// Plugin لإنشاء sitemaps وملفات HTML الثابتة لكل مسار ولغة أثناء البناء
+const seoBuildPlugin = {
+  name: 'seo-static-build-generator',
   closeBundle() {
-    const sitemap = generateSitemap();
     const distPath = resolve(__dirname, 'dist');
-    mkdirSync(distPath, { recursive: true });
-    writeFileSync(resolve(distPath, 'sitemap.xml'), sitemap);
-    console.log('✅ Sitemap generated successfully');
-  }
+    const templateHtml = readFileSync(resolve(distPath, 'index.html'), 'utf8');
+    const { generatedPages } = emitStaticSeoAssets(distPath, templateHtml);
+    console.log(`✅ Generated sitemap index, static sitemap, and ${generatedPages} localized HTML routes`);
+  },
 };
 
 export default defineConfig({
   plugins: [
     react(), 
-    sitemapPlugin,
+    seoBuildPlugin,
     viteCompression({
       algorithm: 'gzip',
       ext: '.gz',

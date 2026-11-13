@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bot, Mic, BookOpen, GraduationCap, Loader2, Sparkles, Upload, Square, Radio } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
+import SEOHead from '../../components/SEOHead';
 import '../../styles/public-experience.css';
 import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -136,6 +137,7 @@ export default function AIHub() {
 
   return (
     <div className="wn-ai-shell">
+      <SEOHead page={{ url: '/ai', noindex: true, canonical: false }} />
       <GlobalHeader />
       <main className="wn-ai-wrap">
         <div className="wn-ai-heading">

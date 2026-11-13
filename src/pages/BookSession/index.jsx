@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
+import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
@@ -228,6 +229,7 @@ export default function BookSession() {
 
   return (
     <>
+      <SEOHead page={{ title: isAr ? 'حجز جلسة تجريبية' : 'Book a trial session', url: '/book-trial/' + teacherId, noindex: true }} />
       <GlobalHeader />
       <main className="wn-session-shell">
         <div className="wn-booking-wrap">

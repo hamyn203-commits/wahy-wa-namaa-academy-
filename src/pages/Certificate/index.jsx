@@ -92,6 +92,14 @@ export default function CertificateView() {
   if (loading) {
     return (
       <>
+        <SEOHead
+          page={{
+            title: isAr ? 'التحقق من الشهادة' : 'Certificate verification',
+            url: '/verify-certificate/' + certificateId,
+            noindex: true,
+            canonical: false,
+          }}
+        />
         <GlobalHeader />
         <main className="wn-public-shell" role="status" aria-live="polite">
           <span className="sr-only">{isAr ? 'جاري التحقق من الشهادة...' : 'Verifying certificate...'}</span>
@@ -124,6 +132,14 @@ export default function CertificateView() {
   if (error || !certificate) {
     return (
       <>
+        <SEOHead
+          page={{
+            title: isAr ? 'التحقق من الشهادة' : 'Certificate verification',
+            url: '/verify-certificate/' + certificateId,
+            noindex: true,
+            canonical: false,
+          }}
+        />
         <GlobalHeader />
         <main className="wn-public-shell min-h-[70vh] grid place-items-center px-4">
           <div className="wn-public-empty max-w-xl w-full">
@@ -155,6 +171,8 @@ export default function CertificateView() {
             ? 'التحقق من شهادة صادرة وموثقة من نظام أكاديمية وحي ونماء.'
             : 'Verify an official certificate issued by Wahy Wa Namaa Academy.',
           url: '/verify-certificate/' + certificateId,
+          noindex: true,
+          canonical: false,
         }}
       />
       <GlobalHeader />

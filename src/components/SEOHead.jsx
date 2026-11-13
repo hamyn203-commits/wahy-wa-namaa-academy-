@@ -1,15 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useI18n } from '../i18n';
 import { useSEO } from '../hooks/useSEO';
-import { hreflangLinks } from '../seo/brand';
+import { RTL_LOCALES, hreflangLinks } from '../seo/brand';
 
 export default function SEOHead({ page = {} }) {
+  const { locale } = useI18n();
   const { generateMetaTags, organizationSchema, websiteSchema } = useSEO();
   const meta = generateMetaTags(page);
   const path = page.url || '/';
-  const alternates = hreflangLinks(path);
+  const includeAlternates = !page.noindex && page.alternates !== false;
+  const alternates = useMemo(
+    () => (includeAlternates ? hreflangLinks(path) : []),
+    [includeAlternates, path]
+  );
 
   useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = RTL_LOCALES.includes(locale) ? 'rtl' : 'ltr';
     document.title = meta.title;
+
+    if (page.canonical === false || page.noindex) {
+      document.querySelectorAll('link[rel="canonical"]').forEach((el) => el.remove());
+    }
+
+    document.querySelectorAll('meta[property="og:locale:alternate"]').forEach((el) => el.remove());
 
     meta.meta.forEach((tag) => {
       let element;
@@ -22,6 +36,11 @@ export default function SEOHead({ page = {} }) {
           document.head.appendChild(element);
         }
         element.setAttribute('href', tag.href);
+      } else if (tag.property === 'og:locale:alternate') {
+        element = document.createElement('meta');
+        element.setAttribute('property', tag.property);
+        element.setAttribute('content', tag.content);
+        document.head.appendChild(element);
       } else if (tag.property) {
         element = document.querySelector(`meta[property="${tag.property}"]`);
         if (!element) {
@@ -41,7 +60,7 @@ export default function SEOHead({ page = {} }) {
       }
     });
 
-    document.querySelectorAll('link[data-seo-hreflang]').forEach((el) => el.remove());
+    document.querySelectorAll('link[rel="alternate"][hreflang]').forEach((el) => el.remove());
     alternates.forEach((link) => {
       const el = document.createElement('link');
       el.setAttribute('rel', link.rel);
@@ -51,28 +70,26 @@ export default function SEOHead({ page = {} }) {
       document.head.appendChild(el);
     });
 
-    document.querySelectorAll('script[data-seo-schema]').forEach((s) => s.remove());
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => s.remove());
 
-    const orgScript = document.createElement('script');
-    orgScript.type = 'application/ld+json';
-    orgScript.setAttribute('data-seo-schema', 'org');
-    orgScript.textContent = JSON.stringify(organizationSchema);
-    document.head.appendChild(orgScript);
+    const appendJsonLd = (id, schemaObj) => {
+      if (!schemaObj) return;
+      const script = document.createElement('script');
+      script.type = 'application/ld+json';
+      script.setAttribute('data-seo-schema', id);
+      script.textContent = JSON.stringify(schemaObj);
+      document.head.appendChild(script);
+    };
 
-    const webScript = document.createElement('script');
-    webScript.type = 'application/ld+json';
-    webScript.setAttribute('data-seo-schema', 'web');
-    webScript.textContent = JSON.stringify(websiteSchema);
-    document.head.appendChild(webScript);
+    appendJsonLd('org', organizationSchema);
+    appendJsonLd('web', websiteSchema);
 
-    if (page.schema) {
-      const pageScript = document.createElement('script');
-      pageScript.type = 'application/ld+json';
-      pageScript.setAttribute('data-seo-schema', 'page');
-      pageScript.textContent = JSON.stringify(page.schema);
-      document.head.appendChild(pageScript);
+    if (Array.isArray(page.schema)) {
+      page.schema.forEach((item, index) => appendJsonLd(`page-${index}`, item));
+    } else if (page.schema) {
+      appendJsonLd('page', page.schema);
     }
-  }, [meta, organizationSchema, websiteSchema, page.schema, path, alternates]);
+  }, [meta, organizationSchema, websiteSchema, page.schema, page.canonical, page.noindex, path, alternates, locale]);
 
   return null;
 }

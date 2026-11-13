@@ -7,12 +7,14 @@ import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import LocalizedLink from '../../components/LocalizedLink';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
 
 export default function BlogDetail() {
   const { slug } = useParams();
   const { locale } = useI18n();
+  const { createArticleSchema, createBreadcrumbSchema } = useSEO();
   const isAr = locale === 'ar';
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -38,9 +40,34 @@ export default function BlogDetail() {
     );
   }
 
+  const articleTitle = post.metaTitle || post.title;
+  const articleDesc = post.metaDescription || post.excerpt;
+  const articleSchema = createArticleSchema({
+    title: post.title,
+    excerpt: post.excerpt,
+    image: post.coverImage,
+    url: '/blog/' + slug,
+    author: post.authorName,
+    datePublished: post.createdAt,
+    dateModified: post.updatedAt || post.createdAt,
+  });
+  const breadcrumbSchema = createBreadcrumbSchema([
+    { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+    { name: isAr ? 'المقالات' : 'Articles', url: '/blog' },
+    { name: post.title, url: '/blog/' + slug },
+  ]);
+
   return (
     <>
-      <SEOHead page={{ title: post.title, description: post.excerpt, url: '/blog/' + slug, type: 'article' }} />
+      <SEOHead page={{
+        title: articleTitle,
+        description: articleDesc,
+        keywords: Array.isArray(post.keywords) && post.keywords.length ? post.keywords.join(', ') : undefined,
+        image: post.coverImage,
+        url: '/blog/' + slug,
+        type: 'article',
+        schema: [articleSchema, breadcrumbSchema],
+      }} />
       <GlobalHeader />
       <main className="wn-public-shell">
         <article className="wn-editorial-wrap">

@@ -6,6 +6,7 @@ import {
   loginPathForLocale,
 } from '../../lib/navigation';
 import BrandLogo from '../BrandLogo';
+import SEOHead from '../SEOHead';
 
 function GuardLoader() {
   return (
@@ -25,8 +26,18 @@ export default function ProtectedRoute({ children, roles = [] }) {
   const location = useLocation();
   const { locale: paramLocale } = useParams();
   const activeLocale = paramLocale || uiLocale;
+  const noindexHead = (
+    <SEOHead
+      page={{
+        title: activeLocale === 'ar' ? 'بوابة الأعضاء' : 'Member Portal',
+        url: location.pathname,
+        noindex: true,
+        canonical: false,
+      }}
+    />
+  );
 
-  if (isLoading) return <GuardLoader />;
+  if (isLoading) return <>{noindexHead}<GuardLoader /></>;
 
   if (!isAuthenticated || !user) {
     const redirect = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);
@@ -37,5 +48,5 @@ export default function ProtectedRoute({ children, roles = [] }) {
     return <Navigate to={dashboardPathForRole(user.role, activeLocale)} replace />;
   }
 
-  return children;
+  return <>{noindexHead}{children}</>;
 }

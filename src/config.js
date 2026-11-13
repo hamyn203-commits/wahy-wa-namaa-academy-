@@ -2,7 +2,7 @@ const API_BASE_URL = import.meta.env.DEV
   ? ''
   : import.meta.env.VITE_API_BASE_URL ?? '';
 
-const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://wahy-wa-namaa.academy';
+const SITE_URL = import.meta.env.VITE_SITE_URL || 'https://wahywanamaa.com';
 
 /** مسار API نسبي في الإنتاج — يعمل على Vercel وأي دومين مربوط */
 function apiUrl(path) {

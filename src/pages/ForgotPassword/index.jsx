@@ -45,7 +45,7 @@ export default function ForgotPassword() {
 
   return (
     <main className="wn-public-shell min-h-screen grid place-items-center p-4">
-      <SEOHead page={{ title: isAr ? 'استعادة كلمة المرور' : 'Reset password', url: '/forgot-password' }} />
+      <SEOHead page={{ title: isAr ? 'استعادة كلمة المرور' : 'Reset password', url: '/forgot-password', noindex: true }} />
       <div className="wn-public-form-card">
         <div className="wn-public-form-card__header">
           <div className="flex justify-center"><BrandLogo size={54} to={localizedPath('/', locale)} /></div>
