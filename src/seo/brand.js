@@ -1,5 +1,5 @@
 /** هوية الأكاديمية الرسمية + بيانات SEO العالمية — وَحْيٌ وَنَمَاء */
-import { DEFAULT_SITE_URL, OG_LOCALE, RTL_LOCALES, SEO_LOCALES } from './staticRoutes.js';
+import { ALTERNATE_NAMES, DEFAULT_SITE_URL, OG_LOCALE, RTL_LOCALES, SEO_LOCALES } from './staticRoutes.js';
 
 const envSiteUrl = typeof import.meta !== 'undefined' && import.meta.env
   ? import.meta.env.VITE_SITE_URL
@@ -16,26 +16,7 @@ export function toAbsoluteUrl(pathOrUrl = '') {
   return `${SITE_URL}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
-export { SEO_LOCALES, RTL_LOCALES, OG_LOCALE };
-
-/** أسماء العلامة الرسمية والبحثية المعتمدة لـ «وَحْيٌ وَنَمَاء» */
-export const ALTERNATE_NAMES = [
-  'وَحْيٌ وَنَمَاء',
-  'وحي ونماء',
-  'أكاديمية وَحْيٌ وَنَمَاء',
-  'أكاديمية وحي ونماء',
-  'WAHY WA NAMAA',
-  'Wahy Wa Namaa',
-  'Wahy Wa Namaa Academy',
-  'Académie WAHY WA NAMAA',
-  'Wahy Wa Namaa Akademie',
-  'Wahy Wa Namaa Akademisi',
-  'Akademi WAHY WA NAMAA',
-  'اکیڈمی وحی و نماء',
-  'وحی و نماء',
-  'ئەکادیمیای وەحی و نەما',
-  'وەحی و نەما',
-];
+export { SEO_LOCALES, RTL_LOCALES, OG_LOCALE, ALTERNATE_NAMES };
 
 export const ALTERNATE_SLOGANS = [
   'نتعلم القرآن، نحفظه، وننمو به.',

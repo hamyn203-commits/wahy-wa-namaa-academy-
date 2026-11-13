@@ -10,13 +10,16 @@ import {
   toAbsoluteUrl,
 } from '../seo/brand';
 
-function hasBrandSuffix(title, appName) {
+function hasBrandSuffix(title, appName, appNameFull) {
   const normalized = String(title || '').toLowerCase();
   const candidates = [
     appName,
+    appNameFull,
     'وَحْيٌ وَنَمَاء',
     'وحي ونماء',
     'wahy wa namaa',
+    'وحی و نماء',
+    'وەحی و نەما',
   ].filter(Boolean);
   return candidates.some((brand) => normalized.includes(brand.toLowerCase()));
 }
@@ -25,11 +28,12 @@ export function useSEO() {
   const { locale, t } = useI18n();
   const baseUrl = SITE_URL;
   const c = t.common;
+  const brandFull = c.appNameFull || c.appName;
 
   const organizationSchema = {
     '@context': 'https://schema.org',
     '@type': 'EducationalOrganization',
-    name: c.appName,
+    name: brandFull,
     alternateName: ALTERNATE_NAMES,
     url: baseUrl,
     logo: LOGO_URL,
@@ -43,8 +47,8 @@ export function useSEO() {
   const websiteSchema = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: c.appName,
-    alternateName: ALTERNATE_NAMES.slice(0, 8),
+    name: brandFull,
+    alternateName: ALTERNATE_NAMES,
     url: baseUrl,
     description: c.seoDescription,
     inLanguage: SEO_LOCALES,
@@ -219,10 +223,11 @@ export function useSEO() {
   });
 
   const generateMetaTags = (page = {}) => {
-    const defaultTitle = `${c.appName} | ${c.slogan}`;
+    const cleanSlogan = String(c.slogan || '').replace(/[.۔]+$/, '');
+    const defaultTitle = `${brandFull} | ${cleanSlogan}`;
     const rawTitle = page.title ? String(page.title).trim() : '';
     const title = rawTitle
-      ? (hasBrandSuffix(rawTitle, c.appName) ? rawTitle : `${rawTitle} | ${c.appName}`)
+      ? (hasBrandSuffix(rawTitle, c.appName, c.appNameFull) ? rawTitle : `${rawTitle} | ${brandFull}`)
       : defaultTitle;
     const description = page.description || c.seoDescription || t.hero.subtitle;
     const pagePath = page.url || '/';
@@ -238,7 +243,7 @@ export function useSEO() {
     const meta = [
       { name: 'description', content: description },
       { name: 'keywords', content: keywords },
-      { name: 'application-name', content: c.appName },
+      { name: 'application-name', content: brandFull },
       { property: 'og:title', content: title },
       { property: 'og:description', content: description },
       { property: 'og:image', content: image },
@@ -248,7 +253,7 @@ export function useSEO() {
       { property: 'og:url', content: url },
       { property: 'og:type', content: page.type || 'website' },
       { property: 'og:locale', content: OG_LOCALE[locale] || locale },
-      { property: 'og:site_name', content: c.appName },
+      { property: 'og:site_name', content: brandFull },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: title },
       { name: 'twitter:description', content: description },
