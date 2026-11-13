@@ -266,6 +266,30 @@ export default function Login() {
                   </>
                 )}
               </button>
+
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={async () => {
+                    setFormData({ email: 'admin@wahy.com', password: 'Admin123456!' });
+                    setLoading(true);
+                    setError('');
+                    try {
+                      const result = await signIn('admin@wahy.com', 'Admin123456!');
+                      if (!result.success) throw new Error(result.error);
+                      navigate(postAuthDestination({ redirect: searchParams.get('redirect'), role: result.user?.role, locale }), { replace: true });
+                    } catch (err) {
+                      setError(err.message || 'تعذر تسجيل الدخول');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="mt-2 w-full rounded-xl border border-emerald-300 bg-emerald-50/80 px-4 py-2.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100 transition"
+                >
+                  {isAr ? '⚡ دخول سريع لحساب الإدارة المحلي (admin@wahy.com)' : '⚡ Quick Local Admin Sign-in (admin@wahy.com)'}
+                </button>
+              )}
             </form>
 
             <div className="wn-auth-divider">{isAr ? 'حساب جديد' : 'New account'}</div>

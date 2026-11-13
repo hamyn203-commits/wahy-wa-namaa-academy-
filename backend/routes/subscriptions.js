@@ -14,6 +14,24 @@ async function isGuardianLinkedToStudent(guardianUserId, studentId) {
   const userDoc = await User.findOne({ _id: guardianUserId, children: studentId }).select('_id').lean();
   return Boolean(userDoc);
 }
+const mongoose = require('mongoose');
+const { isMockMode } = require('../config/runtime');
+const isDBConnected = () => mongoose.connection.readyState === 1;
+const {
+  findMockUserById,
+  getMockUsers,
+  findMockTeacherById,
+  getMockTeachers,
+  getMockCircles,
+  findMockCircleById,
+  addMockCircle,
+  updateMockCircle,
+  deleteMockCircle,
+  getMockSubscriptions,
+  findMockSubscriptionById,
+  addMockSubscription,
+  updateMockSubscription,
+} = require('../mockStore');
 const { protect, authorize } = require('../middleware/auth');
 const {
   placeSubscription,
@@ -322,6 +340,68 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
     const requestedStatus = String(req.query.status || 'awaiting_placement').trim();
     const allowedStatuses = new Set(['awaiting_placement', 'placed', 'active', 'all']);
     const status = allowedStatuses.has(requestedStatus) ? requestedStatus : 'awaiting_placement';
+    if (isMockMode && !isDBConnected()) {
+      const mockCircles = getMockCircles().filter((c) => c.status !== 'completed');
+      const mockTeachers = getMockTeachers().filter((t) => t.status === 'approved');
+      const subs = getMockSubscriptions().filter((s) => (
+        status === 'all' ? ['awaiting_placement', 'placed', 'active'].includes(s.status) : s.status === status
+      ));
+      const rows = subs.map((s) => {
+        const student = findMockUserById(s.student?._id || s.student) || { _id: s.student, name: 'طالب', email: '' };
+        const teacherObj = findMockTeacherById(s.preferredTeacher?._id || s.preferredTeacher);
+        const preferredTeacher = teacherObj
+          ? { ...teacherObj, user: findMockUserById(teacherObj.user) || { name: teacherObj.personalInfo?.fullName } }
+          : null;
+        const circleObj = s.circle ? findMockCircleById(s.circle?._id || s.circle) : null;
+        const compatibleCircles = mockCircles
+          .filter((c) => String(c.teacher) === String(teacherObj?._id || '') && c.subscriptionPlanKey === s.planKey)
+          .map((c) => ({
+            _id: c._id,
+            name: c.name,
+            code: c.code,
+            status: c.status,
+            capacity: c.capacity || 8,
+            currentCount: (c.students || []).length,
+            availableSeats: Math.max(0, (c.capacity || 8) - (c.students || []).length),
+            schedule: c.schedule || [],
+            timezone: c.timezone || 'Africa/Cairo',
+            isFlexible: false,
+          }));
+        const compatibleIds = new Set(compatibleCircles.map((c) => String(c._id)));
+        const flexibleCircles = mockCircles
+          .filter((c) => !compatibleIds.has(String(c._id)))
+          .map((c) => ({
+            _id: c._id,
+            name: c.name,
+            code: c.code,
+            status: c.status,
+            teacherId: c.teacher,
+            planKey: c.subscriptionPlanKey,
+            capacity: c.capacity || 8,
+            currentCount: (c.students || []).length,
+            availableSeats: Math.max(0, (c.capacity || 8) - (c.students || []).length),
+            schedule: c.schedule || [],
+            timezone: c.timezone || 'Africa/Cairo',
+            isFlexible: true,
+          }));
+        return {
+          ...serializeSubscription(s),
+          student,
+          preferredTeacher,
+          circle: circleObj,
+          compatibleCircles,
+          flexibleCircles,
+        };
+      });
+      return res.json({
+        subscriptions: rows,
+        teachers: mockTeachers.map((t) => ({
+          _id: t._id,
+          name: t.personalInfo?.fullName || findMockUserById(t.user)?.name || 'معلم',
+          gender: t.personalInfo?.gender || 'male',
+        })),
+      });
+    }
     const filter = status === 'all'
       ? { status: { $in: ['awaiting_placement', 'placed', 'active'] } }
       : { status };
@@ -427,6 +507,66 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
 
 router.get('/admin/circles', protect, authorize('admin'), async (_req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockTeachers = getMockTeachers().filter((t) => t.status === 'approved');
+      const mockStudents = getMockUsers().filter((u) => u.role === 'student' && u.isActive !== false);
+      const mockCircles = getMockCircles().filter((c) => c.status !== 'completed');
+      const mockSubs = getMockSubscriptions();
+      return res.json({
+        success: true,
+        teachers: mockTeachers.map((t) => ({
+          _id: t._id,
+          name: t.personalInfo?.fullName || findMockUserById(t.user)?.name || 'معلم',
+          gender: t.personalInfo?.gender || 'male',
+        })),
+        students: mockStudents.map((s) => ({
+          _id: s._id,
+          name: s.name,
+          email: s.email,
+          gender: s.gender,
+          currentLevel: s.currentLevel,
+          circleId: s.circle || null,
+        })),
+        circles: mockCircles.map((circle) => {
+          const plan = getPlan(circle.subscriptionPlanKey || 'group');
+          const teacherDoc = findMockTeacherById(circle.teacher?._id || circle.teacher);
+          const hydratedTeacher = teacherDoc
+            ? { ...teacherDoc, user: findMockUserById(teacherDoc.user) || { name: teacherDoc.personalInfo?.fullName } }
+            : null;
+          const studentDocs = (circle.students || [])
+            .map((sid) => findMockUserById(sid?._id || sid))
+            .filter(Boolean);
+          const roster = studentDocs.map((s) => {
+            const sub = mockSubs.find((item) => String(item.student?._id || item.student) === String(s._id) && String(item.circle) === String(circle._id));
+            return {
+              _id: sub?._id || `direct-${s._id}`,
+              student: { _id: s._id, name: s.name, email: s.email },
+              status: sub?.status || (['active', 'full'].includes(circle.status) ? 'active' : 'placed'),
+              sessionsRemaining: sub?.sessionsRemaining ?? 8,
+              sessionCount: sub?.sessionCount ?? 8,
+              sessionsUsed: sub?.sessionsUsed ?? 0,
+            };
+          });
+          return {
+            _id: circle._id,
+            name: circle.name,
+            code: circle.code,
+            status: circleStatusForCount(circle, plan),
+            teacher: hydratedTeacher,
+            plan,
+            section: circle.subscriptionSection || 'men_children',
+            studentCount: studentDocs.length,
+            capacity: operationalCapacity(circle, plan),
+            minimumToStart: plan.minStudents,
+            missingToStart: Math.max(0, plan.minStudents - studentDocs.length),
+            schedule: circle.schedule || [],
+            timezone: circle.timezone || 'Africa/Cairo',
+            startedAt: circle.startedAt || null,
+            roster,
+          };
+        }),
+      });
+    }
     const [circles, approvedTeachers, allStudents] = await Promise.all([
       GroupCircle.find({ subscriptionPlanKey: { $in: ['community', 'group', 'focused', 'mini', 'private'] }, status: { $ne: 'completed' } })
         .sort({ createdAt: -1 }).limit(100)
@@ -495,6 +635,28 @@ router.get('/admin/circles', protect, authorize('admin'), async (_req, res) => {
 router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req, res) => {
   try {
     const allowUnderMinimum = Boolean(req.body?.allowUnderMinimum);
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      const rows = normalizeSchedule(req.body.schedule);
+      if (rows.length) circle.schedule = rows;
+      if (req.body.timezone) circle.timezone = String(req.body.timezone).trim();
+      circle.startedAt = circle.startedAt || new Date();
+      circle.status = 'active';
+      getMockSubscriptions()
+        .filter((s) => String(s.circle) === String(circle._id) && s.status === 'placed')
+        .forEach((s) => { s.status = 'active'; s.startedAt = new Date(); });
+      return res.json({
+        success: true,
+        circleId: String(circle._id),
+        circleName: circle.name,
+        circleStatus: circle.status,
+        schedule: circle.schedule,
+        timezone: circle.timezone,
+        startedAt: circle.startedAt,
+        activatedStudentIds: circle.students || [],
+      });
+    }
     const result = await startSubscriptionCircle({
       circleId: req.params.id,
       schedule: req.body.schedule,
@@ -519,6 +681,17 @@ router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req,
 
 router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      const { name, teacherId, schedule, timezone, capacity } = req.body || {};
+      if (typeof name === 'string' && name.trim()) circle.name = name.trim().slice(0, 120);
+      if (teacherId) circle.teacher = teacherId;
+      if (capacity !== undefined && Number.isFinite(Number(capacity))) circle.capacity = Number(capacity);
+      if (timezone && typeof timezone === 'string' && timezone.trim()) circle.timezone = timezone.trim();
+      if (Array.isArray(schedule)) circle.schedule = normalizeSchedule(schedule);
+      return res.json({ success: true, circle });
+    }
     const circle = await GroupCircle.findById(req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
 
@@ -611,6 +784,41 @@ router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) =
 
 router.post('/admin/circles/:id/students', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      const { studentId, sessionCount = 8 } = req.body || {};
+      const student = findMockUserById(studentId);
+      if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+      circle.students = Array.isArray(circle.students) ? circle.students : [];
+      if (!circle.students.some((id) => String(id) === String(student._id))) {
+        circle.students.push(student._id);
+      }
+      student.circle = circle._id;
+      const isRunning = ['active', 'full'].includes(circle.status) || Boolean(circle.startedAt);
+      const targetSubStatus = isRunning ? 'active' : 'placed';
+      let sub = getMockSubscriptions().find((s) => String(s.student?._id || s.student) === String(student._id) && ['awaiting_placement', 'placed', 'active'].includes(s.status));
+      if (sub) {
+        sub.circle = circle._id;
+        sub.preferredTeacher = circle.teacher;
+        sub.status = targetSubStatus;
+        sub.placedAt = sub.placedAt || new Date();
+      } else {
+        sub = addMockSubscription({
+          student: student._id,
+          planKey: circle.subscriptionPlanKey || 'group',
+          section: circle.subscriptionSection || 'men_children',
+          sessionCount: Number(sessionCount) || 8,
+          sessionsUsed: 0,
+          sessionsRemaining: Number(sessionCount) || 8,
+          status: targetSubStatus,
+          preferredTeacher: circle.teacher,
+          circle: circle._id,
+          placedAt: new Date(),
+        });
+      }
+      return res.json({ success: true, circle, subscription: serializeSubscription(sub) });
+    }
     const circle = await GroupCircle.findById(req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
 
@@ -705,6 +913,18 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
 
 router.delete('/admin/circles/:id/students/:studentId', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      const { studentId } = req.params;
+      circle.students = (circle.students || []).filter((id) => String(id) !== String(studentId));
+      const student = findMockUserById(studentId);
+      if (student && String(student.circle) === String(circle._id)) student.circle = null;
+      getMockSubscriptions()
+        .filter((s) => String(s.student?._id || s.student) === String(studentId) && String(s.circle) === String(circle._id))
+        .forEach((s) => { s.status = 'awaiting_placement'; s.circle = null; });
+      return res.json({ success: true, circle });
+    }
     const circle = await GroupCircle.findById(req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
 
@@ -759,6 +979,25 @@ router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
     if (!teacherId) {
       return res.status(400).json({ error: 'اختر المعلم المسؤول عن المجموعة' });
     }
+    if (isMockMode && !isDBConnected()) {
+      const plan = getPlan(planKey) || getPlan('group');
+      const circle = addMockCircle({
+        name: String(name).trim().slice(0, 120),
+        track: ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(track) ? track : 'memorization',
+        level: ['beginner', 'intermediate', 'advanced', 'ijazah'].includes(level) ? level : 'beginner',
+        gender: ['boys', 'girls', 'men', 'women', 'kids_mixed'].includes(gender) ? gender : (section === 'ladies' ? 'women' : 'men'),
+        targetAgeGroup: ['kids_4_7', 'kids_8_12', 'teens_13_17', 'adults'].includes(targetAgeGroup) ? targetAgeGroup : 'adults',
+        capacity: plan.maxStudents || 8,
+        subscriptionSection: section === 'ladies' ? 'ladies' : 'men_children',
+        teacher: teacherId,
+        students: [],
+        schedule: normalizeSchedule(schedule),
+        timezone: String(timezone || 'Africa/Cairo').trim().slice(0, 80) || 'Africa/Cairo',
+        status: 'forming',
+        subscriptionPlanKey: plan.key,
+      });
+      return res.status(201).json({ success: true, circle });
+    }
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
       return res.status(404).json({ error: 'المعلم غير موجود' });
@@ -804,6 +1043,21 @@ router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      getMockUsers().forEach((u) => {
+        if (String(u.circle) === String(circle._id)) u.circle = null;
+      });
+      getMockSubscriptions().forEach((s) => {
+        if (String(s.circle) === String(circle._id)) {
+          s.circle = null;
+          s.status = 'awaiting_placement';
+        }
+      });
+      deleteMockCircle(circle._id);
+      return res.json({ success: true, deletedId: String(circle._id) });
+    }
     const circle = await GroupCircle.findById(req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
 
@@ -837,6 +1091,16 @@ router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res
 
 router.put('/admin/circles/:id/status', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const circle = findMockCircleById(req.params.id);
+      if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
+      const requestedStatus = String(req.body?.status || '').trim();
+      if (!['active', 'paused'].includes(requestedStatus)) {
+        return res.status(400).json({ error: 'الحالة المطلوبة غير صحيحة' });
+      }
+      circle.status = requestedStatus;
+      return res.json({ success: true, circle });
+    }
     const circle = await GroupCircle.findById(req.params.id);
     if (!circle) return res.status(404).json({ error: 'الحلقة غير موجودة' });
 
@@ -867,6 +1131,63 @@ router.put('/admin/circles/:id/status', protect, authorize('admin'), async (req,
 
 router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const sub = findMockSubscriptionById(req.params.id);
+      if (!sub) return res.status(404).json({ error: 'الاشتراك غير موجود' });
+      let circle = req.body?.existingCircleId ? findMockCircleById(req.body.existingCircleId) : null;
+      if (!circle) {
+        const plan = getPlan(sub.planKey || 'group');
+        circle = addMockCircle({
+          name: String(req.body?.circleName || '').trim() || `مجموعة ${plan?.name?.ar || 'القرآن الكريم'}`,
+          subscriptionPlanKey: sub.planKey || 'group',
+          subscriptionSection: sub.section || 'men_children',
+          capacity: plan?.maxStudents || 8,
+          teacher: req.body?.teacherId || sub.preferredTeacher || 'mock-teacher-1',
+          students: [],
+          schedule: normalizeSchedule(req.body?.schedule || []),
+          timezone: String(req.body?.timezone || 'Africa/Cairo').trim(),
+          status: req.body?.startImmediately ? 'active' : 'forming',
+          startedAt: req.body?.startImmediately ? new Date() : null,
+        });
+      } else {
+        if (req.body?.circleName && String(req.body.circleName).trim()) {
+          circle.name = String(req.body.circleName).trim();
+        }
+        if (Array.isArray(req.body?.schedule) && req.body.schedule.length) {
+          circle.schedule = normalizeSchedule(req.body.schedule);
+        }
+        if (req.body?.timezone) circle.timezone = String(req.body.timezone).trim();
+        if (req.body?.startImmediately) {
+          circle.status = 'active';
+          circle.startedAt = circle.startedAt || new Date();
+        }
+      }
+      const studentId = sub.student?._id || sub.student;
+      if (studentId && !circle.students.some((id) => String(id) === String(studentId))) {
+        circle.students.push(studentId);
+      }
+      const student = findMockUserById(studentId);
+      if (student) student.circle = circle._id;
+      const isActive = ['active', 'full'].includes(circle.status) || Boolean(circle.startedAt);
+      sub.circle = circle._id;
+      sub.status = isActive ? 'active' : 'placed';
+      sub.placedAt = new Date();
+      if (isActive) sub.startedAt = new Date();
+      return res.json({
+        success: true,
+        subscriptionId: String(sub._id),
+        subscriptionStatus: sub.status,
+        circleId: String(circle._id),
+        circleName: circle.name,
+        circleCode: circle.code,
+        circleStatus: circle.status,
+        createdCircle: !req.body?.existingCircleId,
+        currentStudentsCount: circle.students.length,
+        capacity: circle.capacity || 8,
+        schedule: circle.schedule || [],
+        timezone: circle.timezone || 'Africa/Cairo',
+      });
+    }
     const result = await placeSubscription({
       subscriptionId: req.params.id,
       existingCircleId: req.body?.existingCircleId,

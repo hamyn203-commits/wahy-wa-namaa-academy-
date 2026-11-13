@@ -21,6 +21,20 @@ const { getSubscriptionPlan } = require('../config/subscriptionPlans');
 const { protect, authorize } = require('../middleware/auth');
 const { maskPhone } = require('../utils/phone');
 const { logAdminAction } = require('../services/adminAudit');
+const { isMockMode } = require('../config/runtime');
+const isDBConnected = () => mongoose.connection.readyState === 1;
+const {
+  addMockUser,
+  findMockUserByEmail,
+  findMockUserById,
+  updateMockUser,
+  getMockUsers,
+  deleteMockUser,
+  getMockTeachers,
+  findMockCircleById,
+  getMockSubscriptions,
+  addMockSubscription,
+} = require('../mockStore');
 
 function escapeRegex(value) {
   return String(value || '').replace(/[|\\{}()[\]^$+*?.-]/g, '\\$&');
@@ -84,6 +98,38 @@ router.get('/directory', async (req, res) => {
     const q = String(req.query.q || '').trim().slice(0, 120);
     const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
     const limit = Math.max(1, Math.min(50, Number.parseInt(req.query.limit, 10) || 15));
+    if (isMockMode && !isDBConnected()) {
+      const allUsers = getMockUsers();
+      const filtered = allUsers.filter((u) => {
+        if (role === 'all' && !['student', 'guardian'].includes(u.role)) return false;
+        if (role !== 'all' && u.role !== role) return false;
+        if (status === 'active' && u.isActive === false) return false;
+        if (status === 'inactive' && u.isActive !== false) return false;
+        if (q) {
+          const lower = q.toLowerCase();
+          return (
+            String(u.name || '').toLowerCase().includes(lower)
+            || String(u.email || '').toLowerCase().includes(lower)
+            || String(u.phone || '').toLowerCase().includes(lower)
+            || String(u._id || '').toLowerCase().includes(lower)
+          );
+        }
+        return true;
+      });
+      const total = filtered.length;
+      const people = filtered.slice((page - 1) * limit, page * limit);
+      return res.json({
+        people,
+        total,
+        page,
+        limit,
+        pages: Math.max(1, Math.ceil(total / limit)),
+        counts: {
+          student: allUsers.filter((u) => u.role === 'student').length,
+          guardian: allUsers.filter((u) => u.role === 'guardian').length,
+        },
+      });
+    }
     const filter = {
       role: role === 'all' ? { $in: ['student', 'guardian'] } : role,
       ...(status === 'active' ? { isActive: { $ne: false } } : {}),
@@ -115,6 +161,26 @@ router.get('/search', async (req, res) => {
     const q = String(req.query.q || '').trim().slice(0, 120);
     if (q.length < 2) {
       return res.json({ query: q, people: [], sessions: [], payments: [] });
+    }
+    if (isMockMode && !isDBConnected()) {
+      const lower = q.toLowerCase();
+      const mockTeachers = getMockTeachers();
+      const people = getMockUsers()
+        .filter((u) => (
+          String(u.name || '').toLowerCase().includes(lower)
+          || String(u.email || '').toLowerCase().includes(lower)
+          || String(u.phone || '').toLowerCase().includes(lower)
+        ))
+        .map((u) => {
+          const t = mockTeachers.find((item) => String(item.user?._id || item.user) === String(u._id));
+          return {
+            ...u,
+            teacherProfileId: t?._id || null,
+            teacherStatus: t?.status || null,
+            teacherVerified: t?.isVerified ?? null,
+          };
+        });
+      return res.json({ query: q, people, sessions: [], payments: [] });
     }
 
     const regex = new RegExp(escapeRegex(q), 'i');
@@ -230,6 +296,9 @@ router.get('/guardian-links', async (req, res) => {
     if (!allowed.has(status)) {
       return res.status(400).json({ error: 'Invalid guardian invitation status' });
     }
+    if (isMockMode && !isDBConnected()) {
+      return res.json({ status, count: 0, invitations: [] });
+    }
 
     const filter = status === 'all' ? {} : { status };
     if (status === 'pending') filter.expiresAt = { $gt: new Date() };
@@ -275,6 +344,45 @@ router.get('/guardian-links', async (req, res) => {
 
 router.get('/students/:id', async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockStudent = findMockUserById(req.params.id);
+      if (!mockStudent || mockStudent.role !== 'student') {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+      const circleDoc = mockStudent.circle ? findMockCircleById(mockStudent.circle) : null;
+      const subs = getMockSubscriptions()
+        .filter((s) => String(s.student?._id || s.student) === String(mockStudent._id))
+        .map((s) => ({
+          ...s,
+          circle: s.circle ? findMockCircleById(s.circle) : null,
+        }));
+      return res.json({
+        student: {
+          ...mockStudent,
+          circle: circleDoc ? { _id: circleDoc._id, name: circleDoc.name, status: circleDoc.status } : null,
+        },
+        summary: {
+          totalSessions: 0,
+          completedSessions: 0,
+          upcomingSessions: 0,
+          homeworkTotal: 0,
+          homeworkCompleted: 0,
+          settledPayments: subs.length,
+          activeSubscriptions: subs.filter((s) => ['active', 'placed', 'awaiting_placement'].includes(s.status)).length,
+        },
+        guardians: [],
+        guardianInvitations: [],
+        sessions: [],
+        homework: [],
+        subscriptions: subs,
+        enrollments: [],
+        payments: [],
+        progress: null,
+        notifications: [],
+        teacherUpdates: [],
+        audit: [],
+      });
+    }
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
@@ -497,14 +605,65 @@ router.post('/students', async (req, res) => {
       return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
     }
     const normalizedEmail = String(email).toLowerCase().trim();
-    if (await User.findOne({ email: normalizedEmail })) {
-      return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
-    }
-
     const resolvedGender = gender === 'female' ? 'female' : 'male';
     const resolvedSection = VALID_ENROLLMENT_SECTIONS.has(enrollmentSection)
       ? enrollmentSection
       : (resolvedGender === 'female' ? 'ladies' : 'men_children');
+
+    if (isMockMode && !isDBConnected()) {
+      if (findMockUserByEmail(normalizedEmail)) {
+        return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
+      }
+      const mockStudent = addMockUser({
+        name: String(name).trim(),
+        email: normalizedEmail,
+        password: String(password).trim(),
+        phone: String(phone || '').trim() || undefined,
+        whatsappPhone: String(whatsappPhone || phone || '').trim(),
+        role: 'student',
+        gender: resolvedGender,
+        enrollmentSection: resolvedSection,
+        age: Math.min(100, Math.max(4, Number(age) || 12)),
+        currentLevel: VALID_STUDENT_LEVELS.has(currentLevel) ? currentLevel : 'beginner',
+        customLevel: String(customLevel || '').trim().slice(0, 120),
+        preferredTrack: VALID_STUDENT_TRACKS.has(preferredTrack) ? preferredTrack : 'memorization',
+        memorizedJuz: Math.max(0, Math.min(30, Number(memorizedJuz) || 0)),
+        memorizationDetails: String(memorizationDetails || '').trim().slice(0, 500),
+        bio: String(bio || '').trim().slice(0, 500),
+        isActive: Boolean(isActive),
+        emailVerified: true,
+        createdAt: new Date(),
+      });
+      let createdSub = null;
+      if (createSubscription) {
+        const plan = getSubscriptionPlan(planKey);
+        const validCount = [4, 8, 12, 24].includes(Number(sessionCount)) ? Number(sessionCount) : 8;
+        const pricePerSessionMinor = (plan?.pricePerSessionEgp || 55) * 100;
+        createdSub = addMockSubscription({
+          student: mockStudent._id,
+          planKey: plan?.key || 'group',
+          section: resolvedSection,
+          sessionCount: validCount,
+          sessionsUsed: 0,
+          sessionsRemaining: validCount,
+          currency: 'EGP',
+          pricePerSessionMinor,
+          totalAmountMinor: pricePerSessionMinor * validCount,
+          status: 'awaiting_placement',
+          preferredTeacher: preferredTeacherId || null,
+          paidAt: new Date(),
+        });
+      }
+      return res.status(201).json({
+        success: true,
+        student: mockStudent,
+        subscription: createdSub,
+      });
+    }
+
+    if (await User.findOne({ email: normalizedEmail })) {
+      return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
+    }
 
     const student = await User.create({
       name: String(name).trim(),
@@ -592,6 +751,34 @@ router.post('/students', async (req, res) => {
 
 router.put('/students/:id', async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockStudent = findMockUserById(req.params.id);
+      if (!mockStudent || mockStudent.role !== 'student') {
+        return res.status(404).json({ error: 'الطالب غير موجود' });
+      }
+      const {
+        name, email, newPassword, phone, whatsappPhone,
+        gender, age, enrollmentSection,
+        currentLevel, customLevel, preferredTrack,
+        memorizedJuz, memorizationDetails, bio, isActive,
+      } = req.body || {};
+      if (typeof name === 'string' && name.trim()) mockStudent.name = name.trim();
+      if (typeof email === 'string' && email.trim()) mockStudent.email = email.toLowerCase().trim();
+      if (phone !== undefined) mockStudent.phone = String(phone || '').trim();
+      if (whatsappPhone !== undefined) mockStudent.whatsappPhone = String(whatsappPhone || '').trim();
+      if (gender === 'male' || gender === 'female') mockStudent.gender = gender;
+      if (enrollmentSection && VALID_ENROLLMENT_SECTIONS.has(enrollmentSection)) mockStudent.enrollmentSection = enrollmentSection;
+      if (age !== undefined && Number.isFinite(Number(age))) mockStudent.age = Number(age);
+      if (currentLevel && VALID_STUDENT_LEVELS.has(currentLevel)) mockStudent.currentLevel = currentLevel;
+      if (typeof customLevel === 'string') mockStudent.customLevel = customLevel.trim();
+      if (preferredTrack && VALID_STUDENT_TRACKS.has(preferredTrack)) mockStudent.preferredTrack = preferredTrack;
+      if (memorizedJuz !== undefined && Number.isFinite(Number(memorizedJuz))) mockStudent.memorizedJuz = Number(memorizedJuz);
+      if (typeof memorizationDetails === 'string') mockStudent.memorizationDetails = memorizationDetails.trim();
+      if (typeof bio === 'string') mockStudent.bio = bio.trim();
+      if (typeof isActive === 'boolean') mockStudent.isActive = isActive;
+      if (newPassword && String(newPassword).trim().length >= 8) mockStudent.password = String(newPassword).trim();
+      return res.json({ success: true, student: mockStudent });
+    }
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
@@ -683,6 +870,14 @@ router.put('/students/:id', async (req, res) => {
 
 router.delete('/students/:id', async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockStudent = findMockUserById(req.params.id);
+      if (!mockStudent || mockStudent.role !== 'student') {
+        return res.status(404).json({ error: 'الطالب غير موجود' });
+      }
+      deleteMockUser(req.params.id);
+      return res.json({ success: true, deletedId: String(req.params.id) });
+    }
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
