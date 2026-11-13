@@ -39,6 +39,21 @@ const upload = multer({
 const mongoose = require('mongoose');
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const {
+  addMockUser,
+  findMockUserByEmail,
+  findMockUserById,
+  updateMockUser,
+  getMockUsers,
+  deleteMockUser,
+  addMockTeacher,
+  findMockTeacherById,
+  updateMockTeacher,
+  deleteMockTeacher,
+  getMockTeachers,
+  getMockCircles,
+  getMockSubscriptions,
+} = require('../mockStore');
 
 const PLACEHOLDER = '/uploads/teachers/placeholder.jpg';
 const API_PUBLIC = process.env.API_PUBLIC_URL || 'https://wahy-wa-namaa-api.vercel.app';
@@ -209,6 +224,10 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
 });
 
 router.get('/session-control', protect, authorize('admin'), async (req, res) => {
+  if (isMockMode && !isDBConnected()) {
+    const focus = String(req.query.focus || 'all').trim();
+    return res.json({ focus, count: 0, sessions: [] });
+  }
   try {
     const now = new Date();
     const focus = String(req.query.focus || 'all').trim();
@@ -321,6 +340,9 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
 });
 
 router.get('/audit', protect, authorize('admin'), async (req, res) => {
+  if (isMockMode && !isDBConnected()) {
+    return res.json({ entries: [] });
+  }
   try {
     const filter = {};
     if (req.query.entityType) filter.entityType = String(req.query.entityType);
@@ -342,14 +364,17 @@ router.get('/audit', protect, authorize('admin'), async (req, res) => {
 
 router.get('/stats', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
+    const mockUsers = getMockUsers();
+    const mockTeachers = getMockTeachers();
+    const mockCircles = getMockCircles();
     return res.json({
-      totalStudents: 0,
-      totalTeachers: 0,
+      totalStudents: mockUsers.filter((u) => u.role === 'student').length,
+      totalTeachers: mockTeachers.filter((t) => t.status === 'approved').length,
       totalSessions: 0,
       totalCourses: 0,
       totalEnrollments: 0,
-      pendingTeachers: 0,
-      totalCircles: 0,
+      pendingTeachers: mockTeachers.filter((t) => ['pending', 'under-review'].includes(t.status)).length,
+      totalCircles: mockCircles.length,
       pendingTrials: 0,
       totalHours: 0,
       totalEarnings: 0,
@@ -391,7 +416,13 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
 
 router.get('/teachers/approved', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
-    return res.json([]);
+    const list = getMockTeachers()
+      .filter((t) => t.status === 'approved')
+      .map((t) => ({
+        ...t,
+        user: findMockUserById(t.user?._id || t.user) || { _id: t.user, name: t.personalInfo?.fullName || 'معلم', email: '' },
+      }));
+    return res.json(list);
   }
   try {
     const teachers = await Teacher.find({ status: 'approved', isVerified: true })
@@ -405,7 +436,13 @@ router.get('/teachers/approved', protect, authorize('admin'), async (req, res) =
 
 router.get('/teachers/pending', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
-    return res.json([]);
+    const list = getMockTeachers()
+      .filter((t) => ['pending', 'under-review'].includes(t.status))
+      .map((t) => ({
+        ...t,
+        user: findMockUserById(t.user?._id || t.user) || { _id: t.user, name: t.personalInfo?.fullName || 'معلم', email: '' },
+      }));
+    return res.json(list);
   }
   try {
     const teachers = await Teacher.find({ status: { $in: ['pending', 'under-review'] } })
@@ -461,9 +498,6 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
     }
-    if (await User.findOne({ email: String(email).toLowerCase().trim() })) {
-      return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
-    }
 
     const normalizedSpecs = Array.isArray(specializations)
       ? specializations.filter((item) => VALID_TEACHER_SPECIALIZATIONS.has(item))
@@ -471,6 +505,77 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
     const normalizedLangs = Array.isArray(languages)
       ? languages.filter((item) => VALID_TEACHER_LANGUAGES.has(item))
       : ['arabic', 'english'];
+
+    if (isMockMode && !isDBConnected()) {
+      const normalizedEmail = String(email).toLowerCase().trim();
+      if (findMockUserByEmail(normalizedEmail)) {
+        return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
+      }
+      const mockUser = addMockUser({
+        name: String(name).trim(),
+        email: normalizedEmail,
+        password,
+        phone: String(phone || '+201000000000').trim(),
+        whatsappPhone: String(whatsapp || phone || '').trim(),
+        gender: gender === 'female' ? 'female' : 'male',
+        age: Math.min(80, Math.max(18, Number(age) || 30)),
+        bio: String(bio || '').trim().slice(0, 500),
+        role: 'teacher',
+        isActive: true,
+        emailVerified: true,
+      });
+      const mockTeacher = addMockTeacher({
+        user: mockUser._id,
+        personalInfo: {
+          fullName: String(name).trim(),
+          age: Math.min(80, Math.max(18, Number(age) || 30)),
+          gender: gender === 'female' ? 'female' : 'male',
+          country: String(country || 'مصر').trim(),
+          city: String(city || 'القاهرة').trim(),
+          address: String(address || '').trim(),
+          phone: String(phone || '+201000000000').trim(),
+          whatsapp: String(whatsapp || phone || '').trim(),
+          telegram: String(telegram || '').trim(),
+        },
+        academicInfo: {
+          university: String(university || 'الأزهر').trim(),
+          faculty: String(faculty || 'الشريعة').trim(),
+          graduationYear: Number(graduationYear) || 2015,
+          specialization: String(specialization || 'تحفيظ').trim(),
+          qualification: String(qualification || 'إجازة في القرآن').trim(),
+        },
+        quranInfo: {
+          memorizedParts: Math.min(30, Math.max(0, Number(memorizedParts ?? 30))),
+          teachingExperience: Math.max(0, Number(teachingExperience ?? 5)),
+          numberOfIjazat: Math.max(0, Number(numberOfIjazat ?? 0)),
+          ijazaType: String(ijazaType || '').trim(),
+          sheikhName: String(sheikhName || '').trim(),
+          sanad: String(sanad || '').trim(),
+          specializations: normalizedSpecs.length ? normalizedSpecs : ['tajweed', 'children'],
+        },
+        documents: { idCard: PLACEHOLDER, graduationCertificate: PLACEHOLDER },
+        media: {
+          profilePhoto: PLACEHOLDER,
+          introductionVideo: PLACEHOLDER,
+          recitationVideo: PLACEHOLDER,
+          teachingMethodVideo: PLACEHOLDER,
+        },
+        status: autoApprove ? 'approved' : 'pending',
+        isVerified: Boolean(autoApprove),
+        hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
+        isFeatured: Boolean(isFeatured),
+        languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
+      });
+      return res.status(201).json({
+        user: { id: mockUser._id, name: mockUser.name, email: mockUser.email },
+        teacher: { ...mockTeacher, user: mockUser },
+        reviewRequired: !autoApprove,
+      });
+    }
+
+    if (await User.findOne({ email: String(email).toLowerCase().trim() })) {
+      return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
+    }
 
     const user = await User.create({
       name: String(name).trim(),
@@ -559,6 +664,82 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
 
 router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockTeacher = findMockTeacherById(req.params.id);
+      if (!mockTeacher) return res.status(404).json({ error: 'المعلم غير موجود' });
+      const {
+        name, fullName, email, newPassword, bio, isActive,
+        hourlyRate, isFeatured, gender, status, isVerified,
+        country, city, address, phone, whatsapp, telegram, age,
+        university, faculty, graduationYear, specialization, qualification,
+        memorizedParts, teachingExperience, numberOfIjazat, ijazaType, sheikhName, sanad,
+        specializations, languages, availabilityTimezone,
+        personalInfo = {}, academicInfo = {}, quranInfo = {},
+        adminDirectOverride = false,
+      } = req.body;
+
+      if (status === 'approved' && mockTeacher.status !== 'approved' && !adminDirectOverride) {
+        return res.status(409).json({
+          error: 'اعتماد المعلم يتم فقط من مركز المراجعة بعد إكمال Approval Gate',
+          code: 'USE_TEACHER_REVIEW_GATE',
+        });
+      }
+      const mockUser = findMockUserById(mockTeacher.user?._id || mockTeacher.user);
+      const resolvedName = String(fullName ?? name ?? personalInfo.fullName ?? '').trim();
+      const resolvedEmail = email !== undefined ? String(email).toLowerCase().trim() : undefined;
+      if (mockUser) {
+        if (resolvedEmail && resolvedEmail !== mockUser.email) mockUser.email = resolvedEmail;
+        if (resolvedName) mockUser.name = resolvedName;
+        if (phone ?? personalInfo.phone) mockUser.phone = String(phone ?? personalInfo.phone).trim();
+        if (whatsapp ?? personalInfo.whatsapp) mockUser.whatsappPhone = String(whatsapp ?? personalInfo.whatsapp).trim();
+        if (bio !== undefined) mockUser.bio = String(bio || '').trim().slice(0, 500);
+        if (typeof isActive === 'boolean') mockUser.isActive = isActive;
+        if (newPassword && String(newPassword).trim().length >= 8) mockUser.password = String(newPassword).trim();
+      }
+      mockTeacher.personalInfo = {
+        ...mockTeacher.personalInfo,
+        ...personalInfo,
+        ...(resolvedName ? { fullName: resolvedName } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(whatsapp !== undefined ? { whatsapp } : {}),
+        ...(telegram !== undefined ? { telegram } : {}),
+        ...(country !== undefined ? { country } : {}),
+        ...(city !== undefined ? { city } : {}),
+        ...(address !== undefined ? { address } : {}),
+        ...(gender !== undefined ? { gender } : {}),
+        ...(age !== undefined ? { age: Number(age) } : {}),
+      };
+      mockTeacher.academicInfo = {
+        ...mockTeacher.academicInfo,
+        ...academicInfo,
+        ...(university !== undefined ? { university } : {}),
+        ...(faculty !== undefined ? { faculty } : {}),
+        ...(graduationYear !== undefined ? { graduationYear: Number(graduationYear) } : {}),
+        ...(specialization !== undefined ? { specialization } : {}),
+        ...(qualification !== undefined ? { qualification } : {}),
+      };
+      mockTeacher.quranInfo = {
+        ...mockTeacher.quranInfo,
+        ...quranInfo,
+        ...(memorizedParts !== undefined ? { memorizedParts: Number(memorizedParts) } : {}),
+        ...(teachingExperience !== undefined ? { teachingExperience: Number(teachingExperience) } : {}),
+        ...(numberOfIjazat !== undefined ? { numberOfIjazat: Number(numberOfIjazat) } : {}),
+        ...(ijazaType !== undefined ? { ijazaType } : {}),
+        ...(sheikhName !== undefined ? { sheikhName } : {}),
+        ...(sanad !== undefined ? { sanad } : {}),
+        ...(Array.isArray(specializations) ? { specializations } : {}),
+      };
+      if (Array.isArray(languages) && languages.length) mockTeacher.languages = languages;
+      if (availabilityTimezone) mockTeacher.availabilityTimezone = availabilityTimezone;
+      if (hourlyRate !== undefined) mockTeacher.hourlyRate = Number(hourlyRate);
+      if (typeof isFeatured === 'boolean') mockTeacher.isFeatured = isFeatured;
+      if (status && VALID_TEACHER_STATUSES.has(status)) {
+        mockTeacher.status = status;
+        mockTeacher.isVerified = typeof isVerified === 'boolean' ? isVerified : status === 'approved';
+      }
+      return res.json({ ...mockTeacher, user: mockUser });
+    }
+
     const teacher = await Teacher.findById(req.params.id);
     if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
 
@@ -756,6 +937,14 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected()) {
+      const mockTeacher = findMockTeacherById(req.params.id);
+      if (!mockTeacher) return res.status(404).json({ error: 'المعلم غير موجود' });
+      const userId = mockTeacher.user?._id || mockTeacher.user;
+      deleteMockTeacher(req.params.id);
+      if (userId) deleteMockUser(userId);
+      return res.json({ success: true, deletedId: String(req.params.id) });
+    }
     const teacher = await Teacher.findById(req.params.id).populate('user', 'name email role');
     if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
 

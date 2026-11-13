@@ -89,7 +89,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         return {
           success: false,
@@ -102,7 +102,15 @@ export function AuthProvider({ children }) {
       saveAuthenticatedSession(data);
       return { success: true, user: data.user };
     } catch (error) {
-      return { success: false, error: error.message, code: null, applicationStatus: null };
+      const isNetworkError = error instanceof TypeError || /failed to fetch|networkerror/i.test(String(error?.message || ''));
+      return {
+        success: false,
+        error: isNetworkError
+          ? 'تعذر الاتصال بالخادم حالياً. تأكد من تشغيل الخادم أو تحديث الصفحة ثم حاول مرة أخرى.'
+          : error.message,
+        code: isNetworkError ? 'NETWORK_ERROR' : null,
+        applicationStatus: null,
+      };
     }
   }, [saveAuthenticatedSession]);
 

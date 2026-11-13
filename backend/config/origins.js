@@ -32,7 +32,7 @@ function isTrustedOrigin(origin) {
 
   if (
     process.env.NODE_ENV !== 'production' &&
-    /^http:\/\/localhost:\d+$/i.test(normalized)
+    /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/i.test(normalized)
   ) {
     return true;
   }

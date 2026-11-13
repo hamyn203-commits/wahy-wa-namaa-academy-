@@ -50,7 +50,20 @@ class ApiClient {
       });
     };
 
-    let response = await makeRequest(token);
+    let response;
+    try {
+      response = await makeRequest(token);
+    } catch (error) {
+      if (rest.signal?.aborted || error?.name === 'AbortError') {
+        throw error;
+      }
+      if ((!rest.method || rest.method === 'GET') && error instanceof TypeError) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        response = await makeRequest(token);
+      } else {
+        throw error;
+      }
+    }
     let data = json ? await response.clone().json().catch(() => ({})) : null;
 
     if (auth && response.status === 401 && data?.code === 'TOKEN_EXPIRED') {
