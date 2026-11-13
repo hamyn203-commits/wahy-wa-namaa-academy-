@@ -4,6 +4,7 @@ import {
   DEFAULT_OG_IMAGE,
   LOGO_URL,
   ALTERNATE_NAMES,
+  LOCALE_BRAND,
   OG_LOCALE,
   SEO_LOCALES,
   localePath,
@@ -224,7 +225,7 @@ export function useSEO() {
 
   const generateMetaTags = (page = {}) => {
     const cleanSlogan = String(c.slogan || '').replace(/[.۔]+$/, '');
-    const defaultTitle = `${brandFull} | ${cleanSlogan}`;
+    const defaultTitle = LOCALE_BRAND[locale]?.homeTitle || `${brandFull} | ${cleanSlogan}`;
     const rawTitle = page.title ? String(page.title).trim() : '';
     const title = rawTitle
       ? (hasBrandSuffix(rawTitle, c.appName, c.appNameFull) ? rawTitle : `${rawTitle} | ${brandFull}`)

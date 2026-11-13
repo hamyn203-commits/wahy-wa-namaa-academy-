@@ -3,6 +3,7 @@ import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useSEO } from '../../hooks/useSEO';
+import { LOCALE_BRAND } from '../../seo/brand';
 import HomepageMotionController from './HomepageMotionController';
 
 import HeroSection from './sections/HeroSection';
@@ -25,7 +26,7 @@ export default function NewLandingPage() {
   const isAr = locale === 'ar';
 
   const cleanSlogan = String(t.common.slogan || '').replace(/[.۔]+$/, '');
-  const pageTitle = `${t.common.appNameFull || t.common.appName} | ${cleanSlogan}`;
+  const pageTitle = LOCALE_BRAND[locale]?.homeTitle || `${t.common.appNameFull || t.common.appName} | ${cleanSlogan}`;
   const pageDesc = t.common.seoDescription || t.hero?.subtitle || '';
 
   return (

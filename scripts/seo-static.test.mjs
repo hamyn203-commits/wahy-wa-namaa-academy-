@@ -140,12 +140,21 @@ test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid J
       }
     }
 
+    for (const route of STATIC_SEO_ROUTES) {
+      for (const locale of SEO_LOCALES) {
+        assert.ok(route.title?.[locale], `Route ${route.path} missing localized title for ${locale}`);
+        assert.ok(route.description?.[locale], `Route ${route.path} missing localized description for ${locale}`);
+      }
+    }
+
     for (const locale of SEO_LOCALES) {
       const homePath = resolve(distTmp, `${locale}.html`);
       assert.ok(existsSync(homePath), `Missing localized home shell: ${locale}.html`);
       const homeHtml = readFileSync(homePath, 'utf8');
       const fullBrand = LOCALE_BRAND[locale].appNameFull;
+      const shortPlain = LOCALE_BRAND[locale].appNameShortPlain;
       assert.ok(homeHtml.includes(`<title>${fullBrand}`), `Title missing full academy brand for ${locale}`);
+      assert.ok(homeHtml.includes(shortPlain), `Home HTML missing short brand ${shortPlain} for ${locale}`);
       assert.ok(homeHtml.includes(`<h1>${fullBrand}</h1>`), `H1 missing full academy brand for ${locale}`);
       const ldJsonList = [...homeHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
         .map(([, raw]) => JSON.parse(raw));

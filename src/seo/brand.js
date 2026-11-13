@@ -1,5 +1,5 @@
 /** هوية الأكاديمية الرسمية + بيانات SEO العالمية — وَحْيٌ وَنَمَاء */
-import { ALTERNATE_NAMES, DEFAULT_SITE_URL, OG_LOCALE, RTL_LOCALES, SEO_LOCALES } from './staticRoutes.js';
+import { ALTERNATE_NAMES, DEFAULT_SITE_URL, LOCALE_BRAND, OG_LOCALE, RTL_LOCALES, SEO_LOCALES } from './staticRoutes.js';
 
 const envSiteUrl = typeof import.meta !== 'undefined' && import.meta.env
   ? import.meta.env.VITE_SITE_URL
@@ -16,7 +16,7 @@ export function toAbsoluteUrl(pathOrUrl = '') {
   return `${SITE_URL}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
-export { SEO_LOCALES, RTL_LOCALES, OG_LOCALE, ALTERNATE_NAMES };
+export { SEO_LOCALES, RTL_LOCALES, OG_LOCALE, ALTERNATE_NAMES, LOCALE_BRAND };
 
 export const ALTERNATE_SLOGANS = [
   'نتعلم القرآن، نحفظه، وننمو به.',
