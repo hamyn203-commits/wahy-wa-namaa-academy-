@@ -12,7 +12,6 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="canonical" href="https://wahywanamaa.com/ar" />
 
     <link rel="alternate" hreflang="ar" href="https://wahywanamaa.com/ar" />
     <link rel="alternate" hreflang="en" href="https://wahywanamaa.com/en" />
@@ -70,8 +69,13 @@
             var m = document.querySelector('meta[name="' + n + '"]');
             if (m) m.setAttribute('content', 'noindex, nofollow');
           });
-        } else if (clean !== '/' && canonicalEl) {
-          canonicalEl.setAttribute('href', 'https://wahywanamaa.com' + clean);
+        } else {
+          if (!canonicalEl) {
+            canonicalEl = document.createElement('link');
+            canonicalEl.setAttribute('rel', 'canonical');
+            document.head.appendChild(canonicalEl);
+          }
+          canonicalEl.setAttribute('href', 'https://wahywanamaa.com' + (clean === '/' ? '/ar' : clean));
         }
       })();
     </script>
