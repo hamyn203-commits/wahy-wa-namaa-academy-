@@ -29,6 +29,9 @@
     <meta property="og:title" content="وَحْيٌ وَنَمَاء | نتعلم القرآن، نحفظه، وننمو به" />
     <meta property="og:description" content="أكاديمية رقمية لتعلّم القرآن الكريم والحفظ والتجويد عبر تجربة تعليمية حديثة — WAHY WA NAMAA Academy" />
     <meta property="og:image" content="https://wahywanamaa.com/images/hero-wahy-namaa.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="أكاديمية وَحْيٌ وَنَمَاء لتعليم القرآن الكريم" />
     <meta property="og:url" content="https://wahywanamaa.com/ar" />
     <meta property="og:site_name" content="وَحْيٌ وَنَمَاء | WAHY WA NAMAA" />
     <meta property="og:locale" content="ar_EG" />
@@ -36,15 +39,42 @@
     <meta property="og:locale:alternate" content="fr_FR" />
     <meta property="og:locale:alternate" content="de_DE" />
     <meta property="og:locale:alternate" content="tr_TR" />
+    <meta property="og:locale:alternate" content="ur_PK" />
+    <meta property="og:locale:alternate" content="id_ID" />
+    <meta property="og:locale:alternate" content="ms_MY" />
     <meta property="og:locale:alternate" content="ku_IQ" />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="وَحْيٌ وَنَمَاء | WAHY WA NAMAA" />
     <meta name="twitter:description" content="نتعلم القرآن، نحفظه، وننمو به. | Learn the Quran. Memorize it. Grow through it." />
     <meta name="twitter:image" content="https://wahywanamaa.com/images/hero-wahy-namaa.jpg" />
+    <meta name="twitter:image:alt" content="أكاديمية وَحْيٌ وَنَمَاء لتعليم القرآن الكريم" />
 
-    <meta name="robots" content="index, follow, max-image-preview:large" />
-    <meta name="googlebot" content="index, follow" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="preload" as="image" href="/images/hero-wahy-namaa.jpg" fetchpriority="high" />
+    <script data-seo-bootstrap>
+      (function () {
+        var path = window.location.pathname || '/';
+        var clean = path.replace(/\/+$/, '') || '/';
+        var match = clean.match(/^\/(ar|en|fr|de|tr|ur|id|ms|ku)(?:\/|$)/);
+        var loc = match ? match[1] : 'ar';
+        var isRtl = loc === 'ar' || loc === 'ur' || loc === 'ku';
+        document.documentElement.lang = loc;
+        document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+        var noindexRe = /^(?:\/(?:ar|en|fr|de|tr|ur|id|ms|ku))?\/(?:login|register(?:\/(?:student|guardian))?|forgot-password|reset-password|admin(?:\/.*)?|student(?:\/.*)?|teacher\/dashboard(?:\/.*)?|guardian(?:\/.*)?|live(?:\/.*)?|meeting(?:\/.*)?|payment(?:\/.*)?|profile(?:\/.*)?|notifications(?:\/.*)?|settings(?:\/.*)?|ai|journey|verify-certificate(?:\/.*)?|book-trial(?:\/.*)?|courses\/[^/]+\/learn(?:\/.*)?)$/i;
+        var canonicalEl = document.querySelector('link[rel="canonical"]');
+        if (noindexRe.test(clean)) {
+          if (canonicalEl) canonicalEl.remove();
+          ['robots', 'googlebot'].forEach(function (n) {
+            var m = document.querySelector('meta[name="' + n + '"]');
+            if (m) m.setAttribute('content', 'noindex, nofollow');
+          });
+        } else if (clean !== '/' && canonicalEl) {
+          canonicalEl.setAttribute('href', 'https://wahywanamaa.com' + clean);
+        }
+      })();
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

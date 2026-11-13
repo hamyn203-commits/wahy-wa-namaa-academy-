@@ -1,8 +1,10 @@
 import { useEffect, useMemo } from 'react';
+import { useI18n } from '../i18n';
 import { useSEO } from '../hooks/useSEO';
-import { hreflangLinks } from '../seo/brand';
+import { RTL_LOCALES, hreflangLinks } from '../seo/brand';
 
 export default function SEOHead({ page = {} }) {
+  const { locale } = useI18n();
   const { generateMetaTags, organizationSchema, websiteSchema } = useSEO();
   const meta = generateMetaTags(page);
   const path = page.url || '/';
@@ -13,6 +15,8 @@ export default function SEOHead({ page = {} }) {
   );
 
   useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = RTL_LOCALES.includes(locale) ? 'rtl' : 'ltr';
     document.title = meta.title;
 
     if (page.canonical === false || page.noindex) {
@@ -85,7 +89,7 @@ export default function SEOHead({ page = {} }) {
     } else if (page.schema) {
       appendJsonLd('page', page.schema);
     }
-  }, [meta, organizationSchema, websiteSchema, page.schema, page.canonical, page.noindex, path, alternates]);
+  }, [meta, organizationSchema, websiteSchema, page.schema, page.canonical, page.noindex, path, alternates, locale]);
 
   return null;
 }

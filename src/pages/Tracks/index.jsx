@@ -12,23 +12,20 @@ import {
   ShieldCheck,
   GraduationCap,
   Bookmark,
-  Volume2,
-  Users,
-  Star,
-  Compass,
-  PlayCircle,
-  FileCheck
+  Compass
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
+import { useSEO } from '../../hooks/useSEO';
 import { localizedPath } from '../../lib/locale';
 import '../../styles/public-experience.css';
 
 export default function TracksPage() {
   const { locale } = useI18n();
   const isAr = locale === 'ar';
+  const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const [activeTrack, setActiveTrack] = useState('memorization');
   const [activePlan, setActivePlan] = useState('full');
   const [activeMatn, setActiveMatn] = useState('tuhfa');
@@ -134,15 +131,32 @@ export default function TracksPage() {
     }
   };
 
+  const pageTitle = isAr
+    ? 'المسارات التعليمية التخصصية | أكاديمية وَحْيٌ وَنَمَاء'
+    : 'Educational Tracks | Wahy Wa Namaa Academy';
+  const pageDescription = isAr
+    ? 'اكتشف مسارات التحفيظ والمراجعة، والتجويد المتقدم والإجازة عند الأهلية، وتأسيس الأطفال بخطوات تعليمية متدرجة.'
+    : 'Explore the 3 educational tracks: Memorization & Revision, Ijazah & Tajweed Matn, and Kids Quranic Foundation.';
+
   return (
     <>
       <SEOHead
         page={{
           url: '/tracks',
-          title: isAr ? 'المسارات التعليمية التخصصية | أكاديمية وَحْيٌ وَنَمَاء' : 'Educational Tracks | Wahy Wa Namaa Academy',
-          description: isAr
-            ? 'اكتشف مسارات التحفيظ والمراجعة، والتجويد المتقدم والإجازة عند الأهلية، وتأسيس الأطفال بخطوات تعليمية متدرجة.'
-            : 'Explore the 3 educational tracks: Memorization & Revision, Ijazah & Tajweed Matn, and Kids Quranic Foundation.'
+          title: pageTitle,
+          description: pageDescription,
+          schema: [
+            createWebPageSchema({
+              name: pageTitle,
+              description: pageDescription,
+              url: '/tracks',
+              type: 'CollectionPage',
+            }),
+            createBreadcrumbSchema([
+              { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+              { name: isAr ? 'المسارات التعليمية' : 'Educational Tracks', url: '/tracks' },
+            ]),
+          ],
         }}
       />
       <GlobalHeader />

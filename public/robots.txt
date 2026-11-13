@@ -1,7 +1,10 @@
 # robots.txt for Wahy Wa Namaa Academy
 # https://wahywanamaa.com
+
 User-agent: *
 Allow: /
+Allow: /register/teacher
+Allow: /*/register/teacher
 Disallow: /admin
 Disallow: /*/admin
 Disallow: /api
@@ -25,18 +28,65 @@ Disallow: /notifications
 Disallow: /*/notifications
 Disallow: /login
 Disallow: /*/login
+Disallow: /register$
+Disallow: /*/register$
+Disallow: /register/student
+Disallow: /*/register/student
+Disallow: /register/guardian
+Disallow: /*/register/guardian
 Disallow: /forgot-password
 Disallow: /*/forgot-password
 Disallow: /reset-password
 Disallow: /*/reset-password
+Disallow: /ai
+Disallow: /*/ai
+Disallow: /journey
+Disallow: /*/journey
+Disallow: /book-trial
+Disallow: /*/book-trial
+Disallow: /verify-certificate
+Disallow: /*/verify-certificate
+Disallow: /courses/*/learn
+Disallow: /*/courses/*/learn
 Disallow: /.git
 Disallow: /node_modules
 
-Sitemap: https://wahywanamaa.com/sitemap.xml
+# Explicit allow for AI search & citation crawlers on public educational pages
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /*/admin
+Disallow: /api
+Disallow: /student/dashboard
+Disallow: /*/student/dashboard
+Disallow: /teacher/dashboard
+Disallow: /*/teacher/dashboard
+Disallow: /guardian/dashboard
+Disallow: /*/guardian/dashboard
+Disallow: /login
+Disallow: /*/login
+Disallow: /payment
+Disallow: /*/payment
 
-User-agent: GPTBot
-Disallow: /
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin
+Disallow: /api
+Disallow: /payment
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin
+Disallow: /*/admin
+Disallow: /api
+Disallow: /payment
+
+User-agent: Applebot
+Allow: /
+Disallow: /admin
+Disallow: /api
+
 User-agent: CCBot
 Disallow: /
-User-agent: anthropic-ai
-Disallow: /
+
+Sitemap: https://wahywanamaa.com/sitemap.xml

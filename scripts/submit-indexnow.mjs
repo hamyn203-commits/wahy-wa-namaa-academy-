@@ -1,27 +1,10 @@
 #!/usr/bin/env node
-/** إرسال روابط Sitemap إلى Bing IndexNow (202 = مقبول) */
-const SITE = String(process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://wahywanamaa.com').replace(/\/$/, '');
+/** إرسال جميع الروابط الثابتة العامة إلى IndexNow في طلب دفعي واحد */
+import { DEFAULT_SITE_URL, SEO_LOCALES, STATIC_SEO_ROUTES } from '../src/seo/staticRoutes.js';
+
+const SITE = String(process.env.VITE_SITE_URL || process.env.SITE_URL || DEFAULT_SITE_URL).replace(/\/$/, '');
 const HOST = new URL(SITE).hostname;
 const KEY = 'wahywanamaa2026indexnow01';
-const LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
-const PAGES = [
-  '',
-  '/free-trial',
-  '/teachers',
-  '/courses',
-  '/tracks',
-  '/plans',
-  '/blog',
-  '/library',
-  '/programs/kids',
-  '/programs/reverts',
-  '/women',
-  '/markets',
-  '/about',
-  '/contact',
-  '/start',
-  '/faq',
-];
 
 const shouldRun =
   process.argv.includes('--force')
@@ -34,42 +17,26 @@ if (!shouldRun) {
 }
 
 const urls = [];
-LOCALES.forEach((loc) => {
-  PAGES.forEach((p) => urls.push(`${SITE}/${loc}${p}`));
-});
-
-let ok = 0;
-let fail = 0;
-
-const chunkSize = 10;
-for (let i = 0; i < urls.length; i += chunkSize) {
-  const batch = urls.slice(i, i + chunkSize);
-  await Promise.all(batch.map(async (url) => {
-    const api = `https://www.bing.com/indexnow?url=${encodeURIComponent(url)}&key=${KEY}`;
-    try {
-      const r = await fetch(api, { signal: AbortSignal.timeout(2000) });
-      if (r.status === 200 || r.status === 202) ok++;
-      else fail++;
-    } catch {
-      fail++;
-    }
-  }));
+for (const route of STATIC_SEO_ROUTES) {
+  const suffix = route.path === '/' ? '' : route.path;
+  for (const locale of SEO_LOCALES) {
+    urls.push(`${SITE}/${locale}${suffix}`);
+  }
 }
 
 try {
-  const r = await fetch('https://api.indexnow.org/indexnow', {
+  const response = await fetch('https://api.indexnow.org/indexnow', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({
       host: HOST,
       key: KEY,
       keyLocation: `${SITE}/${KEY}.txt`,
-      urlList: urls.slice(0, 100),
+      urlList: urls,
     }),
+    signal: AbortSignal.timeout(10000),
   });
-  console.log(`IndexNow batch POST: ${r.status}`);
-} catch {
-  console.log('IndexNow batch POST: skipped');
+  console.log(`IndexNow batch POST (${HOST}): HTTP ${response.status} for ${urls.length} URLs`);
+} catch (error) {
+  console.log(`IndexNow batch POST (${HOST}): skipped (${error?.message || 'network error'})`);
 }
-
-console.log(`Bing IndexNow (${HOST}) — ${ok} OK, ${fail} fail, ${urls.length} total URLs`);

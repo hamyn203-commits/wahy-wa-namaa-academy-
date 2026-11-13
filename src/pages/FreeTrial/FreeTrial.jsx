@@ -5,9 +5,6 @@ import {
   Award,
   GraduationCap,
   User,
-  Calendar,
-  Clock,
-  Phone,
   Mail,
   ShieldCheck,
   CheckCircle2,
@@ -17,16 +14,14 @@ import {
   MessageCircle,
   Copy,
   Check,
-  HeartHandshake,
   Star,
   Users,
-  ChevronRight,
-  HelpCircle,
   FileCheck
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import { useSEO } from '../../hooks/useSEO';
 import { useI18n } from '../../i18n';
 import { localizedPath, DEFAULT_LOCALE } from '../../lib/locale';
 import { SOCIAL_LINKS } from '../../config/social';
@@ -66,6 +61,7 @@ const COUNTRY_CODES = [
 export default function FreeTrial() {
   const { locale, isRTL } = useI18n();
   const { locale: paramLocale } = useParams();
+  const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const activeLocale = paramLocale || locale || DEFAULT_LOCALE;
   const lp = (path) => localizedPath(path, activeLocale);
 
@@ -483,6 +479,18 @@ export default function FreeTrial() {
         description: text.subtitle,
         url: '/free-trial',
         type: 'website',
+        schema: [
+          createWebPageSchema({
+            name: text.title,
+            description: text.subtitle,
+            url: '/free-trial',
+            type: 'WebPage',
+          }),
+          createBreadcrumbSchema([
+            { name: locale === 'ar' ? 'الرئيسية' : 'Home', url: '/' },
+            { name: text.title, url: '/free-trial' },
+          ]),
+        ],
       }} />
       <GlobalHeader />
 

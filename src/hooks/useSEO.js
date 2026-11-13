@@ -156,6 +156,68 @@ export function useSEO() {
     };
   };
 
+  const createWebPageSchema = ({ name, description, url, type = 'WebPage' }) => ({
+    '@context': 'https://schema.org',
+    '@type': type,
+    name,
+    description,
+    url: url ? localePath(locale, url) : localePath(locale, '/'),
+    inLanguage: locale,
+    isPartOf: { '@type': 'WebSite', url: baseUrl, name: c.appNameFull || c.appName },
+  });
+
+  const createCollectionSchema = ({ name, description, url, items = [] }) => {
+    const pageUrl = localePath(locale, url || '/');
+    const schema = {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name,
+      description,
+      url: pageUrl,
+      inLanguage: locale,
+      isPartOf: { '@type': 'WebSite', url: baseUrl, name: c.appNameFull || c.appName },
+    };
+
+    const validItems = items.filter((item) => item?.name && item?.url).slice(0, 12);
+    if (validItems.length > 0) {
+      schema.mainEntity = {
+        '@type': 'ItemList',
+        itemListElement: validItems.map((item, idx) => ({
+          '@type': 'ListItem',
+          position: idx + 1,
+          name: item.name,
+          url: localePath(locale, item.url),
+        })),
+      };
+    }
+
+    return schema;
+  };
+
+  const createOfferCatalogSchema = ({ name, description, url, offers = [] }) => ({
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name,
+    description,
+    url: localePath(locale, url || '/plans'),
+    inLanguage: locale,
+    mainEntity: {
+      '@type': 'OfferCatalog',
+      name,
+      itemListElement: offers
+        .filter((offer) => offer?.name && offer?.price != null)
+        .map((offer, idx) => ({
+          '@type': 'Offer',
+          position: idx + 1,
+          name: offer.name,
+          description: offer.description,
+          price: Number(offer.price),
+          priceCurrency: offer.currency || 'EGP',
+          availability: 'https://schema.org/InStock',
+        })),
+    },
+  });
+
   const generateMetaTags = (page = {}) => {
     const defaultTitle = `${c.appName} | ${c.slogan}`;
     const rawTitle = page.title ? String(page.title).trim() : '';
@@ -167,7 +229,11 @@ export function useSEO() {
     const url = localePath(locale, pagePath);
     const image = page.image ? toAbsoluteUrl(page.image) : DEFAULT_OG_IMAGE;
     const keywords = page.keywords || c.seoKeywords;
-    const robots = page.robots || (page.noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large');
+    const robots = page.robots || (
+      page.noindex
+        ? 'noindex, nofollow'
+        : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+    );
 
     const meta = [
       { name: 'description', content: description },
@@ -176,6 +242,9 @@ export function useSEO() {
       { property: 'og:title', content: title },
       { property: 'og:description', content: description },
       { property: 'og:image', content: image },
+      { property: 'og:image:width', content: '1200' },
+      { property: 'og:image:height', content: '630' },
+      { property: 'og:image:alt', content: title },
       { property: 'og:url', content: url },
       { property: 'og:type', content: page.type || 'website' },
       { property: 'og:locale', content: OG_LOCALE[locale] || locale },
@@ -184,6 +253,7 @@ export function useSEO() {
       { name: 'twitter:title', content: title },
       { name: 'twitter:description', content: description },
       { name: 'twitter:image', content: image },
+      { name: 'twitter:image:alt', content: title },
       { name: 'robots', content: robots },
       { name: 'googlebot', content: robots },
       { name: 'language', content: locale },
@@ -209,6 +279,9 @@ export function useSEO() {
     createTeacherSchema,
     createFAQSchema,
     createArticleSchema,
+    createWebPageSchema,
+    createCollectionSchema,
+    createOfferCatalogSchema,
     generateMetaTags,
   };
 }

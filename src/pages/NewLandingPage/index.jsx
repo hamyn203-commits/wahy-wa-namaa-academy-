@@ -2,6 +2,7 @@ import { useI18n } from '../../i18n';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import { useSEO } from '../../hooks/useSEO';
 import HomepageMotionController from './HomepageMotionController';
 
 import HeroSection from './sections/HeroSection';
@@ -19,16 +20,21 @@ import FAQHomeSection from './sections/FAQHomeSection';
 import CTASection from './sections/CTASection';
 
 export default function NewLandingPage() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
+  const { createWebPageSchema } = useSEO();
   const isAr = locale === 'ar';
 
   const pageTitle = isAr
     ? 'وَحْيٌ وَنَمَاء | نتعلم القرآن، نحفظه، وننمو به'
-    : 'Wahy Wa Namaa Academy | Learn. Memorize. Grow.';
+    : locale === 'en'
+      ? 'Wahy Wa Namaa Academy | Learn. Memorize. Grow.'
+      : `${t.common.appName} | ${t.common.slogan}`;
 
   const pageDesc = isAr
     ? 'أكاديمية وحي ونماء لتعليم القرآن الكريم بتجربة حديثة، هادئة، وموثوقة للأطفال والناشئة والبالغين.'
-    : 'Wahy Wa Namaa Academy offers modern, trusted Quran learning for children, youth, and adults.';
+    : locale === 'en'
+      ? 'Wahy Wa Namaa Academy offers modern, trusted Quran learning for children, youth, and adults.'
+      : (t.common.seoDescription || t.hero?.subtitle || '');
 
   return (
     <>
@@ -41,6 +47,11 @@ export default function NewLandingPage() {
           description: pageDesc,
           url: '/',
           type: 'website',
+          schema: createWebPageSchema({
+            name: pageTitle,
+            description: pageDesc,
+            url: '/',
+          }),
         }}
       />
       <GlobalHeader />

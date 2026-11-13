@@ -1,109 +1,28 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import viteCompression from 'vite-plugin-compression';
-import { mkdirSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { emitStaticSeoAssets } from './src/seo/staticHtmlGenerator.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// دالة لإنشاء sitemap ثابت شامل + sitemap index
-function getSitemapBaseUrl() {
-  return String(process.env.VITE_SITE_URL || 'https://wahywanamaa.com').replace(/\/$/, '');
-}
-
-function generateStaticSitemap() {
-  const baseUrl = getSitemapBaseUrl();
-  const currentDate = new Date().toISOString().split('T')[0];
-
-  const pages = [
-    { url: '/', priority: '1.0', changefreq: 'weekly' },
-    { url: '/free-trial', priority: '0.95', changefreq: 'weekly' },
-    { url: '/teachers', priority: '0.9', changefreq: 'daily' },
-    { url: '/courses', priority: '0.9', changefreq: 'daily' },
-    { url: '/tracks', priority: '0.85', changefreq: 'weekly' },
-    { url: '/plans', priority: '0.85', changefreq: 'weekly' },
-    { url: '/blog', priority: '0.85', changefreq: 'daily' },
-    { url: '/library', priority: '0.8', changefreq: 'weekly' },
-    { url: '/programs/kids', priority: '0.8', changefreq: 'weekly' },
-    { url: '/programs/reverts', priority: '0.8', changefreq: 'weekly' },
-    { url: '/women', priority: '0.8', changefreq: 'weekly' },
-    { url: '/markets', priority: '0.75', changefreq: 'weekly' },
-    { url: '/global-platform', priority: '0.75', changefreq: 'monthly' },
-    { url: '/start', priority: '0.85', changefreq: 'monthly' },
-    { url: '/about', priority: '0.7', changefreq: 'monthly' },
-    { url: '/contact', priority: '0.7', changefreq: 'monthly' },
-    { url: '/faq', priority: '0.7', changefreq: 'monthly' },
-    { url: '/careers', priority: '0.6', changefreq: 'monthly' },
-    { url: '/donate', priority: '0.6', changefreq: 'monthly' },
-    { url: '/app', priority: '0.6', changefreq: 'monthly' },
-    { url: '/privacy', priority: '0.3', changefreq: 'yearly' },
-    { url: '/terms', priority: '0.3', changefreq: 'yearly' },
-  ];
-
-  const languages = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
-
-  let sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
-`;
-
-  pages.forEach((page) => {
-    languages.forEach((lang) => {
-      const pathSuffix = page.url === '/' ? '' : page.url;
-      sitemap += `  <url>
-    <loc>${baseUrl}/${lang}${pathSuffix}</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>${page.changefreq}</changefreq>
-    <priority>${page.priority}</priority>
-`;
-
-      languages.forEach((altLang) => {
-        sitemap += `    <xhtml:link rel="alternate" hreflang="${altLang}" href="${baseUrl}/${altLang}${pathSuffix}" />\n`;
-      });
-      sitemap += `    <xhtml:link rel="alternate" hreflang="x-default" href="${baseUrl}/ar${pathSuffix}" />\n`;
-
-      sitemap += `  </url>\n`;
-    });
-  });
-
-  sitemap += `</urlset>\n`;
-  return sitemap;
-}
-
-function generateSitemapIndex() {
-  const baseUrl = getSitemapBaseUrl();
-  const currentDate = new Date().toISOString().split('T')[0];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <sitemap>
-    <loc>${baseUrl}/sitemap-static.xml</loc>
-    <lastmod>${currentDate}</lastmod>
-  </sitemap>
-  <sitemap>
-    <loc>${baseUrl}/api/seo/sitemap.xml</loc>
-    <lastmod>${currentDate}</lastmod>
-  </sitemap>
-</sitemapindex>
-`;
-}
-
-// Plugin لإنشاء sitemap أثناء البناء
-const sitemapPlugin = {
-  name: 'sitemap-generator',
+// Plugin لإنشاء sitemaps وملفات HTML الثابتة لكل مسار ولغة أثناء البناء
+const seoBuildPlugin = {
+  name: 'seo-static-build-generator',
   closeBundle() {
     const distPath = resolve(__dirname, 'dist');
-    mkdirSync(distPath, { recursive: true });
-    writeFileSync(resolve(distPath, 'sitemap-static.xml'), generateStaticSitemap());
-    writeFileSync(resolve(distPath, 'sitemap.xml'), generateSitemapIndex());
-    console.log('✅ Sitemap index and static sitemap generated successfully');
-  }
+    const templateHtml = readFileSync(resolve(distPath, 'index.html'), 'utf8');
+    const { generatedPages } = emitStaticSeoAssets(distPath, templateHtml);
+    console.log(`✅ Generated sitemap index, static sitemap, and ${generatedPages} localized HTML routes`);
+  },
 };
 
 export default defineConfig({
   plugins: [
     react(), 
-    sitemapPlugin,
+    seoBuildPlugin,
     viteCompression({
       algorithm: 'gzip',
       ext: '.gz',

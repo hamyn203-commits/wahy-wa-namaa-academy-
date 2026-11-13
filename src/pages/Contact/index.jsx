@@ -14,6 +14,7 @@ import {
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import { useSEO } from '../../hooks/useSEO';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
@@ -21,6 +22,7 @@ import '../../styles/public-experience.css';
 export default function Contact() {
   const { locale } = useI18n();
   const isAr = locale === 'ar';
+  const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const toast = useToast();
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', subject: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,14 +87,31 @@ export default function Contact() {
     },
   ];
 
+  const pageTitle = isAr ? 'تواصل معنا' : 'Contact Us';
+  const pageDescription = isAr
+    ? 'تواصل مع فريق أكاديمية وحي ونماء.'
+    : 'Contact the Wahy Wa Namaa Academy team.';
+
   return (
     <>
       <SEOHead
         page={{
-          title: isAr ? 'تواصل معنا' : 'Contact Us',
-          description: isAr ? 'تواصل مع فريق أكاديمية وحي ونماء.' : 'Contact the Wahy Wa Namaa Academy team.',
+          title: pageTitle,
+          description: pageDescription,
           url: '/contact',
           type: 'website',
+          schema: [
+            createWebPageSchema({
+              name: pageTitle,
+              description: pageDescription,
+              url: '/contact',
+              type: 'ContactPage',
+            }),
+            createBreadcrumbSchema([
+              { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+              { name: pageTitle, url: '/contact' },
+            ]),
+          ],
         }}
       />
       <GlobalHeader />

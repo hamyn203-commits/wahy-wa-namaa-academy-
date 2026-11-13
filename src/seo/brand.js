@@ -1,9 +1,11 @@
 /** هوية الأكاديمية الرسمية + بيانات SEO العالمية — وَحْيٌ وَنَمَاء */
+import { DEFAULT_SITE_URL, OG_LOCALE, RTL_LOCALES, SEO_LOCALES } from './staticRoutes.js';
+
 const envSiteUrl = typeof import.meta !== 'undefined' && import.meta.env
   ? import.meta.env.VITE_SITE_URL
   : '';
 
-export const SITE_URL = (envSiteUrl || 'https://wahywanamaa.com').replace(/\/$/, '');
+export const SITE_URL = (envSiteUrl || DEFAULT_SITE_URL).replace(/\/$/, '');
 export const DEFAULT_OG_IMAGE = `${SITE_URL}/images/hero-wahy-namaa.jpg`;
 export const LOGO_URL = `${SITE_URL}/assets/logo.png`;
 
@@ -14,19 +16,7 @@ export function toAbsoluteUrl(pathOrUrl = '') {
   return `${SITE_URL}${value.startsWith('/') ? value : `/${value}`}`;
 }
 
-export const SEO_LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
-
-export const OG_LOCALE = {
-  ar: 'ar_EG',
-  en: 'en_US',
-  fr: 'fr_FR',
-  de: 'de_DE',
-  tr: 'tr_TR',
-  ur: 'ur_PK',
-  id: 'id_ID',
-  ms: 'ms_MY',
-  ku: 'ku_IQ',
-};
+export { SEO_LOCALES, RTL_LOCALES, OG_LOCALE };
 
 /** أسماء العلامة الرسمية والبحثية المعتمدة لـ «وَحْيٌ وَنَمَاء» */
 export const ALTERNATE_NAMES = [

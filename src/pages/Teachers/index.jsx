@@ -26,6 +26,7 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import { useSEO } from '../../hooks/useSEO';
 import Skeleton from '../../components/shared/Skeleton';
 import '../../styles/public-experience.css';
 
@@ -51,6 +52,7 @@ export default function Teachers() {
   const [searchParams] = useSearchParams();
   const { displayPrice } = useMarket();
   const { locale } = useI18n();
+  const { createCollectionSchema, createBreadcrumbSchema } = useSEO();
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || searchParams.get('search') || '');
@@ -373,6 +375,21 @@ export default function Teachers() {
         description: active.subtitle,
         url: '/teachers',
         type: 'website',
+        schema: [
+          createCollectionSchema({
+            name: active.title,
+            description: active.subtitle,
+            url: '/teachers',
+            items: teachers.slice(0, 12).map((teacher) => ({
+              name: teacher.user?.name || active.title,
+              url: '/teachers/' + teacher._id,
+            })),
+          }),
+          createBreadcrumbSchema([
+            { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+            { name: active.title, url: '/teachers' },
+          ]),
+        ],
       }} />
       <GlobalHeader />
 
@@ -590,7 +607,7 @@ export default function Teachers() {
                     const ratingCount = Number(teacher.rating?.count || 0);
                     const ratingAverage = Number(teacher.rating?.average || 0);
                     const specializations = Array.isArray(teacher.quranInfo?.specializations) ? teacher.quranInfo.specializations.slice(0, 4) : [];
-                    const languages = Array.isArray(teacher.languages || teacher.personalInfo?.languages) ? (teacher.languages || teacher.personalInfo?.languages).slice(0, 3) : [];
+                    const languages = ((teacher.languages || teacher.personalInfo?.languages) || []).slice(0, 3);
                     const price = teacher.hourlyRate;
                     const country = teacher.personalInfo?.country;
                     const experience = teacher.quranInfo?.teachingExperience;

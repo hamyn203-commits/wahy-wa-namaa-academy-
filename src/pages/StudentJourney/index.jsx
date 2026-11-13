@@ -7,6 +7,7 @@ import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
+import SEOHead from '../../components/SEOHead';
 import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
 
 const TRACKS = [
@@ -163,6 +164,7 @@ export default function StudentJourney() {
     .filter((teacher) => preferredGender === 'any' || teacher.personalInfo?.gender === preferredGender);
 
   return <>
+    <SEOHead page={{ url: '/journey', noindex: true, canonical: false }} />
     <GlobalHeader />
     <main className="min-h-screen bg-slate-50 py-10 px-4" dir={isAr ? 'rtl' : 'ltr'}>
       <div className="mx-auto max-w-5xl">
