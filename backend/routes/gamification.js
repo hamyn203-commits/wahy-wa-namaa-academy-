@@ -169,7 +169,7 @@ router.put('/achievements/seen-all', protect, async (req, res) => {
 // @route   GET /api/gamification/leaderboard/:type/:timeframe
 // @desc    Get leaderboard
 // @access  Public
-router.get('/leaderboard/:type/:timeframe', async (req, res) => {
+router.get('/leaderboard/:type/:timeframe', readAccessTokenIfValid, async (req, res) => {
   try {
     const { type, timeframe } = req.params;
     const { limit = 50 } = req.query;
@@ -195,7 +195,7 @@ router.get('/leaderboard/:type/:timeframe', async (req, res) => {
         .populate('entries.user', 'name avatar');
     }
 
-    const viewer = readAccessTokenIfValid(req);
+    const viewer = req.user || null;
     let userRank = null;
     if (viewer?.id) {
       const userEntry = leaderboard.entries.find(e => e.user?._id?.toString() === String(viewer.id));

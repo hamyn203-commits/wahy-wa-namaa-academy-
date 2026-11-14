@@ -188,7 +188,7 @@ const verifyAccessToken = async (req, res, next) => {
 // Optional authentication for public endpoints: attaches req.user when a valid
 // access token is present, otherwise continues anonymously (never rejects).
 const readAccessTokenIfValid = async (req, _res, next) => {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers?.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const decoded = jwt.verify(authHeader.split(' ')[1], accessSecret(), { algorithms: ['HS256'] });
@@ -199,7 +199,10 @@ const readAccessTokenIfValid = async (req, _res, next) => {
       req.user = undefined;
     }
   }
-  return next();
+  if (typeof next === 'function') {
+    return next();
+  }
+  return req.user || null;
 };
 
 function readCookie(req, name) {

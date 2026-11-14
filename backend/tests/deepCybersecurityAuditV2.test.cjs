@@ -24,6 +24,7 @@ const Enrollment = require('../models/Enrollment');
 const { Quiz, QuizAttempt } = require('../models/Quiz');
 const VerificationCode = require('../models/VerificationCode');
 const VideoAsset = require('../models/VideoAsset');
+const { Leaderboard } = require('../models/Gamification');
 const Notification = require('../models/Notification');
 const googleIdentity = require('../services/googleIdentity');
 const { generateAccessToken } = require('../middleware/auth');
@@ -595,4 +596,33 @@ test('HIGH-16: GET /api/videos?category=nonexistent never calls VideoAsset.inser
   assert.equal(res.status, 200);
   assert.equal(insertManyCalled, false, 'GET /api/videos must be strictly read-only');
   assert.deepEqual(res.data.videos, []);
+});
+
+test('MED-12: GET /api/gamification/leaderboard masks learner names, strips _id, and handles optional auth middleware without throwing', async () => {
+  seedUsers();
+  Leaderboard.findOne = () => chainableQuery({
+    _id: oid(),
+    type: 'points',
+    timeframe: 'all-time',
+    lastUpdated: new Date(),
+    entries: [
+      {
+        rank: 1,
+        score: 1200,
+        details: { level: 5 },
+        user: { _id: ids.student, name: 'أحمد محمد علي', avatar: '/a.jpg' },
+      },
+    ],
+  });
+
+  const anonRes = await apiJson('GET', '/api/gamification/leaderboard/points/all-time');
+  assert.equal(anonRes.status, 200);
+  assert.equal(anonRes.data.userRank, null);
+  assert.equal(anonRes.data.entries[0].user._id, undefined, 'Learner _id must not leak on public leaderboard');
+  assert.notEqual(anonRes.data.entries[0].user.name, 'أحمد محمد علي', 'Full learner name must be masked');
+
+  const studentToken = generateAccessToken({ _id: ids.student, role: 'student', email: 'sec-student@wahy.test' });
+  const authRes = await apiJson('GET', '/api/gamification/leaderboard/points/all-time', { token: studentToken });
+  assert.equal(authRes.status, 200);
+  assert.equal(authRes.data.userRank, 1);
 });
