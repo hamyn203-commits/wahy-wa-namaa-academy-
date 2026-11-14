@@ -9,12 +9,8 @@ import {
   CheckCircle,
   FileText,
   Sparkles,
-  Award,
-  Layers,
   Printer,
-  X,
-  Share2,
-  ExternalLink
+  X
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import GlobalHeader from '../../components/GlobalHeader';

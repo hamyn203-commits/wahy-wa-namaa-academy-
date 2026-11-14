@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';

@@ -21,6 +21,8 @@ export default {
     arabic: 'العربية',
     english: 'English',
     kurdish: 'کوردی',
+    freeTrial: 'وانەی تاقیکاری بەخۆڕایی تۆمار بکە',
+    freeTrialShort: 'تاقیکاری بەخۆڕایی',
   },
   hero: {
     title: 'فێrbûna قورئان و عەرەبی',

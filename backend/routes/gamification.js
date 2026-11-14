@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -137,7 +138,7 @@ router.put('/achievements/:achievementId/seen', protect, async (req, res) => {
     res.json(achievement);
   } catch (error) {
     console.error('Mark achievement seen error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -154,7 +155,7 @@ router.put('/achievements/seen-all', protect, async (req, res) => {
     res.json({ message: 'All achievements marked as seen' });
   } catch (error) {
     console.error('Mark all seen error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -304,7 +305,7 @@ router.post('/check-badges', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('Check badges error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -426,7 +427,7 @@ router.post('/initialize-badges', protect, authorize('admin'), async (req, res) 
     });
   } catch (error) {
     console.error('Initialize badges error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

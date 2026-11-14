@@ -90,5 +90,15 @@ const TeacherLedgerSchema = new mongoose.Schema({
 TeacherLedgerSchema.index({ teacher: 1, createdAt: -1 });
 TeacherLedgerSchema.index({ teacher: 1, currency: 1, status: 1 });
 TeacherLedgerSchema.index({ type: 1, status: 1, createdAt: -1 });
+TeacherLedgerSchema.index(
+  { teacher: 1, currency: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'payout',
+      status: { $in: ['pending', 'processing'] },
+    },
+  }
+);
 
 module.exports = mongoose.model('TeacherLedger', TeacherLedgerSchema);

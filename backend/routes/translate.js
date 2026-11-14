@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const { translate, SUPPORTED, LANG_NAMES } = require('../services/translateService');
@@ -26,7 +27,7 @@ router.post('/', async (req, res) => {
     const result = await translate(text, from, to);
     res.json({ original: text, translated: result.text, from, to, provider: result.provider });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Blog = require('../models/Blog');
@@ -50,7 +51,7 @@ router.get('/', async (req, res) => {
       pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -65,7 +66,7 @@ router.get('/:slug', async (req, res) => {
     if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json(pickLocalized(post, locale));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -74,7 +75,7 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
     const post = await Blog.create(req.body);
     res.status(201).json(post);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

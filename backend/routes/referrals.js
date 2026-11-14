@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
@@ -30,7 +31,7 @@ router.get('/validate/:code', async (req, res) => {
     if (!referrer) return res.status(404).json({ valid: false, error: 'رمز غير صالح' });
     res.json({ valid: true, referrerName: referrer.name });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -73,7 +74,7 @@ router.get('/my', protect, async (req, res) => {
       rewards,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -106,7 +107,7 @@ router.get('/leaderboard', async (req, res) => {
     const rows = await Referral.aggregate(pipeline);
     res.json({ leaderboard: rows.map((r, i) => ({ rank: i + 1, name: r.name, invites: r.count, rewarded: r.rewarded })), timeframe: timeframe || 'all-time' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

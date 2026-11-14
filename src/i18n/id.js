@@ -26,6 +26,8 @@ export default {
     urdu: 'اردو',
     indonesian: 'Indonesia',
     malay: 'Melayu',
+    freeTrial: 'Pesan Kelas Percobaan Gratis',
+    freeTrialShort: 'Coba Gratis',
   },
   hero: {
     title: 'Belajar Al-Quran dan Bahasa Arab',

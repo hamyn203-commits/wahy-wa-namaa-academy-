@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const JobApplication = require('../models/JobApplication');
@@ -69,7 +70,7 @@ router.post('/apply', async (req, res) => {
     }).catch(() => {});
     res.status(201).json({ success: true, message: 'تم استلام طلبك — سنتواصل معك قريباً', id: app._id });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -88,7 +89,7 @@ router.put('/applications/:id/status', protect, authorize('admin'), async (req, 
     if (!app) return res.status(404).json({ error: 'الطلب غير موجود' });
     res.json(app);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -103,7 +104,7 @@ router.get('/applications', protect, authorize('admin'), async (req, res) => {
     ]);
     res.json({ applications, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

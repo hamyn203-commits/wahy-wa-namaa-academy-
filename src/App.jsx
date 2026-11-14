@@ -1,6 +1,5 @@
 import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AppProvider } from './context/AppProvider';
 import { AuthProvider } from './hooks/useAuth.jsx';
 import { ToastProvider } from './context/ToastProvider';
 import { I18nProvider } from './i18n';
@@ -66,6 +65,7 @@ const LeaderboardPage = lazy(() => import('./pages/Leaderboard'));
 const NotificationsPage = lazy(() => import('./pages/Notifications'));
 const NotificationSettings = lazy(() => import('./pages/Settings/Notifications'));
 const MeetingRoom = lazy(() => import('./pages/Meeting/MeetingRoom'));
+const SessionRsvp = lazy(() => import('./pages/SessionRsvp'));
 const PlansPage = lazy(() => import('./pages/Plans'));
 
 function PageLoader() {
@@ -130,6 +130,7 @@ function pageRoutes() {
       <Route path="live" element={<ProtectedRoute><LiveSessions /></ProtectedRoute>} />
       <Route path="live/:roomId" element={<ProtectedRoute><LiveRoom /></ProtectedRoute>} />
       <Route path="meeting/:sessionId" element={<ProtectedRoute><MeetingRoom /></ProtectedRoute>} />
+      <Route path="sessions/:sessionId/rsvp" element={<ProtectedRoute roles={['student', 'guardian', 'admin']}><SessionRsvp /></ProtectedRoute>} />
       <Route path="ai" element={<StudentShell><AIHub /></StudentShell>} />
       <Route path="donate" element={<StudentPublicRedirect><Donate /></StudentPublicRedirect>} />
       <Route path="payment/return" element={<ProtectedRoute roles={['student', 'admin']}><StudentShell><PaymentReturn /></StudentShell></ProtectedRoute>} />
@@ -174,17 +175,15 @@ export default function App() {
     <ErrorBoundary>
       <I18nProvider>
         <MarketProvider>
-          <AppProvider>
-            <AuthProvider>
-              <ToastProvider>
+          <AuthProvider>
+            <ToastProvider>
               <Router>
                 <AppContent />
                 <Suspense fallback={null}><QuranChatWidget /></Suspense>
                 <Suspense fallback={null}><PwaInstallPrompt /></Suspense>
               </Router>
-              </ToastProvider>
-            </AuthProvider>
-          </AppProvider>
+            </ToastProvider>
+          </AuthProvider>
         </MarketProvider>
       </I18nProvider>
     </ErrorBoundary>

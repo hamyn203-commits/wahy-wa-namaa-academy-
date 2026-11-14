@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 'use strict';
 
 const express = require('express');
@@ -204,7 +205,7 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
     }
 
     if (error.code === 'PAYMENT_PROVIDER_NOT_CONFIGURED') {
-      return res.status(503).json({ error: error.message, code: error.code });
+      return res.status(503).json({ error: safeErrorMessage(error, 503), code: error.code });
     }
 
     if (error.code === 'PAYMENT_PROVIDER_TIMEOUT' || error.code === 'PAYMENT_PROVIDER_ERROR') {
@@ -346,6 +347,19 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       reviewRequired: true,
     });
   } catch (error) {
+    if (error?.code === 11000) {
+      const duplicatePayment = await Payment.findOne({
+        kind: 'course_enrollment',
+        provider: 'manual',
+        student: req.user.id,
+        status: 'pending',
+      }).select('_id').catch(() => null);
+      return res.status(409).json({
+        error: 'A transfer is already waiting for review',
+        code: 'PAYMENT_REVIEW_PENDING',
+        paymentId: duplicatePayment ? String(duplicatePayment._id) : null,
+      });
+    }
     console.error('Manual payment submission failed:', error.message);
     return res.status(400).json({
       error: 'Unable to submit manual payment',
@@ -779,13 +793,13 @@ router.patch('/admin/manual/:id/review', protect, authorize('admin'), async (req
     });
   } catch (error) {
     if (error.code === 'PAYMENT_NOT_FOUND') {
-      return res.status(404).json({ error: error.message, code: error.code });
+      return res.status(404).json({ error: safeErrorMessage(error, 404), code: error.code });
     }
     if (error.code === 'PAYMENT_ALREADY_REVIEWED') {
-      return res.status(409).json({ error: error.message, code: error.code });
+      return res.status(409).json({ error: safeErrorMessage(error, 409), code: error.code });
     }
     if (error.code === 'INVALID_REVIEW_ACTION') {
-      return res.status(400).json({ error: error.message, code: error.code });
+      return res.status(400).json({ error: safeErrorMessage(error, 400), code: error.code });
     }
 
     console.error('Manual payment review failed:', error.message);

@@ -90,14 +90,47 @@ export function downloadJSON(data, filename) {
 }
 
 export function printElement(elementId) {
-  const printContents = document.getElementById(elementId)?.innerHTML;
-  if (!printContents) return false;
+  const sourceEl = document.getElementById(elementId);
+  if (!sourceEl) return false;
 
-  const originalContents = document.body.innerHTML;
-  document.body.innerHTML = printContents;
-  window.print();
-  document.body.innerHTML = originalContents;
-  window.location.reload();
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc || !iframe.contentWindow) {
+    iframe.remove();
+    return false;
+  }
+
+  const dir = document.documentElement.dir || 'rtl';
+  const lang = document.documentElement.lang || 'ar';
+  const styleNodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+    .map((node) => node.outerHTML)
+    .join('\n');
+
+  doc.open();
+  doc.write(`<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${document.title}</title>${styleNodes}</head><body>${sourceEl.outerHTML}</body></html>`);
+  doc.close();
+
+  const cleanup = () => {
+    setTimeout(() => {
+      iframe.remove();
+    }, 500);
+  };
+
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    cleanup();
+  };
+
   return true;
 }
 

@@ -2,6 +2,7 @@
 
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const { getAccessSecret } = require('./auth');
 
 function extractActorKey(req) {
   const authHeader = String(req.headers?.authorization || '');
@@ -9,12 +10,12 @@ function extractActorKey(req) {
     const token = authHeader.slice(7).trim();
     if (token) {
       try {
-        const decoded = jwt.decode(token);
-        if (decoded && typeof decoded === 'object' && (decoded.id || decoded.sub)) {
-          return `user:${String(decoded.id || decoded.sub)}`;
+        const verified = jwt.verify(token, getAccessSecret());
+        if (verified && typeof verified === 'object' && (verified.id || verified.sub)) {
+          return `user:${String(verified.id || verified.sub)}`;
         }
       } catch {
-        // Fall back to IP when token cannot be decoded
+        // Fall back to IP when token signature is invalid or expired
       }
     }
   }

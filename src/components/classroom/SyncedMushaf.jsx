@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   ChevronRight, ChevronLeft, BookOpen, Sparkles, 
-  Maximize2, Minimize2, ZoomIn, ZoomOut, Lock, Unlock, 
-  Sun, Moon, Eye, RotateCcw, Check, Search
+  ZoomIn, ZoomOut, Lock, Unlock, 
+  Sun, Moon, Eye, RotateCcw, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './classroom.css';
@@ -247,7 +247,6 @@ export default function SyncedMushaf({
   // روابط صور صفحات المصحف عالية الدقة (High-Res CDN)
   const pageImageSrc = useMemo(() => {
     // 3 مصادر موثوقة لصفحات المصحف الشريف
-    const padded = String(currentPage).padStart(3, '0');
     return `https://cdn.jsdelivr.net/gh/spa5k/quran-images@master/quran-images-webp/${currentPage}.webp`;
   }, [currentPage]);
 
@@ -279,7 +278,7 @@ export default function SyncedMushaf({
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload, participant) => {
+    const handleDataReceived = (payload) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type !== 'MUSHAF_ACTION') return;
@@ -305,7 +304,7 @@ export default function SyncedMushaf({
             if (data.page) setCurrentPage(data.page);
           }
         }
-      } catch (e) {
+      } catch {
         // تجاهل الرسائل غير المطابقة (مثل رسائل الشات العادية)
       }
     };

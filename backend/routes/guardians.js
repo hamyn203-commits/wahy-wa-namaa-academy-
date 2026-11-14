@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Guardian = require('../models/Guardian');
@@ -88,20 +89,19 @@ router.delete('/remove-child/:studentId', protect, authorize('guardian'), async 
     res.json({ message: 'Child removed successfully' });
   } catch (error) {
     console.error('Remove child error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
 // @route   PUT /api/guardians/permissions/:studentId
-// @desc    Update permissions for a child
-// @access  Private (Guardian)
-router.put('/permissions/:studentId', protect, authorize('guardian', 'admin'), async (req, res) => {
+// @desc    Update guardian permissions for a student (Student account owner or Admin only)
+// @access  Private (Student/Admin)
+router.put('/permissions/:studentId', protect, authorize('student', 'admin'), async (req, res) => {
   try {
-    const { permissions } = req.body;
-    const guardian = await Guardian.findOne({ user: req.user.id });
+    const { permissions, guardianId } = req.body || {};
 
-    if (!guardian) {
-      return res.status(404).json({ error: 'Guardian profile not found' });
+    if (req.user.role === 'student' && String(req.params.studentId) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Permission denied' });
     }
 
     if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {
@@ -128,12 +128,24 @@ router.put('/permissions/:studentId', protect, authorize('guardian', 'admin'), a
       return res.status(400).json({ error: 'At least one permission is required' });
     }
 
-    await guardian.updatePermissions(req.params.studentId, normalizedPermissions);
+    const guardianFilter = { 'children.student': req.params.studentId };
+    if (guardianId) {
+      guardianFilter._id = guardianId;
+    }
 
-    res.json(guardian);
+    const guardians = await Guardian.find(guardianFilter);
+    if (!guardians.length) {
+      return res.status(404).json({ error: 'Guardian profile not found' });
+    }
+
+    for (const guardian of guardians) {
+      await guardian.updatePermissions(req.params.studentId, normalizedPermissions);
+    }
+
+    res.json(guardians.length === 1 ? guardians[0] : guardians);
   } catch (error) {
     console.error('Update permissions error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -251,7 +263,7 @@ router.post('/report/:studentId', protect, authorize('guardian', 'admin'), async
     res.status(201).json(filterReportForPermissions(latestReport, access.permissions));
   } catch (error) {
     console.error('Generate report error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -321,7 +333,7 @@ router.put('/settings', protect, authorize('guardian', 'admin'), async (req, res
     res.json(guardian);
   } catch (error) {
     console.error('Update settings error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -339,13 +351,16 @@ router.get('/child/:studentId/weekly-summary', protect, authorize('guardian', 'a
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     const studentId = req.params.studentId;
+    const studentSessionMatch = {
+      $or: [{ student: studentId }, { 'attendance.student': studentId }],
+    };
 
-    const [completed, missed, homeworkPending, homeworkDone, recentSessions] = await Promise.all([
+    const [completed, missed, homeworkPending, homeworkDone, rawRecentSessions] = await Promise.all([
       access.permissions.viewAttendance
-        ? Session.countDocuments({ student: studentId, status: 'completed', updatedAt: { $gte: weekAgo } })
+        ? Session.countDocuments({ ...studentSessionMatch, status: 'completed', updatedAt: { $gte: weekAgo } })
         : Promise.resolve(null),
       access.permissions.viewAttendance
-        ? Session.countDocuments({ student: studentId, status: { $in: ['no-show', 'cancelled'] }, updatedAt: { $gte: weekAgo } })
+        ? Session.countDocuments({ ...studentSessionMatch, status: { $in: ['no-show', 'cancelled'] }, updatedAt: { $gte: weekAgo } })
         : Promise.resolve(null),
       access.permissions.viewProgress
         ? TeacherTask.countDocuments({ student: studentId, status: 'pending' })
@@ -354,12 +369,42 @@ router.get('/child/:studentId/weekly-summary', protect, authorize('guardian', 'a
         ? TeacherTask.countDocuments({ student: studentId, status: { $in: ['submitted', 'done'] }, updatedAt: { $gte: weekAgo } })
         : Promise.resolve(null),
       access.permissions.viewAttendance
-        ? Session.find({ student: studentId, status: 'completed', updatedAt: { $gte: weekAgo } })
-            .populate({ path: 'teacher', populate: { path: 'user', select: 'name' } })
+        ? Session.find({ ...studentSessionMatch, status: 'completed', updatedAt: { $gte: weekAgo } })
+            .populate({ path: 'teacher', select: 'user personalInfo.fullName', populate: { path: 'user', select: 'name' } })
             .sort({ scheduledAt: -1 })
             .limit(10)
         : Promise.resolve([]),
     ]);
+
+    const recentSessions = rawRecentSessions.map((doc) => {
+      const s = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+      const ownAttendance = Array.isArray(s.attendance)
+        ? s.attendance.find((entry) => String(entry?.student?._id || entry?.student) === String(studentId))
+        : null;
+
+      const sanitized = {
+        _id: s._id,
+        type: s.type,
+        status: s.status,
+        scheduledAt: s.scheduledAt,
+        duration: s.duration,
+        timezone: s.timezone,
+        attendanceStatus: ownAttendance?.status || 'attended',
+        teacher: s.teacher
+          ? {
+              _id: s.teacher._id,
+              name: s.teacher.user?.name || s.teacher.personalInfo?.fullName || null,
+            }
+          : null,
+      };
+
+      if (access.permissions.viewGrades) {
+        if (s.report) sanitized.report = s.report;
+        if (s.teacherEvaluation) sanitized.teacherEvaluation = s.teacherEvaluation;
+      }
+
+      return sanitized;
+    });
 
     res.json({
       week: {
@@ -372,7 +417,7 @@ router.get('/child/:studentId/weekly-summary', protect, authorize('guardian', 'a
       permissions: access.permissions,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

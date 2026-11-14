@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const VideoAsset = require('../models/VideoAsset');
@@ -29,7 +30,7 @@ router.get('/', async (req, res) => {
     const videos = await VideoAsset.find(filter).sort({ sortOrder: 1, createdAt: -1 }).skip(skip).limit(Number(limit));
     res.json({ videos, pagination: { page: Number(page), limit: Number(limit), total: count } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -39,7 +40,7 @@ router.get('/:id', async (req, res) => {
     if (!video || !video.isPublished) return res.status(404).json({ error: 'الفيديو غير موجود' });
     res.json(video);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -48,7 +49,7 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
     const video = await VideoAsset.create(req.body);
     res.status(201).json(video);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -58,7 +59,7 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
     if (!video) return res.status(404).json({ error: 'الفيديو غير موجود' });
     res.json(video);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -67,7 +68,7 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     await VideoAsset.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Users, Mic, MicOff, Hand, Clock, Play, Pause, 
-  RotateCcw, CheckCircle2, UserCheck, VolumeX, Sparkles,
-  ChevronRight, Award, AlertCircle
+  Users, Hand, Clock, Play, Pause, 
+  RotateCcw, VolumeX,
+  ChevronRight, Award
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './classroom.css';
@@ -39,7 +39,7 @@ export default function CircleTurnManager({
 
   // حالة التسميع والمؤقت
   const [activeReciter, setActiveReciter] = useState(null); // { id, name }
-  const [timerDuration, setTimerDuration] = useState(300); // 5 دقائق (300 ثانية)
+  const [timerDuration] = useState(300); // 5 دقائق (300 ثانية)
   const [timeLeft, setTimeLeft] = useState(300);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
@@ -141,14 +141,14 @@ export default function CircleTurnManager({
           default:
             break;
         }
-      } catch (e) {
+      } catch {
         // تجاهل
       }
     };
 
     room.on('dataReceived', handleDataReceived);
     return () => room.off('dataReceived', handleDataReceived);
-  }, [room, isTeacher, onMuteLocalMic]);
+  }, [room, isTeacher, onMuteLocalMic, localParticipant?.localParticipant]);
 
   // عداد المؤقت التنازلي
   useEffect(() => {

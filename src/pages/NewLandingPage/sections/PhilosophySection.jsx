@@ -1,7 +1,5 @@
-import React from 'react';
 import { useI18n } from '../../../i18n';
-import { BookOpen, Award, Sprout, Heart, Sparkles, CheckCircle } from 'lucide-react';
-import WahyNamaaEmblem from '../../../components/WahyNamaaEmblem';
+import { BookOpen, Award, Sprout, Sparkles, CheckCircle } from 'lucide-react';
 
 export default function PhilosophySection() {
   const { locale } = useI18n();

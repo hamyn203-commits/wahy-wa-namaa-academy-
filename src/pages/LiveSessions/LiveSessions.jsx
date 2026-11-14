@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '../../components/BrandLogo';
 import Modal from '../../components/shared/Modal';
 import EmptyState from '../../components/shared/EmptyState';
-import { useAppContext } from '../../context/AppProvider';
 import api from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useI18n } from '../../i18n';
@@ -19,8 +18,7 @@ import '../../styles/session-experience.css';
 
 export default function LiveSessions() {
   const navigate = useNavigate();
-  const { locale } = useI18n();
-  const { t } = useAppContext();
+  const { locale, t } = useI18n();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +53,6 @@ export default function LiveSessions() {
 
     fetchSessions();
     api.get('/api/live/status').then(setLiveStatus).catch(() => {});
-    // fetchSessions is intentionally scoped to this authenticated page mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAuthenticated, navigate, locale]);
 
   const copyLink = (roomId) => {
@@ -270,7 +266,7 @@ export default function LiveSessions() {
 }
 
 function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
-  const { t } = useAppContext();
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [subject, setSubject] = useState('');

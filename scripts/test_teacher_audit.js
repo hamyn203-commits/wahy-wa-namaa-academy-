@@ -88,7 +88,7 @@ async function runTeacherAudit() {
   const testTeacherEmail = `teacher_${Date.now()}@alathar.com`;
   const teacherPassword = 'Password123!';
   let teacherToken = null;
-  let teacherUser = null;
+  let _teacherUser = null;
 
   try {
     const multipart = makeMultipartBody(
@@ -155,7 +155,7 @@ async function runTeacherAudit() {
 
     if (regRes.data?.accessToken) {
       teacherToken = regRes.data.accessToken;
-      teacherUser = regRes.data.teacher;
+      _teacherUser = regRes.data.teacher;
     }
   } catch (e) {
     logResult('Teacher Registration', false, 'Exception during registration', e.message);
@@ -178,7 +178,7 @@ async function runTeacherAudit() {
 
     if (loginSuccess) {
       teacherToken = loginRes.data.accessToken;
-      teacherUser = loginRes.data.user;
+      _teacherUser = loginRes.data.user;
     }
   } catch (e) {
     logResult('Teacher Login', false, 'Exception during login', e.message);
@@ -243,7 +243,7 @@ async function runTeacherAudit() {
   }
 
   // 7. Circles Management (POST /api/circles, GET /api/circles)
-  let createdCircleId = null;
+  let _createdCircleId = null;
   try {
     const circlePayload = {
       name: 'حلقة إتقان التجويد برواية حفص',
@@ -268,7 +268,7 @@ async function runTeacherAudit() {
     );
 
     if (createCirc.data?.circle?._id) {
-      createdCircleId = createCirc.data.circle._id;
+      _createdCircleId = createCirc.data.circle._id;
     }
   } catch (e) {
     logResult('Create Circle', false, 'Error creating circle', e.message);

@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router({ mergeParams: true });
 const Session = require('../models/Session');
@@ -73,7 +74,7 @@ router.get('/languages', protect, async (req, res) => {
       teacher: { name: session.teacher?.user?.name, lang: teacherLang },
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -120,7 +121,7 @@ router.get('/messages', protect, async (req, res) => {
       }),
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -233,7 +234,7 @@ router.post('/messages', protect, async (req, res) => {
       isMe: true,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

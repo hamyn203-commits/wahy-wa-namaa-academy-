@@ -286,7 +286,7 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
         <header className="border-b px-4 py-3 flex items-center justify-between gap-3 bg-slate-50">
           <div>
             <h3 className="font-black text-slate-900">{isAr ? 'محادثة الحصة' : 'Session chat'}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{peerName} · {new Date(session?.scheduledAt || Date.now()).toLocaleString(isAr ? 'ar-EG' : 'en')}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{peerName}{session?.scheduledAt ? ` · ${new Date(session.scheduledAt).toLocaleString(isAr ? 'ar-EG' : 'en')}` : ''}</p>
           </div>
           <button type="button" aria-label={isAr ? 'إغلاق المحادثة' : 'Close chat'} onClick={onClose} className="p-2 rounded-lg hover:bg-white text-slate-500">
             <X size={20} />

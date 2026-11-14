@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { BookOpen, GraduationCap, UserRound, CalendarDays, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -44,7 +44,7 @@ export default function StudentJourney() {
   const { locale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
-  const lp = (path) => localizedPath(path, locale);
+  const lp = useCallback((path) => localizedPath(path, locale), [locale]);
   const [chosen, setChosen] = useState('');
   const [teachers, setTeachers] = useState([]);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
@@ -96,7 +96,7 @@ export default function StudentJourney() {
     };
     checkProfile();
     return () => { cancelled = true; };
-  }, [isLoading, isAuthenticated, user?.role, user?.onboarding?.completed, location.state?.profileJustSaved, navigate, locale, refreshUser]);
+  }, [isLoading, isAuthenticated, user?.role, user?.onboarding?.completed, user?.name, user?.phone, location.state?.profileJustSaved, navigate, lp, isAr, refreshUser]);
 
   useEffect(() => {
     if (profileChecking || chosen) return;

@@ -1285,6 +1285,23 @@ requireContains(
   /\['points',\s*'streak',\s*'courses',\s*'quizzes'\]\.includes\(type\)/
 );
 
+// Launch Audit Closure Contracts (Batch 1):
+requireContains(
+  'backend/app.js',
+  'Express 5 request sanitizer must override req.query via Object.defineProperty and strip $ operators',
+  /if\s*\(key\.startsWith\(['"]\$['"]\)\)\s*continue[\s\S]{0,600}Object\.defineProperty\(req,\s*['"]query['"]/
+);
+requireContains(
+  'backend/routes/guardians.js',
+  'guardian permission updates must be restricted to student account owner or admin',
+  /router\.put\(['"]\/permissions\/:studentId['"],\s*protect,\s*authorize\(['"]student['"],\s*['"]admin['"]\)/
+);
+requireContains(
+  'backend/routes/notifications.js',
+  'teacher notification broadcasts must verify active teacher-student relationship',
+  /TEACHER_STUDENT_SCOPE_VIOLATION/
+);
+
 if (failures.length) {
   console.error('Security contracts failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

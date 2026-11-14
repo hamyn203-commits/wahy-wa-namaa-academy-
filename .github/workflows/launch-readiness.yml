@@ -10,21 +10,24 @@ jobs:
   verify:
     name: Public launch gate
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ vars.PRODUCTION_API_URL || 'https://api.wahywanamaa.com' }}
+      WEB_URL: ${{ vars.PRODUCTION_WEB_URL || 'https://wahywanamaa.com' }}
     steps:
       - name: Core production readiness
         run: |
-          body=$(curl --fail --silent --show-error https://wahy-wa-namaa-api.vercel.app/api/readiness)
+          body=$(curl --fail --silent --show-error "${API_URL%/}/api/readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: Commercial launch readiness
         run: |
-          body=$(curl --silent --show-error https://wahy-wa-namaa-api.vercel.app/api/launch-readiness)
+          body=$(curl --silent --show-error "${API_URL%/}/api/launch-readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: Frontend
-        run: curl --fail --silent --show-error -o /dev/null https://wahy-wa-namaa-academy.vercel.app/ar
+        run: curl --fail --silent --show-error -o /dev/null "${WEB_URL%/}/ar"
 
       - name: Summary
         run: |

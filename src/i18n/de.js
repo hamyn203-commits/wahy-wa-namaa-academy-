@@ -26,6 +26,8 @@ export default {
     urdu: 'اردو',
     indonesian: 'Indonesia',
     malay: 'Melayu',
+    freeTrial: 'Kostenlose Probestunde buchen',
+    freeTrialShort: 'Kostenlose Probestunde',
   },
   hero: {
     title: 'Lernen Sie den Koran und Arabisch',

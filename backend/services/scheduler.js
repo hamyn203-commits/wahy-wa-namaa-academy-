@@ -1,15 +1,18 @@
 /**
  * Automated Session Reminder Scheduler — Wahy Wa Namaa Academy
- * Runs periodically (every 5 minutes) to dispatch:
- * 1. 24-hour advance reminders (sessions starting in 23-24 hours)
- * 2. 30-minute direct access reminders (sessions starting in 25-35 minutes)
+ * Dispatches:
+ * 1. 24-hour advance reminders (jitter-safe 23h to 25h window)
+ * 2. 30-minute direct access reminders (jitter-safe 20m to 40m window)
+ * Supports both 1-on-1 sessions and group_circle sessions, and only stamps
+ * reminder flags when external delivery succeeds.
  */
 
 const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const Guardian = require('../models/Guardian');
-const { send24HourReminder, send30MinuteReminder } = require('./whatsapp');
+const GroupCircle = require('../models/GroupCircle');
+const { send24HourReminder, send30MinuteReminder, resolveAbsoluteRoomUrl } = require('./whatsapp');
 
 /**
  * Helper to resolve the best recipient phone number for a student
@@ -27,10 +30,14 @@ async function resolveGuardianOrStudentPhone(studentUser) {
   }
 
   // 2. Check Guardian collection where children.student matches
-  const guardianDoc = await Guardian.findOne({ 'children.student': studentUser._id })
-    .populate('user', 'phone whatsappPhone');
+  const guardianDoc = await Guardian.findOne({
+    isActive: true,
+    'children.student': studentUser._id,
+  }).populate('user', 'phone whatsappPhone');
   if (guardianDoc?.user) {
-    const phone = guardianDoc.user.whatsappPhone || guardianDoc.user.phone || guardianDoc.notificationPreferences?.sms?.phoneNumber;
+    const phone = guardianDoc.user.whatsappPhone
+      || guardianDoc.user.phone
+      || guardianDoc.notificationPreferences?.sms?.phoneNumber;
     if (phone) return phone;
   }
 
@@ -39,21 +46,93 @@ async function resolveGuardianOrStudentPhone(studentUser) {
 }
 
 /**
- * Check and process 24-hour reminders (23 to 24 hours ahead)
+ * Resolve all active student users participating in a session (1-on-1 or group_circle),
+ * excluding students who already excused or were marked absent.
+ */
+async function resolveSessionStudents(session) {
+  if (!session) return [];
+
+  const skippedIds = new Set();
+  const candidateIds = new Set();
+  const populatedById = new Map();
+
+  if (Array.isArray(session.attendance)) {
+    for (const entry of session.attendance) {
+      if (!entry?.student) continue;
+      const rawId = typeof entry.student === 'object' && entry.student._id
+        ? String(entry.student._id)
+        : String(entry.student);
+      if (entry.status === 'excused' || entry.status === 'absent') {
+        skippedIds.add(rawId);
+      } else {
+        candidateIds.add(rawId);
+        if (typeof entry.student === 'object' && entry.student._id && entry.student.name) {
+          populatedById.set(rawId, entry.student);
+        }
+      }
+    }
+  }
+
+  if (session.student) {
+    const sid = typeof session.student === 'object' && session.student._id
+      ? String(session.student._id)
+      : String(session.student);
+    if (!skippedIds.has(sid)) {
+      candidateIds.add(sid);
+      if (typeof session.student === 'object' && session.student._id) {
+        populatedById.set(sid, session.student);
+      }
+    }
+  }
+
+  if (session.circle) {
+    const circleId = typeof session.circle === 'object' && session.circle._id
+      ? session.circle._id
+      : session.circle;
+    const circle = await GroupCircle.findById(circleId).select('students').lean().catch(() => null);
+    if (Array.isArray(circle?.students)) {
+      for (const s of circle.students) {
+        if (!s) continue;
+        const sid = String(s);
+        if (!skippedIds.has(sid)) {
+          candidateIds.add(sid);
+        }
+      }
+    }
+  }
+
+  const missingIds = Array.from(candidateIds).filter((id) => !populatedById.has(id));
+  if (missingIds.length > 0) {
+    const users = await User.find({ _id: { $in: missingIds } })
+      .select('_id name phone whatsappPhone guardian')
+      .lean();
+    for (const user of users) {
+      populatedById.set(String(user._id), user);
+    }
+  }
+
+  return Array.from(candidateIds)
+    .map((id) => populatedById.get(id))
+    .filter(Boolean);
+}
+
+/**
+ * Check and process 24-hour reminders (23 to 25 hours ahead for cron jitter safety)
  */
 async function process24HourReminders() {
+  let sentSessions = 0;
   try {
     const now = new Date();
     const minTime = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-    const maxTime = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const maxTime = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
     const sessions = await Session.find({
       status: 'accepted',
       scheduledAt: { $gte: minTime, $lte: maxTime },
       $or: [
         { 'reminders.dayBeforeSent': false },
-        { 'reminders.dayBeforeSent': { $exists: false } }
-      ]
+        { 'reminders.dayBeforeSent': { $exists: false } },
+      ],
     }).populate('student', 'name phone whatsappPhone guardian');
 
     if (sessions.length > 0) {
@@ -62,23 +141,59 @@ async function process24HourReminders() {
 
     for (const session of sessions) {
       try {
-        if (!session.student) continue;
+        const students = await resolveSessionStudents(session);
+        if (students.length === 0) continue;
 
-        const recipientPhone = await resolveGuardianOrStudentPhone(session.student);
-        if (!recipientPhone) {
-          console.warn(`⚠️ [Scheduler] No contact phone found for student ${session.student.name} (${session.student._id})`);
-          continue;
+        const alreadySentIds = new Set(
+          (session.reminders?.dayBeforeRecipients || []).map((id) => String(id))
+        );
+
+        let eligibleCount = 0;
+        let deliveredCount = 0;
+        const newlyDeliveredIds = [];
+
+        for (const studentUser of students) {
+          const studentId = String(studentUser._id);
+          if (alreadySentIds.has(studentId)) {
+            eligibleCount += 1;
+            deliveredCount += 1;
+            continue;
+          }
+
+          const recipientPhone = await resolveGuardianOrStudentPhone(studentUser);
+          if (!recipientPhone) {
+            console.warn(`⚠️ [Scheduler] No contact phone found for student ${studentUser.name} (${studentId})`);
+            continue;
+          }
+
+          eligibleCount += 1;
+          const delivery = await send24HourReminder(session, studentUser, recipientPhone);
+          if (delivery?.success === true) {
+            deliveredCount += 1;
+            newlyDeliveredIds.push(studentUser._id);
+            console.log(`✅ [Scheduler] 24h reminder sent for session ${session._id} to ${recipientPhone}`);
+          } else {
+            console.warn(`⚠️ [Scheduler] 24h reminder delivery failed for session ${session._id} (${studentId}): ${delivery?.reason || 'unknown'}`);
+          }
         }
 
-        await send24HourReminder(session, session.student, recipientPhone);
-
-        // Mark reminder as sent
-        session.reminders = session.reminders || {};
-        session.reminders.dayBeforeSent = true;
-        session.reminders.dayBeforeSentAt = new Date();
-        await session.save();
-
-        console.log(`✅ [Scheduler] 24h reminder sent for session ${session._id} to ${recipientPhone}`);
+        if (newlyDeliveredIds.length > 0 || (eligibleCount > 0 && deliveredCount === eligibleCount)) {
+          const allDelivered = eligibleCount > 0 && deliveredCount === eligibleCount;
+          const updateDoc = {};
+          if (newlyDeliveredIds.length > 0) {
+            updateDoc.$addToSet = { 'reminders.dayBeforeRecipients': { $each: newlyDeliveredIds } };
+          }
+          if (allDelivered) {
+            updateDoc.$set = {
+              'reminders.dayBeforeSent': true,
+              'reminders.dayBeforeSentAt': new Date(),
+            };
+            sentSessions += 1;
+          }
+          if (Object.keys(updateDoc).length > 0) {
+            await Session.updateOne({ _id: session._id }, updateDoc);
+          }
+        }
       } catch (err) {
         console.error(`❌ [Scheduler] Failed to send 24h reminder for session ${session._id}:`, err.message);
       }
@@ -86,24 +201,26 @@ async function process24HourReminders() {
   } catch (err) {
     console.error('❌ [Scheduler] Error processing 24-hour reminders:', err.message);
   }
+  return sentSessions;
 }
 
 /**
- * Check and process 30-minute reminders (25 to 35 minutes ahead)
+ * Check and process 30-minute reminders (20 to 40 minutes ahead for cron jitter safety)
  */
 async function process30MinuteReminders() {
+  let sentSessions = 0;
   try {
     const now = new Date();
-    const minTime = new Date(now.getTime() + 25 * 60 * 1000);
-    const maxTime = new Date(now.getTime() + 35 * 60 * 1000);
+    const minTime = new Date(now.getTime() + 20 * 60 * 1000);
+    const maxTime = new Date(now.getTime() + 40 * 60 * 1000);
 
     const sessions = await Session.find({
       status: 'accepted',
       scheduledAt: { $gte: minTime, $lte: maxTime },
       $or: [
         { 'reminders.halfHourSent': false },
-        { 'reminders.halfHourSent': { $exists: false } }
-      ]
+        { 'reminders.halfHourSent': { $exists: false } },
+      ],
     }).populate('student', 'name phone whatsappPhone guardian');
 
     if (sessions.length > 0) {
@@ -112,25 +229,60 @@ async function process30MinuteReminders() {
 
     for (const session of sessions) {
       try {
-        if (!session.student) continue;
+        const students = await resolveSessionStudents(session);
+        if (students.length === 0) continue;
 
-        const recipientPhone = await resolveGuardianOrStudentPhone(session.student);
-        if (!recipientPhone) {
-          console.warn(`⚠️ [Scheduler] No contact phone found for student ${session.student.name} (${session.student._id})`);
-          continue;
+        const alreadySentIds = new Set(
+          (session.reminders?.halfHourRecipients || []).map((id) => String(id))
+        );
+        const roomUrl = resolveAbsoluteRoomUrl(session);
+
+        let eligibleCount = 0;
+        let deliveredCount = 0;
+        const newlyDeliveredIds = [];
+
+        for (const studentUser of students) {
+          const studentId = String(studentUser._id);
+          if (alreadySentIds.has(studentId)) {
+            eligibleCount += 1;
+            deliveredCount += 1;
+            continue;
+          }
+
+          const recipientPhone = await resolveGuardianOrStudentPhone(studentUser);
+          if (!recipientPhone) {
+            console.warn(`⚠️ [Scheduler] No contact phone found for student ${studentUser.name} (${studentId})`);
+            continue;
+          }
+
+          eligibleCount += 1;
+          const delivery = await send30MinuteReminder(session, studentUser, recipientPhone, roomUrl);
+          if (delivery?.success === true) {
+            deliveredCount += 1;
+            newlyDeliveredIds.push(studentUser._id);
+            console.log(`✅ [Scheduler] 30m reminder sent for session ${session._id} to ${recipientPhone}`);
+          } else {
+            console.warn(`⚠️ [Scheduler] 30m reminder delivery failed for session ${session._id} (${studentId}): ${delivery?.reason || 'unknown'}`);
+          }
         }
 
-        const roomUrl = session.meetingLink || `${(process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app').replace(/\/$/, '')}/live/${session._id}`;
-
-        await send30MinuteReminder(session, session.student, recipientPhone, roomUrl);
-
-        // Mark reminder as sent
-        session.reminders = session.reminders || {};
-        session.reminders.halfHourSent = true;
-        session.reminders.halfHourSentAt = new Date();
-        await session.save();
-
-        console.log(`✅ [Scheduler] 30m reminder sent for session ${session._id} to ${recipientPhone}`);
+        if (newlyDeliveredIds.length > 0 || (eligibleCount > 0 && deliveredCount === eligibleCount)) {
+          const allDelivered = eligibleCount > 0 && deliveredCount === eligibleCount;
+          const updateDoc = {};
+          if (newlyDeliveredIds.length > 0) {
+            updateDoc.$addToSet = { 'reminders.halfHourRecipients': { $each: newlyDeliveredIds } };
+          }
+          if (allDelivered) {
+            updateDoc.$set = {
+              'reminders.halfHourSent': true,
+              'reminders.halfHourSentAt': new Date(),
+            };
+            sentSessions += 1;
+          }
+          if (Object.keys(updateDoc).length > 0) {
+            await Session.updateOne({ _id: session._id }, updateDoc);
+          }
+        }
       } catch (err) {
         console.error(`❌ [Scheduler] Failed to send 30m reminder for session ${session._id}:`, err.message);
       }
@@ -138,37 +290,35 @@ async function process30MinuteReminders() {
   } catch (err) {
     console.error('❌ [Scheduler] Error processing 30-minute reminders:', err.message);
   }
+  return sentSessions;
 }
 
 /**
  * Run scheduler cycle
  */
 async function checkUpcomingSessions() {
-  // Only run if database is connected
   if (mongoose.connection.readyState !== 1) {
-    return;
+    return { dayBeforeSent: 0, halfHourSent: 0, skipped: true };
   }
-  await process24HourReminders();
-  await process30MinuteReminders();
+  const dayBeforeSent = await process24HourReminders();
+  const halfHourSent = await process30MinuteReminders();
+  return { dayBeforeSent, halfHourSent, skipped: false };
 }
 
 /**
- * Starts the automated scheduler
- * Checks every 5 minutes (300,000 ms)
+ * Starts the automated scheduler (for persistent server deployments)
  */
 function startScheduler() {
   console.log('🕒 [Scheduler] Automated session reminder service initialized (interval: 5 minutes)');
-  
-  // Initial check after 10 seconds of startup
+
   setTimeout(() => {
-    checkUpcomingSessions().catch(err => {
+    checkUpcomingSessions().catch((err) => {
       console.error('❌ [Scheduler] Initial check error:', err.message);
     });
   }, 10000);
 
-  // Periodic interval every 5 minutes
   const intervalId = setInterval(() => {
-    checkUpcomingSessions().catch(err => {
+    checkUpcomingSessions().catch((err) => {
       console.error('❌ [Scheduler] Interval check error:', err.message);
     });
   }, 5 * 60 * 1000);
@@ -179,5 +329,8 @@ function startScheduler() {
 module.exports = {
   startScheduler,
   checkUpcomingSessions,
-  resolveGuardianOrStudentPhone
+  process24HourReminders,
+  process30MinuteReminders,
+  resolveSessionStudents,
+  resolveGuardianOrStudentPhone,
 };

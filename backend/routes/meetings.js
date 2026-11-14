@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Session = require('../models/Session');
@@ -78,7 +79,7 @@ router.get('/session/:id', protect, async (req, res) => {
 
     res.json({ session: { _id: session._id, scheduledAt: session.scheduledAt, status: session.status }, meeting });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -104,7 +105,7 @@ router.post('/session/:id/regenerate', protect, authorize('teacher', 'admin'), a
 
     res.json({ success: true, meetingLink: session.meetingLink, meeting });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

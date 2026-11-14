@@ -281,13 +281,110 @@ router.post('/token', verifyAccessToken, async (req, res) => {
   }
 });
 
+function evaluateRoomAccessSync(liveSession, user, { sessionMap, circleStudentsMap, teacherId, guardianChildIds }) {
+  if (!liveSession || !user) {
+    return { allowed: false, isHost: false, isObserver: false, bookedSession: null };
+  }
+
+  const bookedSession = liveSession.session
+    ? sessionMap.get(String(liveSession.session)) || null
+    : null;
+
+  if (user.role === 'admin') {
+    return { allowed: true, isHost: true, isObserver: false, bookedSession };
+  }
+
+  if (!liveSession.session || !bookedSession || bookedSession.status !== 'accepted') {
+    return { allowed: false, isHost: false, isObserver: false, bookedSession };
+  }
+
+  if (!sessionParticipantWindow(bookedSession).within) {
+    return {
+      allowed: false,
+      isHost: false,
+      isObserver: user.role === 'guardian',
+      bookedSession,
+    };
+  }
+
+  const includesStudent = (sid) => {
+    if (!sid) return false;
+    const idStr = String(sid);
+    if (bookedSession.student && String(bookedSession.student) === idStr) return true;
+    if (bookedSession.attendance?.some((entry) => entry.student && String(entry.student) === idStr)) return true;
+    if (bookedSession.circle) {
+      const circleSet = circleStudentsMap.get(String(bookedSession.circle));
+      if (circleSet && circleSet.has(idStr)) return true;
+    }
+    return false;
+  };
+
+  if (user.role === 'teacher') {
+    const allowed = Boolean(teacherId && String(bookedSession.teacher) === String(teacherId));
+    return { allowed, isHost: allowed, isObserver: false, bookedSession };
+  }
+
+  if (user.role === 'student') {
+    const allowed = includesStudent(user.id);
+    return { allowed, isHost: false, isObserver: false, bookedSession };
+  }
+
+  if (user.role === 'guardian') {
+    const allowed = (guardianChildIds || []).some((childId) => includesStudent(childId));
+    return { allowed, isHost: false, isObserver: true, bookedSession };
+  }
+
+  return { allowed: false, isHost: false, isObserver: false, bookedSession };
+}
+
 router.get('/sessions', verifyAccessToken, async (req, res) => {
   try {
     const allSessions = await LiveSession.find().sort({ createdAt: -1 }).limit(100);
-    const visible = [];
+    if (allSessions.length === 0) {
+      return res.json([]);
+    }
 
+    const bookedIds = Array.from(
+      new Set(allSessions.map((ls) => (ls.session ? String(ls.session) : null)).filter(Boolean))
+    );
+
+    const [bookedDocs, teacherDoc, guardianDoc] = await Promise.all([
+      bookedIds.length > 0
+        ? Session.find({ _id: { $in: bookedIds } })
+            .select('student teacher circle attendance scheduledAt duration timezone status')
+            .lean()
+        : Promise.resolve([]),
+      req.user.role === 'teacher'
+        ? Teacher.findOne({ user: req.user.id }).select('_id').lean()
+        : Promise.resolve(null),
+      req.user.role === 'guardian'
+        ? Guardian.findOne({ user: req.user.id, isActive: true }).select('children.student').lean()
+        : Promise.resolve(null),
+    ]);
+
+    const sessionMap = new Map(bookedDocs.map((s) => [String(s._id), s]));
+    const circleIds = Array.from(
+      new Set(bookedDocs.map((s) => (s.circle ? String(s.circle) : null)).filter(Boolean))
+    );
+
+    const circleDocs = circleIds.length > 0
+      ? await GroupCircle.find({ _id: { $in: circleIds } }).select('students').lean()
+      : [];
+    const circleStudentsMap = new Map(
+      circleDocs.map((c) => [String(c._id), new Set((c.students || []).map((id) => String(id)))])
+    );
+
+    const teacherId = teacherDoc?._id ? String(teacherDoc._id) : null;
+    const guardianChildIds = (guardianDoc?.children || []).map((c) => String(c.student)).filter(Boolean);
+
+    const visible = [];
     for (const liveSession of allSessions) {
-      const access = await getRoomAccess(liveSession, req.user);
+      const access = evaluateRoomAccessSync(liveSession, req.user, {
+        sessionMap,
+        circleStudentsMap,
+        teacherId,
+        guardianChildIds,
+      });
       if (access.allowed) {
         visible.push(presentLiveSession(liveSession, access));
       }

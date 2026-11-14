@@ -129,8 +129,11 @@ app.use(cors({
   credentials: true,
 }));
 
-// Cookie-backed auth endpoints mutate/refresh session state. Require an
+// Cookie-backed auth endpoints issue, mutate, or refresh session state. Require an
 // explicitly trusted browser Origin in production to prevent cross-site use.
+app.use('/api/auth/login', requireTrustedOrigin);
+app.use('/api/auth/register', requireTrustedOrigin);
+app.use('/api/auth/google', requireTrustedOrigin);
 app.use('/api/auth/refresh', requireTrustedOrigin);
 app.use('/api/auth/logout', requireTrustedOrigin);
 app.use('/api/auth/logout-all', requireTrustedOrigin);
@@ -143,6 +146,7 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/', generalLimiter);
   app.use('/api/', userRateLimiter);
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/google', authLimiter);
   app.use('/api/auth/register', registrationLimiter);
   app.use('/api/auth/send-verification', otpSendLimiter);
   app.use('/api/auth/verify-code', otpVerifyLimiter);
@@ -174,10 +178,16 @@ function sanitizeStringValue(value, fieldKey = '') {
 function sanitizeObject(obj, parentKey = '') {
   if (typeof obj === 'string') return sanitizeStringValue(obj, parentKey);
   if (typeof obj !== 'object' || obj === null) return obj;
-  const sanitized = Array.isArray(obj) ? [] : {};
+  if (obj instanceof Date || Buffer.isBuffer(obj)) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeObject(item, parentKey));
+  }
+  const sanitized = {};
   for (const key in obj) {
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+    if (key.startsWith('$')) continue;
     const cleanKey = key.replace(/[.$]/g, '_');
-    if (cleanKey === '__proto__' || cleanKey === 'constructor' || cleanKey === 'prototype' || !Object.prototype.hasOwnProperty.call(obj, key)) continue;
+    if (cleanKey === '__proto__' || cleanKey === 'constructor' || cleanKey === 'prototype') continue;
     sanitized[cleanKey] = sanitizeObject(obj[key], cleanKey);
   }
   return sanitized;
@@ -185,8 +195,16 @@ function sanitizeObject(obj, parentKey = '') {
 
 app.use((req, _res, next) => {
   if (req.body) req.body = sanitizeObject(req.body);
-  if (req.query) Object.assign(req.query, sanitizeObject(req.query));
-  if (req.params) Object.assign(req.params, sanitizeObject(req.params));
+  if (req.query) {
+    const cleanQuery = sanitizeObject(req.query);
+    Object.defineProperty(req, 'query', {
+      value: cleanQuery,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  if (req.params) req.params = sanitizeObject(req.params);
   next();
 });
 
@@ -240,6 +258,19 @@ app.get('/', (_req, res) => {
 
 app.get('/api', (_req, res) => res.redirect(301, '/api/health'));
 
+function isWhatsAppConfigured() {
+  const cloudConfigured = Boolean(
+    (process.env.WHATSAPP_CLOUD_TOKEN || process.env.WHATSAPP_TOKEN)
+    && process.env.WHATSAPP_PHONE_NUMBER_ID
+  );
+  const twilioConfigured = Boolean(
+    process.env.TWILIO_ACCOUNT_SID
+    && process.env.TWILIO_AUTH_TOKEN
+    && process.env.TWILIO_WHATSAPP_FROM
+  );
+  return cloudConfigured || twilioConfigured;
+}
+
 app.get('/api/health', (_req, res) => {
   const readiness = getConfigurationReadiness();
   res.status(200).json({
@@ -258,10 +289,11 @@ app.get('/api/health', (_req, res) => {
       ai: Boolean(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK),
       email: getEmailProviderStatus().configured,
       telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN),
-      whatsapp: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+      whatsapp: isWhatsAppConfigured(),
       livekit: Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL),
       manualPayment: process.env.MANUAL_PAYMENT_ENABLED === 'true' && Boolean(
         process.env.MANUAL_PAYMENT_INSTAPAY
+        || process.env.MANUAL_PAYMENT_MOBILE_WALLET
         || process.env.MANUAL_PAYMENT_VODAFONE_CASH
         || process.env.MANUAL_PAYMENT_BANK_DETAILS
       ),
@@ -300,7 +332,7 @@ app.get('/api/readiness', async (_req, res) => {
     optionalFeatures: {
       ai: Boolean(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK),
       email: getEmailProviderStatus().configured,
-      whatsapp: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+      whatsapp: isWhatsAppConfigured(),
       livekit: Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL),
     },
   });

@@ -4,6 +4,36 @@ const TeacherLedger = require('../models/TeacherLedger');
 const MIN_PAYOUT_EGP = 100;
 const MIN_PAYOUT_USD = 10;
 
+const inProcessTeacherLocks = new Map();
+
+async function withInProcessTeacherLock(teacherId, work) {
+  const key = String(teacherId);
+  const previous = inProcessTeacherLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => current, () => current);
+  inProcessTeacherLocks.set(key, chained);
+
+  await previous.catch(() => {});
+  try {
+    return await work();
+  } finally {
+    release();
+    if (inProcessTeacherLocks.get(key) === chained) {
+      inProcessTeacherLocks.delete(key);
+    }
+  }
+}
+
+function attachSession(query, session) {
+  if (session && query && typeof query.session === 'function') {
+    return query.session(session);
+  }
+  return query;
+}
+
 function calculateSessionEarning(hourlyRate = 50, durationMinutes = 60) {
   const rate = Number(hourlyRate);
   const duration = Number(durationMinutes);
@@ -13,12 +43,14 @@ function calculateSessionEarning(hourlyRate = 50, durationMinutes = 60) {
   return Math.round((rate * duration / 60) * 100) / 100;
 }
 
-async function calculateTeacherBalance(teacherId) {
-  const teacher = await Teacher.findById(teacherId);
+async function calculateTeacherBalance(teacherId, { session = null } = {}) {
+  const teacher = await attachSession(Teacher.findById(teacherId), session);
   if (!teacher) return null;
 
-  await ensureLegacyOpeningEntries(teacherId);
-  const ledgerEntries = await TeacherLedger.find({ teacher: teacherId });
+  if (!session) {
+    await ensureLegacyOpeningEntries(teacherId);
+  }
+  const ledgerEntries = await attachSession(TeacherLedger.find({ teacher: teacherId }), session);
 
   const balances = {
     EGP: { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 },
@@ -227,6 +259,7 @@ async function listTeacherTransactions(teacherId, {
 module.exports = {
   MIN_PAYOUT_EGP,
   MIN_PAYOUT_USD,
+  withInProcessTeacherLock,
   calculateTeacherBalance,
   ensureLegacyOpeningEntries,
   calculateSessionEarning,

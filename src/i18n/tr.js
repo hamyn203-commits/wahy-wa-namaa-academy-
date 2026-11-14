@@ -26,6 +26,8 @@ export default {
     urdu: 'اردو',
     indonesian: 'Indonesia',
     malay: 'Melayu',
+    freeTrial: 'Ücretsiz Deneme Dersi Al',
+    freeTrialShort: 'Ücretsiz Deneme',
   },
   hero: {
     title: 'Kuran ve Arapça Öğrenin',

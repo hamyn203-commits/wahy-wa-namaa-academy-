@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const TeacherLedger = require('../models/TeacherLedger');
 const Teacher = require('../models/Teacher');
@@ -10,33 +11,62 @@ const { protect, authorize } = require('../middleware/auth');
 const {
   MIN_PAYOUT_EGP,
   MIN_PAYOUT_USD,
+  withInProcessTeacherLock,
+  ensureLegacyOpeningEntries,
   calculateTeacherBalance,
   ensureSessionEarning,
   listTeacherTransactions,
 } = require('../services/teacherFinance');
 
+function createHttpError(status, publicMessage, code) {
+  const err = new Error(publicMessage);
+  err.status = status;
+  err.publicMessage = publicMessage;
+  if (code) err.code = code;
+  return err;
+}
+
+async function runWithOptionalMongoTransaction(work) {
+  if (typeof mongoose.startSession !== 'function' || mongoose.connection.readyState !== 1) {
+    return work(null);
+  }
+  const dbSession = await mongoose.startSession();
+  try {
+    let output;
+    await dbSession.withTransaction(async () => {
+      output = await work(dbSession);
+    });
+    return output;
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (
+      process.env.NODE_ENV !== 'production'
+      && /Transaction numbers are only allowed on a replica set|standalone/i.test(msg)
+    ) {
+      return work(null);
+    }
+    throw error;
+  } finally {
+    await dbSession.endSession();
+  }
+}
+
 // Constants for academic financial rules (V7.6)
 const STUDENT_RATE_EGP = 20; // 20 ج للمصريين لكل طالب في الحلقة
 const STUDENT_RATE_USD = 1;  // 1$ للمغتربين لكل طالب في الحلقة
 const { isMockMode } = require('../config/runtime');
-
-/**
- * Helper: Determine if user/student is in Egyptian market
- */
-function isEgyptianStudent(user) {
-  if (!user) return false;
-  const market = user.preferences?.market;
-  const currency = user.preferences?.currency;
-  const country = (user.personalInfo?.country || user.country || '').toLowerCase();
-  return market === 'egypt' || currency === 'EGP' || country === 'eg' || country.includes('مصر') || country.includes('egypt');
-}
+const shouldUseMockFinance = () => (
+  isMockMode
+  && mongoose.connection.readyState !== 1
+  && process.env.FORCE_REAL_FINANCE_IN_TEST !== 'true'
+);
 
 // ==========================================
 // 1. GET /api/finance/teacher/balance
 // ==========================================
 router.get('/teacher/balance', protect, authorize('teacher'), async (req, res) => {
   try {
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       return res.json({
         success: true,
         balances: {
@@ -66,7 +96,8 @@ router.get('/teacher/balance', protect, authorize('teacher'), async (req, res) =
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Teacher balance fetch error:', error);
+    res.status(500).json({ error: 'تعذر جلب رصيد المعلم حالياً' });
   }
 });
 
@@ -75,7 +106,7 @@ router.get('/teacher/balance', protect, authorize('teacher'), async (req, res) =
 // ==========================================
 router.get('/teacher/transactions', protect, authorize('teacher'), async (req, res) => {
   try {
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       return res.json({
         success: true,
         transactions: [],
@@ -91,7 +122,8 @@ router.get('/teacher/transactions', protect, authorize('teacher'), async (req, r
     const result = await listTeacherTransactions(teacher._id, req.query);
     res.json({ success: true, ...result });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Teacher transactions fetch error:', error);
+    res.status(500).json({ error: 'تعذر جلب سجل المعاملات المالية حالياً' });
   }
 });
 
@@ -149,7 +181,7 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
       }
     }
 
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       return res.status(201).json({
         success: true,
         message: 'تم تقديم طلب سحب الأرباح بنجاح وجارٍ مراجعته من قِبل الإدارة',
@@ -173,34 +205,73 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
       return res.status(404).json({ error: 'لم يتم العثور على ملف المعلم' });
     }
 
-    // Verify sufficient available balance
-    const balances = await calculateTeacherBalance(teacher._id);
-    const available = balances[curr]?.available || 0;
+    await ensureLegacyOpeningEntries(teacher._id);
 
-    if (numAmount > available) {
-      return res.status(400).json({
-        error: `الرصيد المتاح للسحب غير كافٍ. رصيدك الحالي: ${available} ${curr}`,
-      });
-    }
+    const transaction = await withInProcessTeacherLock(teacher._id, () =>
+      runWithOptionalMongoTransaction(async (dbSession) => {
+        if (dbSession) {
+          await Teacher.updateOne(
+            { _id: teacher._id },
+            { $inc: { ledgerLockVersion: 1 } },
+            { session: dbSession }
+          );
+        }
 
-    const transaction = await TeacherLedger.create({
-      teacher: teacher._id,
-      type: 'payout',
-      amount: numAmount,
-      currency: curr,
-      payoutMethod,
-      payoutDetails: {
-        phone: payoutDetails.phone?.trim(),
-        ipaAddress: payoutDetails.ipaAddress?.trim(),
-        bankAccountNumber: payoutDetails.bankAccountNumber?.trim(),
-        bankName: payoutDetails.bankName?.trim(),
-        accountHolderName: payoutDetails.accountHolderName?.trim(),
-        paypalEmail: payoutDetails.paypalEmail?.trim().toLowerCase(),
-      },
-      status: 'pending',
-      notes: notes || '',
-      description: `طلب سحب أرباح بقيمة ${numAmount} ${curr} عبر ${payoutMethod}`,
-    });
+        const existingPendingQuery = TeacherLedger.findOne({
+          teacher: teacher._id,
+          currency: curr,
+          type: 'payout',
+          status: { $in: ['pending', 'processing'] },
+        }).select('_id');
+        if (dbSession && typeof existingPendingQuery?.session === 'function') {
+          existingPendingQuery.session(dbSession);
+        }
+        const existingPending = await existingPendingQuery;
+        if (existingPending) {
+          throw createHttpError(
+            409,
+            'لديك طلب سحب قيد المراجعة بالفعل لهذه العملة',
+            'PAYOUT_ALREADY_PENDING'
+          );
+        }
+
+        const balances = await calculateTeacherBalance(teacher._id, { session: dbSession });
+        const available = balances?.[curr]?.available || 0;
+
+        if (numAmount > available) {
+          throw createHttpError(
+            400,
+            `الرصيد المتاح للسحب غير كافٍ. رصيدك الحالي: ${available} ${curr}`,
+            'INSUFFICIENT_TEACHER_BALANCE'
+          );
+        }
+
+        const payoutDoc = {
+          teacher: teacher._id,
+          type: 'payout',
+          amount: numAmount,
+          currency: curr,
+          payoutMethod,
+          payoutDetails: {
+            phone: payoutDetails.phone?.trim(),
+            ipaAddress: payoutDetails.ipaAddress?.trim(),
+            bankAccountNumber: payoutDetails.bankAccountNumber?.trim(),
+            bankName: payoutDetails.bankName?.trim(),
+            accountHolderName: payoutDetails.accountHolderName?.trim(),
+            paypalEmail: payoutDetails.paypalEmail?.trim().toLowerCase(),
+          },
+          status: 'pending',
+          notes: notes || '',
+          description: `طلب سحب أرباح بقيمة ${numAmount} ${curr} عبر ${payoutMethod}`,
+        };
+
+        const created = await TeacherLedger.create(
+          [payoutDoc],
+          dbSession ? { session: dbSession } : undefined
+        );
+        return Array.isArray(created) ? created[0] : created;
+      })
+    );
 
     res.status(201).json({
       success: true,
@@ -208,7 +279,18 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
       transaction,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        error: 'لديك طلب سحب قيد المراجعة بالفعل لهذه العملة',
+        code: 'PAYOUT_ALREADY_PENDING',
+      });
+    }
+    const status = error?.status || 400;
+    const message = error?.publicMessage || 'تعذر تقديم طلب السحب حالياً';
+    res.status(status).json({
+      error: message,
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -217,7 +299,7 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
 // ==========================================
 router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
   try {
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       return res.json({
         success: true,
         rates: {
@@ -240,34 +322,110 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       });
     }
 
-    // 1. Fetch completed sessions and calculate student attendees by origin
-    const completedSessions = await Session.find({ status: 'completed' })
-      .populate({ path: 'attendance.student', select: 'preferences personalInfo country' })
-      .populate({ path: 'student', select: 'preferences personalInfo country' })
-      .lean();
+    // 1. Aggregate completed sessions and student attendees by origin in MongoDB (constant memory)
+    const sessionOverviewAgg = await Session.aggregate([
+      { $match: { status: 'completed' } },
+      {
+        $project: {
+          attendeeIds: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$attendance', []] } }, 0] },
+              {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: { $ifNull: ['$attendance', []] },
+                      as: 'att',
+                      cond: {
+                        $or: [
+                          { $eq: ['$$att.status', 'attended'] },
+                          {
+                            $and: [
+                              { $not: ['$$att.status'] },
+                              { $ne: ['$$att.student', null] },
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  as: 'validAtt',
+                  in: '$$validAtt.student',
+                },
+              },
+              {
+                $cond: [
+                  { $ne: ['$student', null] },
+                  ['$student'],
+                  [],
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $facet: {
+          totals: [{ $count: 'totalCompletedSessions' }],
+          attendees: [
+            { $unwind: '$attendeeIds' },
+            {
+              $lookup: {
+                from: User.collection.name,
+                localField: 'attendeeIds',
+                foreignField: '_id',
+                pipeline: [
+                  {
+                    $project: {
+                      market: '$preferences.market',
+                      currency: '$preferences.currency',
+                      country: {
+                        $toLower: {
+                          $ifNull: ['$personalInfo.country', { $ifNull: ['$country', ''] }],
+                        },
+                      },
+                    },
+                  },
+                ],
+                as: 'studentDoc',
+              },
+            },
+            { $unwind: { path: '$studentDoc', preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                isEgyptian: {
+                  $or: [
+                    { $eq: ['$studentDoc.market', 'egypt'] },
+                    { $eq: ['$studentDoc.currency', 'EGP'] },
+                    { $eq: ['$studentDoc.country', 'eg'] },
+                    {
+                      $regexMatch: {
+                        input: { $ifNull: ['$studentDoc.country', ''] },
+                        regex: /مصر|egypt/i,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: '$isEgyptian',
+                count: { $sum: 1 },
+              },
+            },
+          ],
+        },
+      },
+    ]);
 
+    const facetResult = sessionOverviewAgg[0] || { totals: [], attendees: [] };
+    const totalCompletedSessions = facetResult.totals?.[0]?.totalCompletedSessions || 0;
     let egyptianAttendees = 0;
     let expatriateAttendees = 0;
-
-    for (const session of completedSessions) {
-      if (Array.isArray(session.attendance) && session.attendance.length > 0) {
-        for (const record of session.attendance) {
-          if (record.status === 'attended' || (!record.status && record.student)) {
-            if (isEgyptianStudent(record.student)) {
-              egyptianAttendees++;
-            } else {
-              expatriateAttendees++;
-            }
-          }
-        }
-      } else if (session.student) {
-        // Individual 1-on-1 session
-        if (isEgyptianStudent(session.student)) {
-          egyptianAttendees++;
-        } else {
-          expatriateAttendees++;
-        }
-      }
+    for (const row of facetResult.attendees || []) {
+      if (row._id === true) egyptianAttendees += row.count || 0;
+      else expatriateAttendees += row.count || 0;
     }
 
     // Calculate collected revenue from total successful payments for subscriptions and courses (Payment with status 'succeeded')
@@ -359,7 +517,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       studentsBreakdown: {
         egyptianAttendees,
         expatriateAttendees,
-        totalCompletedSessions: completedSessions.length,
+        totalCompletedSessions,
       },
       revenue: {
         EGP: grossRevenueEGP,
@@ -375,7 +533,8 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       recentPayoutRequests,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Admin finance overview error:', error);
+    res.status(500).json({ error: 'تعذر تحميل ملخص البيانات المالية حالياً' });
   }
 });
 
@@ -384,7 +543,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
 // ==========================================
 router.get('/admin/payouts', protect, authorize('admin'), async (req, res) => {
   try {
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       return res.json({ success: true, payouts: [] });
     }
 
@@ -404,7 +563,8 @@ router.get('/admin/payouts', protect, authorize('admin'), async (req, res) => {
 
     return res.json({ success: true, payouts });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error('Admin payouts list error:', error);
+    return res.status(500).json({ error: 'تعذر تحميل طلبات السحب حالياً' });
   }
 });
 
@@ -422,7 +582,7 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       });
     }
 
-    if (isMockMode) {
+    if (shouldUseMockFinance()) {
       await logAdminAction({
         req,
         action: 'payout_processed',
@@ -451,35 +611,102 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       });
     }
 
-    const payout = await TeacherLedger.findById(req.params.id).populate('teacher');
-    if (!payout) {
+    const existingPayout = await TeacherLedger.findById(req.params.id).populate('teacher');
+    if (!existingPayout) {
       return res.status(404).json({ error: 'لم يتم العثور على سجل المعاملة' });
     }
 
-    if (payout.type !== 'payout') {
+    if (existingPayout.type !== 'payout') {
       return res.status(400).json({ error: 'هذه المعاملة ليست طلب سحب أرباح' });
     }
 
-    if (payout.status === 'completed') {
-      return res.status(400).json({ error: 'تم تحويل وسداد هذا الطلب مسبقاً' });
-    }
-
-    payout.status = targetStatus;
-    if (referenceNumber !== undefined) payout.referenceNumber = referenceNumber.trim();
-    if (receiptUrl !== undefined) payout.receiptUrl = receiptUrl.trim();
-    if (notes !== undefined) payout.notes = notes.trim();
-
-    payout.processedBy = req.user.id;
-    payout.processedAt = new Date();
-
-    await payout.save();
-
-    // Sync legacy withdrawnEarnings on Teacher document for backwards compatibility
-    if (targetStatus === 'completed' && payout.teacher && payout.currency === 'EGP') {
-      await Teacher.findByIdAndUpdate(payout.teacher._id, {
-        $inc: { 'earnings.withdrawnEarnings': payout.amount },
+    if (!['pending', 'processing'].includes(existingPayout.status)) {
+      return res.status(409).json({
+        error: existingPayout.status === 'completed'
+          ? 'تم تحويل وسداد هذا الطلب مسبقاً'
+          : 'تمت معالجة وإغلاق هذا الطلب مسبقاً',
+        code: 'PAYOUT_ALREADY_FINALIZED',
       });
     }
+
+    const teacherId = existingPayout.teacher?._id || existingPayout.teacher;
+
+    const payout = await withInProcessTeacherLock(teacherId, () =>
+      runWithOptionalMongoTransaction(async (dbSession) => {
+        if (dbSession && teacherId) {
+          await Teacher.updateOne(
+            { _id: teacherId },
+            { $inc: { ledgerLockVersion: 1 } },
+            { session: dbSession }
+          );
+        }
+
+        const freshPayoutQuery = TeacherLedger.findById(req.params.id).populate('teacher');
+        if (dbSession && typeof freshPayoutQuery?.session === 'function') {
+          freshPayoutQuery.session(dbSession);
+        }
+        const freshPayout = await freshPayoutQuery;
+        if (!freshPayout || !['pending', 'processing'].includes(freshPayout.status)) {
+          throw createHttpError(
+            409,
+            'تمت معالجة هذا الطلب مسبقاً',
+            'PAYOUT_ALREADY_FINALIZED'
+          );
+        }
+
+        if (targetStatus === 'completed' && teacherId) {
+          const balances = await calculateTeacherBalance(teacherId, { session: dbSession });
+          const curr = existingPayout.currency === 'USD' ? 'USD' : 'EGP';
+          const remainingEarned = (balances?.[curr]?.totalEarned || 0) - (balances?.[curr]?.withdrawn || 0);
+          if (existingPayout.amount > remainingEarned) {
+            throw createHttpError(
+              409,
+              'رصيد المعلم المستحق لا يكفي لإتمام هذا السحب',
+              'INSUFFICIENT_TEACHER_BALANCE'
+            );
+          }
+        }
+
+        const setFields = {
+          status: targetStatus,
+          processedBy: req.user.id,
+          processedAt: new Date(),
+        };
+        if (referenceNumber !== undefined) setFields.referenceNumber = String(referenceNumber).trim();
+        if (receiptUrl !== undefined) setFields.receiptUrl = String(receiptUrl).trim();
+        if (notes !== undefined) setFields.notes = String(notes).trim();
+
+        const updatedQuery = TeacherLedger.findOneAndUpdate(
+          {
+            _id: req.params.id,
+            type: 'payout',
+            status: { $in: ['pending', 'processing'] },
+          },
+          { $set: setFields },
+          { new: true, ...(dbSession ? { session: dbSession } : {}) }
+        ).populate('teacher');
+
+        const updated = await updatedQuery;
+        if (!updated) {
+          throw createHttpError(
+            409,
+            'تمت معالجة هذا الطلب بالتزامن من مشرف آخر',
+            'PAYOUT_ALREADY_FINALIZED'
+          );
+        }
+
+        // Sync legacy withdrawnEarnings on Teacher document for backwards compatibility
+        if (targetStatus === 'completed' && teacherId && updated.currency === 'EGP') {
+          await Teacher.findByIdAndUpdate(
+            teacherId,
+            { $inc: { 'earnings.withdrawnEarnings': updated.amount } },
+            dbSession ? { session: dbSession } : undefined
+          );
+        }
+
+        return updated;
+      })
+    );
 
     await logAdminAction({
       req,
@@ -504,7 +731,12 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       payout,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    const status = error?.status || 400;
+    const message = error?.publicMessage || 'تعذر معالجة طلب السحب حالياً';
+    res.status(status).json({
+      error: message,
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 

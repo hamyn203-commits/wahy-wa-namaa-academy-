@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
@@ -8,7 +9,7 @@ const Teacher = require('../models/Teacher');
 const TeacherProfileChangeRequest = require('../models/TeacherProfileChangeRequest');
 const User = require('../models/User');
 const Session = require('../models/Session');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, getAccessSecret } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
 const crypto = require('crypto');
 const { boundedMediaRange } = require('../utils/mediaByteRange');
@@ -51,7 +52,7 @@ function createTeacherApplicationStatusToken({ userId, teacherId, email }) {
       teacherId: String(teacherId),
       email: String(email || '').trim().toLowerCase(),
     },
-    process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me',
+    getAccessSecret(),
     { expiresIn: '7d' }
   );
 }
@@ -295,7 +296,7 @@ async function optionalTeacherRegistrationAuth(req, res, next) {
   const header = String(req.headers.authorization || '');
   if (!header.startsWith('Bearer ')) return next();
   try {
-    const identity = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    const identity = jwt.verify(header.slice(7), getAccessSecret());
     if (identity.role !== 'teacher') return res.status(403).json({ error: 'Only teacher accounts can submit a teacher application' });
     const account = await User.findById(identity.id).select('role isActive');
     if (!account || account.role !== 'teacher' || account.isActive !== true) return res.status(403).json({ error: 'Teacher account not active' });
@@ -329,6 +330,7 @@ router.post(
         personalInfo, academicInfo, quranInfo, languages, availability,
         email, password, verificationToken, phoneVerificationToken
       } = req.body;
+      const normalizedEmail = String(email || '').trim().toLowerCase();
       const uploadedFiles = req.body.uploadedFiles
         ? (typeof req.body.uploadedFiles === 'string' ? JSON.parse(req.body.uploadedFiles) : req.body.uploadedFiles)
         : {};
@@ -361,9 +363,8 @@ router.post(
         try {
           const verification = jwt.verify(
             teacherVerificationToken,
-            process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me'
+            getAccessSecret()
           );
-          const normalizedEmail = String(email || '').trim().toLowerCase();
 
           if (verification.purpose === 'teacher-email-verification') {
             if (!normalizedEmail || verification.email !== normalizedEmail) {
@@ -382,6 +383,13 @@ router.post(
           }
         } catch {
           return res.status(400).json({ error: 'Email verification is invalid or expired' });
+        }
+
+        if (!normalizedEmail || !password) {
+          return res.status(400).json({ error: 'Email and password are required' });
+        }
+        if (String(password).length < 8) {
+          return res.status(400).json({ error: 'Password must be at least 8 characters' });
         }
       }
 
@@ -493,8 +501,13 @@ router.post(
         });
       }
 
-      if (!userId && email && password) {
-        const normalizedEmail = email.toLowerCase().trim();
+      if (!userId && (email || password)) {
+        if (!normalizedEmail || !password) {
+          return res.status(400).json({ error: 'Email and password are required' });
+        }
+        if (String(password).length < 8) {
+          return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        }
 
         if (isMockMode && !isDBConnected()) {
           const existingUser = findMockUserByEmail(normalizedEmail);
@@ -748,7 +761,7 @@ router.post(
       teacher
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -761,7 +774,7 @@ router.post('/application-status', async (req, res) => {
 
     const payload = jwt.verify(
       token,
-      process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me'
+      getAccessSecret()
     );
 
     if (
@@ -892,7 +905,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -909,7 +922,7 @@ router.get('/featured', async (req, res) => {
 
     res.json(teachers.map(sanitizePublicTeacher));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -937,7 +950,7 @@ router.get('/admin/profile-changes/pending', protect, authorize('admin'), async 
       })),
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1011,7 +1024,7 @@ router.get('/admin/:id/profile-change/media/:kind', protect, authorize('admin'),
       fallbackContentType: req.params.kind === 'profilePhoto' ? 'image/jpeg' : 'video/mp4',
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1092,7 +1105,7 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
       teacher: action === 'approve' ? sanitizePublicTeacher(teacher) : undefined,
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1170,7 +1183,7 @@ router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req,
       profileChange,
     ));
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1237,7 +1250,7 @@ router.put('/admin/:id/review-checklist/:key', protect, authorize('admin'), asyn
 
     return res.json({ success: true, gate, reviewChecklist: teacher.reviewChecklist });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1259,7 +1272,7 @@ function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'or
     index: indexNumber,
     scope,
     referenceDigest,
-  }, process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me', { expiresIn: '30m' });
+  }, getAccessSecret(), { expiresIn: '30m' });
   // The frontend rewrites /api to the backend. Keep video requests on the
   // academy's own origin: Helmet's same-origin CORP otherwise blocks media
   // loaded from the separate API domain in the browser.
@@ -1339,7 +1352,7 @@ router.get('/admin-media-range/:id/:kind/:index', async (req, res) => {
   try {
     const ticket = String(req.query.ticket || '');
     if (!ticket || ticket.length > 4096) return res.status(401).end();
-    const payload = jwt.verify(ticket, process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me', {
+    const payload = jwt.verify(ticket, getAccessSecret(), {
       algorithms: ['HS256'],
     });
     const index = Number(req.params.index);
@@ -1540,7 +1553,7 @@ router.get('/admin/pending', protect, authorize('admin'), async (req, res) => {
 
     res.json(teachers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1674,7 +1687,7 @@ router.put('/admin/:id/review', protect, authorize('admin'), async (req, res) =>
       gate: buildTeacherReviewGate(teacher),
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1856,7 +1869,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(sanitizePublicTeacher(teacher));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

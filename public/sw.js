@@ -101,8 +101,8 @@ self.addEventListener('message', (event) => {
     event.waitUntil(
       self.registration.showNotification(title || 'أكاديمية وَحْيٌ وَنَمَاء', {
         body: body || '',
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/badge-72x72.png',
+        icon: '/assets/logo.png',
+        badge: '/favicon.svg',
         data: { url: url || '/notifications' },
       })
     );
@@ -115,8 +115,8 @@ self.addEventListener('push', (event) => {
   const data = event.data.json();
   const options = {
     body: data.body,
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
+    icon: '/assets/logo.png',
+    badge: '/favicon.svg',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/'
@@ -135,15 +135,15 @@ self.addEventListener('notificationclick', (event) => {
   const urlToOpen = event.notification.data?.url || '/';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
         for (const client of clientList) {
           if (client.url === urlToOpen && 'focus' in client) {
             return client.focus();
           }
         }
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen);
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(urlToOpen);
         }
       })
   );

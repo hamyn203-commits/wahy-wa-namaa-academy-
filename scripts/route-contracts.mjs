@@ -123,7 +123,7 @@ assert.match(requireAuth, /loginPathForLocale/);
 assert.match(requireAuth, /dashboardPathForRole/);
 assert.match(requireAuth, /location\.pathname/);
 
-const protectedRoute = read('src/components\/auth\/ProtectedRoute.jsx'.replaceAll('\\/', '/'));
+const protectedRoute = read('src/components/auth/ProtectedRoute.jsx');
 assert.match(protectedRoute, /dashboardPathForRole/);
 
 const languageSwitcher = read('src/components/LanguageSwitcher.jsx');
@@ -146,9 +146,9 @@ const localeSensitiveNavigationFiles = [
 
 for (const relativePath of localeSensitiveNavigationFiles) {
   const source = read(relativePath);
-  assert.doesNotMatch(source, /navigate\(\s*['\"`]\//, relativePath + ' must not use a hard-coded absolute navigate() target');
-  assert.doesNotMatch(source, /\bto\s*=\s*['\"]\//, relativePath + ' must not use a hard-coded absolute Link target');
-  assert.doesNotMatch(source, /window\.location\.href\s*=\s*['\"]\//, relativePath + ' must not hard-code browser recovery navigation');
+  assert.doesNotMatch(source, /navigate\(\s*['"`]\//, relativePath + ' must not use a hard-coded absolute navigate() target');
+  assert.doesNotMatch(source, /\bto\s*=\s*['"]\//, relativePath + ' must not use a hard-coded absolute Link target');
+  assert.doesNotMatch(source, /window\.location\.href\s*=\s*['"]\//, relativePath + ' must not hard-code browser recovery navigation');
 }
 
 const notifications = read('src/components/NotificationBell.jsx');
@@ -156,7 +156,7 @@ assert.match(notifications, /localizeInternalHref\(notification\.data\.meetingLi
 assert.match(notifications, /localizeInternalHref\(links\[notification\.type\]/);
 
 const liveSessions = read('src/pages/LiveSessions/LiveSessions.jsx');
-assert.match(liveSessions, /localizedPath\(\`\/live\/\$\{roomId\}\`,\s*locale\)/);
+assert.match(liveSessions, /localizedPath\(`\/live\/\$\{roomId\}`,\s*locale\)/);
 
 const teacherDashboard = read('src/pages/TeacherDashboard/index.jsx');
 assert.match(teacherDashboard, /useState\(['"]overview['"]\)/);
@@ -175,7 +175,7 @@ assert.match(bookSessionPage, /availabilityData\.configured/);
 
 const studentDashboard = read('src/pages/StudentDashboard/index.jsx');
 assert.match(studentDashboard, /localizeInternalHref\(session\.meetingLink,\s*locale\)/);
-assert.match(studentDashboard, /localizedPath\(\`\/meeting\/\$\{session\._id\}\`,\s*locale\)/);
+assert.match(studentDashboard, /localizedPath\(`\/meeting\/\$\{session\._id\}`,\s*locale\)/);
 assert.match(studentDashboard, /useState\(['"]overview['"]\)/);
 assert.match(studentDashboard, /\/api\/sessions\/available-slots\//);
 assert.match(studentDashboard, /tab\s*===\s*['"]overview['"]/);
@@ -265,7 +265,7 @@ assert.match(subscriptionModel, /pending_payment/);
 assert.match(subscriptionModel, /sessionCount:[\s\S]{0,100}enum:\s*\[4, 8, 12, 24\]/);
 
 const errorBoundary = read('src/components/shared/ErrorBoundary.jsx');
-assert.match(errorBoundary, /localizedPath\(['\"]\/['\"],\s*locale\)/);
+assert.match(errorBoundary, /localizedPath\(['"]\/['"],\s*locale\)/);
 
 const paymentReturn = read('src/pages/PaymentReturn/index.jsx');
 assert.match(paymentReturn, /\/api\/payments\/'\s*\+\s*encodeURIComponent\(paymentId\)\s*\+\s*'\/status/);
@@ -395,7 +395,7 @@ assert.match(teacherReviewDossier, /Teacher 360 Review Dossier/);
 assert.match(adminDashboard, /filteredApprovedTeachers\.map/);
 assert.match(adminDashboard, /openTeacherDossier\(teacher\._id\)/);
 assert.match(adminDashboard, /previewPublicTeacher\(teacher\._id\)/);
-assert.doesNotMatch(adminDashboard, /navigate\(`\/teachers\/\$\{t\._id\}\`\)/);
+assert.doesNotMatch(adminDashboard, /navigate\(`\/teachers\/\$\{t\._id\}`\)/);
 assert.match(teacherReviewDossier, /!approved \? <section className="wn-admin-review-gate">/);
 assert.match(teacherReviewDossier, /!approved \? <footer className="wn-admin-dossier__footer">/);
 assert.match(teacherReviewDossier, /onPreviewPublic/);

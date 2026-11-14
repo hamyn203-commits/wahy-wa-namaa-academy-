@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 
@@ -155,8 +156,7 @@ router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req,
     try {
       quote = quoteSubscription({ planKey: source.planKey, sessionCount });
     } catch (error) {
-      return res.status(400).json({
-        error: error.message,
+      return res.status(400).json({ error: safeErrorMessage(error, 400),
         code: error.code || 'SUBSCRIPTION_RENEWAL_INVALID',
       });
     }
@@ -253,8 +253,7 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
     try {
       quote = quoteSubscription({ planKey, sessionCount });
     } catch (error) {
-      return res.status(400).json({
-        error: error.message,
+      return res.status(400).json({ error: safeErrorMessage(error, 400),
         code: error.code || 'SUBSCRIPTION_SELECTION_INVALID',
       });
     }
@@ -778,7 +777,7 @@ router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) =
 
     return res.json({ success: true, circle });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل تحديث بيانات الحلقة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل تحديث بيانات الحلقة' });
   }
 });
 
@@ -907,7 +906,7 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
 
     return res.json({ success: true, circle, subscription: serializeSubscription(sub) });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل إضافة الطالب للحلقة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل إضافة الطالب للحلقة' });
   }
 });
 
@@ -954,7 +953,7 @@ router.delete('/admin/circles/:id/students/:studentId', protect, authorize('admi
 
     return res.json({ success: true, circle });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل إزالة الطالب من الحلقة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل إزالة الطالب من الحلقة' });
   }
 });
 
@@ -1037,7 +1036,7 @@ router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
 
     return res.status(201).json({ success: true, circle });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل إنشاء المجموعة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل إنشاء المجموعة' });
   }
 });
 
@@ -1085,7 +1084,7 @@ router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res
 
     return res.json({ success: true, deletedId: String(circleId) });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل حذف الحلقة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل حذف الحلقة' });
   }
 });
 
@@ -1125,7 +1124,7 @@ router.put('/admin/circles/:id/status', protect, authorize('admin'), async (req,
 
     return res.json({ success: true, circle });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل تحديث حالة الحلقة' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل تحديث حالة الحلقة' });
   }
 });
 

@@ -2,12 +2,12 @@ const express = require('express');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
+const { protect, getAccessSecret } = require('../middleware/auth');
 const storage = require('../services/objectStorage');
 const { PURPOSES, validateUploadMetadata } = require('../config/uploadPolicy');
 
 function verifyClientIdentity(payload = {}) {
-  const secret = process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me';
+  const secret = getAccessSecret();
 
   if (payload.accessToken) {
     const user = jwt.verify(payload.accessToken, secret);

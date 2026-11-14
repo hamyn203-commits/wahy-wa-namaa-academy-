@@ -5,7 +5,6 @@ import GlobalHeader from '../../components/GlobalHeader';
 import SessionTranslateChat from '../../components/live/SessionTranslateChat';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
 import api from '../../lib/api';
 import '../../styles/session-experience.css';
