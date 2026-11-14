@@ -124,46 +124,75 @@ EnrollmentSchema.virtual('completionPercentage').get(function() {
 // Method to update progress
 EnrollmentSchema.methods.updateProgress = async function(lessonId, score = 100) {
   const Course = mongoose.model('Course');
+  const Lesson = mongoose.model('Lesson');
+  const Certificate = mongoose.model('Certificate');
   const course = await Course.findById(this.course);
   
-  if (!course) return;
+  if (!course) {
+    const err = new Error('Course not found');
+    err.statusCode = 404;
+    err.publicMessage = 'Course not found';
+    throw err;
+  }
+
+  const publishedLessons = await Lesson.find({
+    course: this.course,
+    isPublished: true
+  }).select('_id').lean();
+  const publishedIds = new Set((publishedLessons || []).map((l) => String(l._id)));
+  const targetLessonId = String(lessonId || '');
+
+  if (!targetLessonId || !publishedIds.has(targetLessonId)) {
+    const err = new Error('Lesson does not belong to this course or is unpublished');
+    err.statusCode = 400;
+    err.publicMessage = 'Lesson does not belong to this course';
+    throw err;
+  }
 
   // Check if lesson already completed
   const alreadyCompleted = this.progress.completedLessons.some(
-    cl => cl.lesson.toString() === lessonId.toString()
+    cl => cl.lesson.toString() === targetLessonId
   );
 
   if (!alreadyCompleted) {
+    const safeScore = score == null ? 100 : Math.max(0, Math.min(100, Number(score) || 0));
     this.progress.completedLessons.push({
       lesson: lessonId,
       completedAt: new Date(),
-      score: score
+      score: safeScore
     });
 
-    // Calculate new percentage
-    const totalLessons = course.lessons.length;
-    const completedCount = this.progress.completedLessons.length;
-    this.progress.percentage = Math.round((completedCount / totalLessons) * 100);
+    // Calculate new percentage strictly from published course lessons
+    const totalLessons = publishedIds.size;
+    const completedCount = this.progress.completedLessons.filter(
+      (cl) => publishedIds.has(String(cl.lesson))
+    ).length;
+    this.progress.percentage = totalLessons > 0
+      ? Math.min(100, Math.round((completedCount / totalLessons) * 100))
+      : 0;
 
     // Update current lesson
     this.progress.currentLesson = lessonId;
 
     // Check if course is completed
-    if (this.progress.percentage === 100) {
+    if (totalLessons > 0 && this.progress.percentage === 100) {
       this.status = 'completed';
       this.completedAt = new Date();
       
       // Issue certificate if enabled
-      if (course.certificate.enabled && !this.certificate.issued) {
+      if (course.certificate?.enabled && !this.certificate.issued) {
         this.certificate.issued = true;
         this.certificate.issuedAt = new Date();
-        this.certificate.certificateId = `CERT-${Date.now()}-${this._id}`;
+        this.certificate.certificateId = Certificate.generateCertificateId();
       }
     }
 
     this.lastAccessedAt = new Date();
     await this.save();
+    return { updated: true, alreadyCompleted: false };
   }
+
+  return { updated: false, alreadyCompleted: true };
 };
 
 // Method to check if lesson is accessible

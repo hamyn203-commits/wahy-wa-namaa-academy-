@@ -141,6 +141,31 @@ async function process24HourReminders() {
 
     for (const session of sessions) {
       try {
+        if (mongoose.connection.readyState === 1 && typeof Session.findOneAndUpdate === 'function') {
+          const claimNow = new Date();
+          const claimed = await Session.findOneAndUpdate(
+            {
+              _id: session._id,
+              $and: [
+                {
+                  $or: [
+                    { 'reminders.dayBeforeSent': false },
+                    { 'reminders.dayBeforeSent': { $exists: false } },
+                  ],
+                },
+                {
+                  $or: [
+                    { 'reminders.dayBeforeClaimUntil': { $exists: false } },
+                    { 'reminders.dayBeforeClaimUntil': { $lte: claimNow } },
+                  ],
+                },
+              ],
+            },
+            { $set: { 'reminders.dayBeforeClaimUntil': new Date(claimNow.getTime() + 4 * 60 * 1000) } },
+            { new: true }
+          );
+          if (!claimed) continue;
+        }
         const students = await resolveSessionStudents(session);
         if (students.length === 0) continue;
 
@@ -229,6 +254,31 @@ async function process30MinuteReminders() {
 
     for (const session of sessions) {
       try {
+        if (mongoose.connection.readyState === 1 && typeof Session.findOneAndUpdate === 'function') {
+          const claimNow = new Date();
+          const claimed = await Session.findOneAndUpdate(
+            {
+              _id: session._id,
+              $and: [
+                {
+                  $or: [
+                    { 'reminders.halfHourSent': false },
+                    { 'reminders.halfHourSent': { $exists: false } },
+                  ],
+                },
+                {
+                  $or: [
+                    { 'reminders.halfHourClaimUntil': { $exists: false } },
+                    { 'reminders.halfHourClaimUntil': { $lte: claimNow } },
+                  ],
+                },
+              ],
+            },
+            { $set: { 'reminders.halfHourClaimUntil': new Date(claimNow.getTime() + 4 * 60 * 1000) } },
+            { new: true }
+          );
+          if (!claimed) continue;
+        }
         const students = await resolveSessionStudents(session);
         if (students.length === 0) continue;
 

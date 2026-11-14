@@ -24,11 +24,14 @@ function httpLiveKitUrl() {
 async function createUserRealtimeToken(userId) {
   if (!isRealtimeConfigured()) return null;
 
-  const roomName = roomNameForUser(userId);
-  const identity = `notify:${userId}:${crypto.randomUUID()}`;
+  const cleanUserId = String(userId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!cleanUserId) return null;
+  const roomName = roomNameForUser(cleanUserId);
+  const identity = `notify:${cleanUserId}`;
   const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
     name: 'notifications',
+    ttl: '15m',
   });
 
   token.addGrant({

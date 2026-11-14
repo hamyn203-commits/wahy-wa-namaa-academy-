@@ -7,6 +7,8 @@ const Blog = require('../models/Blog');
 const router = express.Router();
 
 const SEO_LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
+const SITEMAP_CACHE_TTL_MS = 60 * 60 * 1000;
+let sitemapCache = { xml: '', siteUrl: '', expiresAt: 0 };
 
 function resolveSiteUrl() {
   return String(
@@ -56,6 +58,11 @@ ${alternates}
  */
 router.get('/sitemap.xml', async (_req, res) => {
   const siteUrl = resolveSiteUrl();
+  if (sitemapCache.xml && sitemapCache.siteUrl === siteUrl && Date.now() < sitemapCache.expiresAt) {
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+    return res.status(200).send(sitemapCache.xml);
+  }
   let courses = [];
   let teachers = [];
   let posts = [];
@@ -110,6 +117,14 @@ router.get('/sitemap.xml', async (_req, res) => {
 ${entries.join('\n')}
 </urlset>
 `;
+
+  if (mongoose.connection.readyState === 1) {
+    sitemapCache = {
+      xml,
+      siteUrl,
+      expiresAt: Date.now() + SITEMAP_CACHE_TTL_MS,
+    };
+  }
 
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');

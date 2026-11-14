@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
@@ -19,10 +20,10 @@ function isLiveKitConfigured() {
   return Boolean(LIVEKIT_API_KEY && LIVEKIT_API_SECRET && LIVEKIT_URL);
 }
 
-async function createToken({ roomName, identity, participantName, canPublish }) {
+async function createToken({ roomName, identity, participantName, canPublish, isObserver = false }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
-    name: participantName,
+    name: isObserver ? 'مراقب ولي الأمر' : participantName,
   });
 
   at.addGrant({
@@ -31,6 +32,7 @@ async function createToken({ roomName, identity, participantName, canPublish }) 
     canPublish,
     canSubscribe: true,
     canPublishData: canPublish,
+    ...(isObserver ? { hidden: true } : {}),
   });
 
   return at.toJwt();
@@ -87,14 +89,15 @@ async function getRoomAccess(liveSession, user) {
   }
 
   if (user.role === 'guardian') {
-    const guardian = await Guardian.findOne({ user: user.id, isActive: true }).select('children.student');
+    const guardian = await Guardian.findOne({ user: user.id, isActive: true }).select('children.student children.permissions');
     if (!guardian) {
       return { allowed: false, isHost: false, isObserver: true, bookedSession };
     }
 
     let assigned = false;
     for (const child of guardian.children || []) {
-      if (await sessionIncludesStudent(bookedSession, child.student)) {
+      const canObserve = child?.permissions?.viewAttendance !== false || child?.permissions?.viewProgress !== false;
+      if (canObserve && (await sessionIncludesStudent(bookedSession, child.student))) {
         assigned = true;
         break;
       }
@@ -227,23 +230,24 @@ router.post('/token', verifyAccessToken, async (req, res) => {
     }
 
     if (!liveSession && mongoose.Types.ObjectId.isValid(roomName)) {
-      const bookedSession = await Session.findById(roomName).select('_id student circle teacher scheduledAt duration status');
+      const bookedSession = await Session.findById(roomName).select('_id student circle teacher attendance scheduledAt duration timezone status type');
       if (bookedSession && bookedSession.status === 'accepted') {
-        const accessWindow = sessionParticipantWindow(bookedSession);
-        if (accessWindow.within) {
-          const roomId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-          liveSession = await LiveSession.create({
-            roomId,
-            session: bookedSession._id,
-            createdBy: req.user.id,
-            title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
-            description: 'غرفة الأكاديمية المباشرة الموحدة',
-            subject: 'quran',
-            isLive: false,
-            participants: 0,
-          });
-          await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
+        const preflightAccess = await getRoomAccess({ session: bookedSession._id }, req.user);
+        if (!preflightAccess.allowed) {
+          return res.status(403).json({ message: 'You are not assigned to this live session' });
         }
+        const roomId = `session_${crypto.randomBytes(16).toString('hex')}`;
+        liveSession = await LiveSession.create({
+          roomId,
+          session: bookedSession._id,
+          createdBy: req.user.id,
+          title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
+          description: 'غرفة الأكاديمية المباشرة الموحدة',
+          subject: 'quran',
+          isLive: false,
+          participants: 0,
+        });
+        await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
       }
     }
 
@@ -255,13 +259,19 @@ router.post('/token', verifyAccessToken, async (req, res) => {
     }
 
     const role = req.user.role;
-    const canPublish = role === 'student' || role === 'teacher' || role === 'admin';
+    const canPublish = !access.isObserver && (role === 'student' || role === 'teacher' || role === 'admin');
     // Never expose the account email to other participants; use the display name.
     const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
     const participantName = String(participantUser?.name || req.body?.participantName || role).trim().slice(0, 80) || role;
     const identity = `${role}:${req.user.id}`;
 
-    const token = await createToken({ roomName: liveSession.roomId, identity, participantName, canPublish });
+    const token = await createToken({
+      roomName: liveSession.roomId,
+      identity,
+      participantName,
+      canPublish,
+      isObserver: Boolean(access.isObserver),
+    });
     const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
     return res.json({
       token,
@@ -339,7 +349,60 @@ function evaluateRoomAccessSync(liveSession, user, { sessionMap, circleStudentsM
 
 router.get('/sessions', verifyAccessToken, async (req, res) => {
   try {
-    const allSessions = await LiveSession.find().sort({ createdAt: -1 }).limit(100);
+    let liveFilter = {};
+    const [teacherDoc, guardianDoc] = await Promise.all([
+      req.user.role === 'teacher'
+        ? Teacher.findOne({ user: req.user.id }).select('_id').lean()
+        : Promise.resolve(null),
+      req.user.role === 'guardian'
+        ? Guardian.findOne({ user: req.user.id, isActive: true }).select('children.student children.permissions').lean()
+        : Promise.resolve(null),
+    ]);
+
+    let preloadedSessions = null;
+    if (req.user.role !== 'admin') {
+      let candidateSessionFilter = null;
+      if (req.user.role === 'teacher') {
+        if (!teacherDoc?._id) return res.json([]);
+        candidateSessionFilter = { teacher: teacherDoc._id, status: 'accepted' };
+      } else if (req.user.role === 'student') {
+        const circles = await GroupCircle.find({ students: req.user.id }).select('_id').lean();
+        const circleIdsForStudent = circles.map((c) => c._id);
+        candidateSessionFilter = {
+          status: 'accepted',
+          $or: [
+            { student: req.user.id },
+            { 'attendance.student': req.user.id },
+            ...(circleIdsForStudent.length ? [{ circle: { $in: circleIdsForStudent } }] : []),
+          ],
+        };
+      } else if (req.user.role === 'guardian') {
+        const permittedChildIds = (guardianDoc?.children || [])
+          .filter((c) => c?.student && (c?.permissions?.viewAttendance !== false || c?.permissions?.viewProgress !== false))
+          .map((c) => c.student);
+        if (!permittedChildIds.length) return res.json([]);
+        const circles = await GroupCircle.find({ students: { $in: permittedChildIds } }).select('_id').lean();
+        const circleIdsForChildren = circles.map((c) => c._id);
+        candidateSessionFilter = {
+          status: 'accepted',
+          $or: [
+            { student: { $in: permittedChildIds } },
+            { 'attendance.student': { $in: permittedChildIds } },
+            ...(circleIdsForChildren.length ? [{ circle: { $in: circleIdsForChildren } }] : []),
+          ],
+        };
+      } else {
+        return res.json([]);
+      }
+
+      preloadedSessions = await Session.find(candidateSessionFilter)
+        .select('student teacher circle attendance scheduledAt duration timezone status')
+        .lean();
+      if (!preloadedSessions.length) return res.json([]);
+      liveFilter = { session: { $in: preloadedSessions.map((s) => s._id) } };
+    }
+
+    const allSessions = await LiveSession.find(liveFilter).sort({ createdAt: -1 }).limit(100);
     if (allSessions.length === 0) {
       return res.json([]);
     }
@@ -348,19 +411,13 @@ router.get('/sessions', verifyAccessToken, async (req, res) => {
       new Set(allSessions.map((ls) => (ls.session ? String(ls.session) : null)).filter(Boolean))
     );
 
-    const [bookedDocs, teacherDoc, guardianDoc] = await Promise.all([
-      bookedIds.length > 0
-        ? Session.find({ _id: { $in: bookedIds } })
-            .select('student teacher circle attendance scheduledAt duration timezone status')
-            .lean()
-        : Promise.resolve([]),
-      req.user.role === 'teacher'
-        ? Teacher.findOne({ user: req.user.id }).select('_id').lean()
-        : Promise.resolve(null),
-      req.user.role === 'guardian'
-        ? Guardian.findOne({ user: req.user.id, isActive: true }).select('children.student').lean()
-        : Promise.resolve(null),
-    ]);
+    const bookedDocs = preloadedSessions
+      ? preloadedSessions.filter((s) => bookedIds.includes(String(s._id)))
+      : (bookedIds.length > 0
+          ? await Session.find({ _id: { $in: bookedIds } })
+              .select('student teacher circle attendance scheduledAt duration timezone status')
+              .lean()
+          : []);
 
     const sessionMap = new Map(bookedDocs.map((s) => [String(s._id), s]));
     const circleIds = Array.from(
@@ -375,7 +432,10 @@ router.get('/sessions', verifyAccessToken, async (req, res) => {
     );
 
     const teacherId = teacherDoc?._id ? String(teacherDoc._id) : null;
-    const guardianChildIds = (guardianDoc?.children || []).map((c) => String(c.student)).filter(Boolean);
+    const guardianChildIds = (guardianDoc?.children || [])
+      .filter((c) => c?.student && (c?.permissions?.viewAttendance !== false || c?.permissions?.viewProgress !== false))
+      .map((c) => String(c.student))
+      .filter(Boolean);
 
     const visible = [];
     for (const liveSession of allSessions) {
@@ -444,7 +504,7 @@ router.post('/sessions', verifyAccessToken, requireRole('teacher', 'admin'), asy
       }
     }
 
-    const roomId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    const roomId = `session_${crypto.randomBytes(16).toString('hex')}`;
     const liveSession = await LiveSession.create({
       roomId,
       session: bookedSession?._id,
@@ -494,7 +554,15 @@ router.delete('/sessions/:roomId', verifyAccessToken, requireRole('teacher', 'ad
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
     if (!access?.allowed || !access?.isHost) return res.status(403).json({ message: 'Not authorized' });
 
+    const linkedSessionId = liveSession.session;
+    const deletedRoomPath = `/live/${liveSession.roomId}`;
     await liveSession.deleteOne();
+    if (linkedSessionId) {
+      await Session.updateOne(
+        { _id: linkedSessionId, meetingLink: deletedRoomPath },
+        { $unset: { meetingLink: 1 } }
+      ).catch(() => {});
+    }
     return res.json({ message: 'Session deleted successfully' });
   } catch {
     return res.status(500).json({ message: 'Failed to delete session' });

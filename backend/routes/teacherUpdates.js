@@ -90,6 +90,7 @@ async function streamReference(reference, res) {
 
   res.setHeader('Content-Type', result.blob?.contentType || 'video/mp4');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.setHeader('Accept-Ranges', 'none');
   if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
@@ -113,10 +114,11 @@ async function streamReference(reference, res) {
 // without exposing the teacher's stored object reference.
 router.get('/:id/videos/:index/stream', async (req, res) => {
   try {
+    res.setHeader('Referrer-Policy', 'no-referrer');
     const token = String(req.query.token || '');
     if (!token) return res.status(401).json({ error: 'Media token required' });
 
-    const payload = jwt.verify(token, accessSecret());
+    const payload = jwt.verify(token, accessSecret(), { algorithms: ['HS256'] });
     if (
       payload?.purpose !== VIDEO_PURPOSE
       || String(payload.updateId) !== String(req.params.id)
@@ -145,7 +147,7 @@ router.get('/teacher', authorize('teacher'), async (req, res) => {
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
     const updates = await TeacherUpdate.find({ teacher: teacher._id })
-      .populate('audience.students', 'name email avatar')
+      .populate('audience.students', 'name avatar')
       .sort({ publishedAt: -1 })
       .limit(100);
 
@@ -288,7 +290,7 @@ router.get('/student', authorize('student'), async (req, res) => {
     })
       .populate({
         path: 'teacher',
-        select: 'personalInfo user',
+        select: 'personalInfo.fullName media.profilePhoto user',
         populate: { path: 'user', select: 'name avatar' },
       })
       .sort({ publishedAt: -1 })

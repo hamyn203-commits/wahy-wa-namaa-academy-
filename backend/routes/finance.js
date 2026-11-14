@@ -6,15 +6,20 @@ const Teacher = require('../models/Teacher');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
+const { SUPPORTED_CURRENCIES } = require('../utils/paymentIntegrity');
 const { logAdminAction } = require('../services/adminAudit');
 const { protect, authorize } = require('../middleware/auth');
 const {
   MIN_PAYOUT_EGP,
   MIN_PAYOUT_USD,
-  withInProcessTeacherLock,
-  ensureLegacyOpeningEntries,
+  toMinor,
+  fromMinor,
+  validateAndNormalizePayoutInput,
+  validateHttpsReceiptUrl,
   calculateTeacherBalance,
   ensureSessionEarning,
+  requestTeacherPayout,
+  processTeacherPayout,
   listTeacherTransactions,
 } = require('../services/teacherFinance');
 
@@ -132,54 +137,14 @@ router.get('/teacher/transactions', protect, authorize('teacher'), async (req, r
 // ==========================================
 router.post('/teacher/request-payout', protect, authorize('teacher'), async (req, res) => {
   try {
-    const { amount, currency = 'EGP', payoutMethod, payoutDetails, notes } = req.body;
-    const numAmount = Number(amount);
-    const curr = (currency || 'EGP').toUpperCase();
-
-    if (!numAmount || numAmount <= 0) {
-      return res.status(400).json({ error: 'يرجى إدخال مبلغ سحب صحيح' });
-    }
-
-    if (!['EGP', 'USD'].includes(curr)) {
-      return res.status(400).json({ error: 'العملة يجب أن تكون EGP أو USD' });
-    }
-
-    const minAmount = curr === 'USD' ? MIN_PAYOUT_USD : MIN_PAYOUT_EGP;
-    if (numAmount < minAmount) {
-      return res.status(400).json({
-        error: `الحد الأدنى لطلب السحب هو ${minAmount} ${curr === 'USD' ? 'دولار' : 'جنيه'}`,
-      });
-    }
-
-    const validMethods = ['instapay', 'vodafone_cash', 'bank_transfer', 'paypal'];
-    if (!payoutMethod || !validMethods.includes(payoutMethod)) {
-      return res.status(400).json({
-        error: 'يرجى اختيار وسيلة سحب صحيحة: instapay, vodafone_cash, bank_transfer, paypal',
-      });
-    }
-
-    if (!payoutDetails || typeof payoutDetails !== 'object') {
-      return res.status(400).json({ error: 'يرجى إدخال تفاصيل وسيلة السحب' });
-    }
-
-    // Specific validations per payout method
-    if (payoutMethod === 'instapay') {
-      if (!payoutDetails.ipaAddress && !payoutDetails.phone) {
-        return res.status(400).json({ error: 'يرجى إدخال عنوان انستاباي (IPA) أو رقم الهاتف المرتبط بـ InstaPay' });
-      }
-    } else if (payoutMethod === 'vodafone_cash') {
-      if (!payoutDetails.phone || !/^(010|011|012|015)[0-9]{8}$/.test(payoutDetails.phone.replace(/\s+/g, ''))) {
-        return res.status(400).json({ error: 'يرجى إدخال رقم محفظة إلكترونية صحيح مكون من 11 رقماً' });
-      }
-    } else if (payoutMethod === 'bank_transfer') {
-      if (!payoutDetails.bankAccountNumber || !payoutDetails.bankName) {
-        return res.status(400).json({ error: 'يرجى إدخال اسم البنك ورقم الحساب البنكي / IBAN' });
-      }
-    } else if (payoutMethod === 'paypal') {
-      if (!payoutDetails.paypalEmail || !/^\S+@\S+\.\S+$/.test(payoutDetails.paypalEmail)) {
-        return res.status(400).json({ error: 'يرجى إدخال بريد إلكتروني صالح لحساب PayPal' });
-      }
-    }
+    const { amount, currency = 'EGP', payoutMethod, payoutDetails, notes } = req.body || {};
+    const validated = validateAndNormalizePayoutInput({
+      amount,
+      currency,
+      payoutMethod,
+      payoutDetails,
+      notes,
+    });
 
     if (shouldUseMockFinance()) {
       return res.status(201).json({
@@ -188,13 +153,13 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
         transaction: {
           _id: `mock-payout-${Date.now()}`,
           type: 'payout',
-          amount: numAmount,
-          currency: curr,
-          payoutMethod,
-          payoutDetails,
+          amount: validated.numAmount,
+          currency: validated.curr,
+          payoutMethod: validated.payoutMethod,
+          payoutDetails: validated.cleanDetails,
           status: 'pending',
-          notes: notes || '',
-          description: `طلب سحب أرباح بقيمة ${numAmount} ${curr} عبر ${payoutMethod}`,
+          notes: validated.cleanNotes,
+          description: `طلب سحب أرباح بقيمة ${validated.numAmount} ${validated.curr} عبر ${validated.payoutMethod}`,
           createdAt: new Date().toISOString(),
         },
       });
@@ -205,73 +170,14 @@ router.post('/teacher/request-payout', protect, authorize('teacher'), async (req
       return res.status(404).json({ error: 'لم يتم العثور على ملف المعلم' });
     }
 
-    await ensureLegacyOpeningEntries(teacher._id);
-
-    const transaction = await withInProcessTeacherLock(teacher._id, () =>
-      runWithOptionalMongoTransaction(async (dbSession) => {
-        if (dbSession) {
-          await Teacher.updateOne(
-            { _id: teacher._id },
-            { $inc: { ledgerLockVersion: 1 } },
-            { session: dbSession }
-          );
-        }
-
-        const existingPendingQuery = TeacherLedger.findOne({
-          teacher: teacher._id,
-          currency: curr,
-          type: 'payout',
-          status: { $in: ['pending', 'processing'] },
-        }).select('_id');
-        if (dbSession && typeof existingPendingQuery?.session === 'function') {
-          existingPendingQuery.session(dbSession);
-        }
-        const existingPending = await existingPendingQuery;
-        if (existingPending) {
-          throw createHttpError(
-            409,
-            'لديك طلب سحب قيد المراجعة بالفعل لهذه العملة',
-            'PAYOUT_ALREADY_PENDING'
-          );
-        }
-
-        const balances = await calculateTeacherBalance(teacher._id, { session: dbSession });
-        const available = balances?.[curr]?.available || 0;
-
-        if (numAmount > available) {
-          throw createHttpError(
-            400,
-            `الرصيد المتاح للسحب غير كافٍ. رصيدك الحالي: ${available} ${curr}`,
-            'INSUFFICIENT_TEACHER_BALANCE'
-          );
-        }
-
-        const payoutDoc = {
-          teacher: teacher._id,
-          type: 'payout',
-          amount: numAmount,
-          currency: curr,
-          payoutMethod,
-          payoutDetails: {
-            phone: payoutDetails.phone?.trim(),
-            ipaAddress: payoutDetails.ipaAddress?.trim(),
-            bankAccountNumber: payoutDetails.bankAccountNumber?.trim(),
-            bankName: payoutDetails.bankName?.trim(),
-            accountHolderName: payoutDetails.accountHolderName?.trim(),
-            paypalEmail: payoutDetails.paypalEmail?.trim().toLowerCase(),
-          },
-          status: 'pending',
-          notes: notes || '',
-          description: `طلب سحب أرباح بقيمة ${numAmount} ${curr} عبر ${payoutMethod}`,
-        };
-
-        const created = await TeacherLedger.create(
-          [payoutDoc],
-          dbSession ? { session: dbSession } : undefined
-        );
-        return Array.isArray(created) ? created[0] : created;
-      })
-    );
+    const transaction = await requestTeacherPayout({
+      teacherId: teacher._id,
+      amount,
+      currency,
+      payoutMethod,
+      payoutDetails,
+      notes,
+    });
 
     res.status(201).json({
       success: true,
@@ -311,7 +217,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
           expatriateAttendees: 0,
           totalCompletedSessions: 0,
         },
-        revenue: { EGP: 0, USD: 0 },
+        revenue: Object.fromEntries(SUPPORTED_CURRENCIES.map((c) => [c, 0])),
         teacherDues: {
           EGP: { totalEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
           USD: { totalEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
@@ -444,12 +350,14 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       },
     ]);
 
-    const revenue = { EGP: 0, USD: 0 };
+    const revenueMinor = Object.fromEntries(SUPPORTED_CURRENCIES.map((c) => [c, 0]));
     for (const item of paymentAgg) {
       const curr = item._id ? String(item._id).toUpperCase() : 'EGP';
-      const major = (item.totalMinor || 0) / 100;
-      revenue[curr] = (revenue[curr] || 0) + major;
+      revenueMinor[curr] = (revenueMinor[curr] || 0) + (Number(item.totalMinor) || 0);
     }
+    const revenue = Object.fromEntries(
+      Object.entries(revenueMinor).map(([curr, minor]) => [curr, fromMinor(minor)])
+    );
 
     const grossRevenueEGP = revenue.EGP || 0;
     const grossRevenueUSD = revenue.USD || 0;
@@ -465,9 +373,9 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       },
     ]);
 
-    const teacherDues = {
-      EGP: { totalEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
-      USD: { totalEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
+    const duesMinor = {
+      EGP: { earned: 0, deducted: 0, withdrawn: 0, pendingPayouts: 0 },
+      USD: { earned: 0, deducted: 0, withdrawn: 0, pendingPayouts: 0 },
     };
 
     let pendingPayoutsCount = 0;
@@ -477,29 +385,42 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
       const curr = item._id.currency === 'USD' ? 'USD' : 'EGP';
       const type = item._id.type;
       const status = item._id.status;
-      const amount = item.totalAmount || 0;
+      const amountMinor = toMinor(item.totalAmount || 0);
 
       if (type === 'session_earning' || type === 'bonus' || type === 'adjustment') {
         if (status === 'completed') {
-          teacherDues[curr].totalEarned += amount;
+          duesMinor[curr].earned += amountMinor;
+        }
+      } else if (type === 'deduction') {
+        if (status === 'completed') {
+          duesMinor[curr].deducted += amountMinor;
         }
       } else if (type === 'payout') {
         if (status === 'completed') {
-          teacherDues[curr].withdrawn += amount;
+          duesMinor[curr].withdrawn += amountMinor;
         } else if (status === 'pending' || status === 'processing') {
-          teacherDues[curr].pendingPayouts += amount;
+          duesMinor[curr].pendingPayouts += amountMinor;
           if (status === 'pending') pendingPayoutsCount += item.count;
           if (status === 'processing') processingPayoutsCount += item.count;
         }
       }
     }
 
-    teacherDues.EGP.availableLiability = Math.max(0, teacherDues.EGP.totalEarned - teacherDues.EGP.withdrawn - teacherDues.EGP.pendingPayouts);
-    teacherDues.USD.availableLiability = Math.max(0, teacherDues.USD.totalEarned - teacherDues.USD.withdrawn - teacherDues.USD.pendingPayouts);
+    const teacherDues = {};
+    for (const curr of ['EGP', 'USD']) {
+      const netEarnedMinor = Math.max(0, duesMinor[curr].earned - duesMinor[curr].deducted);
+      const availMinor = Math.max(0, netEarnedMinor - duesMinor[curr].withdrawn - duesMinor[curr].pendingPayouts);
+      teacherDues[curr] = {
+        totalEarned: fromMinor(netEarnedMinor),
+        withdrawn: fromMinor(duesMinor[curr].withdrawn),
+        pendingPayouts: fromMinor(duesMinor[curr].pendingPayouts),
+        availableLiability: fromMinor(availMinor),
+      };
+    }
 
     // 3. Net academy income
-    const netIncomeEGP = grossRevenueEGP - teacherDues.EGP.totalEarned;
-    const netIncomeUSD = grossRevenueUSD - teacherDues.USD.totalEarned;
+    const netIncomeEGP = fromMinor(toMinor(grossRevenueEGP) - toMinor(teacherDues.EGP.totalEarned));
+    const netIncomeUSD = fromMinor(toMinor(grossRevenueUSD) - toMinor(teacherDues.USD.totalEarned));
 
     // 4. Fetch recent payout requests for fast admin action
     const recentPayoutRequests = await TeacherLedger.find({ type: 'payout', status: { $in: ['pending', 'processing'] } })
@@ -519,10 +440,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
         expatriateAttendees,
         totalCompletedSessions,
       },
-      revenue: {
-        EGP: grossRevenueEGP,
-        USD: grossRevenueUSD,
-      },
+      revenue,
       teacherDues,
       netIncome: {
         EGP: netIncomeEGP,
@@ -573,7 +491,7 @@ router.get('/admin/payouts', protect, authorize('admin'), async (req, res) => {
 // ==========================================
 router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req, res) => {
   try {
-    const { action, status, referenceNumber, receiptUrl, notes } = req.body;
+    const { action, status, referenceNumber, receiptUrl, notes } = req.body || {};
     const targetStatus = status || (action === 'approve' ? 'completed' : action === 'reject' ? 'rejected' : action === 'processing' ? 'processing' : null);
 
     if (!targetStatus || !['processing', 'completed', 'rejected'].includes(targetStatus)) {
@@ -582,18 +500,20 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       });
     }
 
+    const cleanReceiptUrl = validateHttpsReceiptUrl(receiptUrl);
+
     if (shouldUseMockFinance()) {
       await logAdminAction({
         req,
         action: 'payout_processed',
         entityType: 'TeacherLedger',
         entityId: req.params.id,
-        reason: notes || `معالجة سحب أرباح (${targetStatus})`,
+        reason: String(notes || '').trim().slice(0, 500) || `معالجة سحب أرباح (${targetStatus})`,
         metadata: {
           status: targetStatus,
-          referenceNumber: referenceNumber || '',
-          receiptUrl: receiptUrl || '',
-          notes: notes || '',
+          referenceNumber: String(referenceNumber || '').trim().slice(0, 160),
+          receiptUrl: cleanReceiptUrl || '',
+          notes: String(notes || '').trim().slice(0, 500),
         },
       }).catch(() => {});
 
@@ -603,124 +523,35 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
         payout: {
           _id: req.params.id,
           status: targetStatus,
-          referenceNumber: referenceNumber || '',
-          receiptUrl: receiptUrl || '',
-          notes: notes || '',
+          referenceNumber: String(referenceNumber || '').trim().slice(0, 160),
+          receiptUrl: cleanReceiptUrl || '',
+          notes: String(notes || '').trim().slice(0, 500),
           processedAt: new Date().toISOString(),
         },
       });
     }
 
-    const existingPayout = await TeacherLedger.findById(req.params.id).populate('teacher');
-    if (!existingPayout) {
-      return res.status(404).json({ error: 'لم يتم العثور على سجل المعاملة' });
-    }
-
-    if (existingPayout.type !== 'payout') {
-      return res.status(400).json({ error: 'هذه المعاملة ليست طلب سحب أرباح' });
-    }
-
-    if (!['pending', 'processing'].includes(existingPayout.status)) {
-      return res.status(409).json({
-        error: existingPayout.status === 'completed'
-          ? 'تم تحويل وسداد هذا الطلب مسبقاً'
-          : 'تمت معالجة وإغلاق هذا الطلب مسبقاً',
-        code: 'PAYOUT_ALREADY_FINALIZED',
-      });
-    }
-
-    const teacherId = existingPayout.teacher?._id || existingPayout.teacher;
-
-    const payout = await withInProcessTeacherLock(teacherId, () =>
-      runWithOptionalMongoTransaction(async (dbSession) => {
-        if (dbSession && teacherId) {
-          await Teacher.updateOne(
-            { _id: teacherId },
-            { $inc: { ledgerLockVersion: 1 } },
-            { session: dbSession }
-          );
-        }
-
-        const freshPayoutQuery = TeacherLedger.findById(req.params.id).populate('teacher');
-        if (dbSession && typeof freshPayoutQuery?.session === 'function') {
-          freshPayoutQuery.session(dbSession);
-        }
-        const freshPayout = await freshPayoutQuery;
-        if (!freshPayout || !['pending', 'processing'].includes(freshPayout.status)) {
-          throw createHttpError(
-            409,
-            'تمت معالجة هذا الطلب مسبقاً',
-            'PAYOUT_ALREADY_FINALIZED'
-          );
-        }
-
-        if (targetStatus === 'completed' && teacherId) {
-          const balances = await calculateTeacherBalance(teacherId, { session: dbSession });
-          const curr = existingPayout.currency === 'USD' ? 'USD' : 'EGP';
-          const remainingEarned = (balances?.[curr]?.totalEarned || 0) - (balances?.[curr]?.withdrawn || 0);
-          if (existingPayout.amount > remainingEarned) {
-            throw createHttpError(
-              409,
-              'رصيد المعلم المستحق لا يكفي لإتمام هذا السحب',
-              'INSUFFICIENT_TEACHER_BALANCE'
-            );
-          }
-        }
-
-        const setFields = {
-          status: targetStatus,
-          processedBy: req.user.id,
-          processedAt: new Date(),
-        };
-        if (referenceNumber !== undefined) setFields.referenceNumber = String(referenceNumber).trim();
-        if (receiptUrl !== undefined) setFields.receiptUrl = String(receiptUrl).trim();
-        if (notes !== undefined) setFields.notes = String(notes).trim();
-
-        const updatedQuery = TeacherLedger.findOneAndUpdate(
-          {
-            _id: req.params.id,
-            type: 'payout',
-            status: { $in: ['pending', 'processing'] },
-          },
-          { $set: setFields },
-          { new: true, ...(dbSession ? { session: dbSession } : {}) }
-        ).populate('teacher');
-
-        const updated = await updatedQuery;
-        if (!updated) {
-          throw createHttpError(
-            409,
-            'تمت معالجة هذا الطلب بالتزامن من مشرف آخر',
-            'PAYOUT_ALREADY_FINALIZED'
-          );
-        }
-
-        // Sync legacy withdrawnEarnings on Teacher document for backwards compatibility
-        if (targetStatus === 'completed' && teacherId && updated.currency === 'EGP') {
-          await Teacher.findByIdAndUpdate(
-            teacherId,
-            { $inc: { 'earnings.withdrawnEarnings': updated.amount } },
-            dbSession ? { session: dbSession } : undefined
-          );
-        }
-
-        return updated;
-      })
-    );
+    const payout = await processTeacherPayout({
+      payoutId: req.params.id,
+      targetStatus,
+      adminUserId: req.user.id,
+      referenceNumber,
+      receiptUrl: cleanReceiptUrl,
+      notes,
+    });
 
     await logAdminAction({
       req,
       action: 'payout_processed',
       entityType: 'TeacherLedger',
       entityId: payout._id,
-      reason: notes || `معالجة سحب أرباح (${targetStatus})`,
+      reason: String(notes || '').trim().slice(0, 500) || `معالجة سحب أرباح (${targetStatus})`,
       metadata: {
         status: targetStatus,
         amount: payout.amount,
         currency: payout.currency,
         teacherId: payout.teacher?._id || payout.teacher,
         payoutMethod: payout.payoutMethod,
-        recipientAccount: payout.recipientAccount,
         referenceNumber: payout.referenceNumber,
       },
     }).catch(() => {});
@@ -737,6 +568,56 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       error: message,
       ...(error?.code ? { code: error.code } : {}),
     });
+  }
+});
+
+router.post('/admin/deduction', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { teacherId, amount, currency = 'EGP', reason } = req.body || {};
+    const numAmount = Number(amount);
+    const curr = String(currency || 'EGP').trim().toUpperCase();
+    const cleanReason = String(reason || '').trim().slice(0, 500);
+
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(String(teacherId))) {
+      return res.status(400).json({ error: 'معرف المعلم غير صالح' });
+    }
+    if (!Number.isFinite(numAmount) || numAmount <= 0 || Math.abs(Math.round(numAmount * 100) - (numAmount * 100)) > 1e-6) {
+      return res.status(400).json({ error: 'مبلغ الخصم غير صالح' });
+    }
+    if (!['EGP', 'USD'].includes(curr)) {
+      return res.status(400).json({ error: 'العملة يجب أن تكون EGP أو USD' });
+    }
+    if (!cleanReason) {
+      return res.status(400).json({ error: 'سبب القيد العكسي مطلوب' });
+    }
+
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) return res.status(404).json({ error: 'لم يتم العثور على ملف المعلم' });
+
+    const entry = await TeacherLedger.create({
+      teacher: teacher._id,
+      type: 'deduction',
+      amount: fromMinor(toMinor(numAmount)),
+      currency: curr,
+      status: 'completed',
+      processedBy: req.user.id,
+      processedAt: new Date(),
+      notes: cleanReason,
+      description: `خصم إداري: ${cleanReason.slice(0, 120)}`,
+    });
+
+    await logAdminAction({
+      req,
+      action: 'teacher_ledger.deduction',
+      entityType: 'TeacherLedger',
+      entityId: entry._id,
+      reason: cleanReason,
+      metadata: { teacherId: String(teacher._id), amount: entry.amount, currency: curr },
+    }).catch(() => {});
+
+    return res.status(201).json({ success: true, transaction: entry });
+  } catch (error) {
+    return res.status(400).json({ error: 'تعذر تسجيل القيد العكسي' });
   }
 });
 

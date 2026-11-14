@@ -5,8 +5,10 @@ const GroupCircle = require('../models/GroupCircle');
 const User = require('../models/User');
 const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
+const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
 const { getPlan } = require('../config/subscriptionPlans');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
@@ -139,11 +141,11 @@ router.get('/', async (req, res) => {
   try {
     const filter = {};
 
-    if (track) filter.track = track;
-    if (level) filter.level = level;
-    if (gender) filter.gender = gender;
+    if (track) filter.track = String(track).trim();
+    if (level) filter.level = String(level).trim();
+    if (gender) filter.gender = String(gender).trim();
     if (status) {
-      filter.status = status;
+      filter.status = String(status).trim();
     } else {
       filter.status = { $ne: 'completed' };
     }
@@ -179,7 +181,7 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل جلب الحلقات الجماعية', details: error.message });
+    res.status(500).json({ error: 'فشل جلب الحلقات الجماعية' });
   }
 });
 
@@ -201,6 +203,9 @@ router.get('/:id', async (req, res) => {
     });
   }
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الحلقة غير صالح' });
+    }
     const circle = await GroupCircle.findById(req.params.id)
       .populate({
         path: 'teacher',
@@ -225,7 +230,7 @@ router.get('/:id', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل جلب بيانات الحلقة', details: error.message });
+    res.status(500).json({ error: 'فشل جلب بيانات الحلقة' });
   }
 });
 
@@ -257,6 +262,12 @@ router.post('/', protect, authorize('admin', 'teacher'), async (req, res) => {
     const selectedPlan = subscriptionPlanKey ? getPlan(subscriptionPlanKey) : null;
     if (subscriptionPlanKey && !selectedPlan) {
       return res.status(400).json({ error: 'خطة الاشتراك غير صحيحة', code: 'CIRCLE_PLAN_INVALID' });
+    }
+    if (!selectedPlan && req.user.role !== 'admin') {
+      return res.status(403).json({
+        error: 'يجب ربط الحلقة بخطة اشتراك معتمدة',
+        code: 'CIRCLE_PLAN_REQUIRED',
+      });
     }
     const manualCapacity = Math.min(20, Math.max(1, Number(capacity || 10)));
     const resolvedCapacity = selectedPlan?.maxStudents || manualCapacity;
@@ -320,6 +331,10 @@ router.post('/', protect, authorize('admin', 'teacher'), async (req, res) => {
     if (!teacherExists) {
       return res.status(404).json({ error: 'المعلم المحدد غير موجود' });
     }
+    assertGenderAndAgeCompatibility({
+      teacher: teacherExists,
+      circleGender: gender,
+    });
 
     const genderPrefix = String(gender).charAt(0).toUpperCase() || 'C';
     const randomCode = Math.floor(1000 + Math.random() * 9000);
@@ -358,7 +373,11 @@ router.post('/', protect, authorize('admin', 'teacher'), async (req, res) => {
       circle
     });
   } catch (error) {
-    res.status(400).json({ error: 'فشل إنشاء الحلقة', details: error.message });
+    if (error?.status === 400) {
+      const publicMsg = String(error.publicMessage || error.message || 'بيانات الحلقة غير متوافقة');
+      return res.status(400).json({ error: publicMsg, code: error.code || 'CIRCLE_VALIDATION_FAILED' });
+    }
+    res.status(400).json({ error: 'فشل إنشاء الحلقة' });
   }
 });
 
@@ -397,12 +416,20 @@ router.post('/:id/join', protect, authorize('student', 'guardian', 'admin'), asy
       return res.status(409).json({ error: 'حلقات الاشتراكات تتطلب اعتماد الدفع والتسكين من الإدارة', code: 'SUBSCRIPTION_PLACEMENT_REQUIRED' });
     }
 
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        error: 'الانضمام للحلقات متاح فقط عبر باقات الاشتراك المعتمدة أو قرار المنح الإداري',
+        code: 'SUBSCRIPTION_REQUIRED',
+      });
+    }
+
     if (circle.status === 'completed' || circle.status === 'paused') {
       return res.status(400).json({ error: 'هذه الحلقة غير متاحة للانضمام حالياً' });
     }
 
+    const cap = Number(circle.capacity || 10);
     const currentStudents = circle.students || [];
-    if (currentStudents.length >= (circle.capacity || 10)) {
+    if (currentStudents.length >= cap) {
       if (circle.status !== 'full') {
         circle.status = 'full';
         await circle.save();
@@ -410,7 +437,7 @@ router.post('/:id/join', protect, authorize('student', 'guardian', 'admin'), asy
       return res.status(400).json({
         error: 'عذراً، الحلقة مكتملة بالكامل',
         code: 'CIRCLE_FULL',
-        capacity: circle.capacity || 10
+        capacity: cap,
       });
     }
 
@@ -429,56 +456,65 @@ router.post('/:id/join', protect, authorize('student', 'guardian', 'admin'), asy
       });
     }
 
-    const studentGender = studentUser.gender;
-    if (circle.gender !== 'kids_mixed') {
-      const maleCircleGenders = ['boys', 'men'];
-      const femaleCircleGenders = ['girls', 'women'];
+    assertGenderAndAgeCompatibility({
+      student: studentUser,
+      circleGender: circle.gender,
+    });
 
-      if (maleCircleGenders.includes(circle.gender) && studentGender !== 'male') {
-        return res.status(400).json({
-          error: 'هذه الحلقة مخصصة للبنين/الرجال فقط، يرجى اختيار حلقة متطابقة',
-          code: 'GENDER_MISMATCH'
-        });
-      }
+    const updatedCircle = await GroupCircle.findOneAndUpdate(
+      {
+        _id: circle._id,
+        status: { $nin: ['completed', 'paused', 'full'] },
+        students: { $ne: studentUser._id },
+        $expr: { $lt: [{ $size: '$students' }, cap] },
+      },
+      { $addToSet: { students: studentUser._id } },
+      { new: true }
+    );
 
-      if (femaleCircleGenders.includes(circle.gender) && studentGender !== 'female') {
-        return res.status(400).json({
-          error: 'هذه الحلقة مخصصة للفتيات/النساء فقط، يرجى اختيار حلقة متطابقة',
-          code: 'GENDER_MISMATCH'
-        });
-      }
+    if (!updatedCircle) {
+      return res.status(409).json({
+        error: 'تعذر الانضمام — الحلقة مكتملة أو الطالب مضاف بالفعل',
+        code: 'CIRCLE_FULL',
+        capacity: cap,
+      });
     }
 
-    circle.students.push(studentUser._id);
-
-    if (circle.students.length >= (circle.capacity || 10)) {
-      circle.status = 'full';
-    } else if (circle.status === 'forming') {
-      const circlePlan = getPlan(circle.subscriptionPlanKey);
+    let nextStatus = updatedCircle.status;
+    if (updatedCircle.students.length >= cap) {
+      nextStatus = 'full';
+    } else if (updatedCircle.status === 'forming') {
+      const circlePlan = getPlan(updatedCircle.subscriptionPlanKey);
       const minimumToStart = circlePlan?.minStudents || 3;
-      if (circle.students.length >= minimumToStart) {
-        circle.status = 'active';
+      if (updatedCircle.students.length >= minimumToStart) {
+        nextStatus = 'active';
       }
     }
+    if (nextStatus !== updatedCircle.status) {
+      updatedCircle.status = nextStatus;
+      await updatedCircle.save();
+    }
 
-    await circle.save();
-
-    studentUser.circle = circle._id;
+    studentUser.circle = updatedCircle._id;
     await studentUser.save();
 
     res.json({
       success: true,
       message: 'تم الانضمام إلى الحلقة بنجاح',
       circle: {
-        _id: circle._id,
-        name: circle.name,
-        code: circle.code,
-        studentsCount: circle.students.length,
-        status: circle.status
+        _id: updatedCircle._id,
+        name: updatedCircle.name,
+        code: updatedCircle.code,
+        studentsCount: updatedCircle.students.length,
+        status: updatedCircle.status
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل الانضمام للحلقة', details: error.message });
+    if (error?.status === 400) {
+      const publicMsg = String(error.publicMessage || error.message || 'بيانات الطالب غير متوافقة مع الحلقة');
+      return res.status(400).json({ error: publicMsg, code: error.code || 'GENDER_MISMATCH' });
+    }
+    res.status(500).json({ error: 'فشل الانضمام للحلقة' });
   }
 });
 
@@ -587,7 +623,19 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
     if (teacherId && req.user.role === 'admin') {
       const teacherExists = await Teacher.findById(teacherId);
       if (teacherExists) {
+        assertGenderAndAgeCompatibility({
+          teacher: teacherExists,
+          circleGender: circle.gender,
+        });
         circle.teacher = teacherId;
+      }
+    } else if (gender !== undefined) {
+      const currentTeacher = await Teacher.findById(circle.teacher);
+      if (currentTeacher) {
+        assertGenderAndAgeCompatibility({
+          teacher: currentTeacher,
+          circleGender: circle.gender,
+        });
       }
     }
 
@@ -607,7 +655,11 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       circle
     });
   } catch (error) {
-    res.status(400).json({ error: 'فشل تحديث بيانات الحلقة', details: error.message });
+    if (error?.status === 400) {
+      const publicMsg = String(error.publicMessage || error.message || 'بيانات التحديث غير متوافقة');
+      return res.status(400).json({ error: publicMsg, code: error.code || 'CIRCLE_UPDATE_FAILED' });
+    }
+    res.status(400).json({ error: 'فشل تحديث بيانات الحلقة' });
   }
 });
 
@@ -616,7 +668,7 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
 // @access  Protected (admin only)
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { archive = 'true' } = req.query;
+    const archive = String(req.query.archive ?? 'true');
 
     if (isMockMode && !isDBConnected()) {
       const idx = MOCK_CIRCLES.findIndex(c => c._id === req.params.id);
@@ -642,7 +694,13 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       circle.status = 'completed';
       await circle.save();
 
-      await User.updateMany({ circle: circle._id }, { $unset: { circle: '' } });
+      await Promise.all([
+        User.updateMany({ circle: circle._id }, { $unset: { circle: '' } }),
+        StudentSubscription.updateMany(
+          { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+          { $set: { status: 'awaiting_placement', circle: null } }
+        ),
+      ]);
 
       return res.json({
         success: true,
@@ -650,7 +708,13 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       });
     }
 
-    await User.updateMany({ circle: circle._id }, { $unset: { circle: '' } });
+    await Promise.all([
+      User.updateMany({ circle: circle._id }, { $unset: { circle: '' } }),
+      StudentSubscription.updateMany(
+        { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+        { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+    ]);
     await GroupCircle.findByIdAndDelete(req.params.id);
 
     res.json({
@@ -658,7 +722,7 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       message: 'تم حذف الحلقة نهائياً'
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل حذف أو أرشفة الحلقة', details: error.message });
+    res.status(500).json({ error: 'فشل حذف أو أرشفة الحلقة' });
   }
 });
 

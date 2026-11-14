@@ -72,9 +72,9 @@ self.addEventListener('fetch', (event) => {
         });
       })
     );
-  } else if (url.hostname.includes('fonts.googleapis.com') || 
-             url.hostname.includes('fonts.gstatic.com') ||
-             url.hostname.includes('images.unsplash.com')) {
+  } else if (url.hostname === 'fonts.googleapis.com' ||
+             url.hostname === 'fonts.gstatic.com' ||
+             url.hostname === 'images.unsplash.com') {
     event.respondWith(
       caches.open(RUNTIME_CACHE).then((cache) => {
         return cache.match(event.request).then((cached) => {
@@ -92,6 +92,24 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+function resolveSafeSameOriginUrl(rawUrl, fallbackPath = '/') {
+  const fallback = `${self.location.origin}${fallbackPath}`;
+  if (typeof rawUrl !== 'string') return fallback;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return fallback;
+  }
+  try {
+    const parsed = new URL(trimmed, self.location.origin);
+    if (parsed.origin !== self.location.origin) {
+      return fallback;
+    }
+    return parsed.href;
+  } catch {
+    return fallback;
+  }
+}
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
@@ -99,11 +117,11 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'SHOW_NOTIFICATION') {
     const { title, body, url } = event.data.payload || {};
     event.waitUntil(
-      self.registration.showNotification(title || 'أكاديمية وَحْيٌ وَنَمَاء', {
-        body: body || '',
+      self.registration.showNotification(String(title || 'أكاديمية وَحْيٌ وَنَمَاء').slice(0, 160), {
+        body: String(body || '').slice(0, 500),
         icon: '/assets/logo.png',
         badge: '/favicon.svg',
-        data: { url: url || '/notifications' },
+        data: { url: resolveSafeSameOriginUrl(url, '/notifications') },
       })
     );
   }
@@ -112,27 +130,33 @@ self.addEventListener('message', (event) => {
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
-  const data = event.data.json();
+  let data;
+  try {
+    data = event.data.json() || {};
+  } catch {
+    data = { title: 'أكاديمية وَحْيٌ وَنَمَاء', body: event.data.text() };
+  }
+
   const options = {
-    body: data.body,
+    body: String(data.body || '').slice(0, 500),
     icon: '/assets/logo.png',
     badge: '/favicon.svg',
     vibrate: [200, 100, 200],
     data: {
-      url: data.url || '/'
+      url: resolveSafeSameOriginUrl(data.url, '/'),
     },
-    actions: data.actions || []
+    actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(String(data.title || 'أكاديمية وَحْيٌ وَنَمَاء').slice(0, 160), options)
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
+  const urlToOpen = resolveSafeSameOriginUrl(event.notification.data?.url, '/');
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })

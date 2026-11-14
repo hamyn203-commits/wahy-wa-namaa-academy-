@@ -1,5 +1,6 @@
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Guardian = require('../models/Guardian');
 const User = require('../models/User');
@@ -128,6 +129,27 @@ router.put('/permissions/:studentId', protect, authorize('student', 'admin'), as
       return res.status(400).json({ error: 'At least one permission is required' });
     }
 
+    const hasRevocation = Object.values(normalizedPermissions).some((val) => val === false);
+    if (
+      req.user.role === 'student'
+      && hasRevocation
+      && (mongoose.connection.readyState === 1 || User.findById !== mongoose.Model.findById)
+    ) {
+      const studentDoc = await User.findById(req.user.id).select('age enrollmentSection');
+      const isMinor = Boolean(
+        studentDoc && (
+          (Number.isFinite(Number(studentDoc.age)) && Number(studentDoc.age) < 18)
+          || studentDoc.enrollmentSection === 'children'
+        )
+      );
+      if (isMinor) {
+        return res.status(403).json({
+          error: 'حسابات الطلاب القُصَّر لا يمكنها إلغاء صلاحيات متابعة ولي الأمر',
+          code: 'MINOR_GUARDIAN_SAFEGUARD',
+        });
+      }
+    }
+
     const guardianFilter = { 'children.student': req.params.studentId };
     if (guardianId) {
       guardianFilter._id = guardianId;
@@ -142,7 +164,12 @@ router.put('/permissions/:studentId', protect, authorize('student', 'admin'), as
       await guardian.updatePermissions(req.params.studentId, normalizedPermissions);
     }
 
-    res.json(guardians.length === 1 ? guardians[0] : guardians);
+    res.json({
+      success: true,
+      studentId: String(req.params.studentId),
+      permissions: normalizedPermissions,
+      guardiansUpdated: guardians.length,
+    });
   } catch (error) {
     console.error('Update permissions error:', error);
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -307,25 +334,70 @@ router.get('/reports', protect, authorize('guardian', 'admin'), async (req, res)
 // @route   PUT /api/guardians/settings
 // @desc    Update guardian settings
 // @access  Private (Guardian)
-router.put('/settings', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.put('/settings', protect, authorize('guardian'), async (req, res) => {
   try {
-    const { notificationPreferences, settings } = req.body;
-    
+    const { notificationPreferences, settings } = req.body || {};
+
     let guardian = await Guardian.findOne({ user: req.user.id });
 
     if (!guardian) {
       guardian = new Guardian({
         user: req.user.id,
-        children: []
+        children: [],
       });
     }
 
-    if (notificationPreferences) {
-      guardian.notificationPreferences = notificationPreferences;
+    if (notificationPreferences && typeof notificationPreferences === 'object' && !Array.isArray(notificationPreferences)) {
+      const EMAIL_TYPES = new Set(['progress-update', 'assignment-due', 'quiz-result', 'attendance', 'achievement', 'payment']);
+      const SMS_TYPES = new Set(['urgent', 'attendance', 'payment']);
+      const PUSH_TYPES = new Set(['progress-update', 'assignment-due', 'quiz-result', 'achievement']);
+
+      if (notificationPreferences.email && typeof notificationPreferences.email === 'object') {
+        if (typeof notificationPreferences.email.enabled === 'boolean') {
+          guardian.notificationPreferences.email.enabled = notificationPreferences.email.enabled;
+        }
+        if (Array.isArray(notificationPreferences.email.types)) {
+          guardian.notificationPreferences.email.types = notificationPreferences.email.types.filter((t) => EMAIL_TYPES.has(t));
+        }
+      }
+
+      if (notificationPreferences.sms && typeof notificationPreferences.sms === 'object') {
+        if (typeof notificationPreferences.sms.enabled === 'boolean') {
+          guardian.notificationPreferences.sms.enabled = notificationPreferences.sms.enabled;
+          if (notificationPreferences.sms.enabled && (mongoose.connection.readyState === 1 || User.findById !== mongoose.Model.findById)) {
+            const guardianUser = await User.findById(req.user.id).select('phone');
+            if (guardianUser?.phone) {
+              guardian.notificationPreferences.sms.phoneNumber = guardianUser.phone;
+            }
+          }
+        }
+        if (Array.isArray(notificationPreferences.sms.types)) {
+          guardian.notificationPreferences.sms.types = notificationPreferences.sms.types.filter((t) => SMS_TYPES.has(t));
+        }
+      }
+
+      if (notificationPreferences.push && typeof notificationPreferences.push === 'object') {
+        if (typeof notificationPreferences.push.enabled === 'boolean') {
+          guardian.notificationPreferences.push.enabled = notificationPreferences.push.enabled;
+        }
+        if (Array.isArray(notificationPreferences.push.types)) {
+          guardian.notificationPreferences.push.types = notificationPreferences.push.types.filter((t) => PUSH_TYPES.has(t));
+        }
+      }
     }
 
-    if (settings) {
-      guardian.settings = { ...guardian.settings, ...settings };
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+      const VALID_LANGS = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
+      const VALID_FREQ = new Set(['daily', 'weekly', 'monthly', 'never']);
+      if (VALID_LANGS.has(settings.language)) {
+        guardian.settings.language = settings.language;
+      }
+      if (typeof settings.timezone === 'string' && settings.timezone.trim().length <= 60) {
+        guardian.settings.timezone = settings.timezone.trim();
+      }
+      if (VALID_FREQ.has(settings.reportFrequency)) {
+        guardian.settings.reportFrequency = settings.reportFrequency;
+      }
     }
 
     await guardian.save();

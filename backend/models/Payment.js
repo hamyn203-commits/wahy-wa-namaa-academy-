@@ -69,6 +69,16 @@ const PaymentSchema = new mongoose.Schema({
       type: Number,
       min: 1,
     },
+    proofHash: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: 64,
+    },
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     submittedAt: Date,
     reviewedAt: Date,
     reviewedBy: {
@@ -163,6 +173,39 @@ PaymentSchema.index(
       kind: 'subscription',
       provider: 'manual',
       status: 'pending',
+    },
+  }
+);
+PaymentSchema.index(
+  { 'manual.proofReference': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      provider: 'manual',
+      status: { $in: ['pending', 'succeeded'] },
+      'manual.proofReference': { $type: 'string' },
+    },
+  }
+);
+PaymentSchema.index(
+  { 'manual.proofHash': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      provider: 'manual',
+      status: { $in: ['pending', 'succeeded'] },
+      'manual.proofHash': { $type: 'string' },
+    },
+  }
+);
+PaymentSchema.index(
+  { 'manual.method': 1, 'manual.transferReference': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      provider: 'manual',
+      status: { $in: ['pending', 'succeeded'] },
+      'manual.transferReference': { $type: 'string' },
     },
   }
 );

@@ -1,22 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Certificate = require('../models/Certificate');
 const Enrollment = require('../models/Enrollment');
-const Course = require('../models/Course');
 const { protect, authorize } = require('../middleware/auth');
+const { logAdminAction } = require('../services/adminAudit');
+
+const ALLOWED_CERT_LANGUAGES = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
+const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
 
 // @route   POST /api/certificates/generate
 // @desc    Generate a certificate for a completed course
 // @access  Private
 router.post('/generate', protect, async (req, res) => {
   try {
-    const { enrollmentId } = req.body;
+    const { enrollmentId } = req.body || {};
+    if (!isValidObjectId(enrollmentId)) {
+      return res.status(400).json({ error: 'Invalid enrollment ID' });
+    }
 
     const enrollment = await Enrollment.findById(enrollmentId)
       .populate('course')
       .populate('student');
 
-    if (!enrollment) {
+    if (!enrollment || !enrollment.course || !enrollment.student) {
       return res.status(404).json({ error: 'Enrollment not found' });
     }
 
@@ -24,7 +31,18 @@ router.post('/generate', protect, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    if (enrollment.status !== 'completed') {
+    if (!enrollment.course.certificate?.enabled) {
+      return res.status(400).json({ error: 'Certificates are not enabled for this course' });
+    }
+
+    const completedLessonCount = Array.isArray(enrollment.progress?.completedLessons)
+      ? enrollment.progress.completedLessons.length
+      : 0;
+    if (
+      enrollment.status !== 'completed' ||
+      Number(enrollment.progress?.percentage || 0) < 100 ||
+      completedLessonCount === 0
+    ) {
       return res.status(400).json({ error: 'Course not completed yet' });
     }
 
@@ -39,10 +57,11 @@ router.post('/generate', protect, async (req, res) => {
       return res.status(400).json({ error: 'Certificate already exists' });
     }
 
-    const certificateId = Certificate.generateCertificateId();
+    const certificateId = enrollment.certificate?.certificateId || Certificate.generateCertificateId();
     const verificationUrl = `${process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'}/verify-certificate/${certificateId}`;
     
     const qrCode = await Certificate.generateQRCode(verificationUrl);
+    const language = ALLOWED_CERT_LANGUAGES.has(req.body?.language) ? req.body.language : 'ar';
 
     const certificate = new Certificate({
       student: certificateStudentId,
@@ -56,7 +75,7 @@ router.post('/generate', protect, async (req, res) => {
         instructor: enrollment.course.instructor,
         duration: enrollment.progress.timeSpent
       },
-      language: req.body.language || 'ar'
+      language
     });
 
     await certificate.save();
@@ -117,8 +136,8 @@ router.get('/verify/:certificateId', async (req, res) => {
       reason: verification.reason || null,
       certificate: {
         id: certificate.certificateId,
-        studentName: certificate.student.name,
-        courseTitle: certificate.course.title,
+        studentName: certificate.student?.name || '',
+        courseTitle: certificate.course?.title || null,
         issuedAt: certificate.issuedAt,
         status: certificate.status,
       },
@@ -179,7 +198,10 @@ router.get('/:certificateId', async (req, res) => {
 // @access  Private (Admin)
 router.put('/:id/revoke', protect, authorize('admin'), async (req, res) => {
   try {
-    const { reason } = req.body;
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid certificate ID' });
+    }
+    const reason = String(req.body?.reason || '').trim().slice(0, 500);
     const certificate = await Certificate.findById(req.params.id);
 
     if (!certificate) {
@@ -187,6 +209,13 @@ router.put('/:id/revoke', protect, authorize('admin'), async (req, res) => {
     }
 
     await certificate.revoke(reason);
+    await logAdminAction({
+      req,
+      action: 'certificate.revoked',
+      entityType: 'certificate',
+      entityId: certificate._id,
+      metadata: { certificateId: certificate.certificateId, reason },
+    }).catch(() => {});
 
     res.json({ message: 'Certificate revoked successfully', certificate });
   } catch (error) {
@@ -200,13 +229,24 @@ router.put('/:id/revoke', protect, authorize('admin'), async (req, res) => {
 // @access  Private (Admin)
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid certificate ID' });
+    }
     const certificate = await Certificate.findById(req.params.id);
 
     if (!certificate) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
+    const certMeta = { certificateId: certificate.certificateId, student: String(certificate.student || '') };
     await certificate.deleteOne();
+    await logAdminAction({
+      req,
+      action: 'certificate.deleted',
+      entityType: 'certificate',
+      entityId: req.params.id,
+      metadata: certMeta,
+    }).catch(() => {});
 
     res.json({ message: 'Certificate deleted successfully' });
   } catch (error) {
@@ -231,8 +271,21 @@ router.post('/batch-generate', protect, async (req, res) => {
     }
 
     const generated = [];
+    const language = ALLOWED_CERT_LANGUAGES.has(req.body?.language) ? req.body.language : 'ar';
 
     for (const enrollment of enrollments) {
+      const completedLessonCount = Array.isArray(enrollment.progress?.completedLessons)
+        ? enrollment.progress.completedLessons.length
+        : 0;
+      if (
+        !enrollment.course ||
+        !enrollment.course.certificate?.enabled ||
+        Number(enrollment.progress?.percentage || 0) < 100 ||
+        completedLessonCount === 0
+      ) {
+        continue;
+      }
+
       const existingCert = await Certificate.findOne({
         student: req.user.id,
         course: enrollment.course._id
@@ -250,7 +303,7 @@ router.post('/batch-generate', protect, async (req, res) => {
         continue;
       }
 
-      const certificateId = Certificate.generateCertificateId();
+      const certificateId = enrollment.certificate?.certificateId || Certificate.generateCertificateId();
       const verificationUrl = `${process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'}/verify-certificate/${certificateId}`;
       const qrCode = await Certificate.generateQRCode(verificationUrl);
 
@@ -266,7 +319,7 @@ router.post('/batch-generate', protect, async (req, res) => {
           instructor: enrollment.course.instructor,
           duration: enrollment.progress.timeSpent || 0
         },
-        language: req.body.language || 'ar'
+        language
       });
 
       await certificate.save();

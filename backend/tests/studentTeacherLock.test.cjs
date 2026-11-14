@@ -24,10 +24,11 @@ function stubFindOne(result, capture = {}) {
   return () => { StudentSubscription.findOne = original; };
 }
 
-test('student teacher lock covers every committed status and releases on cancel/expire', () => {
-  for (const status of ['pending_payment', 'payment_review', 'awaiting_placement', 'placed', 'active', 'paused', 'completed', 'renewal_queued']) {
+test('student teacher lock covers every committed status and releases on unpaid/cancel/expire', () => {
+  for (const status of ['payment_review', 'awaiting_placement', 'placed', 'active', 'paused', 'completed', 'renewal_queued']) {
     assert.ok(TEACHER_LOCK_STATUSES.includes(status), status);
   }
+  assert.equal(TEACHER_LOCK_STATUSES.includes('pending_payment'), false);
   assert.equal(TEACHER_LOCK_STATUSES.includes('cancelled'), false);
   assert.equal(TEACHER_LOCK_STATUSES.includes('expired'), false);
 });

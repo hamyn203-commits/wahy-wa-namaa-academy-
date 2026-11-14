@@ -7,9 +7,12 @@ const Teacher = require('../models/Teacher');
 const TeacherProfileChangeRequest = require('../models/TeacherProfileChangeRequest');
 const TeacherTask = require('../models/TeacherTask');
 const User = require('../models/User');
-const WithdrawRequest = require('../models/WithdrawRequest');
+const mongoose = require('mongoose');
 const TeacherLedger = require('../models/TeacherLedger');
-const { calculateTeacherBalance } = require('../services/teacherFinance');
+const {
+  calculateTeacherBalance,
+  requestTeacherPayout,
+} = require('../services/teacherFinance');
 const { protect, authorize } = require('../middleware/auth');
 const { notifyAdmins, notifyUser, notifyGuardiansForStudent } = require('../utils/notify');
 const { deleteStoredReference } = require('../utils/storageLifecycle');
@@ -21,35 +24,46 @@ const HOMEWORK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'homework');
 const { isMockMode } = require('../config/runtime');
 const { safeTimeZone } = require('../services/sessionScheduling');
 
-// Simple mock-mode fallbacks so the teacher dashboard works in local dev without DB.
-if (isMockMode) {
-  router.get('/profile', protect, authorize('teacher'), (req, res) => {
-    const teacher = {
-      _id: `mock-teacher-${req.user.id}`,
-      personalInfo: { fullName: req.user.name || 'معلم تجريبي', phone: '', country: '' },
-      academicInfo: {},
-      earnings: { pendingEarnings: 0, totalEarned: 0, withdrawnEarnings: 0 },
-      stats: { totalStudents: 0, totalHours: 0, totalSessions: 0 },
-      rating: { average: 0, count: 0 },
-      availability: [],
-    };
-    return res.json({ teacher, wallet: { sessionRate: SESSION_RATE, sessionDurationMinutes: 60, pendingEarnings: 0, totalEarned: 0, withdrawn: 0, completedSessions: 0 } });
-  });
+const shouldUseMockTeacherDashboard = () => (
+  isMockMode
+  && mongoose.connection.readyState !== 1
+  && process.env.FORCE_REAL_FINANCE_IN_TEST !== 'true'
+  && process.env.FORCE_REAL_TEACHER_DASHBOARD_IN_TEST !== 'true'
+);
 
-  router.get('/active-students', protect, authorize('teacher'), (req, res) => res.json({ students: [] }));
-  router.get('/tasks', protect, authorize('teacher'), (req, res) => res.json({ tasks: [] }));
-  router.post('/tasks', protect, authorize('teacher'), (req, res) => res.status(201).json({ success: true, task: { _id: `mock-task-${Date.now()}`, ...req.body } }));
-  router.patch('/tasks/:id', protect, authorize('teacher'), (req, res) => res.json({ success: true, task: { _id: req.params.id, ...req.body } }));
-  router.get('/stats', protect, authorize('teacher'), (req, res) => res.json({ totalStudents: 0, totalSessions: 0, totalHours: 0, pendingEarnings: 0, totalEarnings: 0, averageRating: 0, sessionRate: SESSION_RATE }));
-  router.get('/students', protect, authorize('teacher'), (req, res) => res.json({ students: [] }));
-  router.get('/analytics', protect, authorize('teacher'), (req, res) => res.json({ monthlySessions: [], totalCompleted: 0, averageRating: 0, totalStudents: 0, earnings: { daily: 0, weekly: 0, monthly: 0, pending: 0 } }));
-  router.get('/withdrawals', protect, authorize('teacher'), (req, res) => res.json({ withdrawals: [], available: 0 }));
-  router.post('/withdrawals', protect, authorize('teacher'), (req, res) => res.status(201).json({ success: true, withdrawal: { _id: `mock-withdraw-${Date.now()}`, amount: req.body.amount, method: req.body.method, accountInfo: req.body.accountInfo, status: 'pending' } }));
-  router.get('/availability', protect, authorize('teacher'), (req, res) => res.json({ availability: [] }));
-  router.put('/availability', protect, authorize('teacher'), (req, res) => res.json({ success: true, availability: req.body.availability || [] }));
-  router.get('/reviews', protect, authorize('teacher'), (req, res) => res.json({ reviews: [], averageRating: 0, totalReviews: 0 }));
-  router.get('/circles', protect, authorize('teacher'), (req, res) => res.json({ circles: [] }));
-}
+// Simple mock-mode fallbacks so the teacher dashboard works in local dev without DB.
+router.use((req, res, next) => {
+  if (!shouldUseMockTeacherDashboard()) return next();
+  const key = `${req.method} ${req.path}`;
+  if (key === 'GET /profile') {
+    return protect(req, res, () => authorize('teacher')(req, res, () => {
+      const teacher = {
+        _id: `mock-teacher-${req.user.id}`,
+        personalInfo: { fullName: req.user.name || 'معلم تجريبي', phone: '', country: '' },
+        academicInfo: {},
+        earnings: { pendingEarnings: 0, totalEarned: 0, withdrawnEarnings: 0 },
+        stats: { totalStudents: 0, totalHours: 0, totalSessions: 0 },
+        rating: { average: 0, count: 0 },
+        availability: [],
+      };
+      return res.json({ teacher, wallet: { sessionRate: SESSION_RATE, sessionDurationMinutes: 60, pendingEarnings: 0, totalEarned: 0, withdrawn: 0, completedSessions: 0 } });
+    }));
+  }
+  if (key === 'GET /active-students') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ students: [] })));
+  if (key === 'GET /tasks') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ tasks: [] })));
+  if (key === 'POST /tasks') return protect(req, res, () => authorize('teacher')(req, res, () => res.status(201).json({ success: true, task: { _id: `mock-task-${Date.now()}`, ...req.body } })));
+  if (req.method === 'PATCH' && req.path.startsWith('/tasks/')) return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ success: true, task: { _id: req.params.id, ...req.body } })));
+  if (key === 'GET /stats') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ totalStudents: 0, totalSessions: 0, totalHours: 0, pendingEarnings: 0, totalEarnings: 0, averageRating: 0, sessionRate: SESSION_RATE })));
+  if (key === 'GET /students') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ students: [] })));
+  if (key === 'GET /analytics') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ monthlySessions: [], totalCompleted: 0, averageRating: 0, totalStudents: 0, earnings: { daily: 0, weekly: 0, monthly: 0, pending: 0 } })));
+  if (key === 'GET /withdrawals') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ withdrawals: [], available: 0 })));
+  if (key === 'POST /withdrawals') return protect(req, res, () => authorize('teacher')(req, res, () => res.status(201).json({ success: true, withdrawal: { _id: `mock-withdraw-${Date.now()}`, amount: req.body.amount, method: req.body.method, accountInfo: req.body.accountInfo, status: 'pending' } })));
+  if (key === 'GET /availability') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ availability: [] })));
+  if (key === 'PUT /availability') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ success: true, availability: req.body.availability || [] })));
+  if (key === 'GET /reviews') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ reviews: [], averageRating: 0, totalReviews: 0 })));
+  if (key === 'GET /circles') return protect(req, res, () => authorize('teacher')(req, res, () => res.json({ circles: [] })));
+  return next();
+});
 
 router.get('/profile', protect, authorize('teacher'), async (req, res) => {
   try {
@@ -190,7 +204,7 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
         type: 'regular',
         status: { $in: ['accepted', 'completed'] },
       })
-        .populate('student', 'name email avatar phone')
+        .populate('student', 'name avatar')
         .sort({ scheduledAt: -1 })
         .lean(),
       TeacherTask.find({ teacher: teacher._id })
@@ -287,7 +301,7 @@ router.get('/students/:studentId/summary', protect, authorize('teacher'), async 
       student: req.params.studentId,
       status: { $in: ['accepted', 'completed'] },
     })
-      .populate('student', 'name email avatar phone')
+      .populate('student', 'name avatar')
       .lean();
 
     if (!relationship?.student) {
@@ -352,7 +366,7 @@ router.get('/tasks', protect, authorize('teacher'), async (req, res) => {
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
     const tasks = await TeacherTask.find({ teacher: teacher._id })
-      .populate('student', 'name email avatar')
+      .populate('student', 'name avatar')
       .sort({ createdAt: -1 });
     res.json({ tasks });
   } catch (error) {
@@ -569,7 +583,7 @@ router.get('/circles', protect, authorize('teacher'), async (req, res) => {
     const GroupCircle = require('../models/GroupCircle');
     const { getPlan } = require('../config/subscriptionPlans');
     const circles = await GroupCircle.find({ teacher: teacher._id, status: { $ne: 'completed' } })
-      .populate('students', 'name email avatar')
+      .populate('students', 'name avatar')
       .sort({ createdAt: -1 })
       .lean();
     const enriched = circles.map((circle) => {
@@ -598,16 +612,16 @@ router.get('/students', protect, authorize('teacher'), async (req, res) => {
     const sessions = await Session.find({ 
       teacher: teacher._id, 
       status: 'completed' 
-    }).populate('student', 'name email avatar');
+    }).populate('student', 'name avatar');
 
     const studentMap = {};
     sessions.forEach(session => {
+      if (!session.student?._id) return;
       const studentId = session.student._id.toString();
       if (!studentMap[studentId]) {
         studentMap[studentId] = {
           _id: session.student._id,
           name: session.student.name,
-          email: session.student.email,
           avatar: session.student.avatar,
           sessionCount: 0
         };
@@ -730,15 +744,25 @@ router.get('/analytics', protect, authorize('teacher'), async (req, res) => {
   }
 });
 
-async function availableBalance(teacherId) {
-  const teacher = await Teacher.findById(teacherId);
-  if (!teacher) return 0;
-  const pendingSum = await WithdrawRequest.aggregate([
-    { $match: { teacher: teacher._id, status: 'pending' } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const locked = pendingSum[0]?.total || 0;
-  return Math.max(0, teacher.earnings.pendingEarnings - locked);
+function serializeLegacyWithdrawal(entry) {
+  const details = entry?.payoutDetails || {};
+  const accountInfo = details.phone || details.ipaAddress || details.bankAccountNumber || details.paypalEmail || '';
+  return {
+    _id: entry._id,
+    teacher: entry.teacher,
+    amount: entry.amount,
+    currency: entry.currency || 'EGP',
+    method: entry.payoutMethod === 'bank_transfer' ? 'bank' : (entry.payoutMethod || 'vodafone_cash'),
+    payoutMethod: entry.payoutMethod,
+    payoutDetails: details,
+    accountInfo,
+    status: entry.status === 'completed' ? 'approved' : entry.status,
+    ledgerStatus: entry.status,
+    adminNote: entry.notes || '',
+    referenceNumber: entry.referenceNumber || '',
+    createdAt: entry.createdAt,
+    processedAt: entry.processedAt,
+  };
 }
 
 router.get('/withdrawals', protect, authorize('teacher'), async (req, res) => {
@@ -746,9 +770,16 @@ router.get('/withdrawals', protect, authorize('teacher'), async (req, res) => {
     const teacher = await Teacher.findOne({ user: req.user.id });
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
-    const withdrawals = await WithdrawRequest.find({ teacher: teacher._id }).sort({ createdAt: -1 });
-    const available = await availableBalance(teacher._id);
-    res.json({ withdrawals, available });
+    const balances = await calculateTeacherBalance(teacher._id);
+    const ledgerEntries = await TeacherLedger.find({ teacher: teacher._id, type: 'payout' })
+      .sort({ createdAt: -1 })
+      .limit(100);
+    const withdrawals = (Array.isArray(ledgerEntries) ? ledgerEntries : []).map(serializeLegacyWithdrawal);
+    res.json({
+      withdrawals,
+      available: balances?.EGP?.available || 0,
+      balances,
+    });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -759,46 +790,64 @@ router.post('/withdrawals', protect, authorize('teacher'), async (req, res) => {
     const teacher = await Teacher.findOne({ user: req.user.id });
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
-    const { amount, method, accountInfo } = req.body;
-    const num = Number(amount);
-    if (!num || num < SESSION_RATE) {
-      return res.status(400).json({ error: `الحد الأدنى للسحب ${SESSION_RATE} ج.م` });
-    }
-    if (!accountInfo?.trim()) {
-      return res.status(400).json({ error: 'بيانات الحساب مطلوبة' });
-    }
+    const {
+      amount,
+      currency = 'EGP',
+      method,
+      payoutMethod: rawPayoutMethod,
+      accountInfo,
+      payoutDetails: rawPayoutDetails,
+      notes,
+    } = req.body || {};
 
-    const available = await availableBalance(teacher._id);
-    if (num > available) {
-      return res.status(400).json({ error: `الرصيد المتاح ${available} ج.م فقط` });
-    }
+    const cleanAccount = String(accountInfo || '').trim();
+    const mappedMethod = rawPayoutMethod || (method === 'bank' ? 'bank_transfer' : (method || 'vodafone_cash'));
+    const resolvedDetails = rawPayoutDetails && typeof rawPayoutDetails === 'object'
+      ? rawPayoutDetails
+      : mappedMethod === 'bank_transfer'
+        ? { bankName: String(req.body?.bankName || 'Bank Transfer').trim(), bankAccountNumber: cleanAccount }
+        : mappedMethod === 'instapay'
+          ? { ipaAddress: cleanAccount, phone: cleanAccount }
+          : mappedMethod === 'paypal'
+            ? { paypalEmail: cleanAccount }
+            : { phone: cleanAccount };
 
-    const withdrawal = await WithdrawRequest.create({
-      teacher: teacher._id,
-      amount: num,
-      method: method || 'vodafone_cash',
-      accountInfo: accountInfo.trim(),
+    const transaction = await requestTeacherPayout({
+      teacherId: teacher._id,
+      amount,
+      currency,
+      payoutMethod: mappedMethod,
+      payoutDetails: resolvedDetails,
+      notes,
     });
 
     notifyAdmins({
       type: 'system',
       title: { ar: 'طلب سحب أرباح جديد', en: 'New withdrawal request' },
       message: {
-        ar: `طلب معلم سحب ${num} ج.م ويحتاج مراجعة الإدارة.`,
-        en: `A tutor requested a withdrawal of ${num} EGP and it needs admin review.`,
+        ar: `طلب معلم سحب ${transaction.amount} ${transaction.currency} ويحتاج مراجعة الإدارة.`,
+        en: `A tutor requested a withdrawal of ${transaction.amount} ${transaction.currency} and it needs admin review.`,
       },
       data: {
         actionUrl: '/admin?tab=withdrawals',
-        metadata: { withdrawalId: String(withdrawal._id), amount: num },
+        metadata: { withdrawalId: String(transaction._id), amount: transaction.amount },
       },
       priority: 'high',
     }).catch((error) => {
       console.warn('Admin withdrawal notification failed:', error.message);
     });
 
-    res.status(201).json({ success: true, withdrawal });
+    res.status(201).json({
+      success: true,
+      withdrawal: serializeLegacyWithdrawal(transaction),
+      transaction,
+    });
   } catch (error) {
-    res.status(400).json({ error: safeErrorMessage(error, 400) });
+    const status = error?.status || 400;
+    res.status(status).json({
+      error: error?.publicMessage || safeErrorMessage(error, status),
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 

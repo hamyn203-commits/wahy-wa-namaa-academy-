@@ -2,12 +2,12 @@ const crypto = require('crypto');
 
 const PROVIDERS = ['jitsi', 'google_meet', 'zoom'];
 
-function slugify(id) {
-  return String(id).replace(/[^a-zA-Z0-9]/g, '').slice(-12) || crypto.randomBytes(6).toString('hex');
+function randomRoomToken() {
+  return crypto.randomBytes(16).toString('hex');
 }
 
-function generateJitsiLink(sessionId, roomName) {
-  const room = roomName || `wahy-namaa-${slugify(sessionId)}`;
+function generateJitsiLink(_sessionId, roomName) {
+  const room = roomName || `wahy-namaa-${randomRoomToken()}`;
   return {
     provider: 'jitsi',
     url: `https://meet.jit.si/${room}`,
@@ -19,16 +19,16 @@ function generateJitsiLink(sessionId, roomName) {
   };
 }
 
-function generateZoomLink(sessionId) {
+function generateZoomLink() {
   const base = process.env.ZOOM_MEETING_BASE_URL;
   if (base) {
     return {
       provider: 'zoom',
-      url: `${base.replace(/\/$/, '')}/${slugify(sessionId)}`,
+      url: `${base.replace(/\/$/, '')}/${randomRoomToken()}`,
       instructions: { ar: 'انضم عبر Zoom', en: 'Join via Zoom' },
     };
   }
-  const demoId = `${100000000 + (parseInt(slugify(sessionId), 36) % 899999999)}`;
+  const demoId = `${100000000 + crypto.randomInt(0, 899999999)}`;
   return {
     provider: 'zoom',
     url: `https://zoom.us/j/${demoId}`,
@@ -39,7 +39,7 @@ function generateZoomLink(sessionId) {
   };
 }
 
-function generateGoogleMeetLink(sessionId) {
+function generateGoogleMeetLink() {
   const custom = process.env.GOOGLE_MEET_BASE_URL;
   if (custom) {
     return {
@@ -50,7 +50,7 @@ function generateGoogleMeetLink(sessionId) {
   }
   return {
     provider: 'google_meet',
-    url: `https://meet.jit.si/wahy-namaa-gmeet-${slugify(sessionId)}`,
+    url: `https://meet.jit.si/wahy-namaa-gmeet-${randomRoomToken()}`,
     instructions: {
       ar: 'جلسة عبر Jitsi (بديل Meet) — اضبط GOOGLE_MEET_BASE_URL لرابط Meet حقيقي',
       en: 'Jitsi fallback — set GOOGLE_MEET_BASE_URL for real Meet links',

@@ -5,16 +5,16 @@ const { connectDB } = require('../config/database');
 const { checkUpcomingSessions } = require('../services/scheduler');
 
 function safeEqual(a, b) {
-  const left = Buffer.from(String(a || ''));
-  const right = Buffer.from(String(b || ''));
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+  const left = crypto.createHash('sha256').update(String(a || '')).digest();
+  const right = crypto.createHash('sha256').update(String(b || '')).digest();
+  return crypto.timingSafeEqual(left, right);
 }
 
 async function handleRemindersCron(req, res) {
   const secret = process.env.CRON_SECRET;
   const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
-  if (!secret || !safeEqual(secret, supplied)) {
+  if (!secret || !supplied || !safeEqual(secret, supplied)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

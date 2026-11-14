@@ -9,5 +9,14 @@ const ReferralRewardSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 ReferralRewardSchema.index({ user: 1 });
+ReferralRewardSchema.index(
+  { referral: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      referral: { $type: 'objectId' },
+    },
+  }
+);
 
 module.exports = mongoose.model('ReferralReward', ReferralRewardSchema);

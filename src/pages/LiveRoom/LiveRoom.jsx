@@ -50,7 +50,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
   // الترجمة الفورية
   const [myLang, setMyLang] = useState(detectBrowserLocale());
   const [partnerLang, setPartnerLang] = useState(myLang === 'ar' ? 'id' : 'ar');
-  const [autoTranslate, setAutoTranslate] = useState(true);
+  const [autoTranslate, setAutoTranslate] = useState(false);
 
   // LiveKit hooks
   const participants = useParticipants();
@@ -58,12 +58,20 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
   const localParticipant = useLocalParticipant();
 
   const addMessage = useCallback(async (text, sender, isMe, lang) => {
-    let displayText = text;
+    const cleanText = String(text || '').trim().slice(0, 1000);
+    if (!cleanText) return;
+    if (!isMe) {
+      const incomingCheck = inspectMessage(cleanText);
+      if (!incomingCheck.isSafe) {
+        return;
+      }
+    }
+    let displayText = cleanText;
     let original = null;
     if (autoTranslate && lang && lang !== myLang) {
       try {
-        displayText = await translateText(text, lang, myLang);
-        original = text;
+        displayText = await translateText(cleanText, lang, myLang, { auth: true });
+        original = cleanText;
       } catch { /* keep original */ }
     }
     setChatMessages((prev) => [...prev, {

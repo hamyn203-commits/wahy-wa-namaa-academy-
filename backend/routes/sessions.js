@@ -33,7 +33,17 @@ const {
 } = require('../utils/notify');
 
 const { isMockMode } = require('../config/runtime');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
+
+const sessionReportLimiter = createScopedRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  scope: 'session-whatsapp-report',
+  message: 'تم تجاوز الحد المسموح لإرسال تقارير الحصص مؤقتاً. يرجى المحاولة لاحقاً.',
+});
 
 const MAX_TRIAL_SESSIONS_PER_STUDENT = 3;
 const TRIAL_CONSUMING_STATUSES = ['pending', 'accepted', 'completed'];
@@ -170,7 +180,7 @@ async function sessionIncludesStudent(session, studentId) {
 
 router.post('/trial', protect, authorize('student'), async (req, res) => {
   try {
-    const student = await User.findById(req.user.id).select('name phone onboarding preferredTrack');
+    const student = await User.findById(req.user.id).select('name phone gender age enrollmentSection onboarding preferredTrack');
     if (!student?.name?.trim() || !student?.phone?.trim()
         || (student.onboarding?.required && !student.onboarding.completed)) {
       return res.status(403).json({ code: 'PROFILE_INCOMPLETE', error: 'Complete your student profile before booking' });
@@ -190,6 +200,12 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found or not available' });
     }
+
+    assertGenderAndAgeCompatibility({
+      student,
+      teacher,
+      section: student.enrollmentSection || null,
+    });
 
     const teacherLock = await findStudentTeacherLock(req.user.id);
     if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
@@ -455,11 +471,23 @@ router.post('/regular', protect, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const student = await User.findById(req.user.id).select('name phone gender age enrollmentSection onboarding');
+    if (!student?.name?.trim() || !student?.phone?.trim()
+        || (student.onboarding?.required && !student.onboarding.completed)) {
+      return res.status(403).json({ code: 'PROFILE_INCOMPLETE', error: 'Complete your student profile before booking' });
+    }
+
     const { teacherId, scheduledAt, timezone, notes } = req.body;
     const teacher = await Teacher.findOne({ _id: teacherId, status: 'approved', isVerified: true });
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found or not available' });
     }
+
+    assertGenderAndAgeCompatibility({
+      student,
+      teacher,
+      section: student.enrollmentSection || null,
+    });
 
     const teacherLock = await findStudentTeacherLock(req.user.id);
     if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
@@ -473,6 +501,35 @@ router.post('/regular', protect, async (req, res) => {
     });
     if (!prior) {
       return res.status(400).json({ error: 'يجب إجراء حصة تجريبية أو حصة سابقة مع هذا المعلم أولاً' });
+    }
+
+    const activePrivateSub = await StudentSubscription.findOne({
+      student: req.user.id,
+      planKey: 'private',
+      status: { $in: ['active', 'placed'] },
+      sessionsRemaining: { $gt: 0 },
+    });
+    if (
+      !activePrivateSub
+      || !(Number(activePrivateSub.sessionsRemaining) > 0)
+      || (activePrivateSub.preferredTeacher && String(activePrivateSub.preferredTeacher) !== String(teacher._id))
+    ) {
+      return res.status(403).json({
+        error: 'يتطلب حجز الحصص الفردية اشتراكاً فردياً نشطاً برصيد حصص متاح مع هذا المعلم',
+        code: 'SUBSCRIPTION_REQUIRED',
+      });
+    }
+
+    const openRegularCount = await Session.countDocuments({
+      student: req.user.id,
+      type: 'regular',
+      status: { $in: ['pending', 'accepted'] },
+    });
+    if (openRegularCount >= Number(activePrivateSub.sessionsRemaining)) {
+      return res.status(409).json({
+        error: 'لديك حصص مجدولة بالفعل بعدد الحصص المتبقية في اشتراكك الفردي',
+        code: 'SUBSCRIPTION_CREDITS_RESERVED',
+      });
     }
 
     const existing = await Session.findOne({
@@ -505,7 +562,7 @@ router.post('/regular', protect, async (req, res) => {
       type: 'regular',
       scheduledAt: booking.scheduledAt,
       timezone: booking.timezone || timezone || 'Africa/Cairo',
-      notes,
+      notes: notes ? String(notes).slice(0, 1500) : notes,
       status: 'pending',
     });
 
@@ -517,18 +574,21 @@ router.post('/regular', protect, async (req, res) => {
 
     res.status(201).json({ success: true, message: 'تم إرسال طلب الحصة', session });
   } catch (error) {
-    res.status(400).json({ error: safeErrorMessage(error, 400) });
+    const status = error.status || 400;
+    res.status(status).json({ error: safeErrorMessage(error, status), ...(error.code ? { code: error.code } : {}) });
   }
 });
 
 router.get('/my-sessions', protect, async (req, res) => {
   try {
     const { status, type, page = 1, limit = 10 } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
 
     if (isMockMode && !isDBConnected()) {
       return res.json({
         sessions: [],
-        pagination: { page: 1, limit: Number(limit), total: 0, pages: 0 },
+        pagination: { page: pageNum, limit: limitNum, total: 0, pages: 0 },
       });
     }
 
@@ -552,31 +612,54 @@ router.get('/my-sessions', protect, async (req, res) => {
     }
 
 
-    if (status) filter.status = status;
-    if (type) filter.type = type;
+    if (status) filter.status = String(status);
+    if (type) filter.type = String(type);
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const attendanceStudentSelect = ['teacher', 'admin'].includes(req.user.role)
-      ? 'name email avatar'
-      : 'name avatar';
+    const skip = (pageNum - 1) * limitNum;
 
     const [sessions, total] = await Promise.all([
       Session.find(filter)
-        .populate('student', 'name email avatar')
+        .populate('student', 'name avatar')
         .populate({
           path: 'teacher',
-          populate: { path: 'user', select: 'name email avatar' }
+          select: 'personalInfo.fullName personalInfo.gender personalInfo.country personalInfo.city media.profilePhoto rating user',
+          populate: { path: 'user', select: 'name avatar' }
         })
-        .populate('attendance.student', attendanceStudentSelect)
+        .populate('attendance.student', 'name avatar')
         .populate('circle', 'name code status schedule timezone subscriptionPlanKey')
         .sort({ scheduledAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limitNum),
       Session.countDocuments(filter)
     ]);
 
+    const callerId = String(req.user.id);
     const presentedSessions = sessions.map((session) => {
       const value = typeof session.toObject === 'function' ? session.toObject() : { ...session };
+      if (req.user.role === 'student') {
+        delete value.earnings;
+        if (Array.isArray(value.attendance)) {
+          value.attendance = value.attendance.filter((entry) => {
+            const sid = entry?.student?._id || entry?.student;
+            return sid && String(sid) === callerId;
+          });
+        }
+        if (Array.isArray(value.studentReports)) {
+          value.studentReports = value.studentReports.filter((entry) => {
+            const sid = entry?.student?._id || entry?.student;
+            return sid && String(sid) === callerId;
+          });
+        }
+        if (Array.isArray(value.studentFeedbacks)) {
+          value.studentFeedbacks = value.studentFeedbacks.filter((entry) => {
+            const sid = entry?.student?._id || entry?.student;
+            return sid && String(sid) === callerId;
+          });
+        }
+        if (value.teacher?.user && typeof value.teacher.user === 'object') {
+          delete value.teacher.user.email;
+        }
+      }
       const meetingVisible = meetingVisibleToRole(value, req.user.role);
       const windowState = sessionParticipantWindow(value);
       const started = Boolean(value.scheduledAt) && new Date(value.scheduledAt).getTime() <= Date.now();
@@ -607,10 +690,10 @@ router.get('/my-sessions', protect, async (req, res) => {
     res.json({
       sessions: presentedSessions,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
@@ -680,7 +763,7 @@ router.put('/:id/attendance', protect, authorize('teacher', 'admin'), async (req
     }
 
     await session.save();
-    await session.populate('attendance.student', 'name email avatar');
+    await session.populate('attendance.student', req.user.role === 'admin' ? 'name email avatar' : 'name avatar');
 
     return res.json({
       success: true,
@@ -953,6 +1036,13 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       session.teacherEvaluation = evaluation || {};
       session.earnings.amount = SESSION_RATE;
       session.earnings.status = 'pending';
+    }
+
+    const subscriptionUsage = (session.type === 'regular' || session.type === 'group_circle')
+      ? await settleSubscriptionUsageForSession(session)
+      : null;
+
+    if (!wasAlreadyCompleted) {
       await session.save();
       if (session.type === 'trial') {
         const validLevels = ['beginner', 'intermediate', 'advanced', 'ijazah'];
@@ -998,10 +1088,6 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
           : 'حصة منتظمة مكتملة',
     });
 
-    const subscriptionUsage = session.type === 'group_circle'
-      ? await settleSubscriptionUsageForSession(session)
-      : null;
-
     // Keep non-financial teacher counters deterministic and retry-safe.
     const [completedCount, durationAgg] = await Promise.all([
       Session.countDocuments({ teacher: teacher._id, status: 'completed' }),
@@ -1033,7 +1119,7 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       processReferralFirstSession(session.student.toString()).catch(() => {});
     } else if (session.type === 'group_circle') {
       for (const entry of session.attendance || []) {
-        if (entry.student) {
+        if (entry.student && entry.status === 'attended') {
           processReferralFirstSession(String(entry.student)).catch(() => {});
         }
       }
@@ -1131,13 +1217,20 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
 
     return res.json({ success: true, session, subscriptionUsage });
   } catch (error) {
-    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+    const status = error.status || 400;
+    return res.status(status).json({ error: safeErrorMessage(error, status), ...(error.code ? { code: error.code } : {}) });
   }
 });
 
 router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
   try {
     const { rating, comment, wouldContinue } = req.body;
+    const numericRating = Number(rating);
+    if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ error: 'التقييم يجب أن يكون بين 1 و 5' });
+    }
+    const cleanComment = comment ? String(comment).trim().slice(0, 1000) : '';
+    const cleanWouldContinue = typeof wouldContinue === 'boolean' ? wouldContinue : undefined;
 
     const session = await Session.findOne({
       _id: req.params.id,
@@ -1148,6 +1241,7 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
       return res.status(404).json({ error: 'Completed session not found' });
     }
 
+    let savedFeedback;
     if (session.type === 'group_circle') {
       if (!Array.isArray(session.studentFeedbacks)) session.studentFeedbacks = [];
       const existingIndex = session.studentFeedbacks.findIndex(
@@ -1155,9 +1249,9 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
       );
       const feedback = {
         student: req.user.id,
-        rating,
-        comment,
-        wouldContinue,
+        rating: numericRating,
+        comment: cleanComment,
+        wouldContinue: cleanWouldContinue,
         submittedAt: new Date(),
       };
       if (existingIndex >= 0) {
@@ -1165,16 +1259,26 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
       } else {
         session.studentFeedbacks.push(feedback);
       }
+      savedFeedback = feedback;
     } else {
       if (!session.student || String(session.student) !== String(req.user.id)) {
         return res.status(403).json({ error: 'Not your session' });
       }
-      session.studentFeedback = { rating, comment, wouldContinue };
+      savedFeedback = { rating: numericRating, comment: cleanComment, wouldContinue: cleanWouldContinue };
+      session.studentFeedback = savedFeedback;
     }
 
     await session.save();
 
-    res.json({ success: true, session });
+    const sanitizedSession = {
+      _id: session._id,
+      type: session.type,
+      status: session.status,
+      scheduledAt: session.scheduledAt,
+      studentFeedback: savedFeedback,
+    };
+
+    res.json({ success: true, session: sanitizedSession, studentFeedback: savedFeedback });
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
@@ -1183,12 +1287,14 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
 router.get('/admin/all', protect, authorize('admin'), async (req, res) => {
   try {
     const { status, type, page = 1, limit = 20 } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const filter = {};
 
-    if (status) filter.status = status;
-    if (type) filter.type = type;
+    if (status) filter.status = String(status);
+    if (type) filter.type = String(type);
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
     const [sessions, total] = await Promise.all([
       Session.find(filter)
@@ -1199,17 +1305,17 @@ router.get('/admin/all', protect, authorize('admin'), async (req, res) => {
         })
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limitNum),
       Session.countDocuments(filter)
     ]);
 
     res.json({
       sessions,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
@@ -1312,7 +1418,7 @@ router.patch('/:id/attendance', protect, authorize('teacher', 'admin'), async (r
     }
 
     await session.save();
-    await session.populate('attendance.student', 'name email avatar');
+    await session.populate('attendance.student', req.user.role === 'admin' ? 'name email avatar' : 'name avatar');
 
     return res.json({
       success: true,
@@ -1477,6 +1583,9 @@ router.post('/:id/rsvp', protect, async (req, res) => {
     if (!session) {
       return res.status(404).json({ error: 'الحصة غير موجودة' });
     }
+    if (session.status !== 'accepted') {
+      return res.status(409).json({ error: 'تأكيد الحضور والاعتذار متاح للحصص المقبولة فقط', code: 'SESSION_RSVP_NOT_OPEN' });
+    }
 
     const resolved = await resolveRsvpStudentForCaller(session, req.user, requestedStudentId);
     if (!resolved.studentId) {
@@ -1486,6 +1595,9 @@ router.post('/:id/rsvp', protect, async (req, res) => {
 
     const now = new Date();
     const scheduledTime = new Date(session.scheduledAt);
+    if (scheduledTime.getTime() <= now.getTime()) {
+      return res.status(409).json({ error: 'انتهى وقت تأكيد الحضور أو الاعتذار بعد بدء موعد الحصة', code: 'SESSION_ALREADY_STARTED' });
+    }
     const diffHours = (scheduledTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
     let eligibleForCompensation = false;
@@ -1509,11 +1621,12 @@ router.post('/:id/rsvp', protect, async (req, res) => {
     );
 
     const attendanceStatus = status === 'confirmed' ? 'confirmed' : 'excused';
+    const cleanReason = String(excuseReason || '').trim().slice(0, 500);
 
     const attendanceRecord = {
       student: studentId,
       status: attendanceStatus,
-      excuseReason: excuseReason || (status === 'confirmed' ? 'تأكيد الحضور مسبقاً' : ''),
+      excuseReason: cleanReason || (status === 'confirmed' ? 'تأكيد الحضور مسبقاً' : ''),
       excusedAt: status === 'excused' ? now : undefined,
       eligibleForCompensation
     };
@@ -1524,6 +1637,9 @@ router.post('/:id/rsvp', protect, async (req, res) => {
       if (status === 'excused') {
         session.attendance[existingIndex].excusedAt = now;
         session.attendance[existingIndex].eligibleForCompensation = eligibleForCompensation;
+      } else {
+        session.attendance[existingIndex].excusedAt = undefined;
+        session.attendance[existingIndex].eligibleForCompensation = false;
       }
     } else {
       session.attendance.push(attendanceRecord);
@@ -1560,13 +1676,22 @@ router.post('/:id/rsvp', protect, async (req, res) => {
 // @route   POST /api/sessions/:id/report
 // @desc    Save session evaluation report and immediately dispatch WhatsApp report card
 // @access  Private (Teacher, Admin)
-router.post('/:id/report', protect, authorize('teacher', 'admin'), async (req, res) => {
+router.post('/:id/report', protect, authorize('teacher', 'admin'), sessionReportLimiter, async (req, res) => {
   try {
     const { studentReports } = req.body;
     const session = await Session.findById(req.params.id);
 
     if (!session) {
       return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+    if (
+      session.status !== 'completed'
+      && !(session.status === 'accepted' && new Date(session.scheduledAt).getTime() <= Date.now())
+    ) {
+      return res.status(409).json({
+        error: 'لا يمكن إرسال تقرير الحصة قبل بدء موعدها واعتمادها',
+        code: 'SESSION_REPORT_NOT_READY',
+      });
     }
 
     if (req.user.role === 'teacher') {

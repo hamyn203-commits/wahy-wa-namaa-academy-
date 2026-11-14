@@ -326,7 +326,7 @@ test('subscription payment rejection returns subscription to pending payment', a
     assert.equal(rejected.subscriptionId, String(subscriptionId));
     assert.ok(subscriptionUpdate);
     assert.deepEqual(subscriptionUpdate[1].$set, { status: 'pending_payment' });
-    assert.deepEqual(subscriptionUpdate[1].$unset, { payment: 1, paidAt: 1 });
+    assert.deepEqual(subscriptionUpdate[1].$unset, { payment: 1, paidAt: 1, preferredTeacher: 1 });
   } finally {
     mongoose.startSession = originalStartSession;
     Payment.findOne = originalPaymentFindOne;

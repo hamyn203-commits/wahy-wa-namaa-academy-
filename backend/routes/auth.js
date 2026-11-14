@@ -22,10 +22,15 @@ const { isSection } = require('../config/subscriptionPlans');
 const storage = require('../services/objectStorage');
 const { createGuardianInvitation } = require('../services/guardianInvitations');
 
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const GuardianInvitation = require('../models/GuardianInvitation');
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 
-const REFRESH_COOKIE = 'wn_refresh';
+const MAX_PASSWORD_LENGTH = 128;
+const DUMMY_PASSWORD_HASH = '$2b$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+const getRefreshCookieName = () => (process.env.NODE_ENV === 'production' ? '__Secure-wn_refresh' : 'wn_refresh');
 const MAX_FAILED_LOGIN_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS || 5);
 const LOCKOUT_DURATION_MS = Number(process.env.LOCKOUT_DURATION_MS || 15 * 60 * 1000);
 const REFRESH_COOKIE_MAX_AGE_SECONDS = Number(
@@ -33,20 +38,22 @@ const REFRESH_COOKIE_MAX_AGE_SECONDS = Number(
 );
 
 function setRefreshCookie(res, refreshToken) {
+  const cookieName = getRefreshCookieName();
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   const sameSite = process.env.REFRESH_COOKIE_SAMESITE || 'Lax';
   res.setHeader(
     'Set-Cookie',
-    `${REFRESH_COOKIE}=${encodeURIComponent(refreshToken)}; Path=/api/auth; HttpOnly; SameSite=${sameSite}; Max-Age=${REFRESH_COOKIE_MAX_AGE_SECONDS}${secure}`
+    `${cookieName}=${encodeURIComponent(refreshToken)}; Path=/api/auth; HttpOnly; SameSite=${sameSite}; Max-Age=${REFRESH_COOKIE_MAX_AGE_SECONDS}${secure}`
   );
 }
 
 function clearRefreshCookie(res) {
+  const cookieName = getRefreshCookieName();
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   const sameSite = process.env.REFRESH_COOKIE_SAMESITE || 'Lax';
   res.setHeader(
     'Set-Cookie',
-    `${REFRESH_COOKIE}=; Path=/api/auth; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`
+    `${cookieName}=; Path=/api/auth; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`
   );
 }
 
@@ -70,6 +77,10 @@ function sanitizeUserResponse(user) {
   delete obj.refreshTokenVersion;
   delete obj.failedLoginAttempts;
   delete obj.lockUntil;
+  delete obj.sessionsRevokedAt;
+  delete obj.guardianLinkCode;
+  delete obj.pushToken;
+  delete obj.telegramId;
   delete obj.passwordResetToken;
   delete obj.passwordResetExpires;
   delete obj.emailVerificationToken;
@@ -78,21 +89,63 @@ function sanitizeUserResponse(user) {
   return obj;
 }
 
+function sanitizePreferencesInput(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const clean = {};
+  const allowedLangs = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
+  const allowedCurrencies = ['USD', 'EUR', 'GBP', 'SAR', 'AED', 'EGP', 'TRY', 'PKR', 'IDR'];
+  const allowedThemes = ['light', 'dark'];
+  if (raw.language !== undefined) {
+    if (!allowedLangs.includes(raw.language)) return null;
+    clean['preferences.language'] = raw.language;
+  }
+  if (raw.currency !== undefined) {
+    if (!allowedCurrencies.includes(raw.currency)) return null;
+    clean['preferences.currency'] = raw.currency;
+  }
+  if (raw.timezone !== undefined) {
+    if (typeof raw.timezone !== 'string' || raw.timezone.trim().length > 64) return null;
+    clean['preferences.timezone'] = raw.timezone.trim();
+  }
+  if (raw.market !== undefined) {
+    if (typeof raw.market !== 'string' || raw.market.trim().length > 64) return null;
+    clean['preferences.market'] = raw.market.trim();
+  }
+  if (raw.theme !== undefined) {
+    if (!allowedThemes.includes(raw.theme)) return null;
+    clean['preferences.theme'] = raw.theme;
+  }
+  if (raw.notifications !== undefined) {
+    if (!raw.notifications || typeof raw.notifications !== 'object' || Array.isArray(raw.notifications)) return null;
+    for (const ch of ['email', 'push', 'telegram', 'sms']) {
+      if (raw.notifications[ch] !== undefined) {
+        if (typeof raw.notifications[ch] !== 'boolean') return null;
+        clean[`preferences.notifications.${ch}`] = raw.notifications[ch];
+      }
+    }
+  }
+  return clean;
+}
+
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, phone, role, guardianPhone, guardianRelationship, whatsappPhone, age, gender, currentLevel, preferredTrack, memorizedJuz, memorizationDetails, customLevel, enrollmentSection } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const allowedRoles = ['student', 'guardian'];
 
-    if (!name || !normalizedEmail || !password) {
+    if (!name || !normalizedEmail || !password || typeof password !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ 
         error: 'Name, email, and password are required' 
       });
     }
 
-    if (password.length < 8) {
+    if (normalizedEmail.length > 254) {
+      return res.status(400).json({ error: 'Email cannot exceed 254 characters' });
+    }
+
+    if (password.length < 8 || password.length > MAX_PASSWORD_LENGTH) {
       return res.status(400).json({ 
-        error: 'Password must be at least 8 characters' 
+        error: `Password must be between 8 and ${MAX_PASSWORD_LENGTH} characters` 
       });
     }
 
@@ -108,6 +161,21 @@ router.post('/register', async (req, res) => {
 
     if (assignedRole === 'guardian' && !normalizedPhone) {
       return res.status(400).json({ error: 'رقم هاتف ولي الأمر مطلوب لإنشاء الحساب' });
+    }
+
+    let parsedAge = undefined;
+    const hasAge = age !== undefined && age !== null && String(age).trim() !== '';
+    if (assignedRole === 'student' && hasAge) {
+      parsedAge = Number(age);
+      if (!Number.isFinite(parsedAge) || parsedAge < 4 || parsedAge > 100) {
+        return res.status(400).json({ error: 'عمر الطالب غير صحيح (يجب أن يكون بين 4 و 100 سنة)', code: 'INVALID_STUDENT_AGE' });
+      }
+      if (parsedAge < 18 && !normalizePhone(guardianPhone)) {
+        return res.status(400).json({
+          error: 'رقم هاتف ولي الأمر مطلوب لتسجيل الطالب أقل من 18 سنة',
+          code: 'GUARDIAN_CONTACT_REQUIRED',
+        });
+      }
     }
 
     if (!isMockMode || isDBConnected()) {
@@ -133,15 +201,23 @@ router.post('/register', async (req, res) => {
       }
 
       const user = await User.create({
-        name,
+        name: name.trim().slice(0, 100),
         email: normalizedEmail,
         password,
         phone,
         phoneNormalized: normalizedPhone || undefined,
+        phoneVerified: false,
         role: assignedRole,
         ...(assignedRole === 'student' ? {
-          whatsappPhone: String(whatsappPhone || '').trim(),
-          ...(age ? { age: Number(age) } : {}),
+          whatsappPhone: String(whatsappPhone || '').trim().slice(0, 32),
+          ...(parsedAge !== undefined ? { age: parsedAge } : { onboarding: { required: true, completed: false } }),
+          ...(parsedAge !== undefined && parsedAge < 18 && guardianPhone ? {
+            guardianContact: {
+              name: String(req.body.guardianName || '').trim().slice(0, 100),
+              phone: String(guardianPhone).trim().slice(0, 32),
+              relationship: ['father', 'mother', 'guardian', 'other'].includes(guardianRelationship) ? guardianRelationship : 'guardian',
+            },
+          } : {}),
           ...(gender ? { gender } : {}),
           ...(enrollmentSection ? { enrollmentSection } : {}),
           currentLevel: ['beginner', 'intermediate', 'advanced', 'ijazah'].includes(currentLevel) ? currentLevel : 'beginner',
@@ -152,7 +228,7 @@ router.post('/register', async (req, res) => {
         } : {}),
       });
 
-      if (req.body.referralCode && user.role === 'student') {
+      if (req.body.referralCode && user.role === 'student' && user.emailVerified === true) {
         const { processReferralSignup } = require('./referrals');
         await processReferralSignup(req.body.referralCode, user._id).catch(() => {});
       }
@@ -229,7 +305,7 @@ router.post('/register', async (req, res) => {
     if (error.name === 'ValidationError') {
       return res.status(400).json({ 
         error: 'Validation error',
-        details: error.message 
+        ...(process.env.NODE_ENV !== 'production' ? { details: error.message } : {}),
       });
     }
 
@@ -239,7 +315,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Google Identity Services (OpenID Connect). Only student accounts may use self-service Google login.
+// Google Identity Services (OpenID Connect). Self-service Google signup is strictly limited to student/guardian roles.
 router.post('/google', async (req, res) => {
   if (!process.env.GOOGLE_CLIENT_ID) {
     return res.status(503).json({ error: 'Google sign-in is not configured', code: 'GOOGLE_NOT_CONFIGURED' });
@@ -250,16 +326,20 @@ router.post('/google', async (req, res) => {
   try {
     const { verifyGoogleCredential } = require('../services/googleIdentity');
     const identity = await verifyGoogleCredential(req.body?.credential, process.env.GOOGLE_CLIENT_ID);
-    const requestedRole = ['student', 'guardian', 'teacher'].includes(req.body?.role) ? req.body.role : 'student';
+    if (req.body?.role && !['student', 'guardian'].includes(req.body.role)) {
+      return res.status(400).json({ error: 'This role cannot be self-registered via Google', code: 'GOOGLE_ROLE_NOT_ALLOWED' });
+    }
+    const requestedRole = ['student', 'guardian'].includes(req.body?.role) ? req.body.role : 'student';
     const enrollmentSection = req.body?.enrollmentSection;
     if (requestedRole === 'student' && req.body?.context === 'signup' && enrollmentSection !== undefined && !isSection(enrollmentSection)) {
       return res.status(400).json({ error: 'القسم التعليمي المختار غير صحيح', code: 'ENROLLMENT_SECTION_INVALID' });
     }
-    let user = await User.findOne({ googleSubject: identity.sub }).select('+googleSubject +refreshTokenVersion');
+    let user = await User.findOne({ googleSubject: identity.sub })
+      .select('+googleSubject +refreshTokenVersion +failedLoginAttempts +lockUntil +sessionsRevokedAt');
 
     if (!user) {
       const existing = await User.findOne({ email: identity.email })
-        .select('+googleSubject +refreshTokenVersion');
+        .select('+googleSubject +refreshTokenVersion +failedLoginAttempts +lockUntil +sessionsRevokedAt');
       if (existing) {
         if (!['student', 'guardian', 'teacher'].includes(existing.role)) {
           return res.status(403).json({ error: 'Use the account login method for this role' });
@@ -272,6 +352,20 @@ router.post('/google', async (req, res) => {
         if (existing.googleSubject && existing.googleSubject !== identity.sub) {
           return res.status(409).json({ error: 'This account is linked to another Google identity' });
         }
+        // CRIT-03 defense: If an unverified @gmail.com account was pre-registered before the
+        // real Gmail owner signed in via Google, purge any attacker-planted credentials,
+        // sessions, and pending guardian invitations before claiming the account.
+        if (!existing.googleSubject && existing.emailVerified !== true) {
+          existing.password = crypto.randomBytes(48).toString('base64url');
+          existing.refreshTokenVersion = Number(existing.refreshTokenVersion || 0) + 1;
+          existing.sessionsRevokedAt = new Date();
+          existing.guardianContact = { name: '', phone: '', relationship: '' };
+          existing.onboarding = { required: true, completed: false };
+          await GuardianInvitation.updateMany(
+            { student: existing._id, status: 'pending' },
+            { $set: { status: 'cancelled' } }
+          ).catch(() => {});
+        }
         existing.googleSubject = identity.sub;
         existing.emailVerified = true;
         await existing.save();
@@ -280,7 +374,7 @@ router.post('/google', async (req, res) => {
         user = await User.create({
           name: identity.name.length >= 2 ? identity.name : 'طالب الأكاديمية',
           email: identity.email,
-          password: require('crypto').randomBytes(48).toString('base64url'),
+          password: crypto.randomBytes(48).toString('base64url'),
           googleSubject: identity.sub,
           role: requestedRole,
           ...(requestedRole === 'student' && req.body?.context === 'signup' && enrollmentSection ? { enrollmentSection } : {}),
@@ -293,10 +387,31 @@ router.post('/google', async (req, res) => {
     if (!['student', 'guardian', 'teacher'].includes(user.role) || user.isActive === false) {
       return res.status(403).json({ error: 'Account is not eligible for Google sign-in' });
     }
+    if (user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
+      const retryAfterSeconds = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      return res.status(423).json({
+        error: 'Account temporarily locked due to repeated failed login attempts. Please try again later.',
+        code: 'ACCOUNT_LOCKED',
+        retryAfterSeconds,
+      });
+    }
+    if (user.role === 'teacher') {
+      const teacherAccess = await getTeacherAccessDecision(user._id || user.id);
+      if (!teacherAccess.allowed) {
+        return res.status(403).json({
+          error: teacherAccess.error,
+          code: teacherAccess.code,
+          applicationStatus: teacherAccess.status,
+        });
+      }
+    }
     if (user.role === 'guardian') {
       await Guardian.updateOne({ user: user._id }, { $setOnInsert: { user: user._id, children: [] } }, { upsert: true });
     }
     user.lastLogin = new Date();
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
     await user.save();
     setRefreshCookie(res, generateRefreshToken(user));
     return res.json({
@@ -314,23 +429,31 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ 
         error: 'Email and password are required' 
       });
     }
 
+    if (email.length > 254 || password.length > MAX_PASSWORD_LENGTH) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
     const user = isMockMode && !isDBConnected()
       ? findMockUserByEmail(email)
-      : await User.findOne({ email: email.toLowerCase() }).select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
+      : await User.findOne({ email: email.trim().toLowerCase() }).select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
     
     if (!user) {
+      if (!isMockMode || isDBConnected()) {
+        await bcrypt.compare(password, DUMMY_PASSWORD_HASH).catch(() => {});
+      }
       return res.status(401).json({ 
         error: 'Invalid email or password' 
       });
     }
 
-    if (user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
+    const lockExpired = Boolean(user.lockUntil && new Date(user.lockUntil).getTime() <= Date.now());
+    if (user.lockUntil && !lockExpired) {
       const retryAfterSeconds = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / 1000);
       res.setHeader('Retry-After', String(retryAfterSeconds));
       return res.status(423).json({
@@ -352,12 +475,23 @@ router.post('/login', async (req, res) => {
     
     if (!isPasswordValid) {
       if (!isMockMode || isDBConnected()) {
-        const nextAttempts = Number(user.failedLoginAttempts || 0) + 1;
-        user.failedLoginAttempts = nextAttempts;
-        if (nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-          user.lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        const baseAttempts = lockExpired ? 0 : Number(user.failedLoginAttempts || 0);
+        const nextAttempts = baseAttempts + 1;
+        const nextLock = nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
+          ? new Date(Date.now() + LOCKOUT_DURATION_MS)
+          : null;
+        if (typeof User.findByIdAndUpdate === 'function' && user._id) {
+          await User.findByIdAndUpdate(
+            user._id,
+            lockExpired
+              ? { $set: { failedLoginAttempts: 1, lockUntil: nextLock } }
+              : { $inc: { failedLoginAttempts: 1 }, ...(nextLock ? { $set: { lockUntil: nextLock } } : {}) }
+          ).catch(() => {});
+        } else {
+          user.failedLoginAttempts = nextAttempts;
+          user.lockUntil = nextLock;
+          await user.save?.().catch(() => {});
         }
-        await user.save().catch(() => {});
       }
       return res.status(401).json({ 
         error: 'Invalid email or password' 
@@ -385,7 +519,8 @@ router.post('/login', async (req, res) => {
       user.lastLogin = new Date();
       user.failedLoginAttempts = 0;
       user.lockUntil = null;
-      if (user.phone) {
+      if (user.phone && !user.phoneNormalized) {
+        user.$locals = { ...(user.$locals || {}), preservePhoneVerified: true };
         user.phoneNormalized = normalizePhone(user.phone) || undefined;
       }
       await user.save();
@@ -424,6 +559,18 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
     if (tokenVersion !== expectedVersion) {
       clearRefreshCookie(res);
       return res.status(401).json({ error: 'Refresh session has been revoked' });
+    }
+
+    if (user.role === 'teacher') {
+      const teacherAccess = await getTeacherAccessDecision(user._id || user.id);
+      if (!teacherAccess.allowed) {
+        clearRefreshCookie(res);
+        return res.status(403).json({
+          error: teacherAccess.error,
+          code: teacherAccess.code,
+          applicationStatus: teacherAccess.status,
+        });
+      }
     }
 
     const accessToken = generateAccessToken(user);
@@ -490,7 +637,7 @@ router.get('/me', verifyAccessToken, async (req, res) => {
 router.patch('/me', verifyAccessToken, async (req, res) => {
   try {
     const allowedUpdates = ['name', 'phone', 'avatar', 'bio', 'preferences'];
-    const updates = Object.keys(req.body);
+    const updates = Object.keys(req.body || {});
     const isValidUpdate = updates.every(update => allowedUpdates.includes(update));
 
     if (!isValidUpdate) {
@@ -499,34 +646,82 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
       });
     }
 
+    const patchFields = {};
+
     if (Object.prototype.hasOwnProperty.call(req.body, 'avatar') && req.user.role === 'student') {
       const value = String(req.body.avatar || '');
       if (value && (!storage.referenceMatches(value, 'student-avatar', req.user.id) ||
           (storage.getDriver() === 'vercel-blob' && !storage.isVercelBlobReference(value)))) {
         return res.status(400).json({ error: 'Invalid student avatar reference' });
       }
+      patchFields.avatar = value;
     }
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'avatar') && req.user.role !== 'student') {
       const value = String(req.body.avatar || '');
-      if (value && !storage.referenceMatches(value, 'teacher-public', req.user.id) && !storage.referenceMatches(value, 'student-avatar', req.user.id)) {
+      const validOwnerRef = storage.referenceMatches(value, 'teacher-public', req.user.id)
+        || storage.referenceMatches(value, 'student-avatar', req.user.id);
+      const validBlobHost = storage.getDriver() !== 'vercel-blob' || storage.isVercelBlobReference(value);
+      if (value && (!validOwnerRef || !validBlobHost)) {
         return res.status(400).json({ error: 'Invalid avatar reference' });
       }
+      patchFields.avatar = value;
     }
-    if (typeof req.body.name === 'string') req.body.name = req.body.name.trim().slice(0, 100);
-    if (typeof req.body.bio === 'string') req.body.bio = req.body.bio.trim().slice(0, 1000);
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+      if (typeof req.body.name !== 'string' || req.body.name.trim().length < 2) {
+        return res.status(400).json({ error: 'Name must be at least 2 characters' });
+      }
+      patchFields.name = req.body.name.trim().slice(0, 100);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'bio')) {
+      patchFields.bio = String(req.body.bio || '').trim().slice(0, 500);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'preferences')) {
+      const sanitizedPrefs = sanitizePreferencesInput(req.body.preferences);
+      if (!sanitizedPrefs) {
+        return res.status(400).json({ error: 'Invalid preferences payload' });
+      }
+      Object.assign(patchFields, sanitizedPrefs);
+    }
+
     if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
-      req.body.phone = String(req.body.phone || '').trim().slice(0, 32);
-      req.body.phoneNormalized = normalizePhone(req.body.phone) || undefined;
+      const cleanPhone = String(req.body.phone || '').trim().slice(0, 32);
+      const normalizedPhone = normalizePhone(cleanPhone);
+      if (req.user.role === 'guardian' && !normalizedPhone) {
+        return res.status(400).json({ error: 'رقم هاتف ولي الأمر غير صالح' });
+      }
+      if (cleanPhone && !normalizedPhone) {
+        return res.status(400).json({ error: 'رقم الهاتف غير صالح' });
+      }
+      if ((!isMockMode || isDBConnected()) && req.user.role === 'guardian' && normalizedPhone) {
+        const duplicateGuardian = await User.findOne({
+          _id: { $ne: req.user.id },
+          role: 'guardian',
+          phoneNormalized: normalizedPhone,
+          isActive: { $ne: false },
+        }).select('_id');
+        if (duplicateGuardian) {
+          return res.status(409).json({
+            error: 'يوجد حساب ولي أمر آخر مسجل بهذا الرقم',
+            code: 'GUARDIAN_PHONE_ALREADY_REGISTERED',
+          });
+        }
+      }
+      patchFields.phone = cleanPhone;
+      patchFields.phoneNormalized = normalizedPhone || undefined;
+      patchFields.phoneVerified = false;
     }
 
     let user;
     if (isMockMode && !isDBConnected()) {
-      user = updateMockUser(req.user.id, req.body);
+      user = updateMockUser(req.user.id, patchFields);
     } else {
       user = await User.findByIdAndUpdate(
         req.user.id,
-        { $set: req.body },
+        { $set: patchFields },
         { new: true, runValidators: true }
       );
     }
@@ -542,6 +737,15 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
       user: await presentUser(user) 
     });
   } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ error: safeErrorMessage(error, 400) });
+    }
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        error: 'رقم الهاتف مستخدم بالفعل في حساب آخر',
+        code: 'GUARDIAN_PHONE_ALREADY_REGISTERED',
+      });
+    }
     console.error('Update profile error:', error);
     res.status(500).json({ 
       error: 'Failed to update profile' 
@@ -556,8 +760,9 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
     const allowed = ['name', 'phone', 'age', 'gender', 'whatsappPhone', 'preferredTrack', 'currentLevel', 'memorizedJuz', 'memorizationDetails', 'bio', 'guardianContact'];
     const submitted = req.body || {};
     if (Object.keys(submitted).some(key => !allowed.includes(key))) return res.status(400).json({ error: 'Invalid fields' });
-    const updated = await User.findById(req.user.id);
+    const updated = await User.findById(req.user.id).select('+phoneNormalized');
     if (!updated || !updated.isActive || updated.role !== req.user.role) return res.status(403).json({ error: 'Invalid account' });
+    const previousNormalizedPhone = updated.phoneNormalized || normalizePhone(updated.phone) || '';
     if (submitted.guardianContact !== undefined) {
       if (req.user.role !== 'student' || !submitted.guardianContact || typeof submitted.guardianContact !== 'object' || Array.isArray(submitted.guardianContact)) return res.status(400).json({ error: 'Invalid guardian contact' });
       const contact = submitted.guardianContact;
@@ -565,7 +770,7 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
       const relationship = String(contact.relationship || '').trim();
       if (!['', 'father', 'mother', 'guardian', 'other'].includes(relationship)) return res.status(400).json({ error: 'Invalid guardian relationship' });
       if (contact.phone && !normalizePhone(contact.phone)) return res.status(400).json({ error: 'Invalid guardian phone' });
-      updated.guardianContact = { name: String(contact.name || '').trim(), phone: String(contact.phone || '').trim(), relationship };
+      updated.guardianContact = { name: String(contact.name || '').trim().slice(0, 100), phone: String(contact.phone || '').trim().slice(0, 32), relationship };
     }
     for (const key of allowed.filter(value => value !== 'guardianContact')) {
       if (Object.prototype.hasOwnProperty.call(submitted, key)) {
@@ -574,11 +779,39 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
       }
     }
     if (!updated.name?.trim() || !updated.phone?.trim()) return res.status(400).json({ error: 'Name and phone are required to finish profile' });
+    const nextNormalizedPhone = normalizePhone(updated.phone);
+    if (!nextNormalizedPhone) {
+      return res.status(400).json({ error: 'رقم الهاتف غير صالح' });
+    }
+    if (updated.role === 'guardian') {
+      const duplicateGuardian = await User.findOne({
+        _id: { $ne: updated._id },
+        role: 'guardian',
+        phoneNormalized: nextNormalizedPhone,
+        isActive: { $ne: false },
+      }).select('_id');
+      if (duplicateGuardian) {
+        return res.status(409).json({
+          error: 'يوجد حساب ولي أمر آخر مسجل بهذا الرقم',
+          code: 'GUARDIAN_PHONE_ALREADY_REGISTERED',
+        });
+      }
+    }
+    if (updated.role === 'student') {
+      const parsedAge = Number(updated.age);
+      if (!Number.isFinite(parsedAge) || parsedAge < 4 || parsedAge > 100) {
+        return res.status(400).json({ code: 'AGE_REQUIRED', error: 'يرجى تحديد عمر الطالب بشكل صحيح (بين 4 و 100 سنة)' });
+      }
+      updated.age = Math.trunc(parsedAge);
+    }
     const isMinor = updated.role === 'student' && Number(updated.age) > 0 && Number(updated.age) < 18;
     if (isMinor && (!updated.guardianContact?.name?.trim() || !updated.guardianContact?.phone?.trim() || !updated.guardianContact?.relationship)) {
       return res.status(400).json({ code: 'GUARDIAN_CONTACT_REQUIRED', error: 'بيانات ولي الأمر مطلوبة للطالب أقل من 18 سنة' });
     }
-    updated.phoneNormalized = normalizePhone(updated.phone) || undefined;
+    updated.phoneNormalized = nextNormalizedPhone;
+    if (nextNormalizedPhone !== previousNormalizedPhone) {
+      updated.phoneVerified = false;
+    }
     if (isMinor) {
       updated.set('privacyConsent.parentalConsentVerified', true);
       updated.set('privacyConsent.parentalConsentAt', new Date());
@@ -589,6 +822,7 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
     return res.json({ user: await presentUser(updated) });
   } catch (error) {
     if (error.name === 'ValidationError') return res.status(400).json({ error: safeErrorMessage(error, 400) });
+    if (error?.code === 11000) return res.status(409).json({ error: 'رقم الهاتف مستخدم بالفعل في حساب آخر', code: 'GUARDIAN_PHONE_ALREADY_REGISTERED' });
     return res.status(500).json({ error: 'Could not save profile' });
   }
 });
@@ -616,28 +850,47 @@ router.post('/change-password', verifyAccessToken, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
+    if (!currentPassword || !newPassword || typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
       return res.status(400).json({ 
         error: 'Current and new password are required' 
       });
     }
 
-    if (newPassword.length < 8) {
+    if (currentPassword.length > MAX_PASSWORD_LENGTH) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    if (newPassword.length < 8 || newPassword.length > MAX_PASSWORD_LENGTH) {
       return res.status(400).json({ 
-        error: 'New password must be at least 8 characters' 
+        error: `New password must be between 8 and ${MAX_PASSWORD_LENGTH} characters` 
       });
     }
 
-    const user = await User.findById(req.user.id).select('+password +refreshTokenVersion');
+    const user = await User.findById(req.user.id).select('+password +refreshTokenVersion +failedLoginAttempts +lockUntil');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const lockExpired = Boolean(user.lockUntil && new Date(user.lockUntil).getTime() <= Date.now());
+    if (user.lockUntil && !lockExpired) {
+      const retryAfterSeconds = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      return res.status(423).json({
+        error: 'Account temporarily locked due to repeated failed password attempts. Please try again later.',
+        code: 'ACCOUNT_LOCKED',
+        retryAfterSeconds,
+      });
+    }
 
     const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
       if (!isMockMode || isDBConnected()) {
-        const nextAttempts = Number(user.failedLoginAttempts || 0) + 1;
+        const baseAttempts = lockExpired ? 0 : Number(user.failedLoginAttempts || 0);
+        const nextAttempts = baseAttempts + 1;
         user.failedLoginAttempts = nextAttempts;
-        if (nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-          user.lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
-        }
+        user.lockUntil = nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
+          ? new Date(Date.now() + LOCKOUT_DURATION_MS)
+          : null;
         await user.save().catch(() => {});
       }
       return res.status(401).json({ 
@@ -646,6 +899,9 @@ router.post('/change-password', verifyAccessToken, async (req, res) => {
     }
 
     user.password = newPassword;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    user.sessionsRevokedAt = new Date();
     user.refreshTokenVersion = Number(user.refreshTokenVersion || 0) + 1;
     await user.save();
 
@@ -672,7 +928,7 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
-    if (!email || typeof email !== 'string') {
+    if (!email || typeof email !== 'string' || email.trim().length > 254) {
       return res.status(400).json({ 
         error: 'Email is required' 
       });
@@ -734,19 +990,22 @@ router.post('/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
-    if (!token || !newPassword) {
+    if (!token || !newPassword || typeof token !== 'string' || typeof newPassword !== 'string') {
       return res.status(400).json({ 
         error: 'Token and new password are required' 
       });
     }
 
-    if (newPassword.length < 8) {
+    if (token.length > 256) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    if (newPassword.length < 8 || newPassword.length > MAX_PASSWORD_LENGTH) {
       return res.status(400).json({ 
-        error: 'Password must be at least 8 characters' 
+        error: `Password must be between 8 and ${MAX_PASSWORD_LENGTH} characters` 
       });
     }
 
-    const crypto = require('crypto');
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
     const user = await User.findOne({
@@ -763,6 +1022,9 @@ router.post('/reset-password', async (req, res) => {
     user.password = newPassword;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    user.sessionsRevokedAt = new Date();
     user.refreshTokenVersion = Number(user.refreshTokenVersion || 0) + 1;
     await user.save();
 

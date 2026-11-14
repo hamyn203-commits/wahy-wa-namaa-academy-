@@ -4,10 +4,17 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const { Badge, UserBadge, Achievement, Leaderboard } = require('../models/Gamification');
 const Progress = require('../models/Progress');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, readAccessTokenIfValid } = require('../middleware/auth');
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
+
+function maskDisplayName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'طالب وحي ونماء';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0)}.`;
+}
 
 // @route   GET /api/gamification/badges
 // @desc    Get all available badges
@@ -162,7 +169,7 @@ router.put('/achievements/seen-all', protect, async (req, res) => {
 // @route   GET /api/gamification/leaderboard/:type/:timeframe
 // @desc    Get leaderboard
 // @access  Public
-router.get('/leaderboard/:type/:timeframe', async (req, res) => {
+router.get('/leaderboard/:type/:timeframe', readAccessTokenIfValid, async (req, res) => {
   try {
     const { type, timeframe } = req.params;
     const { limit = 50 } = req.query;
@@ -188,15 +195,27 @@ router.get('/leaderboard/:type/:timeframe', async (req, res) => {
         .populate('entries.user', 'name avatar');
     }
 
-    const entries = leaderboard.entries.slice(0, safeLimit);
-
+    const viewer = req.user || null;
     let userRank = null;
-    if (req.user) {
-      const userEntry = leaderboard.entries.find(e => e.user._id.toString() === req.user.id);
+    if (viewer?.id) {
+      const userEntry = leaderboard.entries.find(e => e.user?._id?.toString() === String(viewer.id));
       if (userEntry) {
         userRank = userEntry.rank;
       }
     }
+
+    const entries = leaderboard.entries.slice(0, safeLimit).map((entry) => {
+      const raw = typeof entry.toObject === 'function' ? entry.toObject() : { ...entry };
+      return {
+        rank: raw.rank,
+        score: raw.score,
+        details: raw.details,
+        user: {
+          name: maskDisplayName(raw.user?.name),
+          avatar: raw.user?.avatar || '',
+        },
+      };
+    });
 
     res.json({
       type,

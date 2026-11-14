@@ -24,14 +24,14 @@ router.get('/summary', protect, authorize('admin'), async (_req, res) => {
       monthlyRegs
     ] = await Promise.all([
       Donation.aggregate([
-        { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$amount' } } },
+        { $group: { _id: { status: '$status', currency: '$currency' }, count: { $sum: 1 }, total: { $sum: '$amount' } } },
       ]),
       JobApplication.countDocuments({ status: 'new' }),
       VideoAsset.countDocuments({ isPublished: true }),
       Referral.countDocuments(),
       Donation.aggregate([
         { $match: { status: { $in: ['pledged', 'confirmed'] } } },
-        { $group: { _id: '$category', total: { $sum: '$amount' } } }
+        { $group: { _id: { category: '$category', currency: '$currency' }, total: { $sum: '$amount' } } }
       ]),
       Enrollment.aggregate([
         { $group: { _id: '$course', count: { $sum: 1 } } },
@@ -56,12 +56,35 @@ router.get('/summary', protect, authorize('admin'), async (_req, res) => {
       ])
     ]);
 
+    const donationsSummary = donations.reduce((acc, row) => {
+      const statusKey = row._id?.status || 'pledged';
+      const currencyKey = row._id?.currency || 'USD';
+      if (!acc[statusKey]) {
+        acc[statusKey] = { count: 0, total: 0, byCurrency: {} };
+      }
+      acc[statusKey].count += row.count;
+      acc[statusKey].total += row.total;
+      acc[statusKey].byCurrency[currencyKey] = { count: row.count, total: row.total };
+      return acc;
+    }, {});
+
+    const donationsByCategorySummary = donationsByCategory.reduce((acc, row) => {
+      const catKey = row._id?.category || 'general';
+      const currencyKey = row._id?.currency || 'USD';
+      if (!acc[catKey]) {
+        acc[catKey] = { total: 0, byCurrency: {} };
+      }
+      acc[catKey].total += row.total;
+      acc[catKey].byCurrency[currencyKey] = row.total;
+      return acc;
+    }, {});
+
     res.json({
-      donations: donations.reduce((a, d) => ({ ...a, [d._id]: { count: d.count, total: d.total } }), {}),
+      donations: donationsSummary,
       newApplications: applications,
       publishedVideos: videos,
       totalReferrals: referrals,
-      donationsByCategory: donationsByCategory.reduce((a, c) => ({ ...a, [c._id]: c.total }), {}),
+      donationsByCategory: donationsByCategorySummary,
       enrollmentsByCourse: enrollmentsByCourse.map(e => ({ name: e.title, count: e.count })),
       monthlyRegs: monthlyRegs.map(m => ({ month: `${m._id.year}-${String(m._id.month).padStart(2, '0')}`, count: m.count }))
     });

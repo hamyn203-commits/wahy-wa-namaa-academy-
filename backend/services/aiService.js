@@ -1,6 +1,12 @@
 const RecitationReport = require('../models/RecitationReport');
 
 const SYSTEM_QURAN = 'You are an Islamic education assistant for Wahy Wa Namaa Academy. Answer in the user language with authentic sources. Be concise and practical.';
+const ALLOWED_LOCALES = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
+
+function normalizeLocale(locale) {
+  const clean = String(locale || 'ar').trim().toLowerCase();
+  return ALLOWED_LOCALES.has(clean) ? clean : 'ar';
+}
 
 const LOCAL_FAQ = {
   ar: {
@@ -86,14 +92,18 @@ async function callGemini(prompt, { locale = 'ar' } = {}) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
 
+  const safeLoc = normalizeLocale(locale);
   const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': key,
+    },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `${SYSTEM_QURAN}\nLanguage: ${locale}\n\n${prompt}` }] }],
+      contents: [{ parts: [{ text: `${SYSTEM_QURAN}\nLanguage: ${safeLoc}\n\n${prompt}` }] }],
     }),
   });
 
@@ -236,34 +246,86 @@ async function analyzeWithAi(prompt, locale) {
   return null;
 }
 
+function sanitizeMetricSection(rawSection, fallbackSection) {
+  if (!rawSection || typeof rawSection !== 'object') return fallbackSection;
+  const rawScore = Number(rawSection.score);
+  const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, Math.round(rawScore))) : fallbackSection.score;
+  const notes = Array.isArray(rawSection.notes)
+    ? rawSection.notes.slice(0, 6).map((item) => String(item || '').trim().slice(0, 300)).filter(Boolean)
+    : fallbackSection.notes;
+  return { score, notes };
+}
+
+function sanitizeRecitationAnalysis(rawAnalysis, baseAnalysis) {
+  if (!rawAnalysis || typeof rawAnalysis !== 'object') return baseAnalysis;
+  const rawOverall = Number(rawAnalysis.overallScore);
+  const overallScore = Number.isFinite(rawOverall)
+    ? Math.max(0, Math.min(100, Math.round(rawOverall)))
+    : baseAnalysis.overallScore;
+  const recommendations = Array.isArray(rawAnalysis.recommendations)
+    ? rawAnalysis.recommendations.slice(0, 8).map((item) => String(item || '').trim().slice(0, 300)).filter(Boolean)
+    : baseAnalysis.recommendations;
+
+  return {
+    overallScore,
+    tajweed: sanitizeMetricSection(rawAnalysis.tajweed, baseAnalysis.tajweed),
+    makhraj: sanitizeMetricSection(rawAnalysis.makhraj, baseAnalysis.makhraj),
+    waqf: sanitizeMetricSection(rawAnalysis.waqf, baseAnalysis.waqf),
+    mad: sanitizeMetricSection(rawAnalysis.mad, baseAnalysis.mad),
+    ghunnah: sanitizeMetricSection(rawAnalysis.ghunnah, baseAnalysis.ghunnah),
+    noonSakinah: sanitizeMetricSection(rawAnalysis.noonSakinah, baseAnalysis.noonSakinah),
+    recommendations,
+    source: baseAnalysis.source,
+  };
+}
+
 async function analyzeRecitation(userId, file, { locale = 'ar', surah = '' } = {}) {
-  let analysis = localRecitationAnalysis(file?.originalname, locale);
+  const safeLoc = normalizeLocale(locale);
+  const safeSurah = String(surah || '').trim().slice(0, 120);
+  const safeFilename = String(file?.originalname || 'audio-upload').slice(0, 120);
+  const baseAnalysis = localRecitationAnalysis(safeFilename, safeLoc);
+  let analysis = baseAnalysis;
   let provider = 'local-heuristic';
   let transcript = null;
 
   transcript = await transcribeAudio(file);
 
-  const prompt = RECITATION_JSON_PROMPT(transcript || file?.originalname, locale) + (surah ? `\nSurah context: ${surah}` : '');
-  const aiResult = await analyzeWithAi(prompt, locale);
+  const prompt = RECITATION_JSON_PROMPT(transcript || safeFilename, safeLoc) + (safeSurah ? `\nSurah context: ${safeSurah}` : '');
+  const aiResult = await analyzeWithAi(prompt, safeLoc);
   if (aiResult) {
-    analysis = { ...localRecitationAnalysis(file?.originalname, locale), ...aiResult.analysis, transcript };
+    analysis = sanitizeRecitationAnalysis(aiResult.analysis, baseAnalysis);
     provider = aiResult.provider;
   }
 
   const report = await RecitationReport.create({
     user: userId,
-    filename: file?.originalname,
+    filename: safeFilename,
     mimeType: file?.mimetype,
     size: file?.size,
-    surah: surah || undefined,
+    surah: safeSurah || undefined,
     transcript,
-    ...analysis,
+    overallScore: analysis.overallScore,
+    tajweed: analysis.tajweed,
+    makhraj: analysis.makhraj,
+    waqf: analysis.waqf,
+    mad: analysis.mad,
+    ghunnah: analysis.ghunnah,
+    noonSakinah: analysis.noonSakinah,
+    recommendations: analysis.recommendations,
     provider,
   });
 
   return {
     reportId: report.reportId,
-    ...analysis,
+    overallScore: analysis.overallScore,
+    tajweed: analysis.tajweed,
+    makhraj: analysis.makhraj,
+    waqf: analysis.waqf,
+    mad: analysis.mad,
+    ghunnah: analysis.ghunnah,
+    noonSakinah: analysis.noonSakinah,
+    recommendations: analysis.recommendations,
+    transcript,
     analyzedAt: report.createdAt,
     id: report._id,
     provider,

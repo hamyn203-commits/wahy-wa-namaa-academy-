@@ -19,7 +19,7 @@ router.post('/', async (req, res) => {
     if (cleanName.length < 2 || cleanName.length > 100) {
       return res.status(400).json({ error: 'الاسم غير صالح' });
     }
-    if (!/^\S+@\S+\.\S+$/.test(cleanEmail) || cleanEmail.length > 254) {
+    if (cleanEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/.test(cleanEmail)) {
       return res.status(400).json({ error: 'البريد الإلكتروني غير صالح' });
     }
     if (cleanPhone.length > 32 || cleanSubject.length > 160 || cleanMessage.length > 5000) {
@@ -42,13 +42,15 @@ router.post('/', async (req, res) => {
 router.get('/', protect, authorize('admin'), async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
-    const filter = status ? { status } : {};
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const filter = status ? { status: String(status) } : {};
+    const skip = (pageNum - 1) * limitNum;
     const [messages, total] = await Promise.all([
-      ContactMessage.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      ContactMessage.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
       ContactMessage.countDocuments(filter),
     ]);
-    res.json({ messages, pagination: { page: Number(page), limit: Number(limit), total } });
+    res.json({ messages, pagination: { page: pageNum, limit: limitNum, total } });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }

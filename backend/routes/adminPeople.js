@@ -783,7 +783,7 @@ router.put('/students/:id', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
-    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('+password');
+    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('+password +refreshTokenVersion +sessionsRevokedAt');
     if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
 
     const {
@@ -839,7 +839,11 @@ router.put('/students/:id', async (req, res) => {
     if (typeof bio === 'string') {
       student.bio = bio.trim().slice(0, 500);
     }
+    let shouldRevokeSessions = false;
     if (typeof isActive === 'boolean') {
+      if (isActive === false && student.isActive !== false) {
+        shouldRevokeSessions = true;
+      }
       student.isActive = isActive;
     }
     if (newPassword && String(newPassword).trim()) {
@@ -847,6 +851,11 @@ router.put('/students/:id', async (req, res) => {
         return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
       }
       student.password = String(newPassword).trim();
+      shouldRevokeSessions = true;
+    }
+    if (shouldRevokeSessions) {
+      student.refreshTokenVersion = Number(student.refreshTokenVersion || 0) + 1;
+      student.sessionsRevokedAt = new Date();
     }
 
     await student.save();
@@ -898,8 +907,12 @@ router.delete('/students/:id', async (req, res) => {
         { $set: { status: 'cancelled', circle: null } }
       ),
       Session.updateMany(
-        { student: studentId, type: { $ne: 'group' }, status: { $in: ['pending', 'accepted', 'scheduled'] } },
+        { student: studentId, type: { $ne: 'group_circle' }, status: { $in: ['pending', 'accepted', 'scheduled'] } },
         { $set: { status: 'cancelled' } }
+      ),
+      Session.updateMany(
+        { type: 'group_circle', status: { $in: ['pending', 'accepted', 'scheduled'] }, 'attendance.student': studentId },
+        { $pull: { attendance: { student: studentId } } }
       ),
     ]);
 

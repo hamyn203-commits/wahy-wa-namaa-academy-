@@ -18,7 +18,31 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import { isSafeInternalRedirect } from '../../lib/navigation';
 import '../../styles/public-experience.css';
+
+const TRUSTED_ACADEMY_HOSTS = new Set(['wahywanamaa.com', 'www.wahywanamaa.com']);
+
+function resolveSafeInternalPath(rawUrl) {
+  if (typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  if (isSafeInternalRedirect(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const sameOrigin = typeof window !== 'undefined' && parsed.origin === window.location.origin;
+    const trustedHost = parsed.protocol === 'https:' && TRUSTED_ACADEMY_HOSTS.has(parsed.hostname.toLowerCase());
+    if (sameOrigin || trustedHost) {
+      const candidatePath = `${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`;
+      return isSafeInternalRedirect(candidatePath) ? candidatePath : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function pickText(value, locale) {
   if (!value) return '';
@@ -255,24 +279,30 @@ export default function NotificationsPage() {
                   <p className="mt-2 !text-[10px] !text-[var(--wn-text-tertiary)]">
                     {new Date(n.createdAt).toLocaleString(isAr ? 'ar-EG' : 'en')}
                   </p>
-                  {n.data?.meetingLink ? (
-                    <a
-                      href={n.data.meetingLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block mt-2 text-xs font-bold text-[var(--wn-emerald-dark)]"
-                    >
-                      {isAr ? 'فتح رابط الجلسة' : 'Open session link'}
-                    </a>
-                  ) : null}
-                  {n.data?.actionUrl ? (
-                    <Link
-                      to={localizedPath(n.data.actionUrl, locale)}
-                      className="inline-block mt-2 me-3 text-xs font-bold text-[var(--wn-emerald-dark)]"
-                    >
-                      {isAr ? 'فتح' : 'Open'}
-                    </Link>
-                  ) : null}
+                  {(() => {
+                    const safeMeetingPath = resolveSafeInternalPath(n.data?.meetingLink);
+                    const safeActionPath = resolveSafeInternalPath(n.data?.actionUrl);
+                    return (
+                      <>
+                        {safeMeetingPath ? (
+                          <Link
+                            to={localizedPath(safeMeetingPath, locale)}
+                            className="inline-block mt-2 text-xs font-bold text-[var(--wn-emerald-dark)]"
+                          >
+                            {isAr ? 'فتح رابط الجلسة' : 'Open session link'}
+                          </Link>
+                        ) : null}
+                        {safeActionPath ? (
+                          <Link
+                            to={localizedPath(safeActionPath, locale)}
+                            className="inline-block mt-2 me-3 text-xs font-bold text-[var(--wn-emerald-dark)]"
+                          >
+                            {isAr ? 'فتح' : 'Open'}
+                          </Link>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </article>
               );
             })}

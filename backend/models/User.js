@@ -17,7 +17,11 @@ const UserSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+    maxlength: [254, 'Email cannot exceed 254 characters'],
+    validate: {
+      validator: (value) => typeof value === 'string' && value.length <= 254 && /^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(value),
+      message: 'Please provide a valid email',
+    },
   },
   password: { 
     type: String, 
@@ -28,13 +32,18 @@ const UserSchema = new mongoose.Schema({
   phone: {
     type: String,
     trim: true,
-    match: [/^\+?[\d\s-]{10,}$/, 'Please provide a valid phone number']
+    maxlength: [32, 'Phone number cannot exceed 32 characters'],
+    match: [/^\+?[\d\s-]{10,32}$/, 'Please provide a valid phone number']
   },
   phoneNormalized: {
     type: String,
     trim: true,
     select: false,
     index: true,
+  },
+  phoneVerified: {
+    type: Boolean,
+    default: false,
   },
   role: { 
     type: String, 
@@ -132,9 +141,9 @@ const UserSchema = new mongoose.Schema({
     deletionReason: { type: String, trim: true, maxlength: 500, default: '' },
   },
   lastLogin: Date,
-  pushToken: String,
+  pushToken: { type: String, select: false },
   pushPlatform: String,
-  telegramId: String,
+  telegramId: { type: String, select: false },
   referralCode: { type: String, unique: true, sparse: true, uppercase: true },
   guardianLinkCode: {
     type: String,
@@ -148,8 +157,8 @@ const UserSchema = new mongoose.Schema({
   preferences: {
     language: { type: String, default: 'ar', enum: ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'] },
     currency: { type: String, default: 'SAR', enum: ['USD', 'EUR', 'GBP', 'SAR', 'AED', 'EGP', 'TRY', 'PKR', 'IDR'] },
-    timezone: { type: String, default: 'Asia/Riyadh' },
-    market: { type: String, default: 'arab-world' },
+    timezone: { type: String, default: 'Asia/Riyadh', maxlength: 64 },
+    market: { type: String, default: 'arab-world', maxlength: 64 },
     theme: { type: String, default: 'light', enum: ['light', 'dark'] },
     notifications: {
       email: { type: Boolean, default: true },
@@ -162,10 +171,24 @@ const UserSchema = new mongoose.Schema({
 
 UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
+UserSchema.index(
+  { role: 1, phoneNormalized: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      role: 'guardian',
+      isActive: true,
+      phoneNormalized: { $type: 'string' },
+    },
+  }
+);
 
 UserSchema.pre('save', async function(next) {
   if (this.isModified('phone')) {
     this.phoneNormalized = normalizePhone(this.phone) || undefined;
+    if (!this.$locals?.preservePhoneVerified) {
+      this.phoneVerified = false;
+    }
   }
 
   if (!this.isModified('password')) return next();
@@ -209,6 +232,8 @@ UserSchema.methods.toJSON = function() {
   delete obj.lockUntil;
   delete obj.sessionsRevokedAt;
   delete obj.guardianLinkCode;
+  delete obj.pushToken;
+  delete obj.telegramId;
   delete obj.__v;
   return obj;
 };

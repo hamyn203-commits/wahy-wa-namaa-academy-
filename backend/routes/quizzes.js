@@ -7,13 +7,26 @@ const Progress = require('../models/Progress');
 const Course = require('../models/Course');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
 
-function hideQuizAnswers(value) {
+function canRevealAttemptResults(quiz, attemptStatus) {
+  if (!quiz || attemptStatus === 'in-progress') return false;
+  const mode = quiz.settings?.showResults || 'immediately';
+  if (mode === 'immediately') return true;
+  if (mode === 'after-deadline') {
+    return Boolean(quiz.availability?.endDate && new Date() > new Date(quiz.availability.endDate));
+  }
+  return false;
+}
+
+function hideQuizAnswers(value, { allowExplanations = false } = {}) {
   const quiz = typeof value?.toObject === 'function' ? value.toObject() : { ...value };
   if (!Array.isArray(quiz.questions)) return quiz;
 
   quiz.questions = quiz.questions.map((question) => {
     const safeQuestion = { ...question };
     delete safeQuestion.correctAnswer;
+    if (!allowExplanations) {
+      delete safeQuestion.explanation;
+    }
     if (Array.isArray(safeQuestion.options)) {
       safeQuestion.options = safeQuestion.options.map((option) => {
         const safeOption = { ...option };
@@ -29,10 +42,65 @@ function hideQuizAnswers(value) {
 
 function hideAttemptQuizAnswers(value) {
   const attempt = typeof value?.toObject === 'function' ? value.toObject() : { ...value };
+  const revealResults = canRevealAttemptResults(attempt.quiz, attempt.status);
+  const allowExplanations = revealResults && attempt.quiz?.settings?.allowReview !== false;
+
   if (attempt.quiz && typeof attempt.quiz === 'object') {
-    attempt.quiz = hideQuizAnswers(attempt.quiz);
+    attempt.quiz = hideQuizAnswers(attempt.quiz, { allowExplanations });
   }
+
+  if (!revealResults) {
+    delete attempt.score;
+    delete attempt.isPassed;
+    if (Array.isArray(attempt.answers)) {
+      attempt.answers = attempt.answers.map((ans) => ({
+        question: ans.question,
+        answer: ans.answer,
+      }));
+    }
+  }
+
   return attempt;
+}
+
+function isAttemptTimedOut(attempt, quiz) {
+  const now = Date.now();
+  if (quiz?.availability?.endDate) {
+    const deadlineMs = new Date(quiz.availability.endDate).getTime();
+    if (Number.isFinite(deadlineMs) && now > deadlineMs + 60 * 1000) {
+      return true;
+    }
+  }
+  const timeLimitMinutes = Number(quiz?.settings?.timeLimit || 0);
+  if (timeLimitMinutes > 0 && attempt?.startedAt) {
+    const startedMs = new Date(attempt.startedAt).getTime();
+    if (Number.isFinite(startedMs) && now - startedMs > (timeLimitMinutes * 60 + 60) * 1000) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const ALLOWED_QUIZ_FIELDS = [
+  'title',
+  'description',
+  'course',
+  'lesson',
+  'type',
+  'questions',
+  'settings',
+  'availability',
+  'status',
+];
+
+function pickQuizFields(source = {}) {
+  const out = {};
+  for (const key of ALLOWED_QUIZ_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      out[key] = source[key];
+    }
+  }
+  return out;
 }
 
 // @route   GET /api/quizzes
@@ -70,7 +138,7 @@ router.get('/', protect, attachTeacherProfile, async (req, res) => {
 
     const quizzes = await Quiz.find(filter)
       .populate('instructor', 'name')
-      .select('-questions.options.isCorrect -questions.correctAnswer')
+      .select('-questions.options.isCorrect -questions.correctAnswer -questions.explanation')
       .sort({ createdAt: -1 });
 
     res.json(quizzes);
@@ -176,9 +244,12 @@ router.post('/', protect, attachTeacherProfile, authorize('teacher', 'admin'), a
     }
 
     const quizData = {
-      ...req.body,
+      ...pickQuizFields(req.body || {}),
       instructor: req.user.role === 'teacher' ? req.user.teacherProfile : req.body.instructor
     };
+    if (quizData.status === 'published') {
+      quizData.publishedAt = new Date();
+    }
 
     const quiz = new Quiz(quizData);
     await quiz.save();
@@ -205,10 +276,9 @@ router.put('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin'),
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    const updates = { ...req.body };
+    const updates = pickQuizFields(req.body || {});
 
     if (req.user.role === 'teacher') {
-      delete updates.instructor;
       if (updates.course && String(updates.course) !== String(quiz.course)) {
         const ownsNewCourse = await Course.exists({
           _id: updates.course,
@@ -218,12 +288,13 @@ router.put('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin'),
           return res.status(403).json({ error: 'You can only move quizzes to your own courses' });
         }
       }
+    } else if (req.body?.instructor) {
+      updates.instructor = req.body.instructor;
     }
 
-    delete updates._id;
-    delete updates.createdAt;
-    delete updates.updatedAt;
-    delete updates.stats;
+    if (updates.status === 'published' && quiz.status !== 'published') {
+      updates.publishedAt = new Date();
+    }
 
     Object.assign(quiz, updates);
     await quiz.save();
@@ -306,12 +377,19 @@ router.post('/:id/start', protect, authorize('student'), async (req, res) => {
       }))
     });
 
-    await attempt.save();
+    try {
+      await attempt.save();
+    } catch (saveErr) {
+      if (saveErr?.code === 11000) {
+        return res.status(409).json({ error: 'Quiz attempt already started' });
+      }
+      throw saveErr;
+    }
 
     quiz.stats.attempts += 1;
     await quiz.save();
 
-    res.status(201).json(attempt);
+    res.status(201).json(hideAttemptQuizAnswers(attempt));
   } catch (error) {
     console.error('Start quiz error:', error);
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -339,6 +417,12 @@ router.put('/attempts/:attemptId/answer', protect, authorize('student'), async (
       return res.status(400).json({ error: 'Attempt already submitted' });
     }
 
+    if (isAttemptTimedOut(attempt, attempt.quiz)) {
+      attempt.status = 'expired';
+      await attempt.save();
+      return res.status(400).json({ error: 'Quiz time limit has expired', code: 'QUIZ_TIME_EXPIRED' });
+    }
+
     const question = attempt.quiz.questions.id(questionId);
     if (!question) {
       return res.status(404).json({ error: 'Question not found' });
@@ -349,7 +433,7 @@ router.put('/attempts/:attemptId/answer', protect, authorize('student'), async (
       return res.status(404).json({ error: 'Answer not found' });
     }
 
-    attempt.answers[answerIndex].answer = answer;
+    attempt.answers[answerIndex].answer = answer == null ? null : String(answer).slice(0, 10000);
     await attempt.save();
 
     res.json(hideAttemptQuizAnswers(attempt));
@@ -379,25 +463,37 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
       return res.status(400).json({ error: 'Attempt already submitted' });
     }
 
+    if (isAttemptTimedOut(attempt, attempt.quiz)) {
+      attempt.status = 'expired';
+      await attempt.save();
+      return res.status(400).json({ error: 'Quiz time limit has expired', code: 'QUIZ_TIME_EXPIRED' });
+    }
+
+    const alreadyPassedBefore = await QuizAttempt.exists({
+      quiz: attempt.quiz._id,
+      student: req.user.id,
+      _id: { $ne: attempt._id },
+      isPassed: true,
+    });
+
     attempt.answers.forEach(answer => {
       const question = attempt.quiz.questions.id(answer.question);
       if (question) {
         if (question.type === 'multiple-choice' || question.type === 'true-false') {
           const correctOption = question.options.find(opt => opt.isCorrect);
           if (correctOption) {
-            const correctTexts = [
-              correctOption.text?.en,
-              correctOption.text?.ar,
-              correctOption.text?.fr,
-              correctOption.text?.es
-            ].filter(Boolean).map(t => t.toLowerCase().trim());
-            answer.isCorrect = correctTexts.includes((answer.answer || '').toLowerCase().trim());
+            const correctTexts = Object.values(correctOption.text || {})
+              .filter((t) => typeof t === 'string' && t.trim())
+              .map(t => t.toLowerCase().trim());
+            const submitted = String(answer.answer || '').toLowerCase().trim();
+            answer.isCorrect = Boolean(submitted && correctTexts.includes(submitted));
           } else {
             answer.isCorrect = false;
           }
         } else if (question.type === 'short-answer' || question.type === 'fill-blank') {
           const expected = (question.correctAnswer || '').toLowerCase().trim();
-          answer.isCorrect = expected && answer.answer?.toLowerCase().trim() === expected;
+          const submitted = String(answer.answer || '').toLowerCase().trim();
+          answer.isCorrect = Boolean(expected && submitted === expected);
         } else if (question.type === 'essay') {
           answer.isCorrect = null;
         }
@@ -411,8 +507,8 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
     attempt.timeSpent = (attempt.submittedAt - attempt.startedAt) / 1000;
     await attempt.save();
 
-    // Update Progress model with gamification points if passed
-    if (attempt.isPassed) {
+    // Update Progress model with gamification points only on first pass of this quiz
+    if (attempt.isPassed && !alreadyPassedBefore) {
       try {
         let progress = await Progress.findOne({ student: req.user.id, course: attempt.quiz.course });
         if (!progress) {

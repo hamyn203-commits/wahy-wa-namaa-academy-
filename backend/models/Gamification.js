@@ -201,7 +201,7 @@ AchievementSchema.index({ type: 1 });
 const LeaderboardSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['points', 'streak', 'courses-completed', 'lessons-completed', 'quizzes-perfect'],
+    enum: ['points', 'streak', 'courses', 'quizzes', 'courses-completed', 'lessons-completed', 'quizzes-perfect'],
     required: true
   },
   timeframe: {
@@ -239,30 +239,31 @@ LeaderboardSchema.index({ lastUpdated: -1 });
 LeaderboardSchema.statics.updateLeaderboard = async function(type, timeframe) {
   const Progress = mongoose.model('Progress');
   
-  let sortBy = {};
-  let scoreField = '';
+  let scoreField = 'totalPoints';
   
   switch (type) {
     case 'points':
-      sortBy = { 'milestones.points': -1 };
       scoreField = 'totalPoints';
       break;
     case 'streak':
-      sortBy = { 'streak.current': -1 };
       scoreField = 'currentStreak';
       break;
+    case 'courses':
     case 'courses-completed':
-      sortBy = { 'overallProgress.percentage': -1 };
       scoreField = 'completedCourses';
       break;
+    case 'quizzes':
+    case 'quizzes-perfect':
+      scoreField = 'quizzesPassed';
+      break;
     case 'lessons-completed':
-      sortBy = { 'overallProgress.completedLessons': -1 };
       scoreField = 'completedLessons';
       break;
     default:
-      sortBy = { 'milestones.points': -1 };
       scoreField = 'totalPoints';
   }
+
+  const sortBy = { [scoreField]: -1 };
 
   const entries = await Progress.aggregate([
     {
@@ -273,6 +274,17 @@ LeaderboardSchema.statics.updateLeaderboard = async function(type, timeframe) {
         completedCourses: {
           $sum: {
             $cond: [{ $eq: ['$overallProgress.percentage', 100] }, 1, 0]
+          }
+        },
+        quizzesPassed: {
+          $sum: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$milestones', []] },
+                as: 'm',
+                cond: { $eq: ['$$m.type', 'quiz-passed'] }
+              }
+            }
           }
         },
         completedLessons: { $sum: '$overallProgress.completedLessons' }

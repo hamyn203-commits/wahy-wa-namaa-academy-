@@ -1,22 +1,63 @@
 const express = require('express');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
+const User = require('../models/User');
 const { protect, getAccessSecret } = require('../middleware/auth');
+const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const storage = require('../services/objectStorage');
-const { PURPOSES, validateUploadMetadata } = require('../config/uploadPolicy');
+const { validateUploadMetadata } = require('../config/uploadPolicy');
 
-function verifyClientIdentity(payload = {}) {
+const blobUploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many upload token requests, please try again later.' },
+});
+
+const SAFE_PUBLIC_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/ogg',
+  'application/pdf',
+]);
+
+async function verifyClientIdentity(payload = {}) {
   const secret = getAccessSecret();
 
   if (payload.accessToken) {
-    const user = jwt.verify(payload.accessToken, secret);
+    const user = jwt.verify(payload.accessToken, secret, { algorithms: ['HS256'] });
+    if (mongoose.connection.readyState === 1) {
+      const account = await User.findById(user.id).select('role email isActive').lean();
+      if (!account || account.isActive !== true) {
+        throw new Error('Account is inactive or unavailable');
+      }
+      if (account.role === 'teacher') {
+        const decision = await getTeacherAccessDecision({
+          userId: account._id,
+          email: account.email,
+        });
+        if (!decision.allowed) {
+          throw new Error('Teacher account is not approved for uploads');
+        }
+      }
+      return { role: account.role, owner: String(account._id) };
+    }
     return { role: user.role, owner: user.id };
   }
 
   const teacherVerificationToken = payload.verificationToken || payload.phoneVerificationToken;
   if (teacherVerificationToken) {
-    const verification = jwt.verify(teacherVerificationToken, secret);
+    const verification = jwt.verify(teacherVerificationToken, secret, { algorithms: ['HS256'] });
 
     if (verification.purpose === 'teacher-email-verification' && verification.email) {
       return { role: 'teacher-registration', owner: verification.email };
@@ -53,16 +94,19 @@ router.get('/status', (_req, res) => {
   });
 });
 
-router.post('/blob', async (req, res) => {
+router.post('/blob', blobUploadLimiter, async (req, res) => {
   if (storage.getDriver() !== 'vercel-blob') {
     return res.status(409).json({ error: 'Vercel Blob is not the active storage driver' });
   }
 
   try {
     const { handleUpload } = await import('@vercel/blob/client');
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const request = new Request(`${protocol}://${host}${req.originalUrl}`, {
+    const configuredApiBase = String(process.env.API_PUBLIC_URL || '').trim().replace(/\/$/, '');
+    const fallbackOrigin = process.env.NODE_ENV === 'production'
+      ? 'https://api.wahywanamaa.com'
+      : `http://${String(req.headers.host || 'localhost:5000').replace(/[^a-zA-Z0-9.:-]/g, '')}`;
+    const baseOrigin = configuredApiBase || fallbackOrigin;
+    const request = new Request(`${baseOrigin}${req.originalUrl}`, {
       method: 'POST',
       headers: new Headers(Object.entries(req.headers).filter(([, value]) => typeof value === 'string')),
       body: JSON.stringify(req.body || {}),
@@ -73,7 +117,7 @@ router.post('/blob', async (req, res) => {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = JSON.parse(clientPayload || '{}');
-        const identity = verifyClientIdentity(payload);
+        const identity = await verifyClientIdentity(payload);
         const metadata = validateUploadMetadata({
           purpose: payload.purpose,
           role: identity.role,
@@ -186,6 +230,9 @@ router.get('/public', async (req, res) => {
     if (storage.getDriver() === 'vercel-blob' && !storage.isVercelBlobReference(reference)) {
       return res.status(400).json({ error: 'Invalid media reference' });
     }
+    if (storage.getDriver() === 's3' && !storage.isS3ReferenceAllowed(reference)) {
+      return res.status(400).json({ error: 'Invalid media reference' });
+    }
 
     const result = await storage.getPrivateObject(reference, {
       ifNoneMatch: req.headers['if-none-match'],
@@ -194,8 +241,13 @@ router.get('/public', async (req, res) => {
     if (!result) return res.status(404).end();
     if (result.statusCode === 304) return res.status(304).end();
 
-    res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+    const rawType = String(result.blob?.contentType || '').split(';', 1)[0].trim().toLowerCase();
+    const safeContentType = SAFE_PUBLIC_CONTENT_TYPES.has(rawType)
+      ? rawType
+      : 'application/octet-stream';
+    res.setHeader('Content-Type', safeContentType);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
     res.setHeader('Cache-Control', 'public, max-age=86400');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 

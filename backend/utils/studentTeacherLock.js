@@ -7,7 +7,6 @@ const StudentSubscription = require('../models/StudentSubscription');
 // Only cancelled or expired subscriptions release the lock; changing tutor
 // afterwards is an admin decision.
 const TEACHER_LOCK_STATUSES = Object.freeze([
-  'pending_payment',
   'payment_review',
   'renewal_queued',
   'awaiting_placement',

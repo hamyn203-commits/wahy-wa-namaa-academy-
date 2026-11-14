@@ -7,6 +7,29 @@ const Session = require('../models/Session');
 const { protect, authorize } = require('../middleware/auth');
 const { logAdminAction } = require('../services/adminAudit');
 
+const ALLOWED_REVIEW_CATEGORIES = ['teaching', 'patience', 'communication', 'punctuality'];
+
+function sanitizeCategories(categories) {
+  if (!categories || typeof categories !== 'object' || Array.isArray(categories)) return undefined;
+  const clean = {};
+  for (const key of ALLOWED_REVIEW_CATEGORIES) {
+    if (categories[key] != null) {
+      const val = Number(categories[key]);
+      if (Number.isFinite(val) && val >= 1 && val <= 5) {
+        clean[key] = val;
+      }
+    }
+  }
+  return Object.keys(clean).length ? clean : undefined;
+}
+
+function maskDisplayName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'طالب وحي ونماء';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0)}.`;
+}
+
 router.post('/', protect, authorize('student'), async (req, res) => {
   try {
     const { sessionId, rating, comment, categories, isAnonymous } = req.body || {};
@@ -46,15 +69,23 @@ router.post('/', protect, authorize('student'), async (req, res) => {
       return res.status(400).json({ error: 'Session has no teacher assigned' });
     }
 
-    const review = await Review.create({
-      student: req.user.id,
-      teacher: teacherId,
-      session: sessionId,
-      rating: numericRating,
-      comment: cleanComment,
-      categories: categories && typeof categories === 'object' && !Array.isArray(categories) ? categories : undefined,
-      isAnonymous: Boolean(isAnonymous)
-    });
+    let review;
+    try {
+      review = await Review.create({
+        student: req.user.id,
+        teacher: teacherId,
+        session: sessionId,
+        rating: numericRating,
+        comment: cleanComment,
+        categories: sanitizeCategories(categories),
+        isAnonymous: Boolean(isAnonymous)
+      });
+    } catch (createErr) {
+      if (createErr?.code === 11000) {
+        return res.status(400).json({ error: 'You already reviewed this session' });
+      }
+      throw createErr;
+    }
 
     await Review.updateTeacherRating(teacherId);
 
@@ -103,8 +134,14 @@ router.get('/teacher/:teacherId', async (req, res) => {
 
     const formattedReviews = reviews.map(review => {
       const obj = review.toObject();
+      delete obj.session;
       if (obj.isAnonymous) {
         obj.student = { name: 'طالب مجهول', avatar: '' };
+      } else {
+        obj.student = {
+          name: maskDisplayName(obj.student?.name),
+          avatar: obj.student?.avatar || '',
+        };
       }
       return obj;
     });

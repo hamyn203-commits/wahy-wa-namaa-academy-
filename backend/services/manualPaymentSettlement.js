@@ -2,6 +2,8 @@
 
 const mongoose = require('mongoose');
 const Payment = require('../models/Payment');
+const Enrollment = require('../models/Enrollment');
+const Session = require('../models/Session');
 const StudentSubscription = require('../models/StudentSubscription');
 const GroupCircle = require('../models/GroupCircle');
 const User = require('../models/User');
@@ -9,6 +11,21 @@ const { isRunningCircle, circleStatusForCount, operationalCapacity } = require('
 const { getPlan } = require('../config/subscriptionPlans');
 const { assertPaymentTransition } = require('../utils/paymentIntegrity');
 const { createEnrollmentForSettledPayment } = require('./paymentSettlement');
+
+async function syncUpcomingCircleAttendance(circleId, studentId, fromDate, session) {
+  if (mongoose.connection.readyState === 1 || Session.updateMany !== mongoose.Model.updateMany) {
+    await Session.updateMany(
+      {
+        circle: circleId,
+        status: { $in: ['pending', 'accepted'] },
+        scheduledAt: { $gt: fromDate },
+        'attendance.student': { $ne: studentId },
+      },
+      { $push: { attendance: { student: studentId, status: 'pending' } } },
+      { session }
+    );
+  }
+}
 
 async function processManualPaymentReview({
   paymentId,
@@ -52,6 +69,18 @@ async function processManualPaymentReview({
       payment.manual.reviewNote = String(note || '').trim().slice(0, 500);
 
       if (normalizedAction === 'approve') {
+        if (payment.kind === 'course_enrollment') {
+          const alreadyEnrolled = await Enrollment.findOne({
+            student: payment.student,
+            course: payment.course,
+          }).session(session);
+          if (alreadyEnrolled) {
+            const error = new Error('Student is already enrolled in this course');
+            error.code = 'ALREADY_ENROLLED';
+            throw error;
+          }
+        }
+
         assertPaymentTransition(payment.status, 'succeeded');
         payment.status = 'succeeded';
         payment.settledAt = new Date();
@@ -124,6 +153,7 @@ async function processManualPaymentReview({
                 if (subscription.status === 'active') {
                   subscription.startedAt = paidAt;
                   renewalActivated = true;
+                  await syncUpcomingCircleAttendance(circle._id, payment.student, paidAt, session);
                 }
               } else {
                 subscription.status = 'awaiting_placement';
@@ -177,11 +207,36 @@ async function processManualPaymentReview({
       await payment.save({ session });
 
       if (payment.kind === 'subscription' && payment.subscription) {
+        let nextSubStatus = 'pending_payment';
+        let isRenewal = false;
+
+        if (mongoose.connection.readyState === 1 || StudentSubscription.findOne !== mongoose.Model.findOne) {
+          const targetSub = await StudentSubscription.findOne({
+            _id: payment.subscription,
+            student: payment.student,
+          }).session(session);
+          isRenewal = Boolean(targetSub?.renewalOf);
+
+          const otherPendingSub = await StudentSubscription.findOne({
+            student: payment.student,
+            status: 'pending_payment',
+            _id: { $ne: payment.subscription },
+          }).session(session);
+
+          if (otherPendingSub) {
+            nextSubStatus = 'cancelled';
+          }
+        }
+
         await StudentSubscription.updateOne(
           { _id: payment.subscription, student: payment.student },
           {
-            $set: { status: 'pending_payment' },
-            $unset: { payment: 1, paidAt: 1 },
+            $set: { status: nextSubStatus },
+            $unset: {
+              payment: 1,
+              paidAt: 1,
+              ...(!isRenewal ? { preferredTeacher: 1 } : {}),
+            },
           },
           { session }
         );

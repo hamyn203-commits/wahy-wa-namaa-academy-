@@ -43,10 +43,17 @@ const ReviewSchema = new mongoose.Schema({
 
 ReviewSchema.index({ teacher: 1, createdAt: -1 });
 ReviewSchema.index({ student: 1 });
+ReviewSchema.index(
+  { student: 1, session: 1 },
+  { unique: true, partialFilterExpression: { session: { $exists: true, $type: 'objectId' } } }
+);
 
 ReviewSchema.statics.updateTeacherRating = async function(teacherId) {
+  const teacherObjectId = mongoose.Types.ObjectId.isValid(String(teacherId))
+    ? new mongoose.Types.ObjectId(String(teacherId))
+    : teacherId;
   const stats = await this.aggregate([
-    { $match: { teacher: teacherId, isApproved: true } },
+    { $match: { teacher: teacherObjectId, isApproved: true } },
     { $group: { _id: null, average: { $avg: '$rating' }, count: { $sum: 1 } } }
   ]);
   
@@ -54,8 +61,8 @@ ReviewSchema.statics.updateTeacherRating = async function(teacherId) {
   const result = stats[0] || { average: 0, count: 0 };
   
   await Teacher.findByIdAndUpdate(teacherId, {
-    'rating.average': Math.round(result.average * 10) / 10,
-    'rating.count': result.count
+    'rating.average': Math.round((result.average || 0) * 10) / 10,
+    'rating.count': result.count || 0
   });
 };
 

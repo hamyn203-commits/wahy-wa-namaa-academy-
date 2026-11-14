@@ -13,14 +13,85 @@ const TeacherTask = require('../models/TeacherTask');
 const GuardianInvitation = require('../models/GuardianInvitation');
 const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const { findChildAccess, hasChildPermission } = require('../utils/guardianSafeguarding');
 const { normalizePhone, maskPhone } = require('../utils/phone');
 const { linkGuardianToStudent, expireStaleInvitations } = require('../services/guardianInvitations');
 const { notifyUser } = require('../utils/notify');
 
+const linkChildLimiter = createScopedRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  scope: 'guardian-link-child',
+  message: 'تم تجاوز عدد محاولات ربط الطالب المسموحة. حاول مجدداً بعد 15 دقيقة.',
+});
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
+
+function isWithinGuardianJoinWindow(sess, now = new Date()) {
+  if (!sess || sess.status !== 'accepted' || !sess.scheduledAt) return false;
+  const startMs = new Date(sess.scheduledAt).getTime();
+  if (!Number.isFinite(startMs)) return false;
+  const durationMs = Math.max(15, Number(sess.duration || 60)) * 60 * 1000;
+  const nowMs = now.getTime();
+  return nowMs >= startMs - 30 * 60 * 1000 && nowMs <= startMs + durationMs + 60 * 60 * 1000;
+}
+
+async function countGuardianPhoneDuplicates(guardianUser, normalizedPhone) {
+  const duplicateCandidates = await User.find({
+    role: 'guardian',
+    isActive: { $ne: false },
+    $or: [
+      { phoneNormalized: normalizedPhone },
+      ...(guardianUser?.phone ? [{ phone: guardianUser.phone }] : []),
+    ],
+  }).select('_id');
+  return new Set(duplicateCandidates.map((candidate) => String(candidate._id))).size;
+}
+
+async function verifyPhoneInvitationCodeRequirement(guardianUser, normalizedPhone, invitation, rawLinkCode) {
+  const duplicateCount = await countGuardianPhoneDuplicates(guardianUser, normalizedPhone);
+  const needsCode = duplicateCount > 1 || guardianUser?.phoneVerified !== true;
+  if (!needsCode) return { ok: true };
+  const submittedCode = String(rawLinkCode || '').trim().toUpperCase();
+  if (!submittedCode || !invitation?.linkCode || submittedCode !== String(invitation.linkCode).toUpperCase()) {
+    return {
+      ok: false,
+      code: 'GUARDIAN_CODE_REQUIRED',
+      error: 'يتطلب قبول الدعوة إدخال كود الربط السري الخاص بالطالب لحماية بيانات الأبناء',
+    };
+  }
+  return { ok: true };
+}
+
+async function claimPendingGuardianInvitation(invitationId, actorId, nextStatus) {
+  return GuardianInvitation.findOneAndUpdate(
+    { _id: invitationId, status: 'pending', expiresAt: { $gt: new Date() } },
+    {
+      $set: { status: nextStatus, respondedBy: actorId, respondedAt: new Date() },
+      $push: { history: { action: nextStatus, actor: actorId, at: new Date() } },
+    },
+    { new: true },
+  );
+}
+
+async function matchesInvitationPhone(invitation, guardianUserId) {
+  if (!invitation?.guardianPhoneNormalized) return true;
+  const guardianUser = await User.findById(guardianUserId).select('phone +phoneNormalized');
+  const gPhone = guardianUser?.phoneNormalized || normalizePhone(guardianUser?.phone);
+  return Boolean(gPhone && invitation.guardianPhoneNormalized === gPhone);
+}
+
+function notifyInvitationRejected(studentId) {
+  notifyUser(studentId, {
+    type: 'system',
+    title: { ar: 'تم رفض طلب ربط ولي الأمر', en: 'Guardian link request declined' },
+    message: { ar: 'راجع رقم ولي الأمر أو استخدم كود ربط جديد.', en: 'Check the guardian phone or use a new link code.' },
+    data: { actionUrl: '/student/dashboard?tab=account' },
+    priority: 'normal',
+  }).catch(() => {});
+}
 
 async function getGuardianProfile(userId, { populateChildren = false } = {}) {
   let query = Guardian.findOne({ user: userId });
@@ -32,7 +103,7 @@ async function getGuardianProfile(userId, { populateChildren = false } = {}) {
   }
 
   let guardian = await query;
-  if (guardian?.children?.length) return guardian;
+  if (guardian) return guardian;
 
   // One-time compatibility bridge for accounts created before Guardian became
   // the canonical relationship store.
@@ -85,7 +156,7 @@ function childMatchesSession(child, session) {
  * @desc    جلب أبناء ولي الأمر المسجلين مع تفاصيل حلقاتهم ونسب الحضور وآخر التقييمات
  * @access  Private (Guardian, Admin)
  */
-router.get('/children', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.get('/children', protect, authorize('guardian'), async (req, res) => {
   try {
     if (!isDBConnected() || !isValidObjectId(req.user.id)) {
       return res.status(503).json({ error: 'Guardian data is temporarily unavailable' });
@@ -224,19 +295,22 @@ router.get('/children', protect, authorize('guardian', 'admin'), async (req, res
         ? await Progress.find({ student: studentId }).populate('course', 'title').lean()
         : [];
 
-      const latestSubscription = await StudentSubscription.findOne({
-        student: studentId,
-      }).sort({ createdAt: -1 }).lean();
+      const canViewOverview = Boolean(permissions.viewProgress || permissions.viewAttendance || permissions.viewGrades);
+      const latestSubscription = (permissions.viewProgress || permissions.viewAttendance || permissions.approveEnrollments)
+        ? await StudentSubscription.findOne({
+            student: studentId,
+          }).sort({ createdAt: -1 }).lean()
+        : null;
 
       return {
         studentId: studentUser._id,
         name: studentUser.name,
-        email: studentUser.email,
-        phone: studentUser.phone,
+        email: canViewOverview ? studentUser.email : undefined,
+        phone: canViewOverview ? studentUser.phone : undefined,
         avatar: studentUser.avatar,
         relationship: childItem.relationship,
         permissions,
-        circle: circleInfo,
+        circle: canViewOverview ? circleInfo : null,
         studentProfile: permissions.viewProgress ? {
           plan: studentProfile?.plan || 'حفظ القرآن الكريم',
           currentSurah: studentProfile?.currentSurah || 'سورة الفاتحة',
@@ -491,7 +565,7 @@ router.get('/homework/:studentId', protect, authorize('guardian'), async (req, r
  */
 router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
   try {
-    const guardianUser = await User.findById(req.user.id).select('name phone +phoneNormalized');
+    const guardianUser = await User.findById(req.user.id).select('name phone phoneVerified +phoneNormalized');
     if (!guardianUser) return res.status(404).json({ error: 'Guardian account not found' });
 
     const normalizedPhone = guardianUser.phoneNormalized || normalizePhone(guardianUser.phone);
@@ -508,21 +582,21 @@ router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
       await guardianUser.save();
     }
 
-    const duplicateCandidates = await User.find({
-      role: 'guardian',
-      isActive: { $ne: false },
-      $or: [
-        { phoneNormalized: normalizedPhone },
-        ...(guardianUser.phone ? [{ phone: guardianUser.phone }] : []),
-      ],
-    }).select('_id');
-    const duplicateCount = new Set(duplicateCandidates.map((candidate) => String(candidate._id))).size;
+    const duplicateCount = await countGuardianPhoneDuplicates(guardianUser, normalizedPhone);
 
     if (duplicateCount > 1) {
       return res.json({
         invitations: [],
         requiresCode: true,
         message: 'يوجد أكثر من حساب ولي أمر بنفس الرقم. استخدم كود الربط لحماية بيانات الطلاب.',
+      });
+    }
+
+    if (guardianUser.phoneVerified !== true) {
+      return res.json({
+        invitations: [],
+        requiresCode: true,
+        message: 'استخدم كود الربط المباشر من حساب الطالب لإتمام الربط بأمان.',
       });
     }
 
@@ -566,8 +640,7 @@ router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
  */
 router.post('/invitations/:id/respond', protect, authorize('guardian'), async (req, res) => {
   try {
-    const action = req.body.action === 'reject' ? 'reject' : 'accept';
-    const guardianUser = await User.findById(req.user.id).select('phone +phoneNormalized');
+    const guardianUser = await User.findById(req.user.id).select('phone phoneVerified +phoneNormalized');
     const normalizedPhone = guardianUser?.phoneNormalized || normalizePhone(guardianUser?.phone);
     if (!normalizedPhone) {
       return res.status(400).json({ error: 'لا يوجد رقم هاتف صالح في حساب ولي الأمر' });
@@ -577,7 +650,7 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), async (r
       _id: req.params.id,
       status: 'pending',
       expiresAt: { $gt: new Date() },
-    }).select('+guardianPhone +guardianPhoneNormalized');
+    }).select('+linkCode +guardianPhone +guardianPhoneNormalized');
 
     if (!invitation) {
       return res.status(404).json({ error: 'طلب الربط غير موجود أو انتهت صلاحيته' });
@@ -587,22 +660,24 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), async (r
       return res.status(403).json({ error: 'طلب الربط لا يخص رقم الهاتف المسجل في حسابك' });
     }
 
+    const action = req.body.action === 'reject' ? 'reject' : 'accept';
+    if (action === 'accept') {
+      const codeCheck = await verifyPhoneInvitationCodeRequirement(guardianUser, normalizedPhone, invitation, req.body?.linkCode);
+      if (!codeCheck.ok) {
+        return res.status(403).json({ error: codeCheck.error, code: codeCheck.code });
+      }
+    }
+
     if (action === 'reject') {
-      invitation.status = 'rejected';
-      invitation.respondedBy = req.user.id;
-      invitation.respondedAt = new Date();
-      invitation.history.push({ action: 'rejected', actor: req.user.id });
-      await invitation.save();
-
-      notifyUser(invitation.student, {
-        type: 'system',
-        title: { ar: 'تم رفض طلب ربط ولي الأمر', en: 'Guardian link request declined' },
-        message: { ar: 'راجع رقم ولي الأمر أو استخدم كود ربط جديد.', en: 'Check the guardian phone or use a new link code.' },
-        data: { actionUrl: '/student/dashboard?tab=account' },
-        priority: 'normal',
-      }).catch(() => {});
-
+      if (!await claimPendingGuardianInvitation(invitation._id, req.user.id, 'rejected')) {
+        return res.status(409).json({ error: 'تمت معالجة طلب الربط مسبقاً' });
+      }
+      notifyInvitationRejected(invitation.student);
       return res.json({ success: true, status: 'rejected' });
+    }
+
+    if (!await claimPendingGuardianInvitation(invitation._id, req.user.id, 'accepted')) {
+      return res.status(409).json({ error: 'تمت معالجة طلب الربط مسبقاً' });
     }
 
     const linked = await linkGuardianToStudent({
@@ -610,12 +685,6 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), async (r
       studentId: invitation.student,
       relationship: invitation.relationship,
     });
-
-    invitation.status = 'accepted';
-    invitation.respondedBy = req.user.id;
-    invitation.respondedAt = new Date();
-    invitation.history.push({ action: 'accepted', actor: req.user.id });
-    await invitation.save();
 
     await GuardianInvitation.updateMany(
       {
@@ -654,7 +723,7 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), async (r
  * @desc    ربط حساب طالب بحساب ولي الأمر بواسطة كود الطالب أو إيميله
  * @access  Private (Guardian, Admin)
  */
-router.post('/link-child', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.post('/link-child', protect, authorize('guardian'), linkChildLimiter, async (req, res) => {
   try {
     const { studentCode, relationship = 'guardian' } = req.body;
     const normalizedCode = String(studentCode || '').trim().toUpperCase();
@@ -674,17 +743,26 @@ router.post('/link-child', protect, authorize('guardian', 'admin'), async (req, 
     }).select('+linkCode +guardianPhone +guardianPhoneNormalized');
 
     if (invitation) {
+      if (!await matchesInvitationPhone(invitation, req.user.id)) {
+        return res.status(403).json({ error: 'كود الربط مخصص لرقم هاتف ولي أمر مختلف' });
+      }
+      if (!await claimPendingGuardianInvitation(invitation._id, req.user.id, 'accepted')) {
+        return res.status(409).json({ error: 'كود الربط تم استخدامه من قبل' });
+      }
+
       const linked = await linkGuardianToStudent({
         guardianUserId: req.user.id,
         studentId: invitation.student,
         relationship: invitation.relationship || relationship,
       });
 
-      invitation.status = 'accepted';
-      invitation.respondedBy = req.user.id;
-      invitation.respondedAt = new Date();
-      invitation.history.push({ action: 'accepted', actor: req.user.id });
-      await invitation.save();
+      notifyUser(invitation.student, {
+        type: 'system',
+        title: { ar: 'تم ربط ولي الأمر بنجاح', en: 'Guardian linked successfully' },
+        message: { ar: 'تم استخدام كود الربط لربط حساب ولي الأمر بحسابك.', en: 'A guardian account was linked using your link code.' },
+        data: { actionUrl: '/student/dashboard?tab=account' },
+        priority: 'normal',
+      }).catch(() => {});
 
       return res.status(201).json({
         success: true,
@@ -698,10 +776,11 @@ router.post('/link-child', protect, authorize('guardian', 'admin'), async (req, 
       });
     }
 
-    const student = await User.findOne({
-      role: 'student',
-      guardianLinkCode: normalizedCode
-    }).select('+guardianLinkCode guardian name');
+    const student = await User.findOneAndUpdate(
+      { role: 'student', guardianLinkCode: normalizedCode },
+      { $unset: { guardianLinkCode: 1 } },
+      { new: false },
+    ).select('+guardianLinkCode guardian name');
 
     if (!student) {
       return res.status(404).json({ error: 'كود الربط غير صحيح أو تم استخدامه من قبل' });
@@ -713,8 +792,13 @@ router.post('/link-child', protect, authorize('guardian', 'admin'), async (req, 
       relationship,
     });
 
-    student.guardianLinkCode = undefined;
-    await student.save();
+    notifyUser(student._id, {
+      type: 'system',
+      title: { ar: 'تم ربط ولي الأمر بنجاح', en: 'Guardian linked successfully' },
+      message: { ar: 'تم ربط حساب ولي الأمر بحسابك عبر كود الربط.', en: 'A guardian account was linked to your profile.' },
+      data: { actionUrl: '/student/dashboard?tab=account' },
+      priority: 'normal',
+    }).catch(() => {});
 
     return res.status(201).json({
       success: true,
@@ -819,7 +903,7 @@ router.get('/reports/:studentId', protect, authorize('guardian', 'admin'), async
  * @desc    جلب الحصص والحلقات القادمة لجميع أبناء ولي الأمر مع حالة الحضور والاعتذار
  * @access  Private (Guardian, Admin)
  */
-router.get('/upcoming-sessions', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res) => {
   try {
     if (!isDBConnected() || !isValidObjectId(req.user.id)) {
       return res.status(503).json({ error: 'Guardian sessions are temporarily unavailable' });
@@ -840,6 +924,12 @@ router.get('/upcoming-sessions', protect, authorize('guardian', 'admin'), async 
       }
       childIds = [requestedStudentId];
     }
+
+    childIds = childIds.filter((childId) => {
+      const access = guardian ? findChildAccess(guardian, childId) : null;
+      if (!access) return true;
+      return Boolean(access.permissions?.viewAttendance || access.permissions?.viewProgress);
+    });
 
     if (childIds.length === 0) {
       return res.json({ success: true, sessions: [] });
@@ -911,7 +1001,7 @@ router.get('/upcoming-sessions', protect, authorize('guardian', 'admin'), async 
           instanceKey: `${sess._id}:${child._id}`,
           scheduledAt: sess.scheduledAt,
           duration: sess.duration,
-          meetingLink: liveRoomBySession.get(String(sess._id))
+          meetingLink: (liveRoomBySession.get(String(sess._id)) && isWithinGuardianJoinWindow(sess, now))
             ? `/live/${liveRoomBySession.get(String(sess._id))}`
             : null,
           type: sess.type,

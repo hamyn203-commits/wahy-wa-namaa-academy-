@@ -25,9 +25,20 @@ function getSmtpTransporter() {
   return smtpTransporter;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function sendEmail({ to, subject, html, text }) {
   if (!to) throw new Error('Email recipient required');
 
+  const safeSubject = String(subject || '').replace(/[\r\n]+/g, ' ').trim();
+  const safeBodyHtml = html || `<p>${escapeHtml(text || safeSubject).replace(/\r?\n/g, '<br>')}</p>`;
   const emailProvider = getEmailProviderStatus();
 
   if (emailProvider.provider === 'smtp' && emailProvider.configured) {
@@ -35,9 +46,9 @@ async function sendEmail({ to, subject, html, text }) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM || `Wahy Wa Namaa <${process.env.SMTP_USER}>`,
       to,
-      subject,
-      text: text || subject,
-      html: html || `<p>${text || subject}</p>`,
+      subject: safeSubject,
+      text: text || safeSubject,
+      html: safeBodyHtml,
     });
     return { channel: 'email', sent: true, provider: 'smtp' };
   }
@@ -52,8 +63,8 @@ async function sendEmail({ to, subject, html, text }) {
       body: JSON.stringify({
         from: process.env.EMAIL_FROM || 'Wahy Wa Namaa <noreply@wahywanamaa.com>',
         to: [to],
-        subject,
-        html: html || `<p>${text || subject}</p>`,
+        subject: safeSubject,
+        html: safeBodyHtml,
       }),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -210,4 +221,4 @@ async function sendPush({ token, title, body, data = {} }) {
   return { channel: 'push', sent: true, provider: 'console' };
 }
 
-module.exports = { sendEmail, sendTelegram, sendWhatsApp, sendPush };
+module.exports = { sendEmail, sendTelegram, sendWhatsApp, sendPush, escapeHtml };

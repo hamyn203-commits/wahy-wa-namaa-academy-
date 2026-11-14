@@ -11,6 +11,7 @@ const meetingService = require('../services/meetingService');
 const { notifyUser, notifyAdmins } = require('../utils/notify');
 const { logAdminAction } = require('../services/adminAudit');
 const { parseRequestedDateTime, teacherAvailabilityDecision, overlaps, safeTimeZone } = require('../services/sessionScheduling');
+const { sessionParticipantWindow } = require('../services/sessionAccess');
 const rateLimit = require('express-rate-limit');
 
 const publicTrialLimiter = rateLimit({
@@ -80,22 +81,11 @@ function resolvePreferredSchedule(body = {}) {
 
 const isObjectIdLike = (value) => mongoose.Types.ObjectId.isValid(String(value || ''));
 
-// Resolve the platform student account for a trial request: explicit link first,
-// then email, then WhatsApp/phone. Only student accounts are matched.
+// Resolve the platform student account for a trial request strictly via explicit authenticated link.
 async function findStudentUserForTrial(trial) {
-  if (trial.studentUser) {
+  if (trial?.studentUser) {
     const linked = await User.findById(trial.studentUser);
-    if (linked) return linked;
-  }
-  if (trial.email) {
-    const byEmail = await User.findOne({ email: trial.email, role: 'student' });
-    if (byEmail) return byEmail;
-  }
-  if (trial.whatsappPhone) {
-    return User.findOne({
-      role: 'student',
-      $or: [{ whatsappPhone: trial.whatsappPhone }, { phone: trial.whatsappPhone }]
-    });
+    if (linked && linked.role === 'student') return linked;
   }
   return null;
 }
@@ -244,7 +234,7 @@ router.post('/', publicTrialLimiter, readAccessTokenIfValid, async (req, res) =>
       trial
     });
   } catch (error) {
-    res.status(400).json({ error: 'فشل تسجيل طلب الحصة التجريبية', details: error.message });
+    res.status(400).json({ error: 'فشل تسجيل طلب الحصة التجريبية' });
   }
 });
 
@@ -318,7 +308,7 @@ router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل جلب طلبات الحصص التجريبية', details: error.message });
+    res.status(500).json({ error: 'فشل جلب طلبات الحصص التجريبية' });
   }
 });
 
@@ -341,7 +331,15 @@ router.get('/my', protect, authorize('student', 'guardian'), async (req, res) =>
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();
-    return res.json({ success: true, trials });
+    const safeTrials = (trials || []).map((item) => {
+      if (!item?.scheduledSession || typeof item.scheduledSession !== 'object') return item;
+      const canSeeMeeting = item.scheduledSession.status === 'accepted'
+        && sessionParticipantWindow(item.scheduledSession).within;
+      if (canSeeMeeting) return item;
+      const { meetingLink, ...restSession } = item.scheduledSession;
+      return { ...item, scheduledSession: restSession };
+    });
+    return res.json({ success: true, trials: safeTrials });
   } catch (error) {
     return res.status(500).json({ error: 'تعذر تحميل طلبات الحصص التجريبية' });
   }
@@ -407,7 +405,7 @@ router.get('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       trial
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل جلب تفاصيل الحصة التجريبية', details: error.message });
+    res.status(500).json({ error: 'فشل جلب تفاصيل الحصة التجريبية' });
   }
 });
 
@@ -607,7 +605,7 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
       studentLinked: Boolean(studentUser),
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل تعيين المعلم وجدولة الحصة', details: error.message });
+    res.status(500).json({ error: 'فشل تعيين المعلم وجدولة الحصة' });
   }
 });
 
@@ -736,54 +734,28 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
     let enrolledCircle = null;
     let enrollmentNote = '';
 
-    // If assignedCircleId provided, attempt auto-enrollment
+    // Record circle recommendation only — actual circle enrollment strictly requires paid subscription placement.
     if (assignedCircleId) {
-      const circle = await GroupCircle.findById(assignedCircleId);
-      if (circle) {
-        if (
-          req.user.role === 'teacher' &&
-          String(circle.teacher) !== String(teacherProfileId)
-        ) {
-          return res.status(403).json({ error: 'لا يمكنك إلحاق الطالب بحلقة لا تديرها' });
-        }
-        // Find the student User to link to circle
-        const studentUser = await findStudentUserForTrial(trial);
-
-        const circleStudents = circle.students || [];
-        const capacity = circle.capacity || 10;
-
-        if (circleStudents.length >= capacity) {
-          enrollmentNote = 'الحلقة المختارة ممتلئة بالفعل (10 طلاب)';
-        } else if (studentUser) {
-          const alreadyJoined = circleStudents.some(
-            (sId) => sId.toString() === studentUser._id.toString()
-          );
-
-          if (!alreadyJoined) {
-            circle.students.push(studentUser._id);
-            if (circle.students.length >= capacity) {
-              circle.status = 'full';
-            }
-            await circle.save();
-
-            studentUser.circle = circle._id;
-            studentUser.currentLevel = level || studentUser.currentLevel;
-            await studentUser.save();
-
-            enrolledCircle = {
-              circleId: circle._id,
-              name: circle.name,
-              code: circle.code,
-              studentsCount: circle.students.length
-            };
-            enrollmentNote = 'تم إلحاق الطالب بالحلقة الجماعية بنجاح';
-          } else {
-            enrollmentNote = 'الطالب منضم بالفعل لهذه الحلقة';
-          }
-        } else {
-          enrollmentNote = 'تم تسجيل التقييم وترشيح الحلقة؛ سيتم ربط الطالب فور إنشاء حسابه على المنصة';
-        }
+      const circle = await GroupCircle.findById(assignedCircleId).select('_id name code teacher status');
+      if (!circle) {
+        return res.status(404).json({ error: 'الحلقة المرشحة غير موجودة' });
       }
+      if (
+        req.user.role === 'teacher' &&
+        String(circle.teacher) !== String(teacherProfileId)
+      ) {
+        return res.status(403).json({ error: 'لا يمكنك ترشيح حلقة لا تديرها' });
+      }
+      trial.assessment.assignedCircle = circle._id;
+      enrollmentNote = 'تم حفظ توصية الحلقة ضمن التقييم؛ يتم التسكين الفعلي فور تفعيل الاشتراك المدفوع.';
+    } else {
+      trial.assessment.assignedCircle = undefined;
+    }
+
+    const studentUser = await findStudentUserForTrial(trial);
+    if (studentUser && level) {
+      studentUser.currentLevel = level;
+      await studentUser.save();
     }
 
     await trial.save();
@@ -806,7 +778,7 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
       enrollmentNote
     });
   } catch (error) {
-    res.status(500).json({ error: 'فشل تسجيل تقييم الحصة التجريبية', details: error.message });
+    res.status(500).json({ error: 'فشل تسجيل تقييم الحصة التجريبية' });
   }
 });
 

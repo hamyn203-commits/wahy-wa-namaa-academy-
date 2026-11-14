@@ -39,15 +39,22 @@ function maskJwtString(str) {
   );
 }
 
-function maskPII(value, depth = 0) {
+function maskPII(value, depth = 0, seen = new WeakSet()) {
   if (depth > 5 || value === null || value === undefined) return value;
 
   if (typeof value === 'string') {
     return maskPhoneString(maskEmail(maskJwtString(value)));
   }
 
+  if (typeof value === 'object') {
+    if (value instanceof Date) return value.toISOString();
+    if (Buffer.isBuffer(value)) return `[Buffer:${value.length}]`;
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+  }
+
   if (Array.isArray(value)) {
-    return value.map((item) => maskPII(item, depth + 1));
+    return value.map((item) => maskPII(item, depth + 1, seen));
   }
 
   if (typeof value === 'object') {
@@ -61,7 +68,7 @@ function maskPII(value, depth = 0) {
       } else if (lower.includes('phone') && typeof item === 'string') {
         out[key] = maskPhoneString(item);
       } else {
-        out[key] = maskPII(item, depth + 1);
+        out[key] = maskPII(item, depth + 1, seen);
       }
     }
     return out;
@@ -71,13 +78,25 @@ function maskPII(value, depth = 0) {
 }
 
 function emit(level, message, meta = {}) {
+  const seen = new WeakSet();
+  const safeMeta = meta && typeof meta === 'object' ? maskPII(meta, 0, seen) : {};
   const entry = {
     timestamp: new Date().toISOString(),
     level,
-    message: maskPII(String(message || '')),
-    ...maskPII(meta),
+    message: maskPII(String(message || ''), 0, seen),
+    ...(safeMeta && typeof safeMeta === 'object' ? safeMeta : {}),
   };
-  const serialized = JSON.stringify(entry);
+  let serialized;
+  try {
+    serialized = JSON.stringify(entry);
+  } catch {
+    serialized = JSON.stringify({
+      timestamp: entry.timestamp,
+      level,
+      message: entry.message,
+      note: 'Log metadata omitted due to unserializable structure',
+    });
+  }
   if (level === 'error') {
     console.error(serialized);
   } else if (level === 'warn') {

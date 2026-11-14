@@ -7,7 +7,8 @@ const Enrollment = require('../models/Enrollment');
 const Progress = require('../models/Progress');
 const User = require('../models/User');
 const Teacher = require('../models/Teacher');
-const { Quiz } = require('../models/Quiz');
+const { Quiz, QuizAttempt } = require('../models/Quiz');
+const { AssignmentSubmission } = require('../models/Assignment');
 const Certificate = require('../models/Certificate');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
 const { notifyCourseEnrollment, notifyCertificateIssued } = require('../utils/notify');
@@ -23,6 +24,61 @@ async function getEnrollment(userId, courseId) {
 
 const mongoose = require('mongoose');
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
+
+async function resolveLessonCompletionScore(lesson, studentId) {
+  const quizId = lesson.content?.quiz;
+  if (lesson.type === 'quiz' || quizId) {
+    if (!quizId) {
+      const err = new Error('Quiz is not configured for this lesson');
+      err.statusCode = 400;
+      err.publicMessage = 'Quiz must be passed before completing this lesson';
+      throw err;
+    }
+    const passedAttempt = await QuizAttempt.findOne({
+      quiz: quizId,
+      student: studentId,
+      isPassed: true,
+    })
+      .sort({ 'score.percentage': -1 })
+      .lean();
+    if (!passedAttempt) {
+      const err = new Error('Quiz not passed');
+      err.statusCode = 400;
+      err.publicMessage = 'Quiz must be passed before completing this lesson';
+      err.code = 'QUIZ_NOT_PASSED';
+      throw err;
+    }
+    return Math.round(Number(passedAttempt.score?.percentage ?? 100));
+  }
+
+  const assignmentId = lesson.content?.assignment;
+  if (lesson.type === 'assignment' || assignmentId) {
+    if (!assignmentId) {
+      const err = new Error('Assignment is not configured for this lesson');
+      err.statusCode = 400;
+      err.publicMessage = 'Assignment must be submitted before completing this lesson';
+      throw err;
+    }
+    const submission = await AssignmentSubmission.findOne({
+      assignment: assignmentId,
+      student: studentId,
+      status: { $in: ['submitted', 'graded', 'late'] },
+    }).lean();
+    if (!submission) {
+      const err = new Error('Assignment not submitted');
+      err.statusCode = 400;
+      err.publicMessage = 'Assignment must be submitted before completing this lesson';
+      err.code = 'ASSIGNMENT_REQUIRED';
+      throw err;
+    }
+    return submission.grade?.percentage != null
+      ? Math.round(Number(submission.grade.percentage))
+      : 100;
+  }
+
+  return 100;
+}
 
 // GET /api/lms/course/:slug — course + lessons + enrollment for student
 router.get('/course/:slug', protect, attachTeacherProfile, authorize('student', 'teacher', 'admin'), async (req, res) => {
@@ -221,6 +277,9 @@ router.get('/course/:slug/lesson/:lessonId', protect, attachTeacherProfile, auth
 // POST /api/lms/course/:slug/lesson/:lessonId/complete
 router.post('/course/:slug/lesson/:lessonId/complete', protect, authorize('student'), async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.lessonId)) {
+      return res.status(400).json({ error: 'Invalid lesson ID' });
+    }
     const course = await getCourseBySlug(req.params.slug);
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
@@ -231,43 +290,63 @@ router.post('/course/:slug/lesson/:lessonId/complete', protect, authorize('stude
     });
     if (!enrollment) return res.status(403).json({ error: 'Not enrolled' });
 
-    const { score = 100 } = req.body;
-    await enrollment.updateProgress(req.params.lessonId, score);
+    const lesson = await Lesson.findOne({
+      _id: req.params.lessonId,
+      course: course._id,
+      isPublished: true
+    });
+    if (!lesson) {
+      return res.status(404).json({ error: 'Lesson not found' });
+    }
 
-    const lesson = await Lesson.findById(req.params.lessonId);
-    if (lesson) {
+    const verifiedScore = await resolveLessonCompletionScore(lesson, req.user.id);
+    const wasAlreadyCompleted = Array.isArray(enrollment.progress?.completedLessons)
+      && enrollment.progress.completedLessons.some(
+        (cl) => String(cl.lesson) === String(lesson._id)
+      );
+
+    await enrollment.updateProgress(lesson._id, verifiedScore);
+
+    if (!wasAlreadyCompleted) {
       lesson.stats.completions += 1;
       await lesson.save();
-    }
 
-    // Update Progress model for gamification points & streaks
-    let progress = await Progress.findOne({ student: req.user.id, course: course._id });
-    if (!progress) {
-      const lessons = await Lesson.find({ course: course._id }).select('_id');
-      progress = new Progress({
-        student: req.user.id,
-        course: course._id,
-        enrollment: enrollment._id,
-        lessonProgress: lessons.map(l => ({
-          lesson: l._id,
-          status: 'not-started'
-        })),
-        overallProgress: {
-          totalLessons: lessons.length
-        }
-      });
-    }
+      // Update Progress model for gamification points & streaks
+      let progress = await Progress.findOne({ student: req.user.id, course: course._id });
+      if (!progress) {
+        const lessons = await Lesson.find({ course: course._id, isPublished: true }).select('_id');
+        progress = new Progress({
+          student: req.user.id,
+          course: course._id,
+          enrollment: enrollment._id,
+          lessonProgress: lessons.map(l => ({
+            lesson: l._id,
+            status: 'not-started'
+          })),
+          overallProgress: {
+            totalLessons: lessons.length
+          }
+        });
+      }
 
-    const duration = lesson ? lesson.duration : 15;
-    await progress.updateLessonProgress(req.params.lessonId, 'completed', score, duration);
-    
-    // Add the lesson-completed milestone for 10 points
-    await progress.addMilestone(
-      'lesson-completed',
-      { ar: 'أكملت درساً', en: 'Lesson Completed', id: 'Pelajaran Selesai' },
-      { ar: 'أحسنت! لقد أكملت درساً بنجاح', en: 'Great job! You completed a lesson', id: 'Bagus sekali! Anda berhasil menyelesaikan pelajaran' },
-      10
-    );
+      const progressLessonAlreadyDone = Array.isArray(progress.lessonProgress)
+        && progress.lessonProgress.some(
+          (lp) => String(lp.lesson) === String(lesson._id) && lp.status === 'completed'
+        );
+
+      const duration = lesson.duration || 15;
+      await progress.updateLessonProgress(String(lesson._id), 'completed', verifiedScore, duration);
+      
+      if (!progressLessonAlreadyDone) {
+        // Add the lesson-completed milestone once per lesson
+        await progress.addMilestone(
+          'lesson-completed',
+          { ar: 'أكملت درساً', en: 'Lesson Completed', id: 'Pelajaran Selesai' },
+          { ar: 'أحسنت! لقد أكملت درساً بنجاح', en: 'Great job! You completed a lesson', id: 'Bagus sekali! Anda berhasil menyelesaikan pelajaran' },
+          10
+        );
+      }
+    }
 
     const updated = await Enrollment.findById(enrollment._id);
     let certificate = null;
@@ -275,7 +354,7 @@ router.post('/course/:slug/lesson/:lessonId/complete', protect, authorize('stude
     if (updated.status === 'completed' && updated.certificate?.issued && course.certificate?.enabled) {
       const existing = await Certificate.findOne({ student: req.user.id, course: course._id });
       if (!existing) {
-        const certificateId = Certificate.generateCertificateId();
+        const certificateId = updated.certificate.certificateId || Certificate.generateCertificateId();
         const verificationUrl = `${process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'}/verify-certificate/${certificateId}`;
         const qrCode = await Certificate.generateQRCode(verificationUrl);
         certificate = await Certificate.create({
@@ -300,7 +379,11 @@ router.post('/course/:slug/lesson/:lessonId/complete', protect, authorize('stude
 
     res.json({ enrollment: updated, certificate });
   } catch (error) {
-    res.status(400).json({ error: safeErrorMessage(error, 400) });
+    const status = Number(error?.statusCode) || 400;
+    res.status(status).json({
+      error: safeErrorMessage(error, status),
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -424,7 +507,7 @@ router.post('/seed-demo', protect, authorize('admin'), async (req, res) => {
           points: 10,
         },
       ],
-      settings: { passingScore: 60, maxAttempts: 3, shuffleQuestions: false, showResults: true },
+      settings: { passingScore: 60, maxAttempts: 3, shuffleQuestions: false, showResults: 'immediately' },
     });
 
     const quizLesson = await Lesson.create({

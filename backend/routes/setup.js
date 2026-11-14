@@ -10,13 +10,15 @@ const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 
 function safeEqual(a, b) {
-  const aa = Buffer.from(String(a || ''));
-  const bb = Buffer.from(String(b || ''));
-  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+  const aa = crypto.createHash('sha256').update(String(a || '')).digest();
+  const bb = crypto.createHash('sha256').update(String(b || '')).digest();
+  return crypto.timingSafeEqual(aa, bb);
 }
 
 function bootstrapAllowed(req, res, next) {
-  if (process.env.NODE_ENV !== 'production') return next();
+  if (process.env.NODE_ENV === 'test' && process.env.ALLOW_ADMIN_BOOTSTRAP === undefined) {
+    return next();
+  }
 
   if (process.env.ALLOW_ADMIN_BOOTSTRAP !== 'true') {
     return res.status(404).json({ error: 'Route not found' });
@@ -25,7 +27,7 @@ function bootstrapAllowed(req, res, next) {
   const expected = process.env.ADMIN_BOOTSTRAP_SECRET;
   const supplied = req.get('x-admin-bootstrap-secret');
 
-  if (!expected || !supplied || !safeEqual(expected, supplied)) {
+  if (!expected || String(expected).length < 32 || !supplied || !safeEqual(expected, supplied)) {
     return res.status(403).json({ error: 'Admin bootstrap is not authorized' });
   }
 
@@ -35,8 +37,12 @@ function bootstrapAllowed(req, res, next) {
 const ensureAdminHandler = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    if (!name || !email || !password || password.length < 12) {
-      return res.status(400).json({ error: 'Name, email, and a password of at least 12 characters are required' });
+    if (
+      !name || typeof name !== 'string'
+      || !email || typeof email !== 'string' || email.trim().length > 254
+      || !password || typeof password !== 'string' || password.length < 12 || password.length > 128
+    ) {
+      return res.status(400).json({ error: 'Name, email, and a password of 12 to 128 characters are required' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();

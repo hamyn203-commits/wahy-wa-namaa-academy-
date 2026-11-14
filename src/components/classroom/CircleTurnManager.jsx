@@ -84,15 +84,22 @@ export default function CircleTurnManager({
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload) => {
+    const isTrustedHostSender = (participant) => {
+      const id = String(participant?.identity || '');
+      return id.startsWith('teacher:') || id.startsWith('admin:');
+    };
+
+    const handleDataReceived = (payload, participant) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type !== 'CIRCLE_ACTION') return;
 
-        const { action, payload: p } = data;
+        const { action, payload: p = {} } = data;
+        const senderIdentity = String(participant?.identity || '');
 
         switch (action) {
           case 'MUTE_ALL':
+            if (!isTrustedHostSender(participant)) return;
             // إذا كان المستخدم ليس المعلم، اكتم الصوت
             if (!isTeacher) {
               if (onMuteLocalMic) onMuteLocalMic();
@@ -102,17 +109,24 @@ export default function CircleTurnManager({
             }
             break;
 
-          case 'START_RECITATION':
-            setActiveReciter({ id: p.studentId, name: p.studentName });
-            setTimeLeft(p.duration || 300);
+          case 'START_RECITATION': {
+            if (!isTrustedHostSender(participant)) return;
+            const safeDuration = Math.min(1800, Math.max(30, Number(p.duration) || 300));
+            const safeName = String(p.studentName || 'طالب').slice(0, 80);
+            const safeStudentId = String(p.studentId || '').slice(0, 120);
+            if (!safeStudentId) return;
+            setActiveReciter({ id: safeStudentId, name: safeName });
+            setTimeLeft(safeDuration);
             setIsTimerRunning(true);
             // إزالة الطالب من قائمة الانتظار
-            setWaitingQueue(prev => prev.filter(item => item.id !== p.studentId));
-            setActionNotice(`بدأ التسميع لـ: ${p.studentName}`);
+            setWaitingQueue(prev => prev.filter(item => item.id !== safeStudentId));
+            setActionNotice(`بدأ التسميع لـ: ${safeName}`);
             setTimeout(() => setActionNotice(null), 3500);
             break;
+          }
 
           case 'END_RECITATION':
+            if (!isTrustedHostSender(participant)) return;
             setActiveReciter(null);
             setIsTimerRunning(false);
             setActionNotice('تم إنهاء جولة التسميع الحالية');
@@ -120,23 +134,38 @@ export default function CircleTurnManager({
             break;
 
           case 'TIMER_TICK':
+            if (!isTrustedHostSender(participant)) return;
             // مزامنة وقت المؤقت من المعلم
             if (!isTeacher && p.timeLeft !== undefined) {
-              setTimeLeft(p.timeLeft);
-              setIsTimerRunning(p.isRunning);
+              const safeLeft = Math.min(1800, Math.max(0, Number(p.timeLeft) || 0));
+              setTimeLeft(safeLeft);
+              setIsTimerRunning(Boolean(p.isRunning));
             }
             break;
 
-          case 'RAISE_HAND':
+          case 'RAISE_HAND': {
+            if (!senderIdentity || senderIdentity.startsWith('guardian:')) return;
+            if (p.studentId && String(p.studentId) !== senderIdentity) return;
+            const verifiedId = senderIdentity;
+            const verifiedName = String(participant?.name || p.studentName || 'طالب').slice(0, 80);
             setWaitingQueue(prev => {
-              if (prev.some(item => item.id === p.studentId)) return prev;
-              return [...prev, { id: p.studentId, name: p.studentName, timestamp: Date.now() }];
+              if (prev.some(item => item.id === verifiedId)) return prev;
+              return [...prev, { id: verifiedId, name: verifiedName, timestamp: Date.now() }];
             });
             break;
+          }
 
-          case 'LOWER_HAND':
-            setWaitingQueue(prev => prev.filter(item => item.id !== p.studentId));
+          case 'LOWER_HAND': {
+            if (!senderIdentity) return;
+            const targetId = isTrustedHostSender(participant) && p.studentId
+              ? String(p.studentId)
+              : senderIdentity;
+            if (!isTrustedHostSender(participant) && p.studentId && String(p.studentId) !== senderIdentity) {
+              return;
+            }
+            setWaitingQueue(prev => prev.filter(item => item.id !== targetId));
             break;
+          }
 
           default:
             break;

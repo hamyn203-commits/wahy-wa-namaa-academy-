@@ -278,30 +278,45 @@ export default function SyncedMushaf({
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload) => {
+    const handleDataReceived = (payload, participant) => {
       try {
+        const senderIdentity = String(participant?.identity || '');
+        if (!senderIdentity.startsWith('teacher:') && !senderIdentity.startsWith('admin:')) {
+          return;
+        }
+
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type !== 'MUSHAF_ACTION') return;
 
+        const clampMushafPage = (val) => {
+          const parsed = Number.parseInt(val, 10);
+          if (!Number.isFinite(parsed)) return null;
+          return Math.max(1, Math.min(604, parsed));
+        };
+        const safeAyahId = data.ayahId ? String(data.ayahId).slice(0, 24) : null;
+
         // إذا كان المرسل هو المعلم ونحن لسنا في وضع القراءة الحرة
         if (data.action === 'PAGE_CHANGE') {
-          setTeacherPage(data.page);
+          const safePage = clampMushafPage(data.page);
+          if (!safePage) return;
+          setTeacherPage(safePage);
           if (!isTeacher && !isIndependentMode) {
-            setCurrentPage(data.page);
-            setHighlightedAyah(data.ayahId || null);
-            setSyncToast(`انتقل الشيخ إلى صفحة ${data.page}`);
+            setCurrentPage(safePage);
+            setHighlightedAyah(safeAyahId);
+            setSyncToast(`انتقل الشيخ إلى صفحة ${safePage}`);
             setTimeout(() => setSyncToast(null), 3000);
           }
         } else if (data.action === 'AYAH_HIGHLIGHT') {
           if (!isTeacher && !isIndependentMode) {
-            setHighlightedAyah(data.ayahId);
+            setHighlightedAyah(safeAyahId);
           }
         } else if (data.action === 'MODE_TOGGLE') {
           setAllowIndependentReading(Boolean(data.allowIndependent));
           if (!data.allowIndependent) {
             // المعلم أغلق القراءة الحرة -> إعادة الطالب للتزامن الإجباري
             setIsIndependentMode(false);
-            if (data.page) setCurrentPage(data.page);
+            const safePage = clampMushafPage(data.page);
+            if (safePage) setCurrentPage(safePage);
           }
         }
       } catch {

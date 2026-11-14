@@ -20,6 +20,8 @@ const {
 const paymob = require('../services/paymob');
 const manualPayments = require('../config/manualPayments');
 const objectStorage = require('../services/objectStorage');
+const { validateMagicBytes, normalizeContentType } = require('../config/uploadPolicy');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 const { processPaymobWebhook } = require('../services/paymentSettlement');
 const { processManualPaymentReview } = require('../services/manualPaymentSettlement');
 const { placeSubscription } = require('../services/subscriptionPlacement');
@@ -50,6 +52,131 @@ function cleanText(value, max = 180) {
   return String(value || '').trim().slice(0, max);
 }
 
+function normalizeTransferReference(value) {
+  const collapsed = String(value || '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 160);
+  if (!collapsed) return undefined;
+  if (collapsed.length < 4) {
+    const err = new Error('رقم أو مرجع التحويل قصير جداً (يجب ألا يقل عن 4 أحرف/أرقام)');
+    err.code = 'INVALID_TRANSFER_REFERENCE';
+    err.status = 400;
+    throw err;
+  }
+  return collapsed;
+}
+
+const ALLOWED_PROOF_MIMES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+
+async function verifyAndHashPaymentProof(proofReference, declaredContentType) {
+  let result = null;
+  try {
+    result = await objectStorage.getPrivateObject(proofReference);
+  } catch {
+    result = null;
+  }
+
+  if (!result) {
+    if (process.env.NODE_ENV === 'production') {
+      const err = new Error('لم يتم العثور على ملف إثبات الدفع المرفوع');
+      err.code = 'INVALID_PAYMENT_PROOF';
+      err.status = 400;
+      throw err;
+    }
+    return { proofHash: undefined, detectedContentType: undefined };
+  }
+
+  const maxBytes = 10 * 1024 * 1024;
+  const hash = crypto.createHash('sha256');
+  const headerChunks = [];
+  let headerBytes = 0;
+  let totalBytes = 0;
+
+  if (result.stream?.pipe && typeof result.stream[Symbol.asyncIterator] === 'function') {
+    for await (const chunk of result.stream) {
+      const buf = Buffer.from(chunk);
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        const err = new Error('حجم ملف الإثبات يتجاوز الحد المسموح (10MB)');
+        err.code = 'INVALID_PAYMENT_PROOF';
+        err.status = 400;
+        throw err;
+      }
+      hash.update(buf);
+      if (headerBytes < 64) {
+        const slice = buf.subarray(0, 64 - headerBytes);
+        headerChunks.push(slice);
+        headerBytes += slice.length;
+      }
+    }
+  } else if (result.stream?.getReader) {
+    const reader = result.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const buf = Buffer.from(value);
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        const err = new Error('حجم ملف الإثبات يتجاوز الحد المسموح (10MB)');
+        err.code = 'INVALID_PAYMENT_PROOF';
+        err.status = 400;
+        throw err;
+      }
+      hash.update(buf);
+      if (headerBytes < 64) {
+        const slice = buf.subarray(0, 64 - headerBytes);
+        headerChunks.push(slice);
+        headerBytes += slice.length;
+      }
+    }
+  } else {
+    return { proofHash: undefined, detectedContentType: undefined };
+  }
+
+  const headerBuf = Buffer.concat(headerChunks);
+  const candidateMime = normalizeContentType(declaredContentType || result.blob?.contentType || '');
+  const mimesToCheck = ALLOWED_PROOF_MIMES.has(candidateMime)
+    ? [candidateMime]
+    : [...ALLOWED_PROOF_MIMES];
+
+  const matchedMime = mimesToCheck.find((mime) => validateMagicBytes(headerBuf, mime).valid);
+  if (!matchedMime) {
+    const err = new Error('بصمة ملف الإثبات غير مطابقة لصيغة PDF أو صورة PNG/JPEG معتمدة');
+    err.code = 'INVALID_PAYMENT_PROOF_SIGNATURE';
+    err.status = 400;
+    throw err;
+  }
+
+  return {
+    proofHash: hash.digest('hex'),
+    detectedContentType: matchedMime,
+  };
+}
+
+async function assertManualProofNotReplayed({ proofReference, proofHash, methodId, transferReference }) {
+  const orClauses = [{ 'manual.proofReference': proofReference }];
+  if (proofHash) {
+    orClauses.push({ 'manual.proofHash': proofHash });
+  }
+  if (transferReference) {
+    orClauses.push({
+      'manual.method': methodId,
+      'manual.transferReference': transferReference,
+    });
+  }
+
+  const existingReplay = await Payment.findOne({
+    provider: 'manual',
+    status: { $in: ['pending', 'succeeded'] },
+    $or: orClauses,
+  }).select('_id status');
+
+  if (existingReplay) {
+    const err = new Error('تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى');
+    err.code = 'DUPLICATE_PAYMENT_PROOF';
+    err.status = 409;
+    throw err;
+  }
+}
+
 async function streamPrivateProof(reference, res) {
   const pathname = objectStorage.extractPathname(reference);
   if (!objectStorage.isSafeObjectPath(pathname) || !pathname.startsWith('uploads/payment-proof/')) {
@@ -65,6 +192,7 @@ async function streamPrivateProof(reference, res) {
 
   res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'none'; script-src 'none'; sandbox");
   res.setHeader('Cache-Control', 'private, no-store');
 
   if (result.stream?.pipe) {
@@ -140,6 +268,24 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
 
     const currency = normalizeCurrency(course.currency || 'USD');
     const amountMinor = toMinorUnits(course.price, currency);
+
+    const recentWindow = new Date(Date.now() - 30 * 60 * 1000);
+    const activePendingCheckout = await Payment.findOne({
+      kind: 'course_enrollment',
+      provider: 'paymob',
+      student: user._id,
+      course: course._id,
+      status: 'pending',
+      createdAt: { $gte: recentWindow },
+    }).select('_id');
+
+    if (activePendingCheckout) {
+      return res.status(409).json({
+        error: 'A payment session is already pending for this course',
+        code: 'PAYMENT_ALREADY_PENDING',
+        paymentId: String(activePendingCheckout._id),
+      });
+    }
 
     payment = await Payment.create({
       kind: 'course_enrollment',
@@ -294,6 +440,18 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       });
     }
 
+    const normalizedRef = normalizeTransferReference(req.body?.transferReference);
+    const { proofHash, detectedContentType } = await verifyAndHashPaymentProof(
+      proofReference,
+      req.body?.proofContentType
+    );
+    await assertManualProofNotReplayed({
+      proofReference,
+      proofHash,
+      methodId: method.id,
+      transferReference: normalizedRef,
+    });
+
     const currency = normalizeCurrency(course.currency || 'EGP');
     const amountMinor = toMinorUnits(course.price, currency);
 
@@ -308,10 +466,12 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       status: 'pending',
       manual: {
         method: method.id,
-        transferReference: cleanText(req.body?.transferReference, 160) || undefined,
+        transferReference: normalizedRef,
         proofReference,
+        proofHash,
+        submittedBy: req.user.id,
         proofFilename: cleanText(req.body?.proofFilename, 180) || undefined,
-        proofContentType: cleanText(req.body?.proofContentType, 100) || undefined,
+        proofContentType: detectedContentType || cleanText(req.body?.proofContentType, 100) || undefined,
         proofSize: Number.isFinite(Number(req.body.proofSize))
           ? Math.max(1, Math.min(Number(req.body.proofSize), 10 * 1024 * 1024))
           : undefined,
@@ -347,7 +507,22 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       reviewRequired: true,
     });
   } catch (error) {
+    if (error?.code === 'DUPLICATE_PAYMENT_PROOF') {
+      const publicMsg = String(error.publicMessage || error.message || 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى');
+      return res.status(409).json({ error: publicMsg, code: error.code });
+    }
+    if (error?.code === 'INVALID_TRANSFER_REFERENCE' || error?.code === 'INVALID_PAYMENT_PROOF' || error?.code === 'INVALID_PAYMENT_PROOF_SIGNATURE') {
+      const publicMsg = String(error.publicMessage || error.message || 'بيانات إثبات التحويل غير صالحة');
+      return res.status(400).json({ error: publicMsg, code: error.code });
+    }
     if (error?.code === 11000) {
+      const keyPattern = error?.keyPattern || {};
+      if (keyPattern['manual.proofReference'] || keyPattern['manual.proofHash'] || keyPattern['manual.transferReference']) {
+        return res.status(409).json({
+          error: 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى',
+          code: 'DUPLICATE_PAYMENT_PROOF',
+        });
+      }
       const duplicatePayment = await Payment.findOne({
         kind: 'course_enrollment',
         provider: 'manual',
@@ -370,171 +545,74 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
 
 
 router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'), async (req, res) => {
-  if (!manualPayments.isConfigured()) {
-    return res.status(503).json({
-      error: 'Manual payment is not configured yet',
-      code: 'MANUAL_PAYMENT_NOT_CONFIGURED',
-    });
-  }
-
-  const method = manualPayments.getMethod(req.body?.method);
-  if (!method) {
-    return res.status(400).json({
-      error: 'Unsupported manual payment method',
-      code: 'INVALID_PAYMENT_METHOD',
-    });
-  }
-
-  const proofReference = cleanText(req.body?.proofReference, 2048);
-  if (!proofReference || !objectStorage.isOwnedObjectReference(
-    proofReference,
-    'payment-proof',
-    req.user.id
-  )) {
-    return res.status(400).json({
-      error: 'A valid owned payment proof is required',
-      code: 'INVALID_PAYMENT_PROOF',
-    });
-  }
-
-  const preferredTeacherId = cleanText(req.body?.preferredTeacherId, 80);
-  if (req.user.role === 'guardian') {
-    const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
-    const linked = targetSub && (
-      await Guardian.exists({ user: req.user.id, 'children.student': targetSub.student })
-      || await User.exists({ _id: req.user.id, children: targetSub.student })
-    );
-    if (!linked) {
-      return res.status(403).json({ error: 'غير مصرح بسداد اشتراك هذا الطالب' });
-    }
-    req.user = { ...req.user, id: String(targetSub.student) };
-  }
-  const teacher = await Teacher.findOne({
-    _id: preferredTeacherId,
-    status: 'approved',
-    isVerified: true,
-  }).select('_id personalInfo');
-
-  if (!teacher) {
-    return res.status(400).json({
-      error: 'اختر معلمًا متاحًا ومعتمدًا',
-      code: 'PREFERRED_TEACHER_INVALID',
-    });
-  }
-
-  const subscription = await StudentSubscription.findOne({
-    _id: req.params.id,
-    student: req.user.id,
-  });
-
-  if (!subscription) {
-    return res.status(404).json({
-      error: 'الاشتراك غير موجود',
-      code: 'SUBSCRIPTION_NOT_FOUND',
-    });
-  }
-
-  if (subscription.status === 'payment_review') {
-    const existingPending = await Payment.findOne({
-      kind: 'subscription',
-      provider: 'manual',
-      student: req.user.id,
-      subscription: subscription._id,
-      status: 'pending',
-    }).select('_id');
-
-    return res.status(409).json({
-      error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
-      code: 'PAYMENT_REVIEW_PENDING',
-      paymentId: existingPending ? String(existingPending._id) : null,
-    });
-  }
-
-  if (subscription.status !== 'pending_payment') {
-    return res.status(409).json({
-      error: 'هذا الاشتراك لم يعد في مرحلة الدفع',
-      code: 'SUBSCRIPTION_PAYMENT_NOT_ALLOWED',
-    });
-  }
-
-  const teacherLock = await findStudentTeacherLock(req.user.id);
-  if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
-    return res.status(409).json(teacherLockedResponse(teacherLock));
-  }
-
-  if (
-    subscription.renewalOf
-    && subscription.preferredTeacher
-    && String(subscription.preferredTeacher) !== String(teacher._id)
-  ) {
-    return res.status(409).json({
-      error: 'التجديد مرتبط بنفس المعلم والجروب الحاليين',
-      code: 'RENEWAL_TEACHER_LOCKED',
-    });
-  }
-
-  if (
-    subscription.section === 'ladies'
-    && teacher.personalInfo?.gender
-    && teacher.personalInfo.gender !== 'female'
-  ) {
-    return res.status(400).json({
-      error: 'قسم السيدات متاح مع المعلمات فقط',
-      code: 'LADIES_SECTION_TEACHER_MISMATCH',
-    });
-  }
-
-  const existingPending = await Payment.findOne({
-    kind: 'subscription',
-    provider: 'manual',
-    student: req.user.id,
-    subscription: subscription._id,
-    status: 'pending',
-  }).select('_id');
-
-  if (existingPending) {
-    return res.status(409).json({
-      error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
-      code: 'PAYMENT_REVIEW_PENDING',
-      paymentId: String(existingPending._id),
-    });
-  }
-
-  const dbSession = await mongoose.startSession();
-  let payment;
   try {
-    await dbSession.withTransaction(async () => {
-      const created = await Payment.create([{
-        kind: 'subscription',
-        provider: 'manual',
-        idempotencyKey: `manual-subscription:${crypto.randomUUID()}`,
-        student: req.user.id,
-        subscription: subscription._id,
-        amountMinor: subscription.totalAmountMinor,
-        currency: subscription.currency,
-        status: 'pending',
-        manual: {
-          method: method.id,
-          transferReference: cleanText(req.body?.transferReference, 160) || undefined,
-          proofReference,
-          proofFilename: cleanText(req.body?.proofFilename, 180) || undefined,
-          proofContentType: cleanText(req.body?.proofContentType, 100) || undefined,
-          proofSize: Number.isFinite(Number(req.body.proofSize))
-            ? Math.max(1, Math.min(Number(req.body.proofSize), 10 * 1024 * 1024))
-            : undefined,
-          submittedAt: new Date(),
-        },
-      }], { session: dbSession });
+    if (!manualPayments.isConfigured()) {
+      return res.status(503).json({
+        error: 'Manual payment is not configured yet',
+        code: 'MANUAL_PAYMENT_NOT_CONFIGURED',
+      });
+    }
 
-      payment = created[0];
-      subscription.preferredTeacher = teacher._id;
-      subscription.payment = payment._id;
-      subscription.status = 'payment_review';
-      await subscription.save({ session: dbSession });
+    const method = manualPayments.getMethod(req.body?.method);
+    if (!method) {
+      return res.status(400).json({
+        error: 'Unsupported manual payment method',
+        code: 'INVALID_PAYMENT_METHOD',
+      });
+    }
+
+    const actorUserId = String(req.user.id);
+    const proofReference = cleanText(req.body?.proofReference, 2048);
+    if (!proofReference || !objectStorage.isOwnedObjectReference(
+      proofReference,
+      'payment-proof',
+      req.user.id
+    )) {
+      return res.status(400).json({
+        error: 'A valid owned payment proof is required',
+        code: 'INVALID_PAYMENT_PROOF',
+      });
+    }
+
+    const preferredTeacherId = cleanText(req.body?.preferredTeacherId, 80);
+    if (req.user.role === 'guardian') {
+      const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
+      const linked = targetSub && (
+        await Guardian.exists({ user: req.user.id, 'children.student': targetSub.student })
+        || await User.exists({ _id: req.user.id, children: targetSub.student })
+      );
+      if (!linked) {
+        return res.status(403).json({ error: 'غير مصرح بسداد اشتراك هذا الطالب' });
+      }
+      req.user = { ...req.user, id: String(targetSub.student) };
+    }
+    const teacher = await Teacher.findOne({
+      _id: preferredTeacherId,
+      status: 'approved',
+      isVerified: true,
+    }).select('_id personalInfo');
+
+    if (!teacher) {
+      return res.status(400).json({
+        error: 'اختر معلمًا متاحًا ومعتمدًا',
+        code: 'PREFERRED_TEACHER_INVALID',
+      });
+    }
+
+    const subscription = await StudentSubscription.findOne({
+      _id: req.params.id,
+      student: req.user.id,
     });
-  } catch (error) {
-    if (error?.code === 11000) {
-      const duplicatePayment = await Payment.findOne({
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'الاشتراك غير موجود',
+        code: 'SUBSCRIPTION_NOT_FOUND',
+      });
+    }
+
+    if (subscription.status === 'payment_review') {
+      const existingPending = await Payment.findOne({
         kind: 'subscription',
         provider: 'manual',
         student: req.user.id,
@@ -545,51 +623,203 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
       return res.status(409).json({
         error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
         code: 'PAYMENT_REVIEW_PENDING',
-        paymentId: duplicatePayment ? String(duplicatePayment._id) : null,
+        paymentId: existingPending ? String(existingPending._id) : null,
       });
     }
-    throw error;
-  } finally {
-    await dbSession.endSession();
-  }
 
-  notifyAdmins({
-    type: 'payment-received',
-    title: subscription.renewalOf
-      ? { ar: 'إثبات دفع تجديد باقة', en: 'Package renewal payment proof' }
-      : { ar: 'إثبات دفع اشتراك جديد', en: 'New subscription payment proof' },
-    message: subscription.renewalOf
-      ? {
-          ar: 'طالب رفع إثبات تحويل لتجديد نفس الجروب والمعلم. راجع وصول المبلغ فقط.',
-          en: 'A learner submitted proof for renewing the same circle and tutor. Verify the funds.',
+    if (subscription.status !== 'pending_payment') {
+      return res.status(409).json({
+        error: 'هذا الاشتراك لم يعد في مرحلة الدفع',
+        code: 'SUBSCRIPTION_PAYMENT_NOT_ALLOWED',
+      });
+    }
+
+    const teacherLock = await findStudentTeacherLock(req.user.id);
+    if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
+      return res.status(409).json(teacherLockedResponse(teacherLock));
+    }
+
+    if (
+      subscription.renewalOf
+      && subscription.preferredTeacher
+      && String(subscription.preferredTeacher) !== String(teacher._id)
+    ) {
+      return res.status(409).json({
+        error: 'التجديد مرتبط بنفس المعلم والجروب الحاليين',
+        code: 'RENEWAL_TEACHER_LOCKED',
+      });
+    }
+
+    if (
+      subscription.section === 'ladies'
+      && teacher.personalInfo?.gender
+      && teacher.personalInfo.gender !== 'female'
+    ) {
+      return res.status(400).json({
+        error: 'قسم السيدات متاح مع المعلمات فقط',
+        code: 'LADIES_SECTION_TEACHER_MISMATCH',
+      });
+    }
+
+    const canQueryStudent = mongoose.connection.readyState === 1 || User.findById !== mongoose.Model.findById;
+    const studentDoc = canQueryStudent
+      ? await User.findById(req.user.id).select('gender age').lean().catch(() => null)
+      : null;
+    if (studentDoc) {
+      assertGenderAndAgeCompatibility({
+        student: studentDoc,
+        teacher,
+        section: subscription.section,
+      });
+    }
+
+    const transferReference = normalizeTransferReference(req.body?.transferReference);
+    const { proofHash, detectedContentType } = await verifyAndHashPaymentProof(
+      proofReference,
+      req.body?.proofContentType
+    );
+    await assertManualProofNotReplayed({
+      proofReference,
+      proofHash,
+      methodId: method.id,
+      transferReference,
+    });
+
+    const existingPending = await Payment.findOne({
+      kind: 'subscription',
+      provider: 'manual',
+      student: req.user.id,
+      subscription: subscription._id,
+      status: 'pending',
+    }).select('_id');
+
+    if (existingPending) {
+      return res.status(409).json({
+        error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
+        code: 'PAYMENT_REVIEW_PENDING',
+        paymentId: String(existingPending._id),
+      });
+    }
+
+    const dbSession = await mongoose.startSession();
+    let payment;
+    try {
+      await dbSession.withTransaction(async () => {
+        const created = await Payment.create([{
+          kind: 'subscription',
+          provider: 'manual',
+          idempotencyKey: `manual-subscription:${crypto.randomUUID()}`,
+          student: req.user.id,
+          subscription: subscription._id,
+          amountMinor: subscription.totalAmountMinor,
+          currency: subscription.currency,
+          status: 'pending',
+          manual: {
+            method: method.id,
+            transferReference,
+            proofReference,
+            proofHash,
+            proofFilename: cleanText(req.body?.proofFilename, 180) || undefined,
+            proofContentType: detectedContentType || cleanText(req.body?.proofContentType, 100) || undefined,
+            proofSize: Number.isFinite(Number(req.body.proofSize))
+              ? Math.max(1, Math.min(Number(req.body.proofSize), 10 * 1024 * 1024))
+              : undefined,
+            submittedBy: actorUserId,
+            submittedAt: new Date(),
+          },
+        }], { session: dbSession });
+
+        payment = created[0];
+        subscription.preferredTeacher = teacher._id;
+        subscription.payment = payment._id;
+        subscription.status = 'payment_review';
+        await subscription.save({ session: dbSession });
+      });
+    } catch (error) {
+      if (error?.code === 11000) {
+        const keyPattern = error?.keyPattern || {};
+        if (keyPattern['manual.proofReference'] || keyPattern['manual.proofHash'] || keyPattern['manual.transferReference']) {
+          return res.status(409).json({
+            error: 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى',
+            code: 'DUPLICATE_PAYMENT_PROOF',
+          });
         }
-      : {
-          ar: 'طالب رفع إثبات تحويل لاشتراك واختار المعلم. راجع وصول المبلغ ثم أرسل الطلب للتسكين.',
-          en: 'A student submitted a subscription transfer proof and selected a tutor. Verify funds before placement.',
-        },
-    data: {
-      actionUrl: '/admin/payments',
-      metadata: {
-        paymentId: String(payment._id),
-        subscriptionId: String(subscription._id),
-        preferredTeacherId: String(teacher._id),
-        amountMinor: subscription.totalAmountMinor,
-        currency: subscription.currency,
-      },
-    },
-    priority: 'high',
-  }).catch((error) => {
-    console.warn('Admin subscription payment notification failed:', error.message);
-  });
+        const duplicatePayment = await Payment.findOne({
+          kind: 'subscription',
+          provider: 'manual',
+          student: req.user.id,
+          subscription: subscription._id,
+          status: 'pending',
+        }).select('_id');
 
-  return res.status(201).json({
-    paymentId: String(payment._id),
-    subscriptionId: String(subscription._id),
-    provider: 'manual',
-    status: payment.status,
-    subscriptionStatus: 'payment_review',
-    reviewRequired: true,
-  });
+        return res.status(409).json({
+          error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
+          code: 'PAYMENT_REVIEW_PENDING',
+          paymentId: duplicatePayment ? String(duplicatePayment._id) : null,
+        });
+      }
+      throw error;
+    } finally {
+      await dbSession.endSession();
+    }
+
+    notifyAdmins({
+      type: 'payment-received',
+      title: subscription.renewalOf
+        ? { ar: 'إثبات دفع تجديد باقة', en: 'Package renewal payment proof' }
+        : { ar: 'إثبات دفع اشتراك جديد', en: 'New subscription payment proof' },
+      message: subscription.renewalOf
+        ? {
+            ar: 'طالب رفع إثبات تحويل لتجديد نفس الجروب والمعلم. راجع وصول المبلغ فقط.',
+            en: 'A learner submitted proof for renewing the same circle and tutor. Verify the funds.',
+          }
+        : {
+            ar: 'طالب رفع إثبات تحويل لاشتراك واختار المعلم. راجع وصول المبلغ ثم أرسل الطلب للتسكين.',
+            en: 'A student submitted a subscription transfer proof and selected a tutor. Verify funds before placement.',
+          },
+      data: {
+        actionUrl: '/admin/payments',
+        metadata: {
+          paymentId: String(payment._id),
+          subscriptionId: String(subscription._id),
+          preferredTeacherId: String(teacher._id),
+          amountMinor: subscription.totalAmountMinor,
+          currency: subscription.currency,
+        },
+      },
+      priority: 'high',
+    }).catch((error) => {
+      console.warn('Admin subscription payment notification failed:', error.message);
+    });
+
+    return res.status(201).json({
+      paymentId: String(payment._id),
+      subscriptionId: String(subscription._id),
+      provider: 'manual',
+      status: payment.status,
+      subscriptionStatus: 'payment_review',
+      reviewRequired: true,
+    });
+  } catch (error) {
+    if (error?.code === 'DUPLICATE_PAYMENT_PROOF') {
+      const publicMsg = String(error.publicMessage || error.message || 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى');
+      return res.status(409).json({ error: publicMsg, code: error.code });
+    }
+    if (
+      error?.code === 'INVALID_TRANSFER_REFERENCE'
+      || error?.code === 'INVALID_PAYMENT_PROOF'
+      || error?.code === 'INVALID_PAYMENT_PROOF_SIGNATURE'
+      || error?.status === 400
+    ) {
+      const publicMsg = String(error.publicMessage || error.message || 'بيانات الدفع أو توافق القسم غير صالحة');
+      return res.status(400).json({ error: publicMsg, code: error.code || 'INVALID_PAYMENT_REQUEST' });
+    }
+    console.error('Subscription manual payment submission failed:', error.message);
+    return res.status(400).json({
+      error: 'تعذر رفع إثبات التحويل حالياً',
+      code: 'MANUAL_PAYMENT_SUBMISSION_FAILED',
+    });
+  }
 });
 
 router.get('/admin/manual', protect, authorize('admin'), async (req, res) => {
@@ -795,7 +1025,7 @@ router.patch('/admin/manual/:id/review', protect, authorize('admin'), async (req
     if (error.code === 'PAYMENT_NOT_FOUND') {
       return res.status(404).json({ error: safeErrorMessage(error, 404), code: error.code });
     }
-    if (error.code === 'PAYMENT_ALREADY_REVIEWED') {
+    if (error.code === 'PAYMENT_ALREADY_REVIEWED' || error.code === 'ALREADY_ENROLLED') {
       return res.status(409).json({ error: safeErrorMessage(error, 409), code: error.code });
     }
     if (error.code === 'INVALID_REVIEW_ACTION') {
@@ -826,9 +1056,12 @@ router.post('/paymob/webhook', async (req, res) => {
       });
     }
 
+    const rawBuffer = Buffer.isBuffer(req.rawBody)
+      ? req.rawBody
+      : Buffer.from(JSON.stringify(req.body || {}));
     const payloadHash = crypto
       .createHash('sha256')
-      .update(JSON.stringify(req.body || {}))
+      .update(rawBuffer)
       .digest('hex');
 
     const merchantReference = String(obj.order?.merchant_order_id || '');
@@ -867,7 +1100,7 @@ router.post('/paymob/webhook', async (req, res) => {
   }
 });
 
-router.get('/:id/status', protect, authorize('student', 'admin'), async (req, res) => {
+router.get('/:id/status', protect, authorize('student', 'guardian', 'admin'), async (req, res) => {
   try {
     const payment = await Payment.findById(req.params.id)
       .populate('course', 'slug title')
@@ -876,10 +1109,17 @@ router.get('/:id/status', protect, authorize('student', 'admin'), async (req, re
 
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
 
-    if (
-      req.user.role !== 'admin'
-      && String(payment.student || '') !== String(req.user.id)
-    ) {
+    let isAllowed = req.user.role === 'admin'
+      || String(payment.student || '') === String(req.user.id)
+      || String(payment.manual?.submittedBy || '') === String(req.user.id);
+
+    if (!isAllowed && req.user.role === 'guardian' && payment.student) {
+      const linked = await Guardian.exists({ user: req.user.id, 'children.student': payment.student })
+        || await User.exists({ _id: req.user.id, children: payment.student });
+      isAllowed = Boolean(linked);
+    }
+
+    if (!isAllowed) {
       return res.status(403).json({ error: 'Not authorized to view this payment' });
     }
 

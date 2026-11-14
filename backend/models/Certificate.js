@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 
 const CertificateSchema = new mongoose.Schema({
@@ -37,6 +38,13 @@ const CertificateSchema = new mongoose.Schema({
     enum: ['active', 'expired', 'revoked'],
     default: 'active'
   },
+  revokedAt: {
+    type: Date
+  },
+  revocationReason: {
+    type: String,
+    maxlength: 500
+  },
   metadata: {
     completionDate: Date,
     score: Number,
@@ -52,7 +60,7 @@ const CertificateSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    enum: ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms'],
+    enum: ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'],
     default: 'ar'
   }
 }, {
@@ -65,7 +73,7 @@ CertificateSchema.index({ status: 1 });
 
 CertificateSchema.statics.generateCertificateId = function() {
   const timestamp = Date.now().toString(36).toUpperCase();
-  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const random = crypto.randomBytes(6).toString('hex').toUpperCase();
   return `CERT-${timestamp}-${random}`;
 };
 
@@ -97,7 +105,9 @@ CertificateSchema.methods.verify = function() {
   
   if (this.expiresAt && this.expiresAt < new Date()) {
     this.status = 'expired';
-    this.save();
+    if (typeof this.save === 'function') {
+      Promise.resolve(this.save()).catch(() => {});
+    }
     return { valid: false, reason: 'Certificate has expired' };
   }
   

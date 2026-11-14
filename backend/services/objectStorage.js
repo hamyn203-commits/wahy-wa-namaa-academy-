@@ -56,13 +56,30 @@ function createObjectKey(prefix, originalName) {
   return `${String(prefix || 'uploads').replace(/^\/+|\/+$/g, '')}/${Date.now()}-${crypto.randomUUID()}-${base}${ext}`;
 }
 
-function extractPathname(reference) {
-  if (!reference) return '';
+function unwrapPublicProxyReference(reference) {
+  const value = String(reference || '').trim();
+  if (!value) return '';
+
   try {
-    const parsed = new URL(reference);
+    const parsed = new URL(value, 'https://wahy.invalid');
+    if (parsed.pathname.endsWith('/api/uploads/public')) {
+      return parsed.searchParams.get('ref') || value;
+    }
+  } catch {
+    // Keep the original reference for downstream validation.
+  }
+
+  return value;
+}
+
+function extractPathname(reference) {
+  const unwrapped = unwrapPublicProxyReference(reference);
+  if (!unwrapped) return '';
+  try {
+    const parsed = new URL(unwrapped);
     return decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
   } catch {
-    return String(reference).replace(/^\/+/, '');
+    return String(unwrapped).replace(/^\/+/, '');
   }
 }
 
@@ -85,10 +102,29 @@ function referenceMatches(reference, purpose, owner) {
   return pathname.startsWith(expected);
 }
 
+function getConfiguredBlobStoreId() {
+  const token = String(process.env.BLOB_READ_WRITE_TOKEN || '').trim();
+  const match = token.match(/^vercel_blob_rw_([a-z0-9]+)_/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 function isVercelBlobReference(reference) {
+  const unwrapped = unwrapPublicProxyReference(reference);
   try {
-    const parsed = new URL(reference);
-    return parsed.protocol === 'https:' && parsed.hostname.endsWith('.blob.vercel-storage.com');
+    const parsed = new URL(unwrapped);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      parsed.protocol !== 'https:' ||
+      !host.endsWith('.blob.vercel-storage.com') ||
+      host === 'blob.vercel-storage.com'
+    ) {
+      return false;
+    }
+    const storeId = getConfiguredBlobStoreId();
+    if (storeId && !host.startsWith(`${storeId}.`)) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -105,22 +141,6 @@ function publicProxyUrl(reference) {
     return base ? `${base}/${extractPathname(reference)}` : reference;
   }
   return reference;
-}
-
-function unwrapPublicProxyReference(reference) {
-  const value = String(reference || '').trim();
-  if (!value) return '';
-
-  try {
-    const parsed = new URL(value, 'https://wahy.invalid');
-    if (parsed.pathname.endsWith('/api/uploads/public')) {
-      return parsed.searchParams.get('ref') || value;
-    }
-  } catch {
-    // Keep the original reference for downstream validation.
-  }
-
-  return value;
 }
 
 async function createUploadUrl({ key, contentType, expiresIn = 600 }) {
@@ -249,24 +269,58 @@ async function getPrivateObject(reference, options = {}) {
   return null;
 }
 
+function isS3ReferenceAllowed(reference) {
+  const unwrapped = unwrapPublicProxyReference(reference);
+  if (!/^https?:\/\//i.test(unwrapped)) {
+    return isSafeObjectPath(extractPathname(unwrapped));
+  }
+  try {
+    const parsed = new URL(unwrapped);
+    if (parsed.protocol !== 'https:') return false;
+    const allowedHosts = new Set();
+    for (const candidate of [process.env.S3_PUBLIC_BASE_URL, process.env.S3_ENDPOINT]) {
+      if (candidate) {
+        try {
+          allowedHosts.add(new URL(candidate).hostname.toLowerCase());
+        } catch {
+          // ignore malformed optional env URL
+        }
+      }
+    }
+    const bucket = String(process.env.S3_BUCKET || '').trim().toLowerCase();
+    const region = String(process.env.S3_REGION || '').trim().toLowerCase();
+    if (bucket) {
+      allowedHosts.add(`${bucket}.s3.amazonaws.com`);
+      if (region) {
+        allowedHosts.add(`${bucket}.s3.${region}.amazonaws.com`);
+      }
+    }
+    if (allowedHosts.size === 0) return false;
+    return allowedHosts.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function isOwnedObjectReference(reference, purpose, owner, driver = getDriver()) {
   if (!referenceMatches(reference, purpose, owner)) return false;
   if (driver === 'vercel-blob') return isVercelBlobReference(reference);
-  if (driver === 's3') return true;
+  if (driver === 's3') return isS3ReferenceAllowed(reference);
   return false;
 }
 
 async function deleteObject(reference) {
+  const stored = unwrapPublicProxyReference(reference);
   if (getDriver() === 'vercel-blob') {
     const { del } = await import('@vercel/blob');
-    await del(reference, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    await del(stored, { token: process.env.BLOB_READ_WRITE_TOKEN });
     return;
   }
 
   if (getDriver() === 's3') {
     await getS3Client().send(new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET,
-      Key: extractPathname(reference),
+      Key: extractPathname(stored),
     }));
     return;
   }

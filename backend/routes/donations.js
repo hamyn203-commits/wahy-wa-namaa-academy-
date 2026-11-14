@@ -5,19 +5,21 @@ const mongoose = require('mongoose');
 const Donation = require('../models/Donation');
 const { protect, authorize } = require('../middleware/auth');
 const { notifyAdmin } = require('../services/growthNotify');
+const { logAdminAction } = require('../services/adminAudit');
 
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 
 router.post('/', async (req, res) => {
   try {
-    const { name, email, phone, amount, currency = 'USD', category = 'general', message, isAnonymous } = req.body;
+    const { name, email, phone, amount, currency = 'USD', category = 'general', message, isAnonymous } = req.body || {};
     const cleanName = String(name || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanPhone = String(phone || '').trim();
     const cleanMessage = String(message || '').trim();
     const numericAmount = Number(amount);
     const normalizedCurrency = String(currency || 'USD').toUpperCase();
+    const normalizedCategory = String(category || 'general').trim();
     const allowedCurrencies = ['USD', 'EUR', 'GBP', 'SAR', 'AED', 'EGP'];
     const allowedCategories = ['student', 'teacher', 'halaqa', 'general'];
 
@@ -27,39 +29,43 @@ router.post('/', async (req, res) => {
     if (cleanName.length < 2 || cleanName.length > 100) {
       return res.status(400).json({ error: 'الاسم غير صالح' });
     }
-    if (!/^\S+@\S+\.\S+$/.test(cleanEmail) || cleanEmail.length > 254) {
+    if (cleanEmail.length > 254 || !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
       return res.status(400).json({ error: 'البريد الإلكتروني غير صالح' });
     }
     if (!Number.isFinite(numericAmount) || numericAmount < 1 || numericAmount > 10000000) {
       return res.status(400).json({ error: 'المبلغ غير صالح' });
     }
-    if (!allowedCurrencies.includes(normalizedCurrency) || !allowedCategories.includes(category)) {
+    if (!allowedCurrencies.includes(normalizedCurrency) || !allowedCategories.includes(normalizedCategory)) {
       return res.status(400).json({ error: 'العملة أو فئة التبرع غير صالحة' });
     }
     if (cleanPhone.length > 32 || cleanMessage.length > 500) {
       return res.status(400).json({ error: 'بيانات التبرع تتجاوز الحد المسموح' });
     }
 
-    if (isMockMode || !isDBConnected()) {
+    if (!isDBConnected()) {
+      if (!isMockMode) {
+        return res.status(503).json({ error: 'خدمة التبرعات غير متاحة مؤقتاً، يرجى المحاولة لاحقاً' });
+      }
       return res.status(201).json({
         success: true,
         message: 'شكراً لتبرعك — سنتواصل معك لإتمام العملية',
         id: 'mock-donation-' + Date.now(),
       });
     }
+
     const donation = await Donation.create({
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
       amount: numericAmount,
       currency: normalizedCurrency,
-      category,
+      category: normalizedCategory,
       message: cleanMessage,
       isAnonymous: Boolean(isAnonymous),
     });
     notifyAdmin({
       subject: `تبرع جديد — ${numericAmount} ${normalizedCurrency}`,
-      html: `<p>تم تسجيل تعهد تبرع جديد.</p><p>راجع لوحة الإدارة للاطلاع على بيانات المتبرع.</p>`,
+      html: '<p>تم تسجيل تعهد تبرع جديد.</p><p>راجع لوحة الإدارة للاطلاع على بيانات المتبرع.</p>',
     }).catch(() => {});
     res.status(201).json({ success: true, message: 'شكراً لتبرعك — سنتواصل معك لإتمام العملية', id: donation._id });
   } catch (error) {
@@ -67,9 +73,12 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (_req, res) => {
   try {
-    if (isMockMode || !isDBConnected()) {
+    if (!isDBConnected()) {
+      if (!isMockMode) {
+        return res.status(503).json({ error: 'خدمة الإحصاءات غير متاحة مؤقتاً' });
+      }
       return res.json({
         totalDonors: 0,
         totalsByCurrency: {},
@@ -143,21 +152,28 @@ router.get('/config', async (_req, res) => {
 });
 
 router.get('/', protect, authorize('admin'), async (req, res) => {
-  const { page = 1, limit = 20, status } = req.query;
-  if (isMockMode || !isDBConnected()) {
+  const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+  const status = req.query.status ? String(req.query.status).trim() : '';
+
+  if (!isDBConnected()) {
+    if (!isMockMode) {
+      return res.status(503).json({ error: 'قاعدة البيانات غير متاحة حالياً' });
+    }
     return res.json({
       donations: [],
-      pagination: { page: Number(page), limit: Number(limit), total: 0 }
+      pagination: { page: pageNum, limit: limitNum, total: 0 },
     });
   }
   try {
-    const filter = status ? { status } : {};
-    const skip = (Number(page) - 1) * Number(limit);
+    const allowedStatuses = ['pledged', 'confirmed', 'cancelled'];
+    const filter = status && allowedStatuses.includes(status) ? { status } : {};
+    const skip = (pageNum - 1) * limitNum;
     const [donations, total] = await Promise.all([
-      Donation.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      Donation.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
       Donation.countDocuments(filter),
     ]);
-    res.json({ donations, pagination: { page: Number(page), limit: Number(limit), total } });
+    res.json({ donations, pagination: { page: pageNum, limit: limitNum, total } });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -165,7 +181,10 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
 
 router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
   try {
-    const { status } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف التبرع غير صالح' });
+    }
+    const status = String(req.body?.status || '').trim();
     const allowedStatuses = ['pledged', 'confirmed', 'cancelled'];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ error: 'حالة التبرع غير صالحة' });
@@ -176,6 +195,20 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
       { new: true, runValidators: true }
     );
     if (!donation) return res.status(404).json({ error: 'التبرع غير موجود' });
+
+    await logAdminAction({
+      req,
+      action: `donation.status.${status}`,
+      entityType: 'donation',
+      entityId: String(donation._id),
+      reason: `تحديث حالة التبرع إلى ${status}`,
+      metadata: {
+        status,
+        amount: donation.amount,
+        currency: donation.currency,
+      },
+    }).catch(() => {});
+
     res.json(donation);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });

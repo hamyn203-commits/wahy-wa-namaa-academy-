@@ -5,11 +5,20 @@ const Session = require('../models/Session');
 const SessionChatMessage = require('../models/SessionChatMessage');
 const Teacher = require('../models/Teacher');
 const { protect } = require('../middleware/auth');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const { translateBatch, SUPPORTED } = require('../services/translateService');
 const objectStorage = require('../services/objectStorage');
 const { validateUploadMetadata } = require('../config/uploadPolicy');
 const { notifyUser } = require('../utils/notify');
 const { canAccessSession } = require('../utils/sessionChatAccess');
+const { inspectChatSafety } = require('../utils/chatSafety');
+
+const sessionChatLimiter = createScopedRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  scope: 'session-chat-post',
+  message: 'Too many chat messages. Please slow down.',
+});
 
 function audioMessageUrl(sessionId, messageId) {
   return `/api/sessions/${sessionId}/translate/messages/${messageId}/audio`;
@@ -62,7 +71,7 @@ router.get('/languages', protect, async (req, res) => {
       .populate('student', 'name preferences')
       .populate({ path: 'teacher', populate: { path: 'user', select: 'name preferences' } });
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    if (!(await canAccessSession(session, req.user.id, req.user.role))) {
+    if (!(await canAccessSession(session, req.user.id, req.user.role, { allowGuardianRead: true }))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -82,7 +91,7 @@ router.get('/messages', protect, async (req, res) => {
   try {
     const session = await Session.findById(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    if (!(await canAccessSession(session, req.user.id, req.user.role))) {
+    if (!(await canAccessSession(session, req.user.id, req.user.role, { allowGuardianRead: true }))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -125,8 +134,11 @@ router.get('/messages', protect, async (req, res) => {
   }
 });
 
-router.post('/messages', protect, async (req, res) => {
+router.post('/messages', protect, sessionChatLimiter, async (req, res) => {
   try {
+    if (req.user.role === 'guardian') {
+      return res.status(403).json({ error: 'Guardian chat access is read-only' });
+    }
     const {
       text,
       lang,
@@ -148,9 +160,9 @@ router.post('/messages', protect, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (['rejected', 'cancelled'].includes(session.status)) {
+    if (session.status !== 'accepted') {
       return res.status(409).json({
-        error: 'This session chat is closed',
+        error: 'Session chat is open only for accepted sessions',
         code: 'SESSION_CHAT_CLOSED',
       });
     }
@@ -163,11 +175,20 @@ router.post('/messages', protect, async (req, res) => {
     if (kind === 'text') {
       cleanText = String(text || '').trim();
       if (!cleanText) return res.status(400).json({ error: 'Text required' });
-      if (cleanText.length > 4000) return res.status(400).json({ error: 'Message is too long' });
+      if (cleanText.length > 1000) return res.status(400).json({ error: 'Message is too long' });
+
+      const safety = inspectChatSafety(cleanText);
+      if (!safety.isSafe) {
+        return res.status(400).json({
+          error: safety.warning,
+          code: 'CHAT_SAFETY_VIOLATION',
+          reason: safety.reason,
+        });
+      }
 
       const studentLang = session.student?.preferences?.language || 'id';
       const teacherLang = session.teacher?.user?.preferences?.language || 'ar';
-      const targets = [...new Set([studentLang, teacherLang, 'en', 'ar', 'id'].filter((code) => SUPPORTED.includes(code)))];
+      const targets = [...new Set([studentLang, teacherLang].filter((code) => SUPPORTED.includes(code)))];
       translationsMap = await translateBatch(cleanText, fromLang, targets);
     } else {
       if (!storageFile?.url || !storageFile?.name || !storageFile?.contentType || !storageFile?.size) {
@@ -242,7 +263,7 @@ router.get('/messages/:messageId/audio', protect, async (req, res) => {
   try {
     const session = await Session.findById(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    if (!(await canAccessSession(session, req.user.id, req.user.role))) {
+    if (!(await canAccessSession(session, req.user.id, req.user.role, { allowGuardianRead: true }))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

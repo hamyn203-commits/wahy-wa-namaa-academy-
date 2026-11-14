@@ -7,6 +7,8 @@ const User = require('../models/User');
 const GroupCircle = require('../models/GroupCircle');
 const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
+const Session = require('../models/Session');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 
 async function isGuardianLinkedToStudent(guardianUserId, studentId) {
   if (!guardianUserId || !studentId) return false;
@@ -111,7 +113,7 @@ router.get('/me', protect, authorize('student'), async (req, res) => {
       subscriptions: subscriptions.map(serializeSubscription),
     });
   } catch (error) {
-    return res.status(500).json({ error: 'فشل جلب الاشتراكات', details: error.message });
+    return res.status(500).json({ error: 'فشل جلب الاشتراكات' });
   }
 });
 
@@ -214,7 +216,7 @@ router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req,
         code: 'RENEWAL_ALREADY_EXISTS',
       });
     }
-    return res.status(500).json({ error: 'فشل إنشاء التجديد', details: error.message });
+    return res.status(500).json({ error: 'فشل إنشاء التجديد' });
   }
 });
 
@@ -238,10 +240,11 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       });
     }
 
-    const student = await User.findById(req.user.id).select('enrollmentSection role isActive');
+    const student = await User.findById(req.user.id).select('enrollmentSection gender age role isActive');
     if (!student || student.role !== 'student' || student.isActive === false) {
       return res.status(403).json({ error: 'حساب الطالب غير متاح', code: 'STUDENT_ACCOUNT_UNAVAILABLE' });
     }
+    assertGenderAndAgeCompatibility({ student, section });
     if (!isCompatibleStudentSection(student.enrollmentSection, section)) {
       return res.status(409).json({
         error: 'القسم المحدد لا يتطابق مع القسم المسجل في حسابك. تواصل مع الإدارة لتصحيح القسم.',
@@ -329,7 +332,11 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       subscription: serializeSubscription(subscription),
     });
   } catch (error) {
-    return res.status(500).json({ error: 'فشل حفظ اختيار الاشتراك', details: error.message });
+    if (error?.status === 400) {
+      const publicMsg = String(error.publicMessage || error.message || 'القسم المحدد غير متوافق مع بيانات الطالب');
+      return res.status(400).json({ error: publicMsg, code: error.code || 'SUBSCRIPTION_SELECTION_INVALID' });
+    }
+    return res.status(500).json({ error: 'فشل حفظ اختيار الاشتراك' });
   }
 });
 
@@ -500,7 +507,7 @@ router.get('/admin/placements', protect, authorize('admin'), async (req, res) =>
       })),
     });
   } catch (error) {
-    return res.status(500).json({ error: 'فشل تحميل طلبات التسكين', details: error.message });
+    return res.status(500).json({ error: 'فشل تحميل طلبات التسكين' });
   }
 });
 
@@ -628,7 +635,7 @@ router.get('/admin/circles', protect, authorize('admin'), async (_req, res) => {
         };
       }),
     });
-  } catch (error) { return res.status(500).json({ error: 'فشل تحميل الحلقات', details: error.message }); }
+  } catch (error) { return res.status(500).json({ error: 'فشل تحميل الحلقات' }); }
 });
 
 router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req, res) => {
@@ -673,8 +680,9 @@ router.post('/admin/circles/:id/start', protect, authorize('admin'), async (req,
     })));
     return res.json({ success: true, ...result });
   } catch (error) {
+    const startErrorText = String(error.publicMessage || error.message || 'فشل بدء الحلقة');
     return res.status(error.code === 'CIRCLE_NOT_FOUND' ? 404 : error.code?.includes('INVALID') ? 400 : 409)
-      .json({ error: error.message || 'فشل بدء الحلقة', code: error.code || 'CIRCLE_START_FAILED' });
+      .json({ error: startErrorText, code: error.code || 'CIRCLE_START_FAILED' });
   }
 });
 
@@ -704,9 +712,14 @@ router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) =
 
     if (teacherId && String(teacherId) !== String(circle.teacher)) {
       const nextTeacher = await Teacher.findById(teacherId);
-      if (!nextTeacher) {
-        return res.status(404).json({ error: 'المعلم المختار غير موجود' });
+      if (!nextTeacher || nextTeacher.status !== 'approved' || !nextTeacher.isVerified) {
+        return res.status(404).json({ error: 'المعلم المختار غير موجود أو غير معتمد' });
       }
+      assertGenderAndAgeCompatibility({
+        teacher: nextTeacher,
+        circleGender: circle.gender,
+        section: circle.subscriptionSection,
+      });
       circle.teacher = nextTeacher._id;
       await StudentSubscription.updateMany(
         { circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
@@ -827,6 +840,16 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
     const student = await User.findOne({ _id: studentId, role: 'student' });
     if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
 
+    const circleTeacher = circle.teacher
+      ? await Teacher.findById(circle.teacher).select('personalInfo').lean().catch(() => null)
+      : null;
+    assertGenderAndAgeCompatibility({
+      student,
+      teacher: circleTeacher,
+      circleGender: circle.gender,
+      section: circle.subscriptionSection,
+    });
+
     const plan = getPlan(circle.subscriptionPlanKey || 'group');
     const maxCap = operationalCapacity(circle, plan);
     const alreadyInCircle = (circle.students || []).some((id) => String(id) === String(student._id));
@@ -894,6 +917,18 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
 
     student.circle = circle._id;
     await student.save();
+
+    if (isRunning) {
+      await Session.updateMany(
+        {
+          circle: circle._id,
+          status: { $in: ['pending', 'accepted'] },
+          scheduledAt: { $gt: now },
+          'attendance.student': { $ne: student._id },
+        },
+        { $push: { attendance: { student: student._id, status: 'pending' } } }
+      );
+    }
 
     await logAdminAction({
       req,
@@ -998,9 +1033,19 @@ router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
       return res.status(201).json({ success: true, circle });
     }
     const teacher = await Teacher.findById(teacherId);
-    if (!teacher) {
-      return res.status(404).json({ error: 'المعلم غير موجود' });
+    if (!teacher || teacher.status !== 'approved' || !teacher.isVerified) {
+      return res.status(404).json({ error: 'المعلم غير موجود أو غير معتمد' });
     }
+
+    const resolvedSection = section === 'ladies' ? 'ladies' : 'men_children';
+    const resolvedGender = ['boys', 'girls', 'men', 'women', 'kids_mixed'].includes(gender)
+      ? gender
+      : (resolvedSection === 'ladies' ? 'women' : 'men');
+    assertGenderAndAgeCompatibility({
+      teacher,
+      circleGender: resolvedGender,
+      section: resolvedSection,
+    });
 
     const plan = getPlan(planKey) || getPlan('group');
     const normalizedSchedule = normalizeSchedule(schedule);
@@ -1009,10 +1054,10 @@ router.post('/admin/circles', protect, authorize('admin'), async (req, res) => {
       name: String(name).trim().slice(0, 120),
       track: ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(track) ? track : 'memorization',
       level: ['beginner', 'intermediate', 'advanced', 'ijazah'].includes(level) ? level : 'beginner',
-      gender: ['boys', 'girls', 'men', 'women', 'kids_mixed'].includes(gender) ? gender : (section === 'ladies' ? 'women' : 'men'),
+      gender: resolvedGender,
       targetAgeGroup: ['kids_4_7', 'kids_8_12', 'teens_13_17', 'adults'].includes(targetAgeGroup) ? targetAgeGroup : 'adults',
       capacity: plan.maxStudents || 8,
-      subscriptionSection: section === 'ladies' ? 'ladies' : 'men_children',
+      subscriptionSection: resolvedSection,
       teacher: teacher._id,
       students: [],
       schedule: normalizedSchedule,
@@ -1289,11 +1334,13 @@ router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) =>
       SUBSCRIPTION_NOT_READY_FOR_PLACEMENT: 409,
       PREFERRED_TEACHER_REQUIRED: 409,
       CIRCLE_NOT_COMPATIBLE: 409,
+      LADIES_SECTION_STUDENT_MISMATCH: 400,
       CIRCLE_FULL: 409,
       SUBSCRIPTION_PLAN_INVALID: 400,
     };
+    const placeErrorText = String(error.publicMessage || error.message || 'فشل تسكين الطالب');
     return res.status(statusByCode[error.code] || 400).json({
-      error: error.message || 'فشل تسكين الطالب',
+      error: placeErrorText,
       code: error.code || 'SUBSCRIPTION_PLACEMENT_FAILED',
     });
   }
