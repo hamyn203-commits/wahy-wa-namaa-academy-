@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -158,7 +159,7 @@ router.post('/', protect, attachTeacherProfile, authorize('admin', 'teacher'), a
     res.status(201).json(course);
   } catch (error) {
     console.error('Create course error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -183,7 +184,7 @@ router.put('/:id', protect, attachTeacherProfile, authorize('admin', 'teacher'),
     res.json(course);
   } catch (error) {
     console.error('Update course error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -254,7 +255,7 @@ router.post('/:id/enroll', protect, authorize('student'), async (req, res) => {
     res.status(201).json(enrollment);
   } catch (error) {
     console.error('Enroll error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -312,7 +313,7 @@ router.post('/:courseId/lessons/:lessonId/complete', protect, async (req, res) =
     res.json({ message: 'Lesson completed', enrollment });
   } catch (error) {
     console.error('Complete lesson error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

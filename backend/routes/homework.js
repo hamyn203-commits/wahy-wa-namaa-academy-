@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
@@ -168,7 +169,7 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
 
     res.json({ homework });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -452,7 +453,7 @@ router.post('/:homeworkId/submit', protect, authorize('student'), upload.single(
       submission,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

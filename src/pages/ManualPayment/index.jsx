@@ -236,10 +236,6 @@ export default function ManualPayment() {
             <LocalizedLink to={studentIdParam ? '/guardian/dashboard' : '/student/dashboard'} locale={locale} className="wn-btn wn-btn--primary">
               {studentIdParam ? (isAr ? 'العودة إلى لوحة ولي الأمر' : 'Back to guardian dashboard') : (isAr ? 'العودة إلى لوحة الطالب' : 'Back to student dashboard')}
             </LocalizedLink>
-            {false && null}
-            <LocalizedLink to="/student/dashboard" locale={locale} className="wn-btn wn-btn--primary hidden">
-              {isAr ? 'العودة إلى لوحة الطالب' : 'Back to student dashboard'}
-            </LocalizedLink>
           </div>
         </main>
         <GlobalFooter />

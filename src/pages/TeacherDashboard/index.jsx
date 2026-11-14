@@ -221,7 +221,7 @@ export default function TeacherDashboard() {
       numberOfIjazat: Number(teacher.quranInfo?.numberOfIjazat || 0),
       bio: teacher.user?.bio || '',
     });
-  }, [profile?.teacher?._id, user?.name]);
+  }, [profile?.teacher, user?.name]);
 
   const submitProfileChange = async (event) => {
     event.preventDefault();

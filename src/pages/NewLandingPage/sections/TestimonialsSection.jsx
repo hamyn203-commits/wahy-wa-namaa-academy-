@@ -1,6 +1,5 @@
-import React from 'react';
 import { useI18n } from '../../../i18n';
-import { Star, Quote, CheckCircle2, Heart } from 'lucide-react';
+import { Star, Quote, Heart } from 'lucide-react';
 
 export default function TestimonialsSection() {
   const { locale } = useI18n();

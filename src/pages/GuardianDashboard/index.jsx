@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  Users, TrendingUp, BookOpen, Award, Bell, FileText, CalendarCheck, 
+  Users, TrendingUp, BookOpen, Award, FileText, CalendarCheck, 
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, MessageCircle, 
-  Phone, ShieldCheck, Star, UserPlus, Sparkles, Check, ChevronLeft, ArrowRight, Share2,
+  ShieldCheck, UserPlus, Sparkles, Check, ChevronLeft, ArrowRight, Share2,
   CreditCard, Wallet, RefreshCw
 } from 'lucide-react';
-import DashboardLayout, { StatCard, TabBar } from '../../components/dashboard/DashboardLayout';
+import DashboardLayout, { TabBar } from '../../components/dashboard/DashboardLayout';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';

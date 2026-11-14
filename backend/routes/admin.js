@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -21,6 +22,8 @@ const AdminAuditLog = require('../models/AdminAuditLog');
 const { protect, authorize } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
 const { logAdminAction } = require('../services/adminAudit');
+const { calculateSessionEarning, ensureSessionEarning } = require('../services/teacherFinance');
+const { settleSubscriptionUsageForSession } = require('../services/subscriptionUsage');
 
 const coursesUploadDir = path.join(__dirname, '..', 'uploads', 'courses');
 if (process.env.FILE_STORAGE_DRIVER !== 'external') {
@@ -219,7 +222,7 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
       })),
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -301,7 +304,7 @@ router.get('/session-control', protect, authorize('admin'), async (req, res) => 
 
     return res.json({ focus, count: rows.length, sessions: rows });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -313,16 +316,119 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
     const session = await Session.findById(req.params.id);
     if (!session) return res.status(404).json({ error: 'الحصة غير موجودة' });
 
-    const { status, reason } = req.body || {};
+    const { status, reason, resolvePendingAttendanceAs } = req.body || {};
     if (!['completed', 'cancelled', 'no-show'].includes(status)) {
       return res.status(400).json({ error: 'حالة الحصة غير مدعومة' });
     }
 
-    session.status = status;
-    if (status === 'cancelled' && reason) {
-      session.cancellationReason = String(reason).trim().slice(0, 500);
+    const wasAlreadyCompleted = session.status === 'completed';
+
+    if (wasAlreadyCompleted && status !== 'completed') {
+      return res.status(409).json({
+        error: 'لا يمكن إلغاء أو تعديل حالة حصة مكتملة بعد تسويتها مالياً',
+        code: 'COMPLETED_SESSION_IMMUTABLE',
+      });
     }
-    await session.save();
+
+    let subscriptionUsage = null;
+
+    if (status === 'completed') {
+      if (!wasAlreadyCompleted && session.scheduledAt && new Date(session.scheduledAt).getTime() > Date.now()) {
+        return res.status(409).json({
+          error: 'لا يمكن إنهاء الحصة قبل موعد بدايتها',
+          code: 'SESSION_NOT_STARTED',
+          scheduledAt: session.scheduledAt,
+        });
+      }
+
+      if (session.type === 'group_circle' && !wasAlreadyCompleted) {
+        const unresolved = (session.attendance || []).filter(
+          (entry) => ['pending', 'confirmed'].includes(String(entry.status || 'pending'))
+        );
+        if (unresolved.length) {
+          if (['attended', 'absent'].includes(resolvePendingAttendanceAs)) {
+            for (const entry of session.attendance || []) {
+              if (['pending', 'confirmed'].includes(String(entry.status || 'pending'))) {
+                entry.status = resolvePendingAttendanceAs;
+              }
+            }
+          } else {
+            return res.status(409).json({
+              error: 'يجب حسم حضور طلاب الحلقة قبل إغلاق الحصة كمكتملة',
+              code: 'GROUP_ATTENDANCE_INCOMPLETE',
+              unresolvedCount: unresolved.length,
+            });
+          }
+        }
+      }
+
+      const teacher = session.teacher ? await Teacher.findById(session.teacher) : null;
+      const hourlyRate = Number(teacher?.hourlyRate || 50);
+      const sessionDuration = Math.max(1, Number(session.duration || 60));
+      const sessionRate = calculateSessionEarning(hourlyRate, sessionDuration);
+
+      if (!wasAlreadyCompleted) {
+        session.status = 'completed';
+        session.earnings = session.earnings || {};
+        session.earnings.amount = session.earnings.amount || sessionRate;
+        session.earnings.status = session.earnings.status || 'pending';
+        await session.save();
+      }
+
+      if (session.teacher) {
+        await ensureSessionEarning({
+          sessionId: session._id,
+          teacherId: session.teacher,
+          amount: session.earnings?.amount || sessionRate,
+          currency: 'EGP',
+          attendeesCount: session.student ? 1 : Math.max(1, session.attendance?.length || 0),
+          notes: session.type === 'trial'
+            ? 'حصة تجريبية مكتملة (إغلاق إداري)'
+            : session.type === 'group_circle'
+              ? 'حصة جماعية مكتملة (إغلاق إداري)'
+              : 'حصة منتظمة مكتملة (إغلاق إداري)',
+        });
+      }
+
+      if (session.type === 'group_circle') {
+        subscriptionUsage = await settleSubscriptionUsageForSession(session);
+      }
+
+      if (teacher?._id) {
+        const [completedCount, durationAgg] = await Promise.all([
+          Session.countDocuments({ teacher: teacher._id, status: 'completed' }),
+          Session.aggregate([
+            { $match: { teacher: teacher._id, status: 'completed' } },
+            { $group: { _id: null, totalMinutes: { $sum: { $ifNull: ['$duration', 60] } } } },
+          ]),
+        ]);
+        await Teacher.findByIdAndUpdate(teacher._id, {
+          $set: {
+            'stats.totalSessions': completedCount,
+            'stats.totalHours': Math.round(((durationAgg[0]?.totalMinutes || 0) / 60) * 100) / 100,
+          },
+        });
+      }
+
+      if (!wasAlreadyCompleted) {
+        const { processReferralFirstSession } = require('./referrals');
+        if (session.student) {
+          processReferralFirstSession(String(session.student)).catch(() => {});
+        } else if (session.type === 'group_circle') {
+          for (const entry of session.attendance || []) {
+            if (entry.status === 'attended' && entry.student) {
+              processReferralFirstSession(String(entry.student)).catch(() => {});
+            }
+          }
+        }
+      }
+    } else {
+      session.status = status;
+      if (status === 'cancelled' && reason) {
+        session.cancellationReason = String(reason).trim().slice(0, 500);
+      }
+      await session.save();
+    }
 
     await logAdminAction({
       req,
@@ -330,12 +436,17 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
       entityType: 'session',
       entityId: String(session._id),
       reason: String(reason || `تحديث حالة الحصة إلى ${status} من مركز التحكم`).trim().slice(0, 200),
-      metadata: { status },
+      metadata: { status, wasAlreadyCompleted },
     }).catch(() => {});
 
-    return res.json({ success: true, session });
+    return res.json({
+      success: true,
+      session,
+      ...(subscriptionUsage ? { subscriptionUsage } : {}),
+    });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    console.error('Admin session-control status update error:', error);
+    return res.status(400).json({ error: 'تعذر تحديث حالة الحصة حالياً' });
   }
 });
 
@@ -358,7 +469,7 @@ router.get('/audit', protect, authorize('admin'), async (req, res) => {
 
     return res.json({ entries });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -410,7 +521,7 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
       totalEarnings: earningsAgg[0]?.total || 0,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -430,7 +541,7 @@ router.get('/teachers/approved', protect, authorize('admin'), async (req, res) =
       .sort({ createdAt: -1 });
     res.json(teachers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -450,7 +561,7 @@ router.get('/teachers/pending', protect, authorize('admin'), async (req, res) =>
       .sort({ createdAt: -1 });
     res.json(teachers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -463,7 +574,7 @@ router.get('/donations', protect, authorize('admin'), async (req, res) => {
     const donations = await Donation.find().sort({ createdAt: -1 }).limit(50);
     res.json({ donations, pagination: { page: 1, limit: 50, total: donations.length } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -471,7 +582,7 @@ const VALID_TEACHER_SPECIALIZATIONS = new Set([
   'children', 'adults', 'women', 'non-arabic', 'tajweed', 'ijaza', 'arabic-language',
 ]);
 const VALID_TEACHER_LANGUAGES = new Set([
-  'arabic', 'english', 'french', 'german', 'turkish', 'urdu', 'indonesian', 'malay',
+  'arabic', 'english', 'french', 'german', 'turkish', 'urdu', 'indonesian', 'malay', 'kurdish',
 ]);
 const VALID_TEACHER_STATUSES = new Set([
   'pending', 'under-review', 'approved', 'rejected', 'suspended',
@@ -658,7 +769,7 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       reviewRequired: !autoApprove,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -931,7 +1042,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       .populate('user', 'name email phone whatsappPhone avatar bio isActive createdAt lastLogin');
     res.json(populatedTeacher || teacher);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1008,7 +1119,7 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
 
     return res.json({ success: true, deletedId: teacherId });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1018,7 +1129,7 @@ router.post('/upload', protect, authorize('admin', 'teacher'), upload.single('fi
     : null;
 
   if (directFile?.url) {
-    if (!objectStorage.referenceMatches(directFile.url, 'course-media', req.user.id)) {
+    if (!objectStorage.isOwnedObjectReference(directFile.url, 'course-media', req.user.id)) {
       return res.status(400).json({ error: 'Invalid uploaded media reference' });
     }
     return res.json({
@@ -1043,7 +1154,7 @@ router.post('/upload', protect, authorize('admin', 'teacher'), upload.single('fi
     const url = `${API_PUBLIC}${rel}`;
     return res.json({ url, path: rel, source: 'local', filename, mimetype: req.file.mimetype, size: req.file.size });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1054,7 +1165,7 @@ router.get('/courses', protect, authorize('admin'), async (req, res) => {
       .sort({ updatedAt: -1 });
     res.json(courses);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1088,7 +1199,7 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
     });
     res.status(201).json(course);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1111,7 +1222,7 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
     await course.save();
     res.json(course);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1121,7 +1232,7 @@ router.delete('/courses/:id', protect, authorize('admin'), async (req, res) => {
     await Course.findByIdAndDelete(req.params.id);
     res.json({ message: 'تم حذف الدورة' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1130,7 +1241,7 @@ router.get('/courses/:id/lessons', protect, authorize('admin'), async (req, res)
     const lessons = await Lesson.find({ course: req.params.id }).sort({ order: 1 });
     res.json(lessons);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1166,7 +1277,7 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
     await course.save();
     res.status(201).json(lesson);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1192,7 +1303,7 @@ router.put('/lessons/:id', protect, authorize('admin'), async (req, res) => {
     await lesson.save();
     res.json(lesson);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1203,7 +1314,7 @@ router.delete('/lessons/:id', protect, authorize('admin'), async (req, res) => {
     await Course.updateOne({ _id: lesson.course }, { $pull: { lessons: lesson._id } });
     res.json({ message: 'تم حذف الدرس' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1212,7 +1323,7 @@ router.get('/blog', protect, authorize('admin'), async (req, res) => {
     const posts = await Blog.find().sort({ createdAt: -1 });
     res.json(posts);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1232,7 +1343,7 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
     });
     res.status(201).json(post);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1251,7 +1362,7 @@ router.put('/blog/:id', protect, authorize('admin'), async (req, res) => {
     await post.save();
     res.json(post);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1260,7 +1371,7 @@ router.delete('/blog/:id', protect, authorize('admin'), async (req, res) => {
     await Blog.findByIdAndDelete(req.params.id);
     res.json({ message: 'تم حذف المقال' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1276,7 +1387,7 @@ router.get('/withdrawals', protect, authorize('admin'), async (req, res) => {
       .sort({ createdAt: -1 });
     res.json({ withdrawals });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1320,7 +1431,7 @@ router.patch('/withdrawals/:id', protect, authorize('admin'), async (req, res) =
     await withdrawal.save();
     res.json({ success: true, withdrawal });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

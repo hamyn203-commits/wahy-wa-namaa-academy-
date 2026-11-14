@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   frontend:
-    name: Frontend — build + advisory lint
+    name: Frontend — build + strict lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,8 +49,7 @@ jobs:
       - name: Build
         run: npm run build --ignore-scripts
 
-      - name: Lint (technical-debt report)
-        continue-on-error: true
+      - name: Lint
         run: npm run lint
 
   e2e:

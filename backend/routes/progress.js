@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Progress = require('../models/Progress');
@@ -134,7 +135,7 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
     res.json(progress);
   } catch (error) {
     console.error('Update lesson progress error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -169,7 +170,7 @@ router.post('/bookmark', protect, authorize('student'), async (req, res) => {
     res.json(progress);
   } catch (error) {
     console.error('Add bookmark error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -307,7 +308,7 @@ router.post('/analyze/:courseId', protect, authorize('student'), async (req, res
     });
   } catch (error) {
     console.error('Analyze progress error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

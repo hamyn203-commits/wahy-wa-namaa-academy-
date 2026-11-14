@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Course = require('../models/Course');
@@ -450,7 +451,7 @@ router.post('/bootstrap', async (req, res) => {
       videoCount,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

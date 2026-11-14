@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -81,7 +82,7 @@ const ensureAdminHandler = async (req, res) => {
     return res.status(201).json({ message: 'Administrator created', email: user.email });
   } catch (error) {
     if (error.code === 11000) return res.status(409).json({ error: 'Email already registered' });
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 };
 

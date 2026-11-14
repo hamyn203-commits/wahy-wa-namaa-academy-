@@ -8,7 +8,7 @@ process.env.NODE_ENV = 'development';
 process.env.DISABLE_RATE_LIMIT = 'true';
 
 // Start server
-const app = require('../backend/server');
+require('../backend/server');
 
 function request(options, data = null, isFormData = false) {
   return new Promise((resolve, reject) => {
@@ -130,11 +130,10 @@ async function runStudentAudit() {
   }, regPayload);
 
   let studentToken = null;
-  let studentUser = null;
 
   if (regRes.status === 201 && (regRes.data.accessToken || regRes.data.token)) {
     studentToken = regRes.data.accessToken || regRes.data.token;
-    studentUser = regRes.data.user;
+    const studentUser = regRes.data.user;
     results.journey.passed.push('تسجيل حساب طالب جديد عبر POST /api/auth/register وحصوله على JWT Token');
     console.log(`  ✅ تم إنشاء الحساب بنجاح: Role = ${studentUser.role}, ID = ${studentUser._id || studentUser.id}`);
   } else {

@@ -543,6 +543,13 @@ export default function StudentDashboard() {
     if (currentSubscription && !searchParams.get('tab')) setTab('sessions');
   }, [subscriptionsLoaded, currentSubscription, searchParams]);
 
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
+
   if (!ready) return null;
 
   const now = new Date();
@@ -799,13 +806,6 @@ export default function StudentDashboard() {
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-    };
-  }, [audioUrl]);
-
   const openReview = (session) => {
     setReviewModal(session);
     setReviewForm(emptyReview);
@@ -943,7 +943,7 @@ export default function StudentDashboard() {
     toast.success(locale === 'ar' ? 'تم نسخ كود ربط ولي الأمر' : 'Guardian link code copied');
   };
 
-  const rotateGuardianLinkCode = async () => {
+  const _rotateGuardianLinkCode = async () => {
     try {
       const result = await api.post('/api/students/dashboard/guardian-link-code/rotate', {}, { auth: true });
       setProfile((current) => ({
@@ -2271,9 +2271,6 @@ export default function StudentDashboard() {
                             <button onClick={() => openReview(s)} className="text-sm text-orange-600 hover:underline">{locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}</button>
                           )}
                         </div>
-                        {false && !hasReviewed(s._id) && (
-                          <button onClick={() => openReview(s)} className="text-sm text-orange-600 hover:underline">{locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}</button>
-                        )}
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                         {[

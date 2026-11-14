@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Course = require('../models/Course');
@@ -115,7 +116,7 @@ router.get('/course/:slug', protect, attachTeacherProfile, authorize('student', 
     const lessons = await Lesson.find({ course: course._id, isPublished: true }).sort({ order: 1 });
     res.json({ course, lessons, enrollment });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -161,7 +162,7 @@ router.post('/course/:slug/enroll', protect, authorize('student'), async (req, r
 
     res.status(201).json({ enrollment, progress });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -213,7 +214,7 @@ router.get('/course/:slug/lesson/:lessonId', protect, attachTeacherProfile, auth
 
     res.json({ lesson, enrollment, completed, courseId: course._id });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -299,7 +300,7 @@ router.post('/course/:slug/lesson/:lessonId/complete', protect, authorize('stude
 
     res.json({ enrollment: updated, certificate });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -311,7 +312,7 @@ router.get('/my-certificates', protect, authorize('student'), async (req, res) =
       .sort({ issuedAt: -1 });
     res.json(certs);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -442,7 +443,7 @@ router.post('/seed-demo', protect, authorize('admin'), async (req, res) => {
 
     res.status(201).json({ message: 'Demo course created', course, lessonsCount: course.lessons.length });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Users, BookOpen, Calendar, DollarSign, CheckCircle, XCircle, Eye,
+  Users, BookOpen,
   Mail, MessageSquare, Plus, Trash2, Upload, Video, Edit3, Send,
   TrendingUp, BriefcaseBusiness, MonitorPlay, ShieldCheck,
   History,
@@ -10,6 +10,8 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tool
 import { StatCard } from '../../components/dashboard/DashboardLayout';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
+import { useI18n } from '../../i18n';
+import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import TeacherReviewQueue from './TeacherReviewQueue';
@@ -34,10 +36,12 @@ function Empty({ text }) {
 
 export default function AdminDashboard() {
   const { user, ready, logout } = useRequireAuth(['admin']);
+  const { locale } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
   const [tab, setTab] = useState('overview');
+  const [peopleRole, setPeopleRole] = useState('all');
   const supportStudent = searchParams.get('student') || '';
   const setSupportStudent = (studentId) => navigate(`?tab=messages&student=${encodeURIComponent(studentId)}`);
   const [loading, setLoading] = useState(true);
@@ -252,13 +256,6 @@ export default function AdminDashboard() {
       setReviewPromptModal({ kind: 'teacher-review', id, action, note: '' });
       return;
     }
-    if (false) {
-      reviewNote = window.prompt(
-        action === 'reject' ? 'اكتب سبب رفض الطلب:' : 'اكتب المطلوب من المعلم استكماله أو تعديله:',
-        ''
-      ) ?? '';
-      if (!reviewNote.trim()) return;
-    }
 
     try {
       await api.put(`/api/teachers/admin/${id}/review`, { action, note: reviewNote }, { auth: true });
@@ -410,10 +407,6 @@ export default function AdminDashboard() {
     if (action === 'reject' && !note) {
       setReviewPromptModal({ kind: 'profile-change', id: teacherId, action, note: '' });
       return;
-    }
-    if (false) {
-      note = window.prompt('اكتب سبب رفض التعديل أو المطلوب من المعلم:', '') ?? '';
-      if (!note.trim()) return;
     }
 
     try {
@@ -612,56 +605,7 @@ export default function AdminDashboard() {
   const deleteItem = async (type, id, label = '') => {
     setConfirmDeleteModal({ type, id, label });
   };
-  /*
-    try {
-      if (withdrawal.source === 'ledger') {
-        await api.put(`/api/finance/admin/payouts/${withdrawal._id}/process`, {
-          action,
-        }, { auth: true });
-      } else {
-        await api.patch(`/api/admin/withdrawals/${withdrawal._id}`, { action }, { auth: true });
-      }
-      toast.success(action === 'approve' ? 'تم اعتماد تحويل المبلغ' : 'تم رفض الطلب');
-      loadWithdrawals();
-    } catch (e) { toast.error(e.message); }
-    }
-  };
-    } catch (e) { toast.error(e.message); }
-  };
 
-  const executeDeleteItem = async (type, id) => {
-    const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
-    try {
-      await api.delete(paths[type], { auth: true });
-      toast.success('تم الحذف بنجاح');
-      setConfirmDeleteModal(null);
-      if (type === 'lesson') loadLessons(selectedCourse);
-      else if (type === 'course') loadCourses();
-      else if (type === 'blog') loadBlog();
-      else load();
-    } catch (e) { toast.error(e.message); }
-    }
-  };
-    } catch (e) { toast.error(e.message); }
-  };
-
-  const deleteItem = async (type, id, label = '') => {
-    setConfirmDeleteModal({ type, id, label });
-    if (false) {
-    if (!confirm('هل أنت متأكد؟')) return;
-    const paths = { course: `/api/admin/courses/${id}`, lesson: `/api/admin/lessons/${id}`, blog: `/api/admin/blog/${id}`, message: `/api/contact/${id}` };
-    try {
-      await api.delete(paths[type], { auth: true });
-      toast.success('تم الحذف');
-      if (type === 'lesson') loadLessons(selectedCourse);
-      else load();
-    } catch (e) { toast.error(e.message); }
-    }
-  };
-    } catch (e) { toast.error(e.message); }
-  };
-
-  */
   const COLORS = ['#d5a83d', '#2563eb', '#16a56f', '#7c3aed'];
 
   const donationPieData = Object.entries(growthSummary.donationsByCategory || {}).map(([name, value]) => ({
@@ -684,7 +628,7 @@ export default function AdminDashboard() {
     const query = new URLSearchParams();
     query.set('tab', nextTab);
     if (nextFocus) query.set('focus', nextFocus);
-    navigate(`/admin?${query.toString()}`);
+    navigate(`${localizedPath('/admin', locale)}?${query.toString()}`);
   };
 
   const filteredApprovedTeachers = approved.filter((teacher) => {
@@ -699,17 +643,15 @@ export default function AdminDashboard() {
 
   const previewPublicTeacher = (teacherId) => {
     if (!teacherId) return;
-    window.open(`/teachers/${encodeURIComponent(teacherId)}`, '_blank', 'noopener,noreferrer');
+    window.open(localizedPath(`/teachers/${encodeURIComponent(teacherId)}`, locale), '_blank', 'noopener,noreferrer');
   };
-
-  const [peopleRole, setPeopleRole] = useState('all');
 
   const adminSearch = (
     <AdminPeopleSearch
       onOpenStudent={openStudentDossier}
       onOpenGuardian={openFamilyDossier}
       onOpenTeacher={openTeacherDossier}
-      onOpenPayments={() => navigate('/admin/payments')}
+      onOpenPayments={() => navigate(localizedPath('/admin/payments', locale))}
     />
   );
 

@@ -94,21 +94,28 @@ router.post('/verify-code', async (req, res) => {
     }
 
     if (verification.code !== code) {
-      verification.attempts += 1;
-      await verification.save();
+      const updated = await VerificationCode.findOneAndUpdate(
+        { _id: verification._id, attempts: { $lt: 5 } },
+        { $inc: { attempts: 1 } },
+        { new: true }
+      );
+      if (!updated || updated.attempts >= 5) {
+        await VerificationCode.deleteOne({ _id: verification._id });
+        return res.status(429).json({ error: 'Too many attempts. Please request a new code' });
+      }
       return res.status(400).json({ error: 'Invalid verification code' });
     }
 
     await VerificationCode.deleteOne({ _id: verification._id });
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
+    if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
       return res.status(503).json({ error: 'Verification service is not configured' });
     }
 
+    const { getAccessSecret } = require('../middleware/auth');
     const verificationToken = jwt.sign(
       { email, purpose: 'teacher-email-verification' },
-      secret || 'wahy-namaa-dev-access-secret-change-me',
+      getAccessSecret(),
       { expiresIn: '30m' }
     );
 

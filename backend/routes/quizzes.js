@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const { Quiz, QuizAttempt } = require('../models/Quiz');
@@ -86,7 +87,7 @@ router.get('/my-attempts/list', protect, authorize('student'), async (req, res) 
       .sort({ submittedAt: -1 });
     res.json(attempts);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -185,7 +186,7 @@ router.post('/', protect, attachTeacherProfile, authorize('teacher', 'admin'), a
     res.status(201).json(quiz);
   } catch (error) {
     console.error('Create quiz error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -230,7 +231,7 @@ router.put('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin'),
     res.json(quiz);
   } catch (error) {
     console.error('Update quiz error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -313,7 +314,7 @@ router.post('/:id/start', protect, authorize('student'), async (req, res) => {
     res.status(201).json(attempt);
   } catch (error) {
     console.error('Start quiz error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -354,7 +355,7 @@ router.put('/attempts/:attemptId/answer', protect, authorize('student'), async (
     res.json(hideAttemptQuizAnswers(attempt));
   } catch (error) {
     console.error('Submit answer error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -470,7 +471,7 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
     res.json(hideAttemptQuizAnswers(attempt));
   } catch (error) {
     console.error('Submit quiz error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

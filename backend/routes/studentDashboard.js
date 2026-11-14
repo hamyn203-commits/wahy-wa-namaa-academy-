@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
@@ -80,7 +81,7 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -160,7 +161,7 @@ router.post('/guardian-invitations', protect, authorize('student'), async (req, 
       invitation: presentStudentInvitation(invitation),
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message, code: error.code || null });
+    return res.status(400).json({ error: safeErrorMessage(error, 400), code: error.code || null });
   }
 });
 
@@ -182,7 +183,7 @@ router.delete('/guardian-invitations/:id', protect, authorize('student'), async 
 
     return res.json({ success: true });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -228,7 +229,7 @@ router.get('/stats', protect, authorize('student'), async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -322,7 +323,7 @@ router.get('/tutor-preferences', protect, authorize('student'), async (req, res)
       matching: preference?.matching || { goals: [], preferredGender: 'any', language: '' },
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -345,7 +346,7 @@ router.put('/tutor-preferences', protect, authorize('student'), async (req, res)
       matching: preference.matching,
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -383,7 +384,7 @@ router.post('/favorites/:teacherId', protect, authorize('student'), async (req, 
       favoriteTeachers: (preference.favoriteTeachers || []).map(String),
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -417,7 +418,7 @@ router.get('/matches', protect, authorize('student'), async (req, res) => {
 
     return res.json({ matches });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -466,7 +467,7 @@ router.get('/teachers', protect, authorize('student'), async (req, res) => {
 
     res.json({ teachers: Object.values(map) });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -492,7 +493,7 @@ router.get('/evaluations', protect, authorize('student'), async (req, res) => {
 
     res.json({ evaluations: sessions });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -518,7 +519,7 @@ router.get('/recordings', protect, authorize('student'), async (req, res) => {
 
     res.json({ sessions });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

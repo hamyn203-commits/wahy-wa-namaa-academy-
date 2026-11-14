@@ -103,8 +103,10 @@ const SessionSchema = new mongoose.Schema({
   reminders: {
     dayBeforeSent: { type: Boolean, default: false },
     dayBeforeSentAt: Date,
+    dayBeforeRecipients: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     halfHourSent: { type: Boolean, default: false },
-    halfHourSentAt: Date
+    halfHourSentAt: Date,
+    halfHourRecipients: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
   }
 }, { timestamps: true });
 

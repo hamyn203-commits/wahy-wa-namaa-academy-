@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Donation = require('../models/Donation');
@@ -65,7 +66,7 @@ router.get('/summary', protect, authorize('admin'), async (_req, res) => {
       monthlyRegs: monthlyRegs.map(m => ({ month: `${m._id.year}-${String(m._id.month).padStart(2, '0')}`, count: m.count }))
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

@@ -33,8 +33,8 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
-const accessSecret = () => JWT_SECRET || DEFAULT_JWT_SECRET;
-const refreshSecret = () => JWT_REFRESH_SECRET || DEFAULT_REFRESH_SECRET;
+const accessSecret = () => process.env.JWT_SECRET || JWT_SECRET || DEFAULT_JWT_SECRET;
+const refreshSecret = () => process.env.JWT_REFRESH_SECRET || JWT_REFRESH_SECRET || DEFAULT_REFRESH_SECRET;
 
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -182,6 +182,7 @@ const attachTeacherProfile = async (req, res, next) => {
 };
 
 module.exports = {
+  getAccessSecret: accessSecret,
   generateAccessToken,
   generateRefreshToken,
   verifyAccessToken,

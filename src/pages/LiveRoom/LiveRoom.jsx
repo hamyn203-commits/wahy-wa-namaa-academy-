@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '../../components/BrandLogo';
-import { useAppContext } from '../../context/AppProvider';
 import api from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { LangSelect } from '../../components/live/SessionTranslateChat';
@@ -34,7 +33,7 @@ import CircleTurnManager from '../../components/classroom/CircleTurnManager';
 import { inspectMessage } from '../../components/classroom/ChatSafetyFilter';
 
 function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionContext, onEndAndEvaluate }) {
-  const { t } = useAppContext();
+  const { t } = useI18n();
   
   // شاشات الفصل الذكي (المصحف المتزامن / حلقة الـ 10 طلاب / شبكة الكاميرات)
   const [activeTab, setActiveTab] = useState('mushaf'); // 'mushaf' | 'circle' | 'video'
@@ -457,8 +456,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
 export default function LiveRoom() {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const { locale } = useI18n();
-  const { t } = useAppContext();
+  const { locale, t } = useI18n();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   
   const [token, setToken] = useState(null);

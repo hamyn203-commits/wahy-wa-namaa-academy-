@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const path = require('path');
 const router = express.Router();
@@ -76,7 +77,7 @@ router.get('/profile', protect, authorize('teacher'), async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -96,7 +97,7 @@ router.get('/profile-change', protect, authorize('teacher'), async (req, res) =>
 
     return res.json({ request: request || null });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -174,7 +175,7 @@ router.post('/profile-change', protect, authorize('teacher'), async (req, res) =
 
     return res.status(201).json({ success: true, request });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -272,7 +273,7 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
 
     return res.json({ students });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -341,7 +342,7 @@ router.get('/students/:studentId/summary', protect, authorize('teacher'), async 
       tasks,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -355,7 +356,7 @@ router.get('/tasks', protect, authorize('teacher'), async (req, res) => {
       .sort({ createdAt: -1 });
     res.json({ tasks });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -431,7 +432,7 @@ router.post('/tasks', protect, authorize('teacher'), async (req, res) => {
 
     res.status(201).json({ success: true, task });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -526,7 +527,7 @@ router.patch('/tasks/:id', protect, authorize('teacher'), async (req, res) => {
 
     return res.json({ success: true, task });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -557,7 +558,7 @@ router.get('/stats', protect, authorize('teacher'), async (req, res) => {
       sessionRate: Number(teacher.hourlyRate || SESSION_RATE),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -582,7 +583,7 @@ router.get('/circles', protect, authorize('teacher'), async (req, res) => {
     });
     return res.json({ circles: enriched });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -617,7 +618,7 @@ router.get('/students', protect, authorize('teacher'), async (req, res) => {
     const students = Object.values(studentMap);
     res.json({ students });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -725,7 +726,7 @@ router.get('/analytics', protect, authorize('teacher'), async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -749,7 +750,7 @@ router.get('/withdrawals', protect, authorize('teacher'), async (req, res) => {
     const available = await availableBalance(teacher._id);
     res.json({ withdrawals, available });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -797,7 +798,7 @@ router.post('/withdrawals', protect, authorize('teacher'), async (req, res) => {
 
     res.status(201).json({ success: true, withdrawal });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -862,7 +863,7 @@ router.get('/availability', protect, authorize('teacher'), async (req, res) => {
       timezone: safeTimeZone(teacher.availabilityTimezone),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -888,7 +889,7 @@ router.put('/availability', protect, authorize('teacher'), async (req, res) => {
       timezone: teacher.availabilityTimezone,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -910,7 +911,7 @@ router.get('/reviews', protect, authorize('teacher'), async (req, res) => {
       totalReviews,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

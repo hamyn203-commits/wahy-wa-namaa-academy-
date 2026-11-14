@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
@@ -5,7 +6,7 @@ const router = express.Router();
 const Teacher = require('../models/Teacher');
 const TeacherUpdate = require('../models/TeacherUpdate');
 const Session = require('../models/Session');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, getAccessSecret } = require('../middleware/auth');
 const storage = require('../services/objectStorage');
 const { notifyUser } = require('../utils/notify');
 
@@ -14,7 +15,7 @@ const MAX_VIDEOS_PER_UPDATE = 5;
 const ACCESS_TOKEN_TTL = '10m';
 
 function accessSecret() {
-  return process.env.JWT_SECRET || 'wahy-namaa-dev-access-secret-change-me';
+  return getAccessSecret();
 }
 
 async function getTeacherByUser(userId) {
@@ -150,7 +151,7 @@ router.get('/teacher', authorize('teacher'), async (req, res) => {
 
     return res.json({ updates: updates.map(presentUpdate) });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -243,7 +244,7 @@ router.post('/teacher', authorize('teacher'), async (req, res) => {
 
     return res.status(201).json({ success: true, update: presentUpdate(update) });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -266,7 +267,7 @@ router.delete('/teacher/:id', authorize('teacher'), async (req, res) => {
     await update.deleteOne();
     return res.json({ success: true });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -302,7 +303,7 @@ router.get('/student', authorize('student'), async (req, res) => {
 
     return res.json({ updates: visible });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -333,7 +334,7 @@ router.post('/:id/videos/:index/access', authorize('teacher', 'student', 'admin'
       expiresInSeconds: 600,
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

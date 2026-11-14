@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import ar from './ar';
 import en from './en';
 import fr from './fr';
@@ -8,15 +8,41 @@ import ur from './ur';
 import id from './id';
 import ms from './ms';
 import ku from './ku';
+import { detectBrowserLocale } from '../lib/locale';
 
 const I18nContext = createContext();
-
-import { detectBrowserLocale } from '../lib/locale';
 
 const translations = { ar, en, fr, de, tr, ur, id, ms, ku };
 
 // اللغات التي تكتب من اليمين لليسار
 const rtlLanguages = ['ar', 'ur', 'ku'];
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeTwoDicts(primary, secondary) {
+  if (!isPlainObject(secondary)) {
+    return primary !== undefined ? primary : secondary;
+  }
+  const result = { ...secondary };
+  if (!isPlainObject(primary)) {
+    return result;
+  }
+  for (const [key, value] of Object.entries(primary)) {
+    if (isPlainObject(value) && isPlainObject(secondary[key])) {
+      result[key] = mergeTwoDicts(value, secondary[key]);
+    } else if (value !== undefined && value !== '') {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+export function deepFallback(activeDict, fallbackEn = en, fallbackAr = ar) {
+  const baseWithAr = mergeTwoDicts(fallbackEn, fallbackAr);
+  return mergeTwoDicts(activeDict, baseWithAr);
+}
 
 export function I18nProvider({ children }) {
   const [locale, setLocale] = useState(() => {
@@ -31,7 +57,15 @@ export function I18nProvider({ children }) {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const t = translations[locale];
+  const isRTL = rtlLanguages.includes(locale);
+  const dir = isRTL ? 'rtl' : 'ltr';
+
+  const t = useMemo(() => {
+    const active = translations[locale] || ar;
+    if (locale === 'ar') return mergeTwoDicts(ar, en);
+    if (isRTL) return deepFallback(active, ar, en);
+    return deepFallback(active, en, ar);
+  }, [locale, isRTL]);
 
   const changeLocale = (newLocale) => {
     if (translations[newLocale]) {
@@ -39,10 +73,8 @@ export function I18nProvider({ children }) {
     }
   };
 
-  const isRTL = rtlLanguages.includes(locale);
-
   return (
-    <I18nContext.Provider value={{ locale, t, changeLocale, isRTL }}>
+    <I18nContext.Provider value={{ locale, t, changeLocale, isRTL, dir }}>
       {children}
     </I18nContext.Provider>
   );

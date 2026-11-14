@@ -26,6 +26,8 @@ export default {
     urdu: 'اردو',
     indonesian: 'Indonesia',
     malay: 'Melayu',
+    freeTrial: 'مفت تجرباتی کلاس بک کریں',
+    freeTrialShort: 'مفت تجرباتی کلاس',
   },
   hero: {
     title: 'قرآن اور عربی سیکھیں',

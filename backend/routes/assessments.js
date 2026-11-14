@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Assessment = require('../models/Assessment');
@@ -64,7 +65,7 @@ router.post('/', protect, async (req, res) => {
       suggestedTeachers
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -83,7 +84,7 @@ router.get('/my-assessment', protect, async (req, res) => {
 
     res.json(assessment);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

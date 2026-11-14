@@ -12,23 +12,26 @@ jobs:
   probe:
     name: API + Frontend
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ vars.PRODUCTION_API_URL || 'https://api.wahywanamaa.com' }}
+      WEB_URL: ${{ vars.PRODUCTION_WEB_URL || 'https://wahywanamaa.com' }}
     steps:
       - name: Backend readiness
         run: |
-          body=$(curl --fail --silent --show-error https://wahy-wa-namaa-api.vercel.app/api/readiness)
+          body=$(curl --fail --silent --show-error "${API_URL%/}/api/readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: Frontend home
-        run: curl --fail --silent --show-error -o /dev/null -w "HTTP %{http_code}\n" https://wahy-wa-namaa-academy.vercel.app/ar
+        run: curl --fail --silent --show-error -o /dev/null -w "HTTP %{http_code}\n" "${WEB_URL%/}/ar"
 
       - name: Frontend API rewrite
         run: |
-          body=$(curl --fail --silent --show-error https://wahy-wa-namaa-academy.vercel.app/api/readiness)
+          body=$(curl --fail --silent --show-error "${WEB_URL%/}/api/readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: API teachers
-        run: curl --fail --silent --show-error 'https://wahy-wa-namaa-api.vercel.app/api/teachers?limit=1' | grep -q '"teachers"'
+        run: curl --fail --silent --show-error "${API_URL%/}/api/teachers?limit=1" | grep -q '"teachers"'
 
       - run: echo "### All production checks passed ✅" >> "$GITHUB_STEP_SUMMARY"

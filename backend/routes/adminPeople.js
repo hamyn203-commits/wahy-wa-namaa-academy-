@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const mongoose = require('mongoose');
 
@@ -285,7 +286,7 @@ router.get('/search', async (req, res) => {
       payments: exactPayment ? [exactPayment] : [],
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -338,7 +339,7 @@ router.get('/guardian-links', async (req, res) => {
       })),
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -579,7 +580,7 @@ router.get('/students/:id', async (req, res) => {
       audit,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -745,7 +746,7 @@ router.post('/students', async (req, res) => {
       subscription: createdSubscription,
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -864,7 +865,7 @@ router.put('/students/:id', async (req, res) => {
 
     return res.json({ success: true, student });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -915,7 +916,7 @@ router.delete('/students/:id', async (req, res) => {
 
     return res.json({ success: true, deletedId: String(studentId) });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1074,7 +1075,7 @@ router.get('/guardians/:id', async (req, res) => {
       audit,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

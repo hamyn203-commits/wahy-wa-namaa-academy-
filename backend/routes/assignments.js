@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const { Assignment, AssignmentSubmission } = require('../models/Assignment');
@@ -198,7 +199,7 @@ router.post('/', protect, attachTeacherProfile, authorize('teacher', 'admin'), a
     res.status(201).json(assignment);
   } catch (error) {
     console.error('Create assignment error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -227,7 +228,7 @@ router.put('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin'),
     res.json(assignment);
   } catch (error) {
     console.error('Update assignment error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -352,7 +353,7 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
     res.status(201).json(submission);
   } catch (error) {
     console.error('Submit assignment error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -490,7 +491,7 @@ router.put('/submissions/:submissionId/grade', protect, attachTeacherProfile, au
     res.json(submission);
   } catch (error) {
     console.error('Grade submission error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

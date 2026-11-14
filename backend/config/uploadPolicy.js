@@ -20,7 +20,7 @@ const PURPOSES = Object.freeze({
     maxBytes: 25 * 1024 * 1024,
   },
   'recitation-audio': {
-    roles: ['student', 'teacher'],
+    roles: ['student', 'teacher', 'admin'],
     types: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a'],
     maxBytes: 25 * 1024 * 1024,
   },

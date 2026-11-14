@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
@@ -644,7 +645,7 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), async (r
     });
   } catch (error) {
     console.error('Guardian invitation response error:', error);
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -727,7 +728,7 @@ router.post('/link-child', protect, authorize('guardian', 'admin'), async (req, 
     });
   } catch (error) {
     console.error('Link child error:', error);
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

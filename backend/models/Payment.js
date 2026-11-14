@@ -145,6 +145,17 @@ PaymentSchema.index(
 PaymentSchema.index({ student: 1, course: 1, status: 1 });
 PaymentSchema.index({ student: 1, subscription: 1, status: 1 });
 PaymentSchema.index(
+  { student: 1, course: 1, provider: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      kind: 'course_enrollment',
+      provider: 'manual',
+      status: 'pending',
+    },
+  }
+);
+PaymentSchema.index(
   { student: 1, subscription: 1, provider: 1, status: 1 },
   {
     unique: true,

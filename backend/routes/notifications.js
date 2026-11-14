@@ -1,8 +1,13 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
+const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const Teacher = require('../models/Teacher');
+const Session = require('../models/Session');
+const GroupCircle = require('../models/GroupCircle');
 const { protect, authorize } = require('../middleware/auth');
 const { createUserRealtimeToken, isRealtimeConfigured, publishRealtimeNotification } = require('../services/realtimeNotificationBus');
 router.use(protect, rateLimit({ windowMs: 15 * 60 * 1000, max: 900, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, skip: () => process.env.DISABLE_RATE_LIMIT === 'true' }));
@@ -41,7 +46,7 @@ router.get('/', protect, async (req, res) => {
       filter.isRead = false;
     }
     
-    if (type) {
+    if (typeof type === 'string' && type) {
       filter.type = type;
     }
 
@@ -121,7 +126,7 @@ router.put('/:id/read', protect, async (req, res) => {
     res.json(notification);
   } catch (error) {
     console.error('Mark read error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -142,7 +147,7 @@ router.put('/read-all', protect, async (req, res) => {
     res.json({ message: 'All notifications marked as read' });
   } catch (error) {
     console.error('Mark all read error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -157,7 +162,7 @@ router.delete('/clear-all', protect, async (req, res) => {
     res.json({ message: 'All notifications cleared' });
   } catch (error) {
     console.error('Clear all error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -179,7 +184,7 @@ router.delete('/:id', protect, async (req, res) => {
     res.json({ message: 'Notification deleted' });
   } catch (error) {
     console.error('Delete notification error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -207,7 +212,7 @@ router.put('/preferences', protect, async (req, res) => {
     res.json({ preferences: user.preferences.notifications });
   } catch (error) {
     console.error('Update preferences error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -256,7 +261,7 @@ router.post('/push-token', protect, async (req, res) => {
     res.json({ message: 'Push token registered' });
   } catch (error) {
     console.error('Register push token error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -279,22 +284,177 @@ router.post('/telegram-id', protect, async (req, res) => {
     res.json({ message: 'Telegram ID registered' });
   } catch (error) {
     console.error('Register telegram ID error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
+const TEACHER_ALLOWED_NOTIFICATION_TYPES = new Set([
+  'teacher-update',
+  'homework-assigned',
+  'session-reminder',
+]);
+const ADMIN_ALLOWED_NOTIFICATION_TYPES = new Set([
+  'system',
+  'marketing',
+  'teacher-update',
+  'homework-assigned',
+  'session-reminder',
+  'course-enrollment',
+  'payment-received',
+]);
+const ALLOWED_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
+const LOCALIZED_KEYS = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms'];
+
+function normalizeLocalizedField(input, maxLength) {
+  if (typeof input === 'string') {
+    const trimmed = input.trim().slice(0, maxLength);
+    if (!trimmed) return null;
+    return { ar: trimmed, en: trimmed };
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+  const result = {};
+  for (const locale of LOCALIZED_KEYS) {
+    if (typeof input[locale] === 'string' && input[locale].trim()) {
+      result[locale] = input[locale].trim().slice(0, maxLength);
+    }
+  }
+  const fallback = result.ar || result.en || Object.values(result)[0];
+  if (!fallback) return null;
+  if (!result.ar) result.ar = fallback;
+  if (!result.en) result.en = fallback;
+  return result;
+}
+
+function sanitizeManualNotificationPayload(rawNotification, { role }) {
+  if (!rawNotification || typeof rawNotification !== 'object' || Array.isArray(rawNotification)) {
+    throw new Error('Notification payload object is required');
+  }
+
+  const title = normalizeLocalizedField(rawNotification.title, 200);
+  const message = normalizeLocalizedField(rawNotification.message, 2000);
+  if (!title || !message) {
+    throw new Error('Notification title and message are required');
+  }
+
+  const defaultType = role === 'admin' ? 'system' : 'teacher-update';
+  const requestedType = rawNotification.type ? String(rawNotification.type).trim() : defaultType;
+  const allowedTypes = role === 'admin' ? ADMIN_ALLOWED_NOTIFICATION_TYPES : TEACHER_ALLOWED_NOTIFICATION_TYPES;
+  if (!allowedTypes.has(requestedType)) {
+    throw new Error('Unsupported notification type for this role');
+  }
+
+  const priority = rawNotification.priority ? String(rawNotification.priority).trim() : 'medium';
+  if (!ALLOWED_PRIORITIES.has(priority)) {
+    throw new Error('Invalid notification priority');
+  }
+
+  const channels = {
+    inApp: { enabled: true },
+  };
+  if (role === 'admin' && rawNotification.channels && typeof rawNotification.channels === 'object') {
+    for (const channelName of ['inApp', 'email', 'push', 'telegram', 'sms']) {
+      if (typeof rawNotification.channels[channelName]?.enabled === 'boolean') {
+        channels[channelName] = { enabled: rawNotification.channels[channelName].enabled };
+      }
+    }
+  }
+
+  const data = {};
+  if (rawNotification.data && typeof rawNotification.data === 'object' && !Array.isArray(rawNotification.data)) {
+    for (const urlKey of ['url', 'actionUrl']) {
+      const candidate = rawNotification.data[urlKey];
+      if (candidate !== undefined) {
+        if (typeof candidate !== 'string' || !candidate.startsWith('/') || candidate.startsWith('//')) {
+          throw new Error(`Notification ${urlKey} must be an internal relative path`);
+        }
+        data[urlKey] = candidate.slice(0, 500);
+      }
+    }
+  }
+
+  return {
+    type: requestedType,
+    title,
+    message,
+    priority,
+    channels,
+    ...(Object.keys(data).length ? { data } : {}),
+  };
+}
+
+async function getTeacherAllowedStudentIds(userId) {
+  const teacher = await Teacher.findOne({ user: userId }).select('_id');
+  if (!teacher) return null;
+
+  const [directStudents, attendanceStudents, circles] = await Promise.all([
+    Session.find({
+      teacher: teacher._id,
+      status: { $in: ['accepted', 'completed'] },
+      student: { $ne: null },
+    }).distinct('student'),
+    Session.find({
+      teacher: teacher._id,
+      status: { $in: ['accepted', 'completed'] },
+      'attendance.student': { $ne: null },
+    }).distinct('attendance.student'),
+    GroupCircle.find({
+      teacher: teacher._id,
+      status: 'active',
+    }).select('students'),
+  ]);
+
+  const allowed = new Set();
+  for (const id of directStudents) {
+    if (id) allowed.add(String(id));
+  }
+  for (const id of attendanceStudents) {
+    if (id) allowed.add(String(id));
+  }
+  for (const circle of circles) {
+    for (const id of circle.students || []) {
+      if (id) allowed.add(String(id));
+    }
+  }
+  return allowed;
+}
+
 // @route   POST /api/notifications/send
-// @desc    Send notification (Admin/Teacher)
+// @desc    Send notification (Admin/Teacher — teachers scoped strictly to their own students)
 // @access  Private (Admin/Teacher)
 router.post('/send', protect, authorize('admin', 'teacher'), async (req, res) => {
   try {
-    const { userIds, notification } = req.body;
+    const { userIds, notification } = req.body || {};
 
-    if (!userIds || !Array.isArray(userIds)) {
-      return res.status(400).json({ error: 'userIds must be an array' });
+    if (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 100) {
+      return res.status(400).json({ error: 'userIds must be a non-empty array of at most 100 IDs' });
     }
 
-    const notifications = await Notification.sendBulk(userIds, notification);
+    const uniqueUserIds = [...new Set(userIds.map((id) => String(id || '').trim()))];
+    if (uniqueUserIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ error: 'All userIds must be valid user identifiers' });
+    }
+
+    const sanitizedNotification = sanitizeManualNotificationPayload(notification, {
+      role: req.user.role,
+    });
+
+    if (req.user.role === 'teacher') {
+      const allowedStudentIds = await getTeacherAllowedStudentIds(req.user.id);
+      if (!allowedStudentIds) {
+        return res.status(403).json({ error: 'Teacher profile not found' });
+      }
+      const unauthorizedTarget = uniqueUserIds.find((id) => !allowedStudentIds.has(id));
+      if (unauthorizedTarget) {
+        return res.status(403).json({
+          error: 'Teachers can only notify their own active students',
+          code: 'TEACHER_STUDENT_SCOPE_VIOLATION',
+        });
+      }
+    }
+
+    const notifications = await Notification.sendBulk(uniqueUserIds, sanitizedNotification);
 
     res.status(201).json({
       message: `Sent ${notifications.length} notifications`,
@@ -302,21 +462,54 @@ router.post('/send', protect, authorize('admin', 'teacher'), async (req, res) =>
     });
   } catch (error) {
     console.error('Send notification error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
 // @route   POST /api/notifications/send-all
-// @desc    Send notification to all users (Admin only)
+// @desc    Send notification to all users matching safe scalar filter (Admin only)
 // @access  Private (Admin)
 router.post('/send-all', protect, authorize('admin'), async (req, res) => {
   try {
-    const { notification, filter = {} } = req.body;
+    const { notification, filter = {} } = req.body || {};
 
-    const users = await User.find(filter).select('_id');
+    if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
+      return res.status(400).json({ error: 'Invalid filter object' });
+    }
+
+    const allowedFilterKeys = new Set(['role', 'isActive']);
+    for (const key of Object.keys(filter)) {
+      if (!allowedFilterKeys.has(key)) {
+        return res.status(400).json({ error: `Unsupported filter field: ${key}` });
+      }
+    }
+
+    const safeFilter = {};
+    if (filter.role !== undefined) {
+      if (!['student', 'teacher', 'guardian', 'admin'].includes(filter.role)) {
+        return res.status(400).json({ error: 'Invalid role filter' });
+      }
+      safeFilter.role = filter.role;
+    }
+    if (filter.isActive !== undefined) {
+      if (typeof filter.isActive !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid isActive filter' });
+      }
+      safeFilter.isActive = filter.isActive;
+    } else {
+      safeFilter.isActive = true;
+    }
+
+    const sanitizedNotification = sanitizeManualNotificationPayload(notification, {
+      role: 'admin',
+    });
+
+    const users = await User.find(safeFilter).select('_id');
     const userIds = users.map(u => u._id);
 
-    const notifications = await Notification.sendBulk(userIds, notification);
+    const notifications = userIds.length
+      ? await Notification.sendBulk(userIds, sanitizedNotification)
+      : [];
 
     res.status(201).json({
       message: `Sent ${notifications.length} notifications`,
@@ -324,7 +517,7 @@ router.post('/send-all', protect, authorize('admin'), async (req, res) => {
     });
   } catch (error) {
     console.error('Send all error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -339,9 +532,12 @@ router.get('/stats', protect, async (req, res) => {
       isRead: false 
     });
     const read = total - unread;
+    const userObjectId = mongoose.Types.ObjectId.isValid(req.user.id)
+      ? new mongoose.Types.ObjectId(req.user.id)
+      : req.user.id;
 
     const byType = await Notification.aggregate([
-      { $match: { user: req.user.id } },
+      { $match: { user: userObjectId } },
       { $group: { _id: '$type', count: { $sum: 1 } } }
     ]);
 

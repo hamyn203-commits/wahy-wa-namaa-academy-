@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -148,7 +149,7 @@ router.get('/available-slots/:teacherId', async (req, res) => {
       slots,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -300,7 +301,7 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -442,8 +443,7 @@ router.post('/group-circle', protect, authorize('teacher', 'admin'), async (req,
 
     return res.status(201).json({ success: true, session });
   } catch (error) {
-    return res.status(400).json({
-      error: error.message || 'فشل جدولة حصة الحلقة',
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل جدولة حصة الحلقة',
       code: error.code || 'GROUP_SESSION_CREATE_FAILED',
     });
   }
@@ -517,7 +517,7 @@ router.post('/regular', protect, async (req, res) => {
 
     res.status(201).json({ success: true, message: 'تم إرسال طلب الحصة', session });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -556,6 +556,9 @@ router.get('/my-sessions', protect, async (req, res) => {
     if (type) filter.type = type;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const attendanceStudentSelect = ['teacher', 'admin'].includes(req.user.role)
+      ? 'name email avatar'
+      : 'name avatar';
 
     const [sessions, total] = await Promise.all([
       Session.find(filter)
@@ -564,9 +567,8 @@ router.get('/my-sessions', protect, async (req, res) => {
           path: 'teacher',
           populate: { path: 'user', select: 'name email avatar' }
         })
-        .populate('attendance.student', 'name email avatar')
+        .populate('attendance.student', attendanceStudentSelect)
         .populate('circle', 'name code status schedule timezone subscriptionPlanKey')
-        .populate('attendance.student', 'name email avatar')
         .sort({ scheduledAt: -1 })
         .skip(skip)
         .limit(parseInt(limit)),
@@ -612,7 +614,7 @@ router.get('/my-sessions', protect, async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -685,7 +687,7 @@ router.put('/:id/attendance', protect, authorize('teacher', 'admin'), async (req
       attendance: session.attendance,
     });
   } catch (error) {
-    return res.status(400).json({ error: error.message || 'فشل تحديث الحضور' });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل تحديث الحضور' });
   }
 });
 
@@ -864,7 +866,7 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
 
     res.json({ success: true, session });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -980,8 +982,6 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
           );
         } catch { /* ignore if no TrialRequest */ }
       }
-      if (false)
-      await session.save();
     }
 
     // Ledger is the canonical source of truth for all new teacher earnings.
@@ -1131,7 +1131,7 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
 
     return res.json({ success: true, session, subscriptionUsage });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1176,7 +1176,7 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
 
     res.json({ success: true, session });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1213,7 +1213,7 @@ router.get('/admin/all', protect, authorize('admin'), async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -1320,10 +1320,104 @@ router.patch('/:id/attendance', protect, authorize('teacher', 'admin'), async (r
       unresolved: session.attendance.filter((entry) => ['pending', 'confirmed'].includes(entry.status)).length,
     });
   } catch (error) {
-    return res.status(400).json({
-      error: error.message || 'فشل تحديث الحضور',
+    return res.status(400).json({ error: safeErrorMessage(error, 400) || 'فشل تحديث الحضور',
       code: error.code || 'GROUP_ATTENDANCE_UPDATE_FAILED',
     });
+  }
+});
+
+async function resolveRsvpStudentForCaller(session, user, requestedStudentId) {
+  if (!session || !user) return { studentId: null, errorStatus: 401, errorMessage: 'غير مصرح' };
+
+  let candidateId = requestedStudentId || null;
+
+  if (!candidateId && user.role === 'student') {
+    candidateId = user.id;
+  }
+
+  if (!candidateId && user.role === 'admin') {
+    candidateId = session.student ? String(session.student) : null;
+  }
+
+  if (user.role === 'guardian') {
+    const Guardian = require('../models/Guardian');
+    const guardian = await Guardian.findOne({ user: user.id, isActive: true }).select('children.student').lean();
+    if (!guardian) {
+      return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
+    }
+    const childIds = (guardian.children || []).map((c) => String(c.student)).filter(Boolean);
+    if (candidateId) {
+      if (!childIds.includes(String(candidateId))) {
+        return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
+      }
+    } else {
+      for (const cid of childIds) {
+        if (await sessionIncludesStudent(session, cid)) {
+          candidateId = cid;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!candidateId) {
+    candidateId = user.id;
+  }
+
+  const belongsToSession = await sessionIncludesStudent(session, candidateId);
+  if (!belongsToSession) {
+    return { studentId: null, errorStatus: 403, errorMessage: 'الطالب غير مسجل في هذه الحصة' };
+  }
+
+  if (user.role !== 'admin' && user.role !== 'guardian' && String(user.id) !== String(candidateId)) {
+    return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
+  }
+
+  return { studentId: String(candidateId), errorStatus: null, errorMessage: null };
+}
+
+// @route   GET /api/sessions/:id/rsvp
+// @desc    Inspect session RSVP summary for student, guardian, or admin
+// @access  Private (Student, Guardian, Admin)
+router.get('/:id/rsvp', protect, async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+    const session = await Session.findById(req.params.id)
+      .populate({ path: 'teacher', select: 'name user', populate: { path: 'user', select: 'name' } });
+    if (!session) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
+    const resolved = await resolveRsvpStudentForCaller(session, req.user, req.query.studentId);
+    if (!resolved.studentId) {
+      return res.status(resolved.errorStatus).json({ error: resolved.errorMessage });
+    }
+
+    const studentUser = await User.findById(resolved.studentId).select('name').lean();
+    const existingEntry = (session.attendance || []).find(
+      (entry) => entry?.student && String(entry.student) === String(resolved.studentId)
+    );
+    const diffHours = (new Date(session.scheduledAt).getTime() - Date.now()) / (1000 * 60 * 60);
+
+    return res.json({
+      sessionId: String(session._id),
+      type: session.type,
+      status: session.status,
+      scheduledAt: session.scheduledAt,
+      duration: session.duration || 60,
+      timezone: session.timezone || 'Africa/Cairo',
+      teacherName: session.teacher?.user?.name || session.teacher?.name || 'معلم الأكاديمية',
+      studentId: resolved.studentId,
+      studentName: studentUser?.name || 'الطالب',
+      rsvpStatus: existingEntry?.status || 'pending',
+      excuseReason: existingEntry?.excuseReason || '',
+      canCompensateIfExcusedNow: diffHours >= 6,
+      diffHours: Math.round(diffHours * 10) / 10,
+    });
+  } catch {
+    return res.status(500).json({ error: 'تعذر تحميل بيانات تأكيد الحضور' });
   }
 });
 
@@ -1333,13 +1427,14 @@ router.patch('/:id/attendance', protect, authorize('teacher', 'admin'), async (r
 router.post('/:id/rsvp', protect, async (req, res) => {
   try {
     const { status, excuseReason } = req.body;
-    const studentId = req.body.studentId || req.user.id;
+    const requestedStudentId = req.body.studentId || req.query.studentId;
 
     if (!status || !['confirmed', 'excused'].includes(status)) {
       return res.status(400).json({ error: 'الحالة غير صالحة. يجب أن تكون confirmed أو excused' });
     }
 
     if (isMockMode && (!isDBConnected() || !isValidObjectId(req.params.id))) {
+      const studentId = requestedStudentId || req.user.id;
       const now = new Date();
       const scheduledTime = new Date(now.getTime() + 48 * 60 * 60 * 1000);
       const diffHours = (scheduledTime.getTime() - now.getTime()) / (1000 * 60 * 60);
@@ -1374,24 +1469,20 @@ router.post('/:id/rsvp', protect, async (req, res) => {
       });
     }
 
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
     const session = await Session.findById(req.params.id);
     if (!session) {
       return res.status(404).json({ error: 'الحصة غير موجودة' });
     }
 
-    const belongsToSession = await sessionIncludesStudent(session, studentId);
-    if (!belongsToSession) {
-      return res.status(403).json({ error: 'الطالب غير مسجل في هذه الحصة' });
+    const resolved = await resolveRsvpStudentForCaller(session, req.user, requestedStudentId);
+    if (!resolved.studentId) {
+      return res.status(resolved.errorStatus).json({ error: resolved.errorMessage });
     }
-
-    // Verify actor permission: the student, their linked guardian, or an admin.
-    if (req.user.role !== 'admin' && String(req.user.id) !== String(studentId)) {
-      const Guardian = require('../models/Guardian');
-      const guardian = await Guardian.findOne({ user: req.user.id, 'children.student': studentId });
-      if (!guardian) {
-        return res.status(403).json({ error: 'غير مصرح بتعديل حضور هذا الطالب' });
-      }
-    }
+    const studentId = resolved.studentId;
 
     const now = new Date();
     const scheduledTime = new Date(session.scheduledAt);
@@ -1462,7 +1553,7 @@ router.post('/:id/rsvp', protect, async (req, res) => {
       diffHours: Math.round(diffHours * 10) / 10
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -1571,7 +1662,7 @@ router.post('/:id/report', protect, authorize('teacher', 'admin'), async (req, r
       dispatchSummary: results
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

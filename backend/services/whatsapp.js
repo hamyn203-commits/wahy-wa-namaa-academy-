@@ -126,6 +126,30 @@ async function sendRawWhatsAppMessage(toPhone, messageText) {
   };
 }
 
+function resolveSiteUrl() {
+  return String(
+    process.env.FRONTEND_URL
+    || process.env.SITE_URL
+    || 'https://wahywanamaa.com'
+  ).trim().replace(/\/$/, '');
+}
+
+function resolveAbsoluteRoomUrl(session, roomUrl) {
+  const siteUrl = resolveSiteUrl();
+  const raw = String(roomUrl || session?.meetingLink || '').trim();
+  if (!raw) {
+    return `${siteUrl}/ar/live/${session?._id || ''}`;
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+  const normalized = raw.startsWith('/') ? raw : `/${raw}`;
+  if (/^\/(ar|en|fr|de|tr|ur|id|ms|ku)(\/|$)/.test(normalized)) {
+    return `${siteUrl}${normalized}`;
+  }
+  return `${siteUrl}/ar${normalized}`;
+}
+
 /**
  * 1. تذكير قبل 24 ساعة برابط الحصة ورابط تأكيد الحضور أو الاعتذار
  * @param {Object} session - Session document or object
@@ -144,9 +168,10 @@ async function send24HourReminder(session, student, guardianPhone) {
     timeZone: session.timezone || 'Africa/Cairo'
   }) : 'الموعد المحدد';
 
-  const siteUrl = (process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app').replace(/\/$/, '');
-  const rsvpUrl = `${siteUrl}/sessions/${session._id}/rsvp`;
-  const roomUrl = session.meetingLink || `${siteUrl}/live/${session._id}`;
+  const siteUrl = resolveSiteUrl();
+  const studentQuery = student?._id ? `?studentId=${encodeURIComponent(String(student._id))}` : '';
+  const rsvpUrl = `${siteUrl}/ar/sessions/${session._id}/rsvp${studentQuery}`;
+  const roomUrl = resolveAbsoluteRoomUrl(session);
 
   const message = `🌿 *أكاديمية وَحْيٌ وَنَمَاء* 🌿
 السلام عليكم ورحمة الله وبركاته،
@@ -173,8 +198,7 @@ async function send24HourReminder(session, student, guardianPhone) {
  */
 async function send30MinuteReminder(session, student, guardianPhone, roomUrl) {
   const studentName = student?.name || 'الطالب';
-  const siteUrl = (process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app').replace(/\/$/, '');
-  const link = roomUrl || session.meetingLink || `${siteUrl}/live/${session._id}`;
+  const link = resolveAbsoluteRoomUrl(session, roomUrl);
 
   const message = `⏰ *تذكير: الحصة ستبدأ بعد 30 دقيقة!*
 السلام عليكم ورحمة الله وبركاته،
@@ -204,8 +228,8 @@ async function sendAbsenceAlert(session, student, guardianPhone) {
     timeZone: session.timezone || 'Africa/Cairo'
   }) : 'اليوم';
 
-  const siteUrl = (process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app').replace(/\/$/, '');
-  const contactUrl = `${siteUrl}/contact`;
+  const siteUrl = resolveSiteUrl();
+  const contactUrl = `${siteUrl}/ar/contact`;
 
   const message = `السلام عليكم ورحمة الله وبركاته،
 عناية ولي أمر الطالب *${studentName}* المحترم،
@@ -261,6 +285,8 @@ ${homework}
 
 module.exports = {
   cleanPhoneNumber,
+  resolveSiteUrl,
+  resolveAbsoluteRoomUrl,
   sendRawWhatsAppMessage,
   send24HourReminder,
   send30MinuteReminder,

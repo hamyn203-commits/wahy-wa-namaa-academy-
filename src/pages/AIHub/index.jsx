@@ -6,6 +6,7 @@ import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import '../../styles/public-experience.css';
 import { api } from '../../lib/api';
+import { uploadFileDirect } from '../../lib/fileUpload';
 import { useAuth } from '../../hooks/useAuth';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { useI18n } from '../../i18n';
@@ -31,7 +32,7 @@ const REC_LABELS = {
 export default function AIHub() {
   const navigate = useNavigate();
   const { locale } = useI18n();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [tab, setTab] = useState('quran');
   const [loading, setLoading] = useState(false);
   const [aiStatus, setAiStatus] = useState(null);
@@ -58,11 +59,13 @@ export default function AIHub() {
       );
       return;
     }
-    api.get('/api/ai/status', { auth: true }).then(setAiStatus).catch(() => {});
+    if (user?.role === 'admin') {
+      api.get('/api/ai/status', { auth: true }).then(setAiStatus).catch(() => {});
+    }
     api.get('/api/ai/recitation-reports', { auth: true })
       .then((d) => setReports(d.reports || []))
       .catch(() => {});
-  }, [isAuthenticated, navigate, locale]);
+  }, [isAuthenticated, user?.role, navigate, locale]);
 
   const askQuran = async (e) => {
     e.preventDefault();
@@ -82,11 +85,28 @@ export default function AIHub() {
     if (!file) return;
     setLoading(true);
     try {
-      const fd = new FormData();
-      fd.append('audio', file, file.name || 'recitation.webm');
-      fd.append('locale', 'ar');
-      if (surah) fd.append('surah', surah);
-      const res = await api.post('/api/ai/recitation-analyze', fd, { auth: true });
+      let res;
+      // Avoid Vercel's 4.5 MB serverless request payload cap by uploading larger files directly to private object storage first.
+      if (file.size > 4 * 1024 * 1024) {
+        const uploaded = await uploadFileDirect(file, 'recitation-audio');
+        res = await api.post(
+          '/api/ai/recitation-analyze',
+          {
+            storageRef: uploaded.url,
+            contentType: uploaded.contentType || file.type,
+            filename: uploaded.name || file.name || 'recitation.webm',
+            locale: 'ar',
+            ...(surah ? { surah } : {}),
+          },
+          { auth: true }
+        );
+      } else {
+        const fd = new FormData();
+        fd.append('audio', file, file.name || 'recitation.webm');
+        fd.append('locale', 'ar');
+        if (surah) fd.append('surah', surah);
+        res = await api.post('/api/ai/recitation-analyze', fd, { auth: true });
+      }
       setRecitationReport(res);
       setReports((prev) => [res, ...prev]);
     } catch (err) {

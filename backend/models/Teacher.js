@@ -107,10 +107,11 @@ const TeacherSchema = new mongoose.Schema({
   }],
   languages: [{
     type: String,
-    enum: ['arabic', 'english', 'french', 'german', 'turkish', 'urdu', 'indonesian', 'malay']
+    enum: ['arabic', 'english', 'french', 'german', 'turkish', 'urdu', 'indonesian', 'malay', 'kurdish']
   }],
   isVerified: { type: Boolean, default: false },
   isFeatured: { type: Boolean, default: false },
+  ledgerLockVersion: { type: Number, default: 0, select: false },
   storageOwner: { type: String, trim: true, select: false },
   assetsPurgedAt: { type: Date }
 }, { timestamps: true });

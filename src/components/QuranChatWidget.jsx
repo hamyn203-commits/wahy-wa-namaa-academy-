@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
-  MessageCircle, Star, Sparkles, Send, X, Bot, User, 
-  HelpCircle, Gift, PhoneCall, ShieldCheck, ChevronDown
+  MessageCircle, Send, X, Bot, User, Gift
 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -56,6 +55,7 @@ export default function QuranChatWidget() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const nextMessageIdRef = useRef(2);
 
   useEffect(() => {
     if (!open) return;
@@ -71,9 +71,9 @@ export default function QuranChatWidget() {
   }, [messages, open]);
 
   const handleQuickQuestion = (item) => {
-    const userMsg = { id: Date.now(), sender: 'user', text: item.label };
+    const userMsg = { id: nextMessageIdRef.current++, sender: 'user', text: item.label };
     const botReply = { 
-      id: Date.now() + 1, 
+      id: nextMessageIdRef.current++, 
       sender: 'bot', 
       text: PRESET_ANSWERS[item.id],
       action: item.id === 'trial' ? 'trial_cta' : item.id === 'human' ? 'contact_cta' : null
@@ -88,7 +88,7 @@ export default function QuranChatWidget() {
 
     const userText = input.trim();
     setInput('');
-    const userMsg = { id: Date.now(), sender: 'user', text: userText };
+    const userMsg = { id: nextMessageIdRef.current++, sender: 'user', text: userText };
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
@@ -103,13 +103,13 @@ export default function QuranChatWidget() {
 
       setMessages((prev) => [
         ...prev, 
-        { id: Date.now() + 1, sender: 'bot', text: replyText }
+        { id: nextMessageIdRef.current++, sender: 'bot', text: replyText }
       ]);
     } catch {
       setMessages((prev) => [
         ...prev, 
         { 
-          id: Date.now() + 1, 
+          id: nextMessageIdRef.current++, 
           sender: 'bot', 
           text: 'يسعدنا تواصلك دائماً! يمكنك فتح صفحة التواصل أو طلب جلسة تعريفية الآن.',
           action: 'trial_cta'

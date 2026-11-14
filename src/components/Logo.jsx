@@ -1,10 +1,7 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { useI18n } from '../i18n';
 import WahyNamaaEmblem from './WahyNamaaEmblem';
 
 export default function Logo({ size = 42, showText = true, variant = 'dark' }) {
-  const { locale } = useI18n();
   const isLight = variant === 'light';
 
   return (

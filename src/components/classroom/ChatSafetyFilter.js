@@ -79,7 +79,7 @@ export function containsExternalLink(text = '') {
   if (/https?:\/\/|ftp:\/\/|file:\/\//i.test(lower)) return true;
 
   // 2. بادئة www
-  if (/www\.[a-z0-9\-]+(\.[a-z0-9\-]+)+/i.test(lower)) return true;
+  if (/www\.[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(lower)) return true;
 
   // 3. روابط شات ومكالمات واختصار
   const shorteners = [

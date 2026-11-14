@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -14,6 +15,7 @@ const {
 } = require('../middleware/auth');
 const { addMockUser, findMockUserByEmail, findMockUserById, updateMockUser } = require('../mockStore');
 const { sendEmail } = require('../services/notificationDispatcher');
+const { getEmailProviderStatus } = require('../config/emailProvider');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const { normalizePhone } = require('../utils/phone');
 const { isSection } = require('../config/subscriptionPlans');
@@ -163,6 +165,16 @@ router.post('/register', async (req, res) => {
           source: 'student-registration',
         }).catch((error) => {
           console.warn('Guardian invitation creation warning:', error.message);
+        });
+      }
+
+      if (assignedRole === 'guardian') {
+        await Guardian.findOneAndUpdate(
+          { user: user._id },
+          { $setOnInsert: { user: user._id, children: [] } },
+          { upsert: true, new: true }
+        ).catch((error) => {
+          console.warn('Guardian profile upsert warning:', error.message);
         });
       }
 
@@ -576,7 +588,7 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
     await updated.save();
     return res.json({ user: await presentUser(updated) });
   } catch (error) {
-    if (error.name === 'ValidationError') return res.status(400).json({ error: error.message });
+    if (error.name === 'ValidationError') return res.status(400).json({ error: safeErrorMessage(error, 400) });
     return res.status(500).json({ error: 'Could not save profile' });
   }
 });
@@ -652,20 +664,21 @@ router.post('/change-password', verifyAccessToken, async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+    const emailStatus = getEmailProviderStatus();
 
-    if (process.env.NODE_ENV === 'production' && !process.env.RESEND_API_KEY) {
+    if (process.env.NODE_ENV === 'production' && !emailStatus.configured) {
       return res.status(503).json({
         error: 'Password reset email service is temporarily unavailable'
       });
     }
 
-    if (!email) {
+    if (!email || typeof email !== 'string') {
       return res.status(400).json({ 
         error: 'Email is required' 
       });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     
     if (!user) {
       return res.json({ 
@@ -677,23 +690,31 @@ router.post('/forgot-password', async (req, res) => {
     await user.save();
 
     const frontendUrl = String(
-      process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'
+      process.env.FRONTEND_URL || 'https://wahywanamaa.com'
     ).replace(/\/$/, '');
     const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
 
-    if (process.env.RESEND_API_KEY) {
-      await sendEmail({
-        to: user.email,
-        subject: 'استعادة كلمة المرور — وَحْيٌ وَنَمَاء',
-        text: `استخدم الرابط التالي لإعادة تعيين كلمة المرور: ${resetUrl}`,
-        html: `
-          <div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8">
-            <h2>استعادة كلمة المرور</h2>
-            <p>وصلنا طلب لإعادة تعيين كلمة المرور لحسابك في أكاديمية وَحْيٌ وَنَمَاء.</p>
-            <p><a href="${resetUrl}">اضغط هنا لإعادة تعيين كلمة المرور</a></p>
-            <p>إذا لم تطلب ذلك، تجاهل هذه الرسالة.</p>
-          </div>
-        `,
+    const delivery = await sendEmail({
+      to: user.email,
+      subject: 'استعادة كلمة المرور — وَحْيٌ وَنَمَاء',
+      text: `استخدم الرابط التالي لإعادة تعيين كلمة المرور: ${resetUrl}`,
+      html: `
+        <div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8">
+          <h2>استعادة كلمة المرور</h2>
+          <p>وصلنا طلب لإعادة تعيين كلمة المرور لحسابك في أكاديمية وَحْيٌ وَنَمَاء.</p>
+          <p><a href="${resetUrl}">اضغط هنا لإعادة تعيين كلمة المرور</a></p>
+          <p>إذا لم تطلب ذلك، تجاهل هذه الرسالة.</p>
+        </div>
+      `,
+    });
+
+    if (!delivery?.sent) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save().catch(() => {});
+      return res.status(503).json({
+        error: 'Password reset email delivery failed. Please try again later.',
+        code: 'EMAIL_DELIVERY_FAILED',
       });
     }
 

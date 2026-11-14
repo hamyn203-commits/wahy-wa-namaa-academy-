@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -62,7 +63,7 @@ router.post('/', async (req, res) => {
     }).catch(() => {});
     res.status(201).json({ success: true, message: 'شكراً لتبرعك — سنتواصل معك لإتمام العملية', id: donation._id });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -129,7 +130,7 @@ router.get('/stats', async (req, res) => {
       byCategory,
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -158,7 +159,7 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
     ]);
     res.json({ donations, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -177,7 +178,7 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
     if (!donation) return res.status(404).json({ error: 'التبرع غير موجود' });
     res.json(donation);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

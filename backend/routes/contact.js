@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const ContactMessage = require('../models/ContactMessage');
@@ -34,7 +35,7 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json({ success: true, message: 'تم إرسال رسالتك بنجاح', id: msg._id });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -49,7 +50,7 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
     ]);
     res.json({ messages, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
@@ -72,7 +73,7 @@ router.put('/:id/reply', protect, authorize('admin'), async (req, res) => {
     if (!msg) return res.status(404).json({ error: 'الرسالة غير موجودة' });
     res.json(msg);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -90,7 +91,7 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
     if (!msg) return res.status(404).json({ error: 'الرسالة غير موجودة' });
     res.json(msg);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -99,7 +100,7 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     await ContactMessage.findByIdAndDelete(req.params.id);
     res.json({ message: 'تم الحذف' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

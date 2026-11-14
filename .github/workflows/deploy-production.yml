@@ -12,24 +12,27 @@ jobs:
   verify:
     name: Verify Vercel Frontend + API
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ vars.PRODUCTION_API_URL || 'https://api.wahywanamaa.com' }}
+      WEB_URL: ${{ vars.PRODUCTION_WEB_URL || 'https://wahywanamaa.com' }}
     steps:
       - name: API readiness
         run: |
-          body=$(curl --fail --silent --show-error https://wahy-wa-namaa-api.vercel.app/api/readiness)
+          body=$(curl --fail --silent --show-error "${API_URL%/}/api/readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: API through frontend rewrite
         run: |
-          body=$(curl --fail --silent --show-error https://wahy-wa-namaa-academy.vercel.app/api/readiness)
+          body=$(curl --fail --silent --show-error "${WEB_URL%/}/api/readiness")
           echo "$body"
           echo "$body" | grep -q '"ready":true'
 
       - name: Frontend
-        run: curl --fail --silent --show-error -o /dev/null https://wahy-wa-namaa-academy.vercel.app/ar
+        run: curl --fail --silent --show-error -o /dev/null "${WEB_URL%/}/ar"
 
       - name: Summary
         run: |
           echo "### Production verification passed ✅" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Frontend: https://wahy-wa-namaa-academy.vercel.app" >> "$GITHUB_STEP_SUMMARY"
-          echo "- API: https://wahy-wa-namaa-api.vercel.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend: ${WEB_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- API: ${API_URL}" >> "$GITHUB_STEP_SUMMARY"

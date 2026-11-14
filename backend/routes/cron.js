@@ -10,7 +10,7 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-router.get('/reminders', async (req, res) => {
+async function handleRemindersCron(req, res) {
   const secret = process.env.CRON_SECRET;
   const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
 
@@ -22,12 +22,17 @@ router.get('/reminders', async (req, res) => {
     const connected = await connectDB();
     if (!connected) return res.status(503).json({ error: 'Database unavailable' });
 
-    await checkUpcomingSessions();
-    return res.json({ success: true, ranAt: new Date().toISOString() });
+    const summary = await checkUpcomingSessions();
+    return res.json({ success: true, ranAt: new Date().toISOString(), summary });
   } catch (error) {
     console.error('Reminder cron failed:', error.message);
     return res.status(500).json({ error: 'Reminder job failed' });
   }
-});
+}
+
+router.get('/reminders', handleRemindersCron);
+router.post('/reminders', handleRemindersCron);
+router.get('/session-reminders', handleRemindersCron);
+router.post('/session-reminders', handleRemindersCron);
 
 module.exports = router;

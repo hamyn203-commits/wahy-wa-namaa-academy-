@@ -1,4 +1,5 @@
 const { getEmailProviderStatus } = require('../config/emailProvider');
+const { cleanPhoneNumber } = require('./whatsapp');
 
 let smtpTransporter = null;
 
@@ -49,7 +50,7 @@ async function sendEmail({ to, subject, html, text }) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM || 'Wahy Wa Namaa <noreply@example.com>',
+        from: process.env.EMAIL_FROM || 'Wahy Wa Namaa <noreply@wahywanamaa.com>',
         to: [to],
         subject,
         html: html || `<p>${text || subject}</p>`,
@@ -91,12 +92,43 @@ async function sendTelegram({ chatId, text }) {
 async function sendWhatsApp({ phone, text }) {
   if (!phone) throw new Error('WhatsApp phone required');
 
+  const digits = cleanPhoneNumber(phone);
+  const cloudApiToken = process.env.WHATSAPP_CLOUD_TOKEN || process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_WHATSAPP_FROM;
 
+  let cloudError = null;
+
+  // 1. Meta WhatsApp Cloud API
+  if (cloudApiToken && phoneNumberId) {
+    if (!digits) throw new Error('Valid WhatsApp phone required');
+    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${cloudApiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: digits,
+        type: 'text',
+        text: { preview_url: true, body: text },
+      }),
+    });
+    if (res.ok) {
+      return { channel: 'sms', sent: true, provider: 'whatsapp-cloud' };
+    }
+    cloudError = await res.text();
+    if (!(sid && authToken && from)) {
+      throw new Error(cloudError || 'WhatsApp Cloud API delivery failed');
+    }
+  }
+
+  // 2. Twilio WhatsApp Fallback
   if (sid && authToken && from) {
-    const digits = String(phone).replace(/\D/g, '');
     if (!digits) throw new Error('Valid WhatsApp phone required');
     const normalizedFrom = from.startsWith('whatsapp:') ? from : `whatsapp:${from}`;
     const body = new URLSearchParams({ From: normalizedFrom, To: `whatsapp:+${digits}`, Body: text });
@@ -116,15 +148,43 @@ async function sendWhatsApp({ phone, text }) {
     return { channel: 'sms', sent: false, provider: 'not-configured' };
   }
 
-  const waLink = `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
+  const waLink = `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
   console.log(`💬 [whatsapp] → ${phone}: ${text?.slice(0, 60)} | ${waLink}`);
   return { channel: 'sms', sent: true, provider: 'console-wa-link', link: waLink };
 }
 
 async function sendPush({ token, title, body, data = {} }) {
   if (!token) throw new Error('Push token required');
-  const fcmKey = process.env.FCM_SERVER_KEY;
 
+  const fcmProjectId = process.env.FCM_PROJECT_ID;
+  const fcmAccessToken = process.env.FCM_ACCESS_TOKEN;
+
+  // 1. FCM HTTP v1 API
+  if (fcmProjectId && fcmAccessToken) {
+    const stringData = {};
+    for (const [k, v] of Object.entries(data || {})) {
+      if (v !== undefined && v !== null) stringData[String(k)] = String(v);
+    }
+    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(fcmProjectId)}/messages:send`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${fcmAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          token,
+          notification: { title, body },
+          data: stringData,
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return { channel: 'push', sent: true, provider: 'fcm-v1' };
+  }
+
+  // 2. Legacy FCM HTTP Key Fallback
+  const fcmKey = process.env.FCM_SERVER_KEY;
   if (fcmKey) {
     const res = await fetch('https://fcm.googleapis.com/fcm/send', {
       method: 'POST',
