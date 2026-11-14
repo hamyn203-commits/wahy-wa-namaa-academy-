@@ -13,6 +13,7 @@ const { protect, authorize } = require('../middleware/auth');
 const { findMockUserById } = require('../mockStore');
 const { isMockMode } = require('../config/runtime');
 const { createGuardianInvitation, expireStaleInvitations, presentStudentInvitation } = require('../services/guardianInvitations');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
@@ -175,6 +176,33 @@ router.delete('/guardian-invitations/:id', protect, authorize('student'), async 
 
     if (!invitation) {
       return res.status(404).json({ error: 'طلب الربط غير موجود أو لا يمكن إلغاؤه' });
+    }
+
+    if (isDBConnected() || User.findById !== mongoose.Model.findById) {
+      const studentUser = await User.findById(req.user.id).select('age enrollmentSection');
+      const isMinor = Boolean(
+        studentUser && (
+          (Number.isFinite(Number(studentUser.age)) && Number(studentUser.age) < 18)
+          || studentUser.enrollmentSection === 'children'
+        )
+      );
+      if (isMinor) {
+        const [hasLinkedGuardian, hasOtherPending] = await Promise.all([
+          Guardian.exists({ 'children.student': req.user.id, isActive: { $ne: false } }),
+          GuardianInvitation.exists({
+            student: req.user.id,
+            status: 'pending',
+            expiresAt: { $gt: new Date() },
+            _id: { $ne: invitation._id },
+          }),
+        ]);
+        if (invitation.source === 'student-registration' || (!hasLinkedGuardian && !hasOtherPending)) {
+          return res.status(403).json({
+            error: 'حسابات الطلاب القُصَّر تتطلب وجود ولي أمر مرتبط أو طلب ربط نشط لحمايتهم',
+            code: 'MINOR_GUARDIAN_SAFEGUARD',
+          });
+        }
+      }
     }
 
     invitation.status = 'cancelled';
@@ -395,7 +423,10 @@ router.get('/matches', protect, authorize('student'), async (req, res) => {
       return res.json({ matches: [] });
     }
 
-    const preference = await StudentTutorPreference.findOne({ student: req.user.id }).lean();
+    const [preference, studentUser] = await Promise.all([
+      StudentTutorPreference.findOne({ student: req.user.id }).lean(),
+      User.findById(req.user.id).select('gender age enrollmentSection').lean(),
+    ]);
     const matching = normalizeMatchingInput(preference?.matching || {});
 
     const teachers = await Teacher.find({
@@ -406,6 +437,7 @@ router.get('/matches', protect, authorize('student'), async (req, res) => {
       .lean();
 
     const matches = teachers
+      .filter((teacher) => assertGenderAndAgeCompatibility(studentUser, teacher).valid)
       .map((teacher) => {
         const result = scoreTutorMatch(teacher, matching);
         return {
@@ -437,7 +469,8 @@ router.get('/teachers', protect, authorize('student'), async (req, res) => {
     })
       .populate({
         path: 'teacher',
-        populate: { path: 'user', select: 'name email avatar' },
+        select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
+        populate: { path: 'user', select: 'name avatar' },
       })
       .sort({ scheduledAt: -1 });
 
@@ -487,6 +520,7 @@ router.get('/evaluations', protect, authorize('student'), async (req, res) => {
     })
       .populate({
         path: 'teacher',
+        select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
         populate: { path: 'user', select: 'name avatar' },
       })
       .sort({ updatedAt: -1 });
@@ -512,6 +546,7 @@ router.get('/recordings', protect, authorize('student'), async (req, res) => {
     })
       .populate({
         path: 'teacher',
+        select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
         populate: { path: 'user', select: 'name avatar' },
       })
       .sort({ scheduledAt: -1 })

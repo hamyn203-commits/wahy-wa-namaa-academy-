@@ -1,9 +1,11 @@
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { validateMagicBytes } = require('../utils/magicBytes');
 const User = require('../models/User');
 const Teacher = require('../models/Teacher');
 const Session = require('../models/Session');
@@ -22,7 +24,11 @@ const AdminAuditLog = require('../models/AdminAuditLog');
 const { protect, authorize } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
 const { logAdminAction } = require('../services/adminAudit');
-const { calculateSessionEarning, ensureSessionEarning } = require('../services/teacherFinance');
+const {
+  calculateSessionEarning,
+  ensureSessionEarning,
+  processTeacherPayout,
+} = require('../services/teacherFinance');
 const { settleSubscriptionUsageForSession } = require('../services/subscriptionUsage');
 
 const coursesUploadDir = path.join(__dirname, '..', 'uploads', 'courses');
@@ -30,11 +36,24 @@ if (process.env.FILE_STORAGE_DRIVER !== 'external') {
   if (!fs.existsSync(coursesUploadDir)) fs.mkdirSync(coursesUploadDir, { recursive: true });
 }
 
+const ADMIN_UPLOAD_MIMES = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+  ['application/pdf', '.pdf'],
+  ['video/mp4', '.mp4'],
+  ['video/webm', '.webm'],
+]);
+
+const ADMIN_UPLOAD_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.mp4', '.webm']);
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
-    const ok = /video|image|pdf|mp4|webm|jpeg|jpg|png/.test(file.mimetype);
+    const mime = String(file.mimetype || '').split(';', 1)[0].trim().toLowerCase();
+    const ext = path.extname(String(file.originalname || '')).toLowerCase();
+    const ok = ADMIN_UPLOAD_MIMES.has(mime) && ADMIN_UPLOAD_EXTENSIONS.has(ext);
     cb(ok ? null : new Error('نوع الملف غير مدعوم'), ok);
   },
 });
@@ -390,7 +409,7 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
         });
       }
 
-      if (session.type === 'group_circle') {
+      if (['group_circle', 'regular'].includes(session.type)) {
         subscriptionUsage = await settleSubscriptionUsageForSession(session);
       }
 
@@ -671,8 +690,8 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
           recitationVideo: PLACEHOLDER,
           teachingMethodVideo: PLACEHOLDER,
         },
-        status: autoApprove ? 'approved' : 'pending',
-        isVerified: Boolean(autoApprove),
+        status: 'pending',
+        isVerified: false,
         hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
         isFeatured: Boolean(isFeatured),
         languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
@@ -680,7 +699,7 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       return res.status(201).json({
         user: { id: mockUser._id, name: mockUser.name, email: mockUser.email },
         teacher: { ...mockTeacher, user: mockUser },
-        reviewRequired: !autoApprove,
+        reviewRequired: true,
       });
     }
 
@@ -745,28 +764,19 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
     });
 
-    if (autoApprove) {
-      teacher.status = 'approved';
-      teacher.isVerified = true;
-      teacher.reviewCompletedAt = new Date();
-      await teacher.save();
-    }
-
     await logAdminAction({
       req,
       action: 'teacher.created-by-admin',
       entityType: 'teacher',
       entityId: teacher._id,
-      reason: autoApprove
-        ? 'تم إنشاء ملف معلم من الإدارة مع اعتماد مباشر.'
-        : 'تم إنشاء ملف معلم من الإدارة بحالة pending.',
+      reason: 'تم إنشاء ملف معلم من الإدارة بحالة pending بانتظار استكمال المراجعة.',
       metadata: { requestedAutoApprove: Boolean(autoApprove), status: teacher.status },
     }).catch(() => {});
 
     res.status(201).json({
       user: { id: user._id, name: user.name, email: user.email },
       teacher,
-      reviewRequired: !autoApprove,
+      reviewRequired: true,
     });
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -789,7 +799,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
         adminDirectOverride = false,
       } = req.body;
 
-      if (status === 'approved' && mockTeacher.status !== 'approved' && !adminDirectOverride) {
+      if (status === 'approved' && mockTeacher.status !== 'approved') {
         return res.status(409).json({
           error: 'اعتماد المعلم يتم فقط من مركز المراجعة بعد إكمال Approval Gate',
           code: 'USE_TEACHER_REVIEW_GATE',
@@ -865,14 +875,14 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       adminDirectOverride = false,
     } = req.body;
 
-    if (status === 'approved' && teacher.status !== 'approved' && !adminDirectOverride) {
+    if (status === 'approved' && teacher.status !== 'approved') {
       return res.status(409).json({
         error: 'اعتماد المعلم يتم فقط من مركز المراجعة بعد إكمال Approval Gate',
         code: 'USE_TEACHER_REVIEW_GATE',
       });
     }
 
-    const userDoc = await User.findById(teacher.user).select('+password');
+    const userDoc = await User.findById(teacher.user).select('+password +refreshTokenVersion +sessionsRevokedAt');
     const resolvedName = String(fullName ?? name ?? personalInfo.fullName ?? '').trim();
     const resolvedEmail = email !== undefined ? String(email).toLowerCase().trim() : undefined;
     const resolvedPhone = phone ?? personalInfo.phone;
@@ -908,14 +918,26 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       if (resolvedAge !== undefined && Number.isFinite(Number(resolvedAge))) {
         userDoc.age = Math.min(80, Math.max(18, Number(resolvedAge)));
       }
+      let shouldRevokeSessions = false;
       if (typeof isActive === 'boolean') {
+        if (isActive === false && userDoc.isActive !== false) {
+          shouldRevokeSessions = true;
+        }
         userDoc.isActive = isActive;
+      }
+      if (status && ['suspended', 'rejected', 'pending', 'under-review'].includes(status) && teacher.status === 'approved') {
+        shouldRevokeSessions = true;
       }
       if (newPassword && String(newPassword).trim()) {
         if (String(newPassword).trim().length < 8) {
           return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
         }
         userDoc.password = String(newPassword).trim();
+        shouldRevokeSessions = true;
+      }
+      if (shouldRevokeSessions) {
+        userDoc.refreshTokenVersion = Number(userDoc.refreshTokenVersion || 0) + 1;
+        userDoc.sessionsRevokedAt = new Date();
       }
       await userDoc.save();
     }
@@ -1056,7 +1078,9 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
       if (userId) deleteMockUser(userId);
       return res.json({ success: true, deletedId: String(req.params.id) });
     }
-    const teacher = await Teacher.findById(req.params.id).populate('user', 'name email role');
+    const teacher = await Teacher.findById(req.params.id)
+      .select('+storageOwner documents media personalInfo status user isVerified')
+      .populate('user', 'name email role');
     if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
 
     const replacementTeacherId = req.body?.replacementTeacherId || req.query?.replacementTeacherId;
@@ -1065,9 +1089,27 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
 
     if (teacherCircles.length > 0) {
       if (replacementTeacherId) {
+        if (String(replacementTeacherId) === String(teacher._id)) {
+          return res.status(400).json({ error: 'لا يمكن تعيين نفس المعلم المحذوف كبديل' });
+        }
         const replacement = await Teacher.findById(replacementTeacherId);
         if (!replacement) {
           return res.status(404).json({ error: 'المعلم البديل غير موجود' });
+        }
+        if (replacement.status !== 'approved' || replacement.isVerified !== true) {
+          return res.status(409).json({
+            error: 'يجب أن يكون المعلم البديل معتمداً وموثقاً قبل نقل الحلقات إليه',
+            code: 'REPLACEMENT_TEACHER_NOT_APPROVED',
+          });
+        }
+        const incompatibleCircle = teacherCircles.find(
+          (circle) => ['male', 'female'].includes(circle.gender) && replacement.personalInfo?.gender !== circle.gender
+        );
+        if (incompatibleCircle) {
+          return res.status(409).json({
+            error: 'جنس المعلم البديل غير متوافق مع جنس إحدى الحلقات المسجلة',
+            code: 'GENDER_SEPARATION_VIOLATION',
+          });
         }
         await GroupCircle.updateMany({ teacher: teacher._id }, { $set: { teacher: replacement._id } });
       } else {
@@ -1103,6 +1145,16 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
     const teacherEmail = teacher.user?.email || '';
     const linkedUserId = teacher.user?._id || teacher.user;
 
+    try {
+      const { resolveOwnedTeacherAssets } = require('../utils/teacherAssetLifecycle');
+      const lifecycle = resolveOwnedTeacherAssets({ teacher, user: teacher.user });
+      await Promise.allSettled(
+        (lifecycle.resolved || []).map((asset) => objectStorage.deleteOwnedObject(asset.reference, asset.purpose, asset.owner))
+      );
+    } catch {
+      // Best-effort storage purge during hard delete; do not block DB account removal if legacy refs exist.
+    }
+
     await Teacher.findByIdAndDelete(teacher._id);
     if (linkedUserId) {
       await User.deleteOne({ _id: linkedUserId, role: 'teacher' });
@@ -1123,7 +1175,15 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
   }
 });
 
-router.post('/upload', protect, authorize('admin', 'teacher'), upload.single('file'), async (req, res) => {
+router.post('/upload', protect, authorize('admin'), (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({ error: safeErrorMessage(err, status) });
+    }
+    return next();
+  });
+}, async (req, res) => {
   const directFile = req.body?.storageFile && typeof req.body.storageFile === 'object'
     ? req.body.storageFile
     : null;
@@ -1132,19 +1192,34 @@ router.post('/upload', protect, authorize('admin', 'teacher'), upload.single('fi
     if (!objectStorage.isOwnedObjectReference(directFile.url, 'course-media', req.user.id)) {
       return res.status(400).json({ error: 'Invalid uploaded media reference' });
     }
+    const directMime = String(directFile.contentType || '').split(';', 1)[0].trim().toLowerCase();
+    const directExt = path.extname(objectStorage.extractPathname(directFile.url)).toLowerCase();
+    if (!ADMIN_UPLOAD_MIMES.has(directMime) || !ADMIN_UPLOAD_EXTENSIONS.has(directExt)) {
+      return res.status(400).json({ error: 'نوع الملف غير مدعوم' });
+    }
     return res.json({
       url: objectStorage.publicProxyUrl(directFile.url),
       source: objectStorage.getDriver(),
-      filename: directFile.name,
-      mimetype: directFile.contentType,
-      size: directFile.size,
+      filename: String(directFile.name || 'media').slice(0, 180),
+      mimetype: directMime,
+      size: Number(directFile.size || 0),
     });
   }
 
   if (!req.file) return res.status(400).json({ error: 'لم يُرفع ملف' });
-  const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(req.file.originalname)}`;
+  const normalizedMime = String(req.file.mimetype || '').split(';', 1)[0].trim().toLowerCase();
+  const canonicalExt = ADMIN_UPLOAD_MIMES.get(normalizedMime);
+  if (!canonicalExt) {
+    return res.status(400).json({ error: 'نوع الملف غير مدعوم' });
+  }
+  const magicCheck = validateMagicBytes(req.file.buffer, normalizedMime);
+  if (!magicCheck.valid) {
+    return res.status(400).json({ error: 'محتوى الملف لا يطابق الصيغة المعلنة', code: 'INVALID_FILE_MAGIC_BYTES' });
+  }
+
+  const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${canonicalExt}`;
   try {
-    if (process.env.FILE_STORAGE_DRIVER === 'external') {
+    if (process.env.FILE_STORAGE_DRIVER === 'external' || ['vercel-blob', 's3'].includes(objectStorage.getDriver())) {
       return res.status(503).json({ error: 'External file storage is not configured yet', code: 'FILE_STORAGE_NOT_READY' });
     }
 
@@ -1152,7 +1227,7 @@ router.post('/upload', protect, authorize('admin', 'teacher'), upload.single('fi
     fs.writeFileSync(filePath, req.file.buffer);
     const rel = `/uploads/courses/${filename}`;
     const url = `${API_PUBLIC}${rel}`;
-    return res.json({ url, path: rel, source: 'local', filename, mimetype: req.file.mimetype, size: req.file.size });
+    return res.json({ url, path: rel, source: 'local', filename, mimetype: normalizedMime, size: req.file.size });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -1376,15 +1451,32 @@ router.delete('/blog/:id', protect, authorize('admin'), async (req, res) => {
 });
 
 router.get('/withdrawals', protect, authorize('admin'), async (req, res) => {
-  if (isMockMode && !isDBConnected()) {
+  if (isMockMode && !isDBConnected() && process.env.FORCE_REAL_FINANCE_IN_TEST !== 'true') {
     return res.json({ withdrawals: [] });
   }
   try {
-    const status = req.query.status || 'pending';
-    const filter = status === 'all' ? {} : { status };
-    const withdrawals = await WithdrawRequest.find(filter)
+    const rawStatus = String(req.query.status || 'pending').trim();
+    const mappedStatus = rawStatus === 'approved' ? 'completed' : rawStatus;
+    const filter = {
+      type: 'payout',
+      ...(mappedStatus === 'all' ? {} : { status: mappedStatus }),
+    };
+    const entries = await TeacherLedger.find(filter)
       .populate({ path: 'teacher', populate: { path: 'user', select: 'name email' } })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+    const withdrawals = entries.map((entry) => ({
+      ...entry,
+      method: entry.payoutMethod === 'bank_transfer' ? 'bank' : entry.payoutMethod,
+      accountInfo: entry.payoutDetails?.phone
+        || entry.payoutDetails?.ipaAddress
+        || entry.payoutDetails?.bankAccountNumber
+        || entry.payoutDetails?.paypalEmail
+        || '',
+      status: entry.status === 'completed' ? 'approved' : entry.status,
+      adminNote: entry.notes || '',
+    }));
     res.json({ withdrawals });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -1392,7 +1484,7 @@ router.get('/withdrawals', protect, authorize('admin'), async (req, res) => {
 });
 
 router.patch('/withdrawals/:id', protect, authorize('admin'), async (req, res) => {
-  if (isMockMode && !isDBConnected()) {
+  if (isMockMode && !isDBConnected() && process.env.FORCE_REAL_FINANCE_IN_TEST !== 'true') {
     return res.json({
       success: true,
       withdrawal: {
@@ -1403,35 +1495,63 @@ router.patch('/withdrawals/:id', protect, authorize('admin'), async (req, res) =
     });
   }
   try {
-    const { action, adminNote } = req.body;
-    const withdrawal = await WithdrawRequest.findById(req.params.id);
-    if (!withdrawal) return res.status(404).json({ error: 'طلب غير موجود' });
-    if (withdrawal.status !== 'pending') {
-      return res.status(400).json({ error: 'تمت معالجة هذا الطلب مسبقاً' });
-    }
-
-    const teacher = await Teacher.findById(withdrawal.teacher);
-    if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
-
-    if (action === 'approve') {
-      if (teacher.earnings.pendingEarnings < withdrawal.amount) {
-        return res.status(400).json({ error: 'رصيد المعلم غير كافٍ' });
-      }
-      teacher.earnings.pendingEarnings -= withdrawal.amount;
-      teacher.earnings.withdrawnEarnings += withdrawal.amount;
-      await teacher.save();
-      withdrawal.status = 'approved';
-    } else if (action === 'reject') {
-      withdrawal.status = 'rejected';
-    } else {
+    const { action, adminNote, referenceNumber, receiptUrl } = req.body || {};
+    const targetStatus = action === 'approve'
+      ? 'completed'
+      : action === 'reject'
+        ? 'rejected'
+        : action === 'processing'
+          ? 'processing'
+          : null;
+    if (!targetStatus) {
       return res.status(400).json({ error: 'action يجب أن يكون approve أو reject' });
     }
 
-    if (adminNote) withdrawal.adminNote = adminNote;
-    await withdrawal.save();
-    res.json({ success: true, withdrawal });
+    const payout = await processTeacherPayout({
+      payoutId: req.params.id,
+      targetStatus,
+      adminUserId: req.user.id,
+      referenceNumber,
+      receiptUrl,
+      notes: adminNote,
+    });
+
+    await logAdminAction({
+      req,
+      action: 'payout_processed',
+      entityType: 'TeacherLedger',
+      entityId: payout._id,
+      reason: String(adminNote || '').trim().slice(0, 500) || `معالجة سحب أرباح (${targetStatus})`,
+      metadata: {
+        status: targetStatus,
+        amount: payout.amount,
+        currency: payout.currency,
+        teacherId: payout.teacher?._id || payout.teacher,
+        payoutMethod: payout.payoutMethod,
+        referenceNumber: payout.referenceNumber,
+      },
+    }).catch(() => {});
+
+    res.json({
+      success: true,
+      withdrawal: {
+        _id: payout._id,
+        teacher: payout.teacher,
+        amount: payout.amount,
+        currency: payout.currency,
+        method: payout.payoutMethod === 'bank_transfer' ? 'bank' : payout.payoutMethod,
+        status: payout.status === 'completed' ? 'approved' : payout.status,
+        adminNote: payout.notes || '',
+        referenceNumber: payout.referenceNumber || '',
+      },
+      payout,
+    });
   } catch (error) {
-    res.status(400).json({ error: safeErrorMessage(error, 400) });
+    const status = error?.status || 400;
+    res.status(status).json({
+      error: error?.publicMessage || safeErrorMessage(error, status),
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 

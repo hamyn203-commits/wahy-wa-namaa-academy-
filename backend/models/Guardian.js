@@ -113,7 +113,7 @@ const GuardianSchema = new mongoose.Schema({
   settings: {
     language: {
       type: String,
-      enum: ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms'],
+      enum: ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'],
       default: 'ar'
     },
     timezone: {
@@ -215,6 +215,9 @@ GuardianSchema.methods.generateReport = function(childId, type = 'weekly') {
       };
 
       this.reports.push(report);
+      if (this.reports.length > 50) {
+        this.reports = this.reports.slice(-50);
+      }
       return this.save();
     });
 };

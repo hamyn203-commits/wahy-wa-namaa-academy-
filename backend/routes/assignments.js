@@ -2,42 +2,78 @@ const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const { Assignment, AssignmentSubmission } = require('../models/Assignment');
+const Course = require('../models/Course');
 const Enrollment = require('../models/Enrollment');
 const Teacher = require('../models/Teacher');
 const objectStorage = require('../services/objectStorage');
 const { deleteStoredReference } = require('../utils/storageLifecycle');
+const { PURPOSES, normalizeContentType } = require('../config/uploadPolicy');
+const { validateMagicBytes } = require('../utils/magicBytes');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
-const externalStorage = process.env.FILE_STORAGE_DRIVER === 'external';
+const externalStorage =
+  process.env.FILE_STORAGE_DRIVER === 'external' ||
+  ['vercel-blob', 's3'].includes(objectStorage.getDriver());
 const ASSIGNMENT_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'assignments');
 
 const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/assignments');
+    if (!fs.existsSync(ASSIGNMENT_UPLOAD_ROOT)) {
+      fs.mkdirSync(ASSIGNMENT_UPLOAD_ROOT, { recursive: true });
+    }
+    cb(null, ASSIGNMENT_UPLOAD_ROOT);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const cleanExt = path.extname(String(file.originalname || '')).toLowerCase().replace(/[^.a-z0-9]/g, '');
+    cb(null, uniqueSuffix + cleanExt);
   }
 });
 
 const upload = multer({
   storage: externalStorage ? multer.memoryStorage() : diskStorage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|pdf|doc|docx|mp3|mp4|wav|ogg|webm/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    
-    if (extname && mimetype) {
+    const allowedExts = new Set(['jpeg', 'jpg', 'png', 'pdf', 'mp3', 'mp4', 'wav', 'webm']);
+    const ext = path.extname(String(file.originalname || '')).toLowerCase().replace('.', '');
+    const normalizedMime = normalizeContentType(file.mimetype);
+    if (allowedExts.has(ext) && PURPOSES.assignment.types.includes(normalizedMime)) {
       cb(null, true);
     } else {
       cb(new Error('File type not allowed'));
     }
   }
 });
+
+const ALLOWED_ASSIGNMENT_FIELDS = [
+  'title',
+  'description',
+  'course',
+  'lesson',
+  'type',
+  'instructions',
+  'dueDate',
+  'points',
+  'attachments',
+  'submissionTypes',
+  'maxFileSize',
+  'allowedFileTypes',
+  'rubric',
+  'status',
+];
+
+function pickAssignmentFields(source = {}) {
+  const out = {};
+  for (const key of ALLOWED_ASSIGNMENT_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      out[key] = source[key];
+    }
+  }
+  return out;
+}
 
 function safeSubmission(doc) {
   const value = typeof doc?.toObject === 'function' ? doc.toObject() : { ...doc };
@@ -59,6 +95,7 @@ async function streamPrivateFile(res, req, reference) {
     if (result.statusCode === 304) return res.status(304).end();
 
     res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
@@ -80,7 +117,12 @@ async function streamPrivateFile(res, req, reference) {
   if (!absolute.startsWith(allowedRoot + path.sep)) {
     return res.status(404).json({ error: 'File not found' });
   }
+  if (!fs.existsSync(absolute)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
 
+  res.setHeader('Content-Disposition', 'attachment');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, no-store');
   return res.sendFile(absolute);
 }
@@ -91,7 +133,9 @@ async function streamPrivateFile(res, req, reference) {
 router.get('/', protect, attachTeacherProfile, authorize('student', 'teacher', 'admin'), async (req, res) => {
   try {
     const { courseId, status = 'published' } = req.query;
-    const filter = { status };
+    const allowedStatuses = ['draft', 'published', 'archived'];
+    const safeStatus = allowedStatuses.includes(status) ? status : 'published';
+    const filter = { status: req.user.role === 'student' ? 'published' : safeStatus };
 
     if (req.user.role === 'student') {
       const enrollmentFilter = {
@@ -159,6 +203,9 @@ router.get('/:id', protect, attachTeacherProfile, authorize('student', 'teacher'
     }
 
     if (req.user.role === 'student') {
+      if (assignment.status !== 'published') {
+        return res.status(404).json({ error: 'Assignment not found' });
+      }
       const enrollment = await Enrollment.exists({
         student: req.user.id,
         course: assignment.course?._id || assignment.course,
@@ -188,10 +235,28 @@ router.get('/:id', protect, attachTeacherProfile, authorize('student', 'teacher'
 // @access  Private (Teacher/Admin)
 router.post('/', protect, attachTeacherProfile, authorize('teacher', 'admin'), async (req, res) => {
   try {
+    if (req.user.role === 'teacher') {
+      if (!req.user.teacherProfile) {
+        return res.status(403).json({ error: 'Teacher profile is required' });
+      }
+      const ownsCourse = await Course.exists({
+        _id: req.body?.course,
+        instructor: req.user.teacherProfile,
+      });
+      if (!ownsCourse) {
+        return res.status(403).json({ error: 'You can only create assignments for your own courses' });
+      }
+    } else if (!await Course.exists({ _id: req.body?.course })) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
     const assignmentData = {
-      ...req.body,
-      instructor: req.user.role === 'teacher' ? req.user.teacherProfile : req.body.instructor
+      ...pickAssignmentFields(req.body || {}),
+      instructor: req.user.role === 'teacher' ? req.user.teacherProfile : req.body?.instructor
     };
+    if (assignmentData.status === 'published') {
+      assignmentData.publishedAt = new Date();
+    }
 
     const assignment = new Assignment(assignmentData);
     await assignment.save();
@@ -218,11 +283,30 @@ router.put('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin'),
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    if (req.user.role === 'teacher' && assignment.instructor.toString() !== req.user.teacherProfile.toString()) {
+    if (req.user.role === 'teacher' && assignment.instructor.toString() !== String(req.user.teacherProfile || '')) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    Object.assign(assignment, req.body);
+    const updates = pickAssignmentFields(req.body || {});
+    if (req.user.role === 'teacher') {
+      if (updates.course && String(updates.course) !== String(assignment.course)) {
+        const ownsTargetCourse = await Course.exists({
+          _id: updates.course,
+          instructor: req.user.teacherProfile,
+        });
+        if (!ownsTargetCourse) {
+          return res.status(403).json({ error: 'You can only move assignments to your own courses' });
+        }
+      }
+    } else if (req.body?.instructor) {
+      updates.instructor = req.body.instructor;
+    }
+
+    if (updates.status === 'published' && assignment.status !== 'published') {
+      updates.publishedAt = new Date();
+    }
+
+    Object.assign(assignment, updates);
     await assignment.save();
 
     res.json(assignment);
@@ -243,7 +327,7 @@ router.delete('/:id', protect, attachTeacherProfile, authorize('teacher', 'admin
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    if (req.user.role === 'teacher' && assignment.instructor.toString() !== req.user.teacherProfile.toString()) {
+    if (req.user.role === 'teacher' && assignment.instructor.toString() !== String(req.user.teacherProfile || '')) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
@@ -271,7 +355,7 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
   try {
     const assignment = await Assignment.findById(req.params.id);
 
-    if (!assignment) {
+    if (!assignment || assignment.status !== 'published') {
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
@@ -331,6 +415,18 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
           code: 'DIRECT_UPLOAD_REQUIRED'
         });
       }
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        const normalizedMime = normalizeContentType(req.file.mimetype);
+        const fd = fs.openSync(req.file.path, 'r');
+        const header = Buffer.alloc(64);
+        const bytesRead = fs.readSync(fd, header, 0, 64, 0);
+        fs.closeSync(fd);
+        const magicCheck = validateMagicBytes(header.subarray(0, bytesRead), normalizedMime);
+        if (!magicCheck.valid) {
+          try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+          return res.status(400).json({ error: 'Invalid assignment file signature', code: 'INVALID_FILE_MAGIC_BYTES' });
+        }
+      }
       submissionData.content.file = {
         name: req.file.originalname,
         url: req.file.path,
@@ -339,9 +435,15 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
       };
       submissionData.submissionType = 'file';
     } else if (req.body.text) {
-      submissionData.content.text = req.body.text;
+      submissionData.content.text = String(req.body.text).slice(0, 20000);
     } else if (req.body.url) {
-      submissionData.content.url = req.body.url;
+      try {
+        const parsed = new URL(String(req.body.url));
+        if (parsed.protocol !== 'https:') throw new Error('https required');
+        submissionData.content.url = parsed.toString().slice(0, 1000);
+      } catch {
+        return res.status(400).json({ error: 'Submission URL must be a valid HTTPS link' });
+      }
     }
 
     const submission = new AssignmentSubmission(submissionData);
@@ -387,12 +489,17 @@ router.get('/submissions/:submissionId/file', protect, attachTeacherProfile, asy
 router.delete('/submissions/:submissionId', protect, authorize('student', 'admin'), async (req, res) => {
   try {
     const submission = await AssignmentSubmission.findById(req.params.submissionId)
-      .select('assignment student content.file');
+      .select('assignment student status content.file');
 
     if (!submission) return res.status(404).json({ error: 'Submission not found' });
 
-    if (req.user.role === 'student' && String(submission.student) !== String(req.user.id)) {
-      return res.status(403).json({ error: 'Not authorized to delete this submission' });
+    if (req.user.role === 'student') {
+      if (String(submission.student) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Not authorized to delete this submission' });
+      }
+      if (['graded', 'returned'].includes(submission.status)) {
+        return res.status(400).json({ error: 'Graded submissions cannot be deleted' });
+      }
     }
 
     const reference = submission.content?.file?.url;
@@ -466,10 +573,16 @@ router.put('/submissions/:submissionId/grade', protect, attachTeacherProfile, au
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    const maxScore = Math.max(1, Number(submission.assignment.points) || 100);
+    const numericScore = Number(score);
+    if (!Number.isFinite(numericScore) || numericScore < 0 || numericScore > maxScore) {
+      return res.status(400).json({ error: `Score must be between 0 and ${maxScore}` });
+    }
+
     submission.grade = {
-      score,
-      maxScore: submission.assignment.points,
-      percentage: (score / submission.assignment.points) * 100,
+      score: numericScore,
+      maxScore,
+      percentage: Math.round((numericScore / maxScore) * 10000) / 100,
       feedback,
       gradedBy: req.user.role === 'teacher' ? req.user.teacherProfile : req.body.gradedBy,
       gradedAt: new Date()

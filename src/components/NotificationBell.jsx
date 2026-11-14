@@ -3,9 +3,26 @@ import { Bell, CheckCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useI18n } from '../i18n';
-import { localizeInternalHref } from '../lib/navigation';
+import { isSafeInternalRedirect, localizeInternalHref } from '../lib/navigation';
 import { useToast } from '../context/ToastProvider';
 import { Room, RoomEvent } from 'livekit-client';
+
+const TRUSTED_ACADEMY_HOSTS = new Set(['wahywanamaa.com', 'www.wahywanamaa.com']);
+
+function isSafeNotificationTarget(rawUrl) {
+  if (typeof rawUrl !== 'string') return false;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return false;
+  if (isSafeInternalRedirect(trimmed)) return true;
+  try {
+    const parsed = new URL(trimmed);
+    const sameOrigin = typeof window !== 'undefined' && parsed.origin === window.location.origin;
+    const trustedHost = parsed.protocol === 'https:' && TRUSTED_ACADEMY_HOSTS.has(parsed.hostname.toLowerCase());
+    return sameOrigin || trustedHost;
+  } catch {
+    return false;
+  }
+}
 
 function pickText(obj, locale = 'ar') {
   if (!obj) return '';
@@ -178,10 +195,10 @@ export default function NotificationBell() {
   };
 
   const getNotificationLink = (notification) => {
-    if (notification.data?.meetingLink) {
+    if (notification.data?.meetingLink && isSafeNotificationTarget(notification.data.meetingLink)) {
       return localizeInternalHref(notification.data.meetingLink, locale);
     }
-    if (notification.data?.actionUrl) {
+    if (notification.data?.actionUrl && isSafeNotificationTarget(notification.data.actionUrl)) {
       return localizeInternalHref(notification.data.actionUrl, locale);
     }
     const links = {
@@ -194,7 +211,7 @@ export default function NotificationBell() {
     return localizeInternalHref(links[notification.type] || '/notifications', locale);
   };
 
-  const isExternal = (url) => url?.startsWith('http');
+  const isExternal = (url) => typeof url === 'string' && url.startsWith('https://');
 
   return (
     <div className="relative">

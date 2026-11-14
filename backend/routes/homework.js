@@ -15,9 +15,13 @@ const path = require('path');
 const fs = require('fs');
 
 const { isMockMode } = require('../config/runtime');
+const { PURPOSES, normalizeContentType } = require('../config/uploadPolicy');
+const { validateMagicBytes } = require('../utils/magicBytes');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 
-const externalStorage = process.env.FILE_STORAGE_DRIVER === 'external';
+const externalStorage =
+  process.env.FILE_STORAGE_DRIVER === 'external' ||
+  ['vercel-blob', 's3'].includes(objectStorage.getDriver());
 const HOMEWORK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'homework');
 
 const diskStorage = multer.diskStorage({
@@ -28,23 +32,25 @@ const diskStorage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const cleanExt = path.extname(String(file.originalname || '')).toLowerCase().replace(/[^.a-z0-9]/g, '');
+    cb(null, uniqueSuffix + cleanExt);
   }
 });
 
 const upload = multer({
   storage: externalStorage ? multer.memoryStorage() : diskStorage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /mp3|wav|ogg|m4a|webm|aac|flac/;
-    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
-    const isMimeAudio = file.mimetype && file.mimetype.startsWith('audio/');
-    const isExtAudio = allowedTypes.test(ext);
+    const allowedExts = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'aac', 'mp4', 'pdf', 'jpg', 'jpeg', 'png', 'webp']);
+    const ext = path.extname(String(file.originalname || '')).toLowerCase().replace('.', '');
+    const normalizedMime = normalizeContentType(file.mimetype);
+    const isAllowedMime = PURPOSES.homework.types.includes(normalizedMime);
+    const isAllowedExt = allowedExts.has(ext);
     
-    if (isExtAudio || isMimeAudio) {
+    if (isAllowedExt && isAllowedMime) {
       cb(null, true);
     } else {
-      cb(new Error('Only audio files are allowed (mp3, wav, ogg, m4a, webm, aac)'));
+      cb(new Error('Unsupported homework file type'));
     }
   }
 });
@@ -67,6 +73,7 @@ async function streamPrivateFile(res, req, reference) {
     if (result.statusCode === 304) return res.status(304).end();
 
     res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
@@ -90,6 +97,8 @@ async function streamPrivateFile(res, req, reference) {
   }
   if (!fs.existsSync(absolute)) return res.status(404).json({ error: 'File not found' });
 
+  res.setHeader('Content-Disposition', 'attachment');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, no-store');
   return res.sendFile(absolute);
 }
@@ -240,12 +249,17 @@ router.get('/tasks/:id/file', protect, async (req, res) => {
 router.delete('/submissions/:id', protect, authorize('student', 'admin'), async (req, res) => {
   try {
     const submission = await HomeworkSubmission.findById(req.params.id)
-      .select('student sessionId homeworkId filePath');
+      .select('student sessionId homeworkId filePath status');
 
     if (!submission) return res.status(404).json({ error: 'Submission not found' });
 
-    if (req.user.role === 'student' && String(submission.student) !== String(req.user.id)) {
-      return res.status(403).json({ error: 'Not authorized to delete this submission' });
+    if (req.user.role === 'student') {
+      if (String(submission.student) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Not authorized to delete this submission' });
+      }
+      if (submission.status && submission.status !== 'submitted') {
+        return res.status(400).json({ error: 'Reviewed homework submissions cannot be deleted' });
+      }
     }
 
     await deleteStoredReference({
@@ -284,8 +298,13 @@ router.delete('/tasks/:id/submission', protect, authorize('student', 'admin'), a
     if (!task) return res.status(404).json({ error: 'Task not found' });
     if (!task.submissionFile) return res.status(404).json({ error: 'Submission file not found' });
 
-    if (req.user.role === 'student' && String(task.student) !== String(req.user.id)) {
-      return res.status(403).json({ error: 'Not authorized to delete this submission' });
+    if (req.user.role === 'student') {
+      if (String(task.student) !== String(req.user.id)) {
+        return res.status(403).json({ error: 'Not authorized to delete this submission' });
+      }
+      if (!['pending', 'submitted'].includes(task.status)) {
+        return res.status(400).json({ error: 'Reviewed task submissions cannot be deleted' });
+      }
     }
 
     await deleteStoredReference({
@@ -329,6 +348,19 @@ router.post('/:homeworkId/submit', protect, authorize('student'), upload.single(
 
       if (!validReference) {
         return res.status(400).json({ error: 'Invalid homework upload reference' });
+      }
+    }
+
+    if (!directFile && req.file && req.file.path && fs.existsSync(req.file.path)) {
+      const normalizedMime = normalizeContentType(req.file.mimetype);
+      const fd = fs.openSync(req.file.path, 'r');
+      const header = Buffer.alloc(64);
+      const bytesRead = fs.readSync(fd, header, 0, 64, 0);
+      fs.closeSync(fd);
+      const magicCheck = validateMagicBytes(header.subarray(0, bytesRead), normalizedMime);
+      if (!magicCheck.valid) {
+        try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+        return res.status(400).json({ error: 'Invalid homework file signature', code: 'INVALID_FILE_MAGIC_BYTES' });
       }
     }
 

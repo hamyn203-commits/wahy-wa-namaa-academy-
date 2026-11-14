@@ -7,6 +7,13 @@ const Lesson = require('../models/Lesson');
 const Course = require('../models/Course');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
 
+function maskDisplayName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'طالب وحي ونماء';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0)}.`;
+}
+
 // @route   GET /api/progress/my-progress
 // @desc    Get progress for all enrolled courses
 // @access  Private (Student)
@@ -74,10 +81,41 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       _id: lessonId,
       course: courseId,
       isPublished: true
-    }).select('_id');
+    }).select('_id type content.quiz content.assignment');
 
     if (!lesson) {
       return res.status(404).json({ error: 'Lesson does not belong to this course' });
+    }
+
+    if (status === 'completed') {
+      if (lesson.type === 'quiz' || lesson.content?.quiz) {
+        if (!lesson.content?.quiz) {
+          return res.status(400).json({ error: 'Quiz must be passed before completing this lesson' });
+        }
+        const { QuizAttempt } = require('../models/Quiz');
+        const passed = await QuizAttempt.exists({
+          quiz: lesson.content.quiz,
+          student: req.user.id,
+          isPassed: true,
+        });
+        if (!passed) {
+          return res.status(400).json({ error: 'Quiz must be passed before completing this lesson', code: 'QUIZ_NOT_PASSED' });
+        }
+      }
+      if (lesson.type === 'assignment' || lesson.content?.assignment) {
+        if (!lesson.content?.assignment) {
+          return res.status(400).json({ error: 'Assignment must be submitted before completing this lesson' });
+        }
+        const { AssignmentSubmission } = require('../models/Assignment');
+        const submitted = await AssignmentSubmission.exists({
+          assignment: lesson.content.assignment,
+          student: req.user.id,
+          status: { $in: ['submitted', 'graded', 'late'] },
+        });
+        if (!submitted) {
+          return res.status(400).json({ error: 'Assignment must be submitted before completing this lesson', code: 'ASSIGNMENT_REQUIRED' });
+        }
+      }
     }
 
     const enrollment = await Enrollment.findOne({
@@ -96,7 +134,7 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
     });
 
     if (!progress) {
-      const lessons = await Lesson.find({ course: courseId }).select('_id');
+      const lessons = await Lesson.find({ course: courseId, isPublished: true }).select('_id');
       progress = new Progress({
         student: req.user.id,
         course: courseId,
@@ -111,9 +149,16 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       });
     }
 
-    await progress.updateLessonProgress(lessonId, status, numericScore, numericTimeSpent);
+    const wasAlreadyCompleted = Array.isArray(progress.lessonProgress)
+      && progress.lessonProgress.some(
+        (lp) => String(lp.lesson) === String(lessonId) && lp.status === 'completed'
+      );
+    const hadWeekStreakMilestone = Array.isArray(progress.milestones)
+      && progress.milestones.some((m) => m.badge === 'week-streak');
 
-    if (status === 'completed') {
+    await progress.updateLessonProgress(String(lessonId), status, numericScore, numericTimeSpent);
+
+    if (status === 'completed' && !wasAlreadyCompleted) {
       await progress.addMilestone(
         'lesson-completed',
         { ar: 'أكملت درساً', en: 'Lesson Completed' },
@@ -122,7 +167,7 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       );
     }
 
-    if (progress.streak.current === 7) {
+    if (progress.streak.current === 7 && !hadWeekStreakMilestone) {
       await progress.addMilestone(
         'streak',
         { ar: 'أسبوع متواصل!', en: 'Week Streak!' },
@@ -185,7 +230,9 @@ router.get('/analytics', protect, authorize('student'), async (req, res) => {
     const totalCourses = progress.length;
     const completedCourses = progress.filter(p => p.overallProgress.percentage === 100).length;
     const totalTimeSpent = progress.reduce((sum, p) => sum + p.overallProgress.totalTimeSpent, 0);
-    const averageScore = progress.reduce((sum, p) => sum + p.overallProgress.averageScore, 0) / totalCourses;
+    const averageScore = totalCourses > 0
+      ? progress.reduce((sum, p) => sum + (p.overallProgress.averageScore || 0), 0) / totalCourses
+      : 0;
     
     const currentStreak = Math.max(...progress.map(p => p.streak.current), 0);
     const longestStreak = Math.max(...progress.map(p => p.streak.longest), 0);
@@ -320,13 +367,11 @@ router.get('/leaderboard', protect, async (req, res) => {
     const { type = 'points' } = req.query;
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
 
-    let sortBy = {};
-    if (type === 'points') {
-      sortBy = { 'milestones.points': -1 };
-    } else if (type === 'streak') {
-      sortBy = { 'streak.longest': -1 };
+    let sortBy = { totalPoints: -1 };
+    if (type === 'streak') {
+      sortBy = { longestStreak: -1 };
     } else if (type === 'courses') {
-      sortBy = { 'overallProgress.percentage': -1 };
+      sortBy = { completedCourses: -1 };
     }
 
     const leaderboard = await Progress.aggregate([
@@ -342,6 +387,8 @@ router.get('/leaderboard', protect, async (req, res) => {
           }
         }
       },
+      { $sort: sortBy },
+      { $limit: limit },
       {
         $lookup: {
           from: 'users',
@@ -353,19 +400,26 @@ router.get('/leaderboard', protect, async (req, res) => {
       { $unwind: '$student' },
       {
         $project: {
-          _id: 1,
+          _id: 0,
           name: '$student.name',
           avatar: '$student.avatar',
           totalPoints: 1,
           longestStreak: 1,
           completedCourses: 1
         }
-      },
-      { $sort: sortBy },
-      { $limit: limit }
+      }
     ]);
 
-    res.json(leaderboard);
+    const safeLeaderboard = leaderboard.map((row, idx) => ({
+      rank: idx + 1,
+      name: req.user?.role === 'admin' ? row.name : maskDisplayName(row.name),
+      avatar: row.avatar || '',
+      totalPoints: row.totalPoints,
+      longestStreak: row.longestStreak,
+      completedCourses: row.completedCourses,
+    }));
+
+    res.json(safeLeaderboard);
   } catch (error) {
     console.error('Get leaderboard error:', error);
     res.status(500).json({ error: 'Failed to fetch leaderboard' });

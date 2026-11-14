@@ -5,8 +5,8 @@ const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 let keyCache = { keys: [], expiresAt: 0 };
 
-async function googleKeys() {
-  if (Date.now() < keyCache.expiresAt && keyCache.keys.length) return keyCache.keys;
+async function googleKeys(forceRefresh = false) {
+  if (!forceRefresh && Date.now() < keyCache.expiresAt && keyCache.keys.length) return keyCache.keys;
   const response = await fetch(GOOGLE_JWKS_URL, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error('Google verification unavailable');
   const data = await response.json();
@@ -41,8 +41,12 @@ async function verifyGoogleCredential(credential, clientId) {
     || !payload.sub || !payload.email || payload.email_verified !== true) {
     throw new Error('Invalid or expired Google credential');
   }
-  const key = (await googleKeys()).find((item) =>
+  let key = (await googleKeys(false)).find((item) =>
     item.kid === header.kid && item.kty === 'RSA' && item.use === 'sig');
+  if (!key) {
+    key = (await googleKeys(true)).find((item) =>
+      item.kid === header.kid && item.kty === 'RSA' && item.use === 'sig');
+  }
   if (!key) throw new Error('Google key unavailable');
   const publicKey = crypto.createPublicKey({ key, format: 'jwk' });
   const verifier = crypto.createVerify('RSA-SHA256');

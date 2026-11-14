@@ -111,7 +111,24 @@ StudentSubscriptionSchema.index({ status: 1, createdAt: -1 });
 StudentSubscriptionSchema.index({ preferredTeacher: 1, status: 1 });
 StudentSubscriptionSchema.index(
   { renewalOf: 1 },
-  { unique: true, partialFilterExpression: { renewalOf: { $type: 'objectId' } } }
+  {
+    unique: true,
+    partialFilterExpression: {
+      renewalOf: { $type: 'objectId' },
+      status: {
+        $in: [
+          'pending_payment',
+          'payment_review',
+          'renewal_queued',
+          'awaiting_placement',
+          'placed',
+          'active',
+          'paused',
+          'completed',
+        ],
+      },
+    },
+  }
 );
 
 StudentSubscriptionSchema.pre('validate', function(next) {

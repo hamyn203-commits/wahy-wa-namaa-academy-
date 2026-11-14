@@ -6,6 +6,7 @@ const PaymentWebhookEvent = require('../models/PaymentWebhookEvent');
 const Enrollment = require('../models/Enrollment');
 const Progress = require('../models/Progress');
 const Course = require('../models/Course');
+const Certificate = require('../models/Certificate');
 const { assertPaymentTransition } = require('../utils/paymentIntegrity');
 
 function majorAmount(amountMinor) {
@@ -70,6 +71,10 @@ async function applyPaymobTransaction({
 
   if (classification === 'succeeded') {
     if (payment.status !== 'succeeded') {
+      if (payment.status === 'created') {
+        assertPaymentTransition('created', 'pending');
+        payment.status = 'pending';
+      }
       assertPaymentTransition(payment.status, 'succeeded');
       payment.status = 'succeeded';
       payment.settledAt = new Date();
@@ -104,6 +109,10 @@ async function applyPaymobTransaction({
     if (payment.status === 'cancelled') {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
+    if (payment.status === 'created') {
+      assertPaymentTransition('created', 'pending');
+      payment.status = 'pending';
+    }
     assertPaymentTransition(payment.status, 'cancelled');
     payment.status = 'cancelled';
     payment.cancelledAt = new Date();
@@ -128,9 +137,36 @@ async function applyPaymobTransaction({
     }).session(session);
 
     if (enrollment) {
+      const wasActive = enrollment.status !== 'cancelled';
       enrollment.status = 'cancelled';
       enrollment.payment.status = 'refunded';
       await enrollment.save({ session });
+
+      if (wasActive && payment.course) {
+        await Course.updateOne(
+          { _id: payment.course, 'stats.enrolled': { $gt: 0 } },
+          { $inc: { 'stats.enrolled': -1 } },
+          { session }
+        );
+      }
+    }
+
+    if (
+      payment.student
+      && payment.course
+      && (mongoose.connection.readyState === 1 || Certificate.updateMany !== mongoose.Model.updateMany)
+    ) {
+      await Certificate.updateMany(
+        { user: payment.student, course: payment.course },
+        {
+          $set: {
+            isValid: false,
+            revokedAt: new Date(),
+            revocationReason: 'Payment refunded',
+          },
+        },
+        { session }
+      );
     }
 
     return { payment, enrollment, enrollmentCreated: false, changed: true };
@@ -205,12 +241,25 @@ async function processPaymobWebhook({
         return;
       }
 
-      const applied = await applyPaymobTransaction({
-        payment,
-        classification,
-        transactionId,
-        session,
-      });
+      let applied;
+      try {
+        applied = await applyPaymobTransaction({
+          payment,
+          classification,
+          transactionId,
+          session,
+        });
+      } catch (txErr) {
+        if (txErr?.code === 'INVALID_PAYMENT_TRANSITION') {
+          event.status = 'ignored';
+          event.failureCode = 'INVALID_PAYMENT_TRANSITION';
+          event.processedAt = new Date();
+          await event.save({ session });
+          result = { accepted: true, processed: false, reason: event.failureCode };
+          return;
+        }
+        throw txErr;
+      }
 
       event.status = classification === 'pending' || classification === 'ignored'
         ? 'ignored'

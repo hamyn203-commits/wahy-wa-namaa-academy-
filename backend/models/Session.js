@@ -118,5 +118,25 @@ SessionSchema.index({ type: 1 });
 SessionSchema.index({ teacher: 1, status: 1, scheduledAt: 1 });
 SessionSchema.index({ student: 1, status: 1, scheduledAt: 1 });
 SessionSchema.index({ 'attendance.student': 1, scheduledAt: -1 });
+SessionSchema.index(
+  { student: 1, teacher: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'trial',
+      status: { $in: ['pending', 'accepted'] },
+    },
+  }
+);
+SessionSchema.index(
+  { teacher: 1, scheduledAt: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: { $in: ['trial', 'regular'] },
+      status: { $in: ['pending', 'accepted'] },
+    },
+  }
+);
 
 module.exports = mongoose.model('Session', SessionSchema);

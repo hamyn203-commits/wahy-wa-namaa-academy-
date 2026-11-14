@@ -384,8 +384,12 @@ router.post('/bootstrap', async (req, res) => {
     if (process.env.NODE_ENV === 'production') {
       return res.status(404).json({ error: 'Route not found' });
     }
-    const secret = req.headers['x-seed-secret'] || req.body?.secret;
-    if (!process.env.SEED_SECRET || secret !== process.env.SEED_SECRET) {
+    const crypto = require('crypto');
+    const secret = String(req.headers['x-seed-secret'] || req.body?.secret || '');
+    const expected = String(process.env.SEED_SECRET || '');
+    const left = crypto.createHash('sha256').update(expected).digest();
+    const right = crypto.createHash('sha256').update(secret).digest();
+    if (!expected || !secret || !crypto.timingSafeEqual(left, right)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 

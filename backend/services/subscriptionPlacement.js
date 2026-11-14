@@ -103,6 +103,12 @@ async function placeSubscription({
       const expectedTrack = student.preferredTrack || 'memorization';
       const expectedLevel = student.currentLevel || 'beginner';
 
+      if (subscription.section === 'ladies' && student.gender && student.gender !== 'female') {
+        const error = new Error('قسم السيدات مخصص للطالبات فقط');
+        error.code = 'LADIES_SECTION_STUDENT_MISMATCH';
+        throw error;
+      }
+
       if (existingCircleId) {
         if (allowFlexibleCircle) {
           circle = await GroupCircle.findOne({
@@ -177,6 +183,45 @@ async function placeSubscription({
         circle = created[0];
       }
 
+      if (teacher?.personalInfo?.gender) {
+        const tGender = teacher.personalInfo.gender;
+        const sGender = student.gender;
+        const sAge = Number(student.age || 0);
+        if (subscription.section === 'ladies' && tGender !== 'female') {
+          const error = new Error('قسم السيدات متاح مع المعلمات فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+        if (sAge >= 18 && sGender === 'male' && tGender === 'female') {
+          const error = new Error('الحصص والحلقات للرجال متاحة مع المعلمين الرجال فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+        if (sAge >= 18 && sGender === 'female' && tGender === 'male') {
+          const error = new Error('حلقات وحصص السيدات البالغات متاحة مع المعلمات فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+      }
+
+      if (circle?.gender && student.gender) {
+        if (['boys', 'men'].includes(circle.gender) && student.gender !== 'male') {
+          const error = new Error('هذه الحلقة مخصصة للبنين والرجال فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+        if (['girls', 'women'].includes(circle.gender) && student.gender !== 'female') {
+          const error = new Error('هذه الحلقة مخصصة للفتيات والسيدات فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+        if (circle.gender === 'kids_mixed' && Number(student.age || 0) > 12) {
+          const error = new Error('حلقات البراعم المختلطة متاحة للأطفال حتى 12 سنة فقط');
+          error.code = 'CIRCLE_NOT_COMPATIBLE';
+          throw error;
+        }
+      }
+
       if (!allowFlexibleCircle) {
         const otherSection = await StudentSubscription.exists({
           circle: circle._id,
@@ -220,6 +265,27 @@ async function placeSubscription({
         subscription.startedAt = now;
       }
       await subscription.save({ session: dbSession });
+
+      if (subscription.status === 'active') {
+        let SessionModel = null;
+        try {
+          SessionModel = require('../models/Session');
+        } catch {
+          SessionModel = null;
+        }
+        if (SessionModel?.updateMany) {
+          await SessionModel.updateMany(
+            {
+              circle: circle._id,
+              status: { $in: ['pending', 'accepted'] },
+              scheduledAt: { $gt: now },
+              'attendance.student': { $ne: student._id },
+            },
+            { $push: { attendance: { student: student._id, status: 'pending' } } },
+            { session: dbSession }
+          );
+        }
+      }
 
       const activatedStudentIds = subscription.status === 'active' ? [String(subscription.student)] : [];
 

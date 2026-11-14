@@ -24,7 +24,7 @@ router.post('/apply', async (req, res) => {
     if (cleanName.length < 2 || cleanName.length > 100) {
       return res.status(400).json({ error: 'الاسم غير صالح' });
     }
-    if (!/^\S+@\S+\.\S+$/.test(cleanEmail) || cleanEmail.length > 254) {
+    if (cleanEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/.test(cleanEmail)) {
       return res.status(400).json({ error: 'البريد الإلكتروني غير صالح' });
     }
     if (cleanPhone.length > 32 || cleanCoverLetter.length > 2000) {
@@ -35,10 +35,10 @@ router.post('/apply', async (req, res) => {
     if (resumeUrl) {
       try {
         const parsed = new URL(String(resumeUrl));
-        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported');
+        if (parsed.protocol !== 'https:') throw new Error('unsupported');
         cleanResumeUrl = parsed.toString().slice(0, 1000);
       } catch {
-        return res.status(400).json({ error: 'رابط السيرة الذاتية غير صالح' });
+        return res.status(400).json({ error: 'رابط السيرة الذاتية غير صالح (يجب أن يبدأ بـ https://)' });
       }
     }
 
@@ -96,13 +96,15 @@ router.put('/applications/:id/status', protect, authorize('admin'), async (req, 
 router.get('/applications', protect, authorize('admin'), async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
-    const filter = status ? { status } : {};
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const filter = status ? { status: String(status) } : {};
+    const skip = (pageNum - 1) * limitNum;
     const [applications, total] = await Promise.all([
-      JobApplication.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      JobApplication.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
       JobApplication.countDocuments(filter),
     ]);
-    res.json({ applications, pagination: { page: Number(page), limit: Number(limit), total } });
+    res.json({ applications, pagination: { page: pageNum, limit: limitNum, total } });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }

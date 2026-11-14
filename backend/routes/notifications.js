@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const mongoose = require('mongoose');
@@ -9,13 +10,21 @@ const Teacher = require('../models/Teacher');
 const Session = require('../models/Session');
 const GroupCircle = require('../models/GroupCircle');
 const { protect, authorize } = require('../middleware/auth');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const { createUserRealtimeToken, isRealtimeConfigured, publishRealtimeNotification } = require('../services/realtimeNotificationBus');
 router.use(protect, rateLimit({ windowMs: 15 * 60 * 1000, max: 900, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, skip: () => process.env.DISABLE_RATE_LIMIT === 'true' }));
+
+const realtimeTokenLimiter = createScopedRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  scope: 'realtime-notify-token',
+  message: 'Too many realtime token requests. Please try again later.',
+});
 
 // @route   GET /api/notifications/realtime-token
 // @desc    Get a short-lived LiveKit data-only token for instant in-app events
 // @access  Private
-router.get('/realtime-token', protect, async (req, res) => {
+router.get('/realtime-token', protect, realtimeTokenLimiter, async (req, res) => {
   try {
     if (!isRealtimeConfigured()) {
       return res.status(503).json({ error: 'Realtime notifications are not configured' });
@@ -193,7 +202,7 @@ router.delete('/:id', protect, async (req, res) => {
 // @access  Private
 router.put('/preferences', protect, async (req, res) => {
   try {
-    const { preferences } = req.body;
+    const { preferences } = req.body || {};
 
     const user = await User.findById(req.user.id);
 
@@ -201,10 +210,19 @@ router.put('/preferences', protect, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const safeUpdates = {};
+    if (preferences && typeof preferences === 'object') {
+      for (const key of ['email', 'push', 'telegram', 'sms']) {
+        if (typeof preferences[key] === 'boolean') {
+          safeUpdates[key] = preferences[key];
+        }
+      }
+    }
+
     user.preferences = user.preferences || {};
     user.preferences.notifications = {
-      ...user.preferences.notifications,
-      ...preferences,
+      ...(user.preferences.notifications || {}),
+      ...safeUpdates,
     };
 
     await user.save();
@@ -246,7 +264,15 @@ router.get('/preferences', protect, async (req, res) => {
 // @access  Private
 router.post('/push-token', protect, async (req, res) => {
   try {
-    const { token, platform } = req.body;
+    const { token, platform } = req.body || {};
+    const cleanToken = typeof token === 'string' ? token.trim() : '';
+    const cleanPlatform = String(platform || 'web').trim().toLowerCase();
+    if (!cleanToken || cleanToken.length > 512) {
+      return res.status(400).json({ error: 'Valid push token is required' });
+    }
+    if (!['web', 'ios', 'android'].includes(cleanPlatform)) {
+      return res.status(400).json({ error: 'Unsupported push platform' });
+    }
 
     const user = await User.findById(req.user.id);
 
@@ -254,8 +280,8 @@ router.post('/push-token', protect, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    user.pushToken = token;
-    user.pushPlatform = platform;
+    user.pushToken = cleanToken;
+    user.pushPlatform = cleanPlatform;
     await user.save();
 
     res.json({ message: 'Push token registered' });
@@ -266,11 +292,37 @@ router.post('/push-token', protect, async (req, res) => {
 });
 
 // @route   POST /api/notifications/telegram-id
-// @desc    Register Telegram ID
+// @desc    Register Telegram ID (requires verified bot binding token)
 // @access  Private
 router.post('/telegram-id', protect, async (req, res) => {
   try {
-    const { telegramId } = req.body;
+    const { telegramId, bindingToken } = req.body || {};
+    const cleanTelegramId = String(telegramId || '').trim();
+    if (!/^-?\d{5,20}$/.test(cleanTelegramId)) {
+      return res.status(400).json({ error: 'Invalid Telegram chat ID' });
+    }
+
+    if (req.user.role !== 'admin') {
+      const secret = process.env.TELEGRAM_BINDING_SECRET || process.env.TELEGRAM_BOT_TOKEN;
+      if (!secret || typeof bindingToken !== 'string' || !bindingToken.trim()) {
+        return res.status(403).json({
+          error: 'يتطلب ربط تلغرام رمز تحقق صادر من بوت الأكاديمية الرسمي',
+          code: 'TELEGRAM_BINDING_VERIFICATION_REQUIRED',
+        });
+      }
+      const expected = crypto
+        .createHmac('sha256', secret)
+        .update(`${req.user.id}:${cleanTelegramId}`)
+        .digest('hex');
+      const providedBuf = Buffer.from(bindingToken.trim(), 'utf8');
+      const expectedBuf = Buffer.from(expected, 'utf8');
+      if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+        return res.status(403).json({
+          error: 'رمز ربط تلغرام غير صالح',
+          code: 'INVALID_TELEGRAM_BINDING_TOKEN',
+        });
+      }
+    }
 
     const user = await User.findById(req.user.id);
 
@@ -278,7 +330,7 @@ router.post('/telegram-id', protect, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    user.telegramId = telegramId;
+    user.telegramId = cleanTelegramId;
     await user.save();
 
     res.json({ message: 'Telegram ID registered' });

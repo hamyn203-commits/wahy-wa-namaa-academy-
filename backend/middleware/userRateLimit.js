@@ -10,7 +10,7 @@ function extractActorKey(req) {
     const token = authHeader.slice(7).trim();
     if (token) {
       try {
-        const verified = jwt.verify(token, getAccessSecret());
+        const verified = jwt.verify(token, getAccessSecret(), { algorithms: ['HS256'] });
         if (verified && typeof verified === 'object' && (verified.id || verified.sub)) {
           return `user:${String(verified.id || verified.sub)}`;
         }
@@ -36,4 +36,19 @@ const userRateLimiter = rateLimit({
   validate: false,
 });
 
-module.exports = { userRateLimiter, extractActorKey };
+function createScopedRateLimiter({ windowMs = 15 * 60 * 1000, max = 20, scope = 'scoped', message } = {}) {
+  return rateLimit({
+    windowMs,
+    max,
+    keyGenerator: (req) => `${scope}:${req.user?.id ? `user:${req.user.id}` : extractActorKey(req)}`,
+    skip: () => process.env.DISABLE_RATE_LIMIT === 'true',
+    message: typeof message === 'string'
+      ? { error: message, code: 'RATE_LIMIT_EXCEEDED' }
+      : (message || { error: 'Too many requests. Please slow down and try again shortly.', code: 'RATE_LIMIT_EXCEEDED' }),
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: false,
+  });
+}
+
+module.exports = { userRateLimiter, extractActorKey, createScopedRateLimiter };

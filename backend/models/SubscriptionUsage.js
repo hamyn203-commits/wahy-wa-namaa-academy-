@@ -22,7 +22,8 @@ const SubscriptionUsageSchema = new mongoose.Schema({
   circle: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'GroupCircle',
-    required: true,
+    required: false,
+    default: null,
     index: true,
   },
   outcome: {

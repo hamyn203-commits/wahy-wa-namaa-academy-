@@ -4,6 +4,7 @@ const router = express.Router();
 const Session = require('../models/Session');
 const Teacher = require('../models/Teacher');
 const GroupCircle = require('../models/GroupCircle');
+const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
 const meetingService = require('../services/meetingService');
 const { sessionParticipantWindow } = require('../services/sessionAccess');
@@ -34,10 +35,10 @@ async function sessionIncludesStudent(session, studentId) {
 router.get('/session/:id', protect, async (req, res) => {
   try {
     const session = await Session.findById(req.params.id)
-      .populate('student', 'name email')
-      .populate('attendance.student', 'name email')
+      .populate('student', 'name')
+      .populate('attendance.student', 'name')
       .populate('circle', 'students')
-      .populate({ path: 'teacher', populate: { path: 'user', select: 'name' } });
+      .populate({ path: 'teacher', select: 'personalInfo.fullName user', populate: { path: 'user', select: 'name' } });
 
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
@@ -47,10 +48,23 @@ router.get('/session/:id', protect, async (req, res) => {
     let isTeacher = false;
     if (req.user.role === 'teacher') {
       const teacher = await Teacher.findOne({ user: req.user.id });
-      isTeacher = teacher && String(session.teacher._id || session.teacher) === String(teacher._id);
+      isTeacher = teacher && String(session.teacher?._id || session.teacher) === String(teacher._id);
+    }
+    let isGuardianObserver = false;
+    if (req.user.role === 'guardian') {
+      const guardian = await Guardian.findOne({ user: req.user.id, isActive: true })
+        .select('children.student children.permissions')
+        .lean();
+      for (const child of guardian?.children || []) {
+        const canObserve = child?.permissions?.viewAttendance !== false || child?.permissions?.viewProgress !== false;
+        if (canObserve && child?.student && (await sessionIncludesStudent(session, child.student))) {
+          isGuardianObserver = true;
+          break;
+        }
+      }
     }
 
-    if (!isStudent && !isTeacher && req.user.role !== 'admin') {
+    if (!isStudent && !isTeacher && !isGuardianObserver && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -73,11 +87,19 @@ router.get('/session/:id', protect, async (req, res) => {
       }
     }
 
-    const meeting = session.meetingLink
-      ? { url: session.meetingLink, provider: session.meetingProvider || 'jitsi' }
-      : meetingService.generateMeetingLink(session._id);
+    let meeting;
+    if (session.meetingLink) {
+      meeting = { url: session.meetingLink, provider: session.meetingProvider || 'jitsi' };
+    } else {
+      meeting = meetingService.attachToSession(session);
+      await session.save();
+    }
 
-    res.json({ session: { _id: session._id, scheduledAt: session.scheduledAt, status: session.status }, meeting });
+    res.json({
+      session: { _id: session._id, scheduledAt: session.scheduledAt, status: session.status },
+      meeting,
+      isObserver: isGuardianObserver,
+    });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }

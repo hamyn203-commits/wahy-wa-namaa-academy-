@@ -71,7 +71,9 @@ if (process.env.FILE_STORAGE_DRIVER !== 'external') {
   }
 }
 
-const externalStorage = process.env.FILE_STORAGE_DRIVER === 'external';
+const externalStorage =
+  process.env.FILE_STORAGE_DRIVER === 'external' ||
+  ['vercel-blob', 's3'].includes(objectStorage.getDriver());
 
 async function streamAdminTeacherAsset(reference, res, { fallbackContentType = 'application/octet-stream' } = {}) {
   reference = objectStorage.unwrapPublicProxyReference(reference);
@@ -252,12 +254,17 @@ function sanitizePublicTeacher(doc) {
 
   delete teacher.documents;
   delete teacher.reviewNotes;
+  delete teacher.reviewChecklist;
+  delete teacher.reviewStartedAt;
+  delete teacher.reviewCompletedAt;
   delete teacher.earnings;
+  delete teacher.assetsPurgedAt;
+  delete teacher.storageOwner;
+  delete teacher.ledgerLockVersion;
 
   if (teacher.personalInfo) {
     teacher.personalInfo = {
       fullName: teacher.personalInfo.fullName,
-      age: teacher.personalInfo.age,
       gender: teacher.personalInfo.gender,
       country: teacher.personalInfo.country,
       city: teacher.personalInfo.city,
@@ -278,7 +285,7 @@ function sanitizePublicTeacher(doc) {
 
 const upload = multer({
   storage: externalStorage ? multer.memoryStorage() : diskStorage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024, files: 16 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|jfif|png|pdf|mp4|webm|mov|quicktime|mp3|wav/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -296,7 +303,7 @@ async function optionalTeacherRegistrationAuth(req, res, next) {
   const header = String(req.headers.authorization || '');
   if (!header.startsWith('Bearer ')) return next();
   try {
-    const identity = jwt.verify(header.slice(7), getAccessSecret());
+    const identity = jwt.verify(header.slice(7), getAccessSecret(), { algorithms: ['HS256'] });
     if (identity.role !== 'teacher') return res.status(403).json({ error: 'Only teacher accounts can submit a teacher application' });
     const account = await User.findById(identity.id).select('role isActive');
     if (!account || account.role !== 'teacher' || account.isActive !== true) return res.status(403).json({ error: 'Teacher account not active' });
@@ -307,9 +314,23 @@ async function optionalTeacherRegistrationAuth(req, res, next) {
   }
 }
 
+function guardExternalMultipartBeforeMulter(req, res, next) {
+  const isExternalActive =
+    process.env.FILE_STORAGE_DRIVER === 'external' ||
+    ['vercel-blob', 's3'].includes(objectStorage.getDriver());
+  if (isExternalActive && req.is('multipart/form-data')) {
+    return res.status(503).json({
+      error: 'External file storage is not configured yet',
+      code: 'FILE_STORAGE_NOT_READY',
+    });
+  }
+  return next();
+}
+
 router.post(
   '/register',
   optionalTeacherRegistrationAuth,
+  guardExternalMultipartBeforeMulter,
   upload.fields([
     { name: 'profilePhoto', maxCount: 1 },
     { name: 'idCard', maxCount: 1 },
@@ -363,7 +384,8 @@ router.post(
         try {
           const verification = jwt.verify(
             teacherVerificationToken,
-            getAccessSecret()
+            getAccessSecret(),
+            { algorithms: ['HS256'] }
           );
 
           if (verification.purpose === 'teacher-email-verification') {
@@ -861,7 +883,8 @@ router.get('/', async (req, res) => {
     if (minExperience) filter['quranInfo.teachingExperience'] = { $gte: parseInt(minExperience) };
 
     if (search && String(search).trim()) {
-      const escaped = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const boundedSearch = String(search).trim().slice(0, 100);
+      const escaped = boundedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
       filter.$or = [
         { 'personalInfo.fullName': regex },
@@ -870,23 +893,28 @@ router.get('/', async (req, res) => {
         { languages: regex },
       ];
     }
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 12));
+    const skip = (pageNum - 1) * limitNum;
     const SORT_MAP = {
       rating: 'rating.average',
+      'rating.average': 'rating.average',
       experience: 'quranInfo.teachingExperience',
       price: 'hourlyRate',
       students: 'stats.totalStudents',
       newest: 'createdAt',
     };
-    const sortField = SORT_MAP[sortBy] || sortBy;
-    const sort = { [sortField]: sortOrder === 'desc' ? -1 : 1 };
+    const sortField = Object.prototype.hasOwnProperty.call(SORT_MAP, sortBy)
+      ? SORT_MAP[sortBy]
+      : 'rating.average';
+    const sort = { [sortField]: sortOrder === 'asc' ? 1 : -1 };
 
     const [teachers, total] = await Promise.all([
       Teacher.find(filter)
         .populate('user', 'name avatar bio')
         .sort(sort)
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limitNum),
       Teacher.countDocuments(filter)
     ]);
 
@@ -898,10 +926,10 @@ router.get('/', async (req, res) => {
         return teacher;
       }),
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.ceil(total / limitNum)
       }
     });
   } catch (error) {
@@ -1873,4 +1901,5 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+router.sanitizePublicTeacher = sanitizePublicTeacher;
 module.exports = router;

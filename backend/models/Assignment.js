@@ -196,20 +196,26 @@ AssignmentSubmissionSchema.index({ assignment: 1, student: 1 });
 AssignmentSubmissionSchema.index({ status: 1 });
 AssignmentSubmissionSchema.index({ submittedAt: 1 });
 
-AssignmentSubmissionSchema.pre('save', function(next) {
-  const assignment = mongoose.model('Assignment');
-  assignment.findById(this.assignment).then(assignment => {
-    if (assignment && this.submittedAt > assignment.dueDate) {
-      this.isLate = true;
+AssignmentSubmissionSchema.pre('save', async function() {
+  if (!this.isNew && !this.isModified('submittedAt')) {
+    return;
+  }
+  const AssignmentModel = mongoose.model('Assignment');
+  const assignment = await AssignmentModel.findById(this.assignment).select('dueDate').lean();
+  if (assignment && assignment.dueDate && this.submittedAt > assignment.dueDate) {
+    this.isLate = true;
+    if (this.status === 'submitted') {
       this.status = 'late';
     }
-  }).then(() => next());
+  }
 });
 
 AssignmentSubmissionSchema.methods.calculateGrade = function(score, maxScore) {
-  this.grade.score = score;
-  this.grade.maxScore = maxScore;
-  this.grade.percentage = (score / maxScore) * 100;
+  const safeMax = Math.max(1, Number(maxScore) || 100);
+  const safeScore = Math.max(0, Math.min(safeMax, Number(score) || 0));
+  this.grade.score = safeScore;
+  this.grade.maxScore = safeMax;
+  this.grade.percentage = Math.round((safeScore / safeMax) * 10000) / 100;
   this.status = 'graded';
   return this.save();
 };

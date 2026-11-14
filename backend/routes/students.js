@@ -1,3 +1,4 @@
+const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
 const Student = require('../models/Student');
@@ -8,21 +9,28 @@ const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(id));
 
 router.get('/', protect, authorize('admin', 'supervisor'), async (req, res) => {
   try {
     if (!isDBConnected()) {
       return res.json([]);
     }
-    const students = await Student.find().sort({ createdAt: -1 });
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+    const students = await Student.find().sort({ createdAt: -1 }).skip(skip).limit(limitNum);
     res.json(students);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ error: safeErrorMessage(err, 500) });
   }
 });
 
 router.get('/:id', protect, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student profile id' });
+    }
     const student = await Student.findById(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
     
@@ -57,36 +65,47 @@ router.get('/:id', protect, async (req, res) => {
 
     res.json(student);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ error: safeErrorMessage(err, 500) });
   }
 });
 
 router.post('/', protect, authorize('admin'), async (req, res) => {
-  const student = new Student(req.body);
+  const allowedAdminFields = ['user', 'name', 'age', 'plan', 'currentSurah', 'memorizedAyahs', 'points', 'streak', 'level', 'dailyHabits'];
+  const payload = Object.fromEntries(
+    Object.entries(req.body || {}).filter(([key]) => allowedAdminFields.includes(key))
+  );
+  const student = new Student(payload);
   try {
     const newStudent = await student.save();
     res.status(201).json(newStudent);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ error: safeErrorMessage(err, 400) });
   }
 });
 
 router.patch('/:id', protect, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student profile id' });
+    }
     const existingStudent = await Student.findById(req.params.id);
     if (!existingStudent) return res.status(404).json({ message: 'Student not found' });
 
-    // Only admin or the student themselves can update (and students cannot modify administrative fields)
-    if (req.user.role !== 'admin' && (!existingStudent.user || existingStudent.user.toString() !== req.user.id)) {
+    // Only admin or the owning student can update; non-admin roles may only update dailyHabits
+    if (req.user.role !== 'admin' && (!existingStudent.user || existingStudent.user.toString() !== String(req.user.id))) {
       return res.status(403).json({ error: 'غير مصرح بتعديل بيانات هذا الطالب' });
     }
 
-    // If student updating themselves, prevent elevating points or changing plan unilaterally
-    let updates = { ...req.body };
-    if (req.user.role === 'student') {
+    let updates = { ...(req.body || {}) };
+    if (req.user.role !== 'admin') {
       const allowedSelfFields = ['dailyHabits'];
       updates = Object.fromEntries(
         Object.entries(updates).filter(([key]) => allowedSelfFields.includes(key))
+      );
+    } else {
+      const allowedAdminFields = ['name', 'age', 'plan', 'currentSurah', 'memorizedAyahs', 'points', 'streak', 'level', 'dailyHabits'];
+      updates = Object.fromEntries(
+        Object.entries(updates).filter(([key]) => allowedAdminFields.includes(key))
       );
     }
 
@@ -97,17 +116,20 @@ router.patch('/:id', protect, async (req, res) => {
     );
     res.json(student);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ error: safeErrorMessage(err, 400) });
   }
 });
 
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student profile id' });
+    }
     const student = await Student.findByIdAndDelete(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
     res.json({ message: 'Student deleted' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ error: safeErrorMessage(err, 500) });
   }
 });
 

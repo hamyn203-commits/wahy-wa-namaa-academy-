@@ -224,25 +224,24 @@ const QuizAttemptSchema = new mongoose.Schema({
 });
 
 QuizAttemptSchema.index({ quiz: 1, student: 1 });
+QuizAttemptSchema.index({ quiz: 1, student: 1, attemptNumber: 1 }, { unique: true });
 QuizAttemptSchema.index({ status: 1 });
 QuizAttemptSchema.index({ submittedAt: 1 });
 
 QuizAttemptSchema.methods.calculateScore = function() {
-  let correctCount = 0;
   let totalPoints = 0;
   let earnedPoints = 0;
 
   this.answers.forEach(answer => {
     totalPoints += answer.points || 0;
     if (answer.isCorrect) {
-      correctCount++;
       earnedPoints += answer.points || 0;
     }
   });
 
   this.score = {
     raw: earnedPoints,
-    percentage: (earnedPoints / totalPoints) * 100,
+    percentage: totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0,
     maxScore: totalPoints
   };
 

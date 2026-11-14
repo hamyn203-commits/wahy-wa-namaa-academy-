@@ -49,6 +49,7 @@ AdminAuditLogSchema.index({ actor: 1, createdAt: -1 });
 const immutableOperations = [
   'updateOne',
   'updateMany',
+  'replaceOne',
   'findOneAndUpdate',
   'deleteOne',
   'deleteMany',

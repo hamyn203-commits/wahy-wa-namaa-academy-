@@ -9,7 +9,7 @@ const TeacherLedgerSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['session_earning', 'bonus', 'payout', 'adjustment'],
+    enum: ['session_earning', 'bonus', 'payout', 'adjustment', 'deduction'],
     required: [true, 'Transaction type is required'],
     index: true,
   },
@@ -65,18 +65,22 @@ const TeacherLedgerSchema = new mongoose.Schema({
   referenceNumber: {
     type: String,
     trim: true,
+    maxlength: 160,
   },
   receiptUrl: {
     type: String,
     trim: true,
+    maxlength: 2048,
   },
   description: {
     type: String,
     trim: true,
+    maxlength: 500,
   },
   notes: {
     type: String,
     trim: true,
+    maxlength: 500,
   },
   processedBy: {
     type: mongoose.Schema.Types.ObjectId,

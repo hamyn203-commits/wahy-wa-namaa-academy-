@@ -231,7 +231,7 @@ NotificationSchema.methods.sendEmail = async function() {
 
 NotificationSchema.methods.sendPush = async function() {
   const User = mongoose.model('User');
-  const user = await User.findById(this.user);
+  const user = await User.findById(this.user).select('+pushToken');
   if (!user?.pushToken) throw new Error('User push token not found');
 
   const result = await dispatcher.sendPush({
@@ -246,12 +246,14 @@ NotificationSchema.methods.sendPush = async function() {
 
 NotificationSchema.methods.sendTelegram = async function() {
   const User = mongoose.model('User');
-  const user = await User.findById(this.user);
+  const user = await User.findById(this.user).select('+telegramId');
   if (!user?.telegramId) throw new Error('User telegram ID not found');
 
+  const safeTitle = dispatcher.escapeHtml(this.title.ar || this.title.en);
+  const safeBody = dispatcher.escapeHtml(this.message.ar || this.message.en);
   const result = await dispatcher.sendTelegram({
     chatId: user.telegramId,
-    text: `<b>${this.title.ar || this.title.en}</b>\n${this.message.ar || this.message.en}`,
+    text: `<b>${safeTitle}</b>\n${safeBody}`,
   });
   if (!result?.sent) throw new Error(`Telegram delivery unavailable (${result?.provider || 'unknown'})`);
   return true;
@@ -313,30 +315,36 @@ NotificationSchema.statics.sendBulk = async function(userIds, notificationData) 
   }));
 
   const created = await this.insertMany(notifications);
+  const BATCH_SIZE = 25;
 
-  for (const notification of created) {
-    if (notification.channels.inApp?.enabled) {
-      await notification.send('inApp');
-    }
+  for (let i = 0; i < created.length; i += BATCH_SIZE) {
+    const chunk = created.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      chunk.map(async (notification) => {
+        if (notification.channels.inApp?.enabled) {
+          await notification.send('inApp');
+        }
 
-    await publishRealtimeNotification(notification.user, {
-      type: 'notification',
-      notification: {
-        _id: notification._id,
-        type: notification.type,
-        title: notification.title,
-        message: notification.message,
-        data: notification.data,
-        priority: notification.priority,
-        createdAt: notification.createdAt,
-      },
-    });
+        await publishRealtimeNotification(notification.user, {
+          type: 'notification',
+          notification: {
+            _id: notification._id,
+            type: notification.type,
+            title: notification.title,
+            message: notification.message,
+            data: notification.data,
+            priority: notification.priority,
+            createdAt: notification.createdAt,
+          },
+        });
 
-    for (const channel of ['email', 'push', 'telegram', 'sms']) {
-      if (notification.channels[channel]?.enabled) {
-        await notification.send(channel);
-      }
-    }
+        for (const channel of ['email', 'push', 'telegram', 'sms']) {
+          if (notification.channels[channel]?.enabled) {
+            await notification.send(channel);
+          }
+        }
+      })
+    );
   }
 
   return created;

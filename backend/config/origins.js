@@ -37,11 +37,18 @@ function isTrustedOrigin(origin) {
     return true;
   }
 
-  if (
-    process.env.ALLOW_VERCEL_PREVIEW_ORIGINS === 'true' &&
-    /^https:\/\/wahy-wa-namaa-academy(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(normalized)
-  ) {
-    return true;
+  if (process.env.ALLOW_VERCEL_PREVIEW_ORIGINS === 'true') {
+    const teamSlug = String(process.env.VERCEL_TEAM_SLUG || '').trim().toLowerCase();
+    if (/^[a-z0-9-]+$/.test(teamSlug)) {
+      const escapedSlug = teamSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const scopedPreviewPattern = new RegExp(
+        `^https:\\/\\/wahy-wa-namaa-academy-git-[a-z0-9-]+-${escapedSlug}\\.vercel\\.app$`,
+        'i'
+      );
+      if (scopedPreviewPattern.test(normalized)) {
+        return true;
+      }
+    }
   }
 
   return false;

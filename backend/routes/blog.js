@@ -27,28 +27,59 @@ const pickLocalized = (doc, locale = 'ar') => {
   };
 };
 
+const ALLOWED_BLOG_LOCALES = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
+const escapeRegex = (s) => String(s || '').slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const ALLOWED_BLOG_FIELDS = [
+  'slug',
+  'title',
+  'excerpt',
+  'content',
+  'seo',
+  'coverImage',
+  'category',
+  'tags',
+  'authorName',
+  'readTime',
+  'featured',
+  'status',
+];
+
+function sanitizeBlogPayload(body = {}) {
+  const out = {};
+  for (const field of ALLOWED_BLOG_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(body, field) && body[field] !== undefined) {
+      out[field] = body[field];
+    }
+  }
+  return out;
+}
+
 router.get('/', async (req, res) => {
   try {
-    const { locale = 'ar', category, search, page = 1, limit = 12, featured } = req.query;
+    const { locale: rawLocale = 'ar', category, search, page = 1, limit = 12, featured } = req.query;
+    const locale = ALLOWED_BLOG_LOCALES.has(String(rawLocale)) ? String(rawLocale) : 'ar';
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 12));
     const filter = { status: 'published' };
-    if (category) filter.category = category;
+    if (category) filter.category = String(category).trim().slice(0, 60);
     if (featured === 'true') filter.featured = true;
-    if (search) {
+    if (search && String(search).trim()) {
+      const escaped = escapeRegex(String(search).trim());
       filter.$or = [
-        { [`title.${locale}`]: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } },
+        { [`title.${locale}`]: { $regex: escaped, $options: 'i' } },
+        { tags: { $regex: escaped, $options: 'i' } },
       ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const skip = (pageNum - 1) * limitNum;
     const [posts, total] = await Promise.all([
-      Blog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      Blog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
       Blog.countDocuments(filter),
     ]);
 
     res.json({
       posts: posts.map((p) => pickLocalized(p, locale)),
-      pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / limit) },
+      pagination: { page: pageNum, limit: limitNum, total, pages: Math.ceil(total / limitNum) },
     });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -57,9 +88,10 @@ router.get('/', async (req, res) => {
 
 router.get('/:slug', async (req, res) => {
   try {
-    const { locale = 'ar' } = req.query;
+    const rawLocale = String(req.query.locale || 'ar');
+    const locale = ALLOWED_BLOG_LOCALES.has(rawLocale) ? rawLocale : 'ar';
     const post = await Blog.findOneAndUpdate(
-      { slug: req.params.slug, status: 'published' },
+      { slug: String(req.params.slug || '').trim().slice(0, 180), status: 'published' },
       { $inc: { views: 1 } },
       { new: true }
     );
@@ -72,7 +104,7 @@ router.get('/:slug', async (req, res) => {
 
 router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
-    const post = await Blog.create(req.body);
+    const post = await Blog.create(sanitizeBlogPayload(req.body || {}));
     res.status(201).json(post);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });

@@ -89,6 +89,15 @@ export function downloadJSON(data, filename) {
   downloadText(json, filename, 'application/json');
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function printElement(elementId) {
   const sourceEl = document.getElementById(elementId);
   if (!sourceEl) return false;
@@ -109,14 +118,15 @@ export function printElement(elementId) {
     return false;
   }
 
-  const dir = document.documentElement.dir || 'rtl';
-  const lang = document.documentElement.lang || 'ar';
+  const dir = document.documentElement.dir === 'ltr' ? 'ltr' : 'rtl';
+  const lang = escapeHtml(document.documentElement.lang || 'ar');
+  const safeTitle = escapeHtml(document.title || '');
   const styleNodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
     .map((node) => node.outerHTML)
     .join('\n');
 
   doc.open();
-  doc.write(`<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${document.title}</title>${styleNodes}</head><body>${sourceEl.outerHTML}</body></html>`);
+  doc.write(`<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${safeTitle}</title>${styleNodes}</head><body>${sourceEl.outerHTML}</body></html>`);
   doc.close();
 
   const cleanup = () => {

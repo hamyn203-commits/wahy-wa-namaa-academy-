@@ -15,9 +15,18 @@ export const SAFETY_WARNING_MESSAGE = 'حفاظاً على خصوصية وسلا
 /**
  * تحويل الأرقام العربية المشرقية إلى أرقام قياسية
  */
+/**
+ * تطبيع النص من المحارف المخفية والتطويل والأرقام المشرقية والفارسية/الأردية
+ */
+export function normalizeSafetyText(text = '') {
+  return String(text || '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0640]/g, '')
+    .replace(/[\u0660-\u0669]/g, (char) => String(char.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (char) => String(char.charCodeAt(0) - 0x06f0));
+}
+
 export function normalizeArabicDigits(text = '') {
-  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-  return text.replace(/[٠-٩]/g, (char) => arabicDigits.indexOf(char).toString());
+  return normalizeSafetyText(text);
 }
 
 /**
@@ -73,7 +82,7 @@ export function containsPhoneNumber(text = '') {
  */
 export function containsExternalLink(text = '') {
   if (!text) return false;
-  const lower = text.toLowerCase();
+  const lower = normalizeSafetyText(text).toLowerCase();
 
   // 1. بروتوكولات صريحة
   if (/https?:\/\/|ftp:\/\/|file:\/\//i.test(lower)) return true;
@@ -111,7 +120,7 @@ export function containsExternalLink(text = '') {
  */
 export function containsEmail(text = '') {
   if (!text) return false;
-  const lower = text.toLowerCase();
+  const lower = normalizeSafetyText(text).toLowerCase();
 
   // بريد إلكتروني قياسي
   const emailPattern = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i;

@@ -24,11 +24,18 @@ const ALLOWED_AUDIO_MIMES = new Set([
 ]);
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const MAX_DIRECT_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_LENGTH = 1500;
+const ALLOWED_LOCALES = new Set(['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku']);
+
+function sanitizeLocale(value) {
+  const clean = String(value || 'ar').trim().toLowerCase();
+  return ALLOWED_LOCALES.has(clean) ? clean : 'ar';
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: MAX_DIRECT_UPLOAD_BYTES },
   fileFilter: (_req, file, cb) => {
     const mime = String(file.mimetype || '').split(';', 1)[0].trim().toLowerCase();
     if (!ALLOWED_AUDIO_MIMES.has(mime)) {
@@ -78,13 +85,14 @@ async function readPrivateStreamToBuffer(stream, maxBytes = MAX_AUDIO_BYTES) {
 router.post('/quran-assistant', protect, async (req, res) => {
   try {
     const { question, locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanQuestion = String(question || '').trim();
     if (!cleanQuestion) return res.status(400).json({ error: 'Question is required' });
     if (cleanQuestion.length > MAX_PROMPT_LENGTH) {
       return res.status(400).json({ error: 'Question is too long' });
     }
 
-    const result = await aiService.chat(cleanQuestion, { locale, role: 'quran' });
+    const result = await aiService.chat(cleanQuestion, { locale: safeLoc, role: 'quran' });
     res.json({
       answer: result.text,
       sources: ['Quran', 'Authentic Tafsir'],
@@ -99,12 +107,13 @@ router.post('/quran-assistant', protect, async (req, res) => {
 router.post('/teacher-assistant', protect, authorize('teacher', 'admin'), async (req, res) => {
   try {
     const { prompt, locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanPrompt = String(prompt || 'Suggest a lesson plan for today Quran class').trim();
     if (cleanPrompt.length > MAX_PROMPT_LENGTH) {
       return res.status(400).json({ error: 'Prompt is too long' });
     }
 
-    const result = await aiService.chat(cleanPrompt, { locale, role: 'teacher' });
+    const result = await aiService.chat(cleanPrompt, { locale: safeLoc, role: 'teacher' });
 
     res.json({
       suggestions: result.text.split('\n').filter(Boolean).slice(0, 6),
@@ -119,18 +128,19 @@ router.post('/teacher-assistant', protect, authorize('teacher', 'admin'), async 
 router.post('/student-assistant', protect, authorize('student', 'admin'), async (req, res) => {
   try {
     const { goal, level, locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanGoal = String(goal || 'memorization').trim().slice(0, 200);
     const cleanLevel = String(level || 'beginner').trim().slice(0, 60);
     const result = await aiService.chat(
       `Daily plan for student. Goal: ${cleanGoal}. Level: ${cleanLevel}. Return structured daily tasks.`,
-      { locale, role: 'student' }
+      { locale: safeLoc, role: 'student' }
     );
 
     res.json({
       dailyPlan: [
-        { task: locale === 'ar' ? 'مراجعة حفظ الأمس' : 'Review yesterday', duration: 15 },
-        { task: locale === 'ar' ? 'حفظ جديد (5 آيات)' : 'New memorization (5 ayat)', duration: 30 },
-        { task: locale === 'ar' ? 'تدريب تجويد' : 'Tajweed practice', duration: 15 },
+        { task: safeLoc === 'ar' ? 'مراجعة حفظ الأمس' : 'Review yesterday', duration: 15 },
+        { task: safeLoc === 'ar' ? 'حفظ جديد (5 آيات)' : 'New memorization (5 ayat)', duration: 30 },
+        { task: safeLoc === 'ar' ? 'تدريب تجويد' : 'Tajweed practice', duration: 15 },
       ],
       aiNotes: result.text,
       goal: cleanGoal,
@@ -190,8 +200,9 @@ router.post('/recitation-analyze', protect, authorize('student', 'teacher', 'adm
       return res.status(400).json({ error: 'Audio file content does not match declared MIME type', code: 'INVALID_AUDIO_MAGIC_BYTES' });
     }
     const { locale = 'ar', surah = '' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanSurah = String(surah || '').trim().slice(0, 120);
-    const report = await aiService.analyzeRecitation(req.user.id, req.file, { locale, surah: cleanSurah });
+    const report = await aiService.analyzeRecitation(req.user.id, req.file, { locale: safeLoc, surah: cleanSurah });
     res.json(report);
   } catch {
     res.status(500).json({ error: 'Failed to analyze recitation' });
@@ -231,10 +242,11 @@ router.get('/recitation-reports/:reportId', protect, async (req, res) => {
 router.post('/homework-generate', protect, authorize('teacher', 'admin'), async (req, res) => {
   try {
     const { topic, level, count = 5, locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanTopic = String(topic || '').trim().slice(0, 300);
     const cleanLevel = String(level || 'beginner').trim().slice(0, 60);
     const safeCount = Math.min(20, Math.max(1, parseInt(count, 10) || 5));
-    const result = await aiService.generateHomework({ topic: cleanTopic, level: cleanLevel, count: safeCount, locale });
+    const result = await aiService.generateHomework({ topic: cleanTopic, level: cleanLevel, count: safeCount, locale: safeLoc });
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Failed to generate homework' });
@@ -244,9 +256,10 @@ router.post('/homework-generate', protect, authorize('teacher', 'admin'), async 
 router.post('/exam-generate', protect, authorize('teacher', 'admin'), async (req, res) => {
   try {
     const { topic, questionCount = 5, locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanTopic = String(topic || '').trim().slice(0, 300);
     const safeCount = Math.min(20, Math.max(1, parseInt(questionCount, 10) || 5));
-    const result = await aiService.generateExam({ topic: cleanTopic, questionCount: safeCount, locale });
+    const result = await aiService.generateExam({ topic: cleanTopic, questionCount: safeCount, locale: safeLoc });
     res.json(result);
   } catch {
     res.status(500).json({ error: 'Failed to generate exam' });
@@ -256,6 +269,7 @@ router.post('/exam-generate', protect, authorize('teacher', 'admin'), async (req
 router.post('/reports-generate', protect, authorize('teacher', 'admin'), async (req, res) => {
   try {
     const { studentId, period = 'monthly', locale = 'ar' } = req.body || {};
+    const safeLoc = sanitizeLocale(locale);
     const cleanStudentId = String(studentId || '').trim();
     if (!cleanStudentId || !mongoose.Types.ObjectId.isValid(cleanStudentId)) {
       return res.status(400).json({ error: 'Valid studentId is required', code: 'INVALID_STUDENT_ID' });
@@ -370,7 +384,7 @@ router.post('/reports-generate', protect, authorize('teacher', 'admin'), async (
         averageScore,
       },
       generatedAt: new Date().toISOString(),
-      note: locale === 'ar'
+      note: safeLoc === 'ar'
         ? `تقرير فعلي مستخرج من سجلات الحلقات والواجبات لآخر ${days} يوماً`
         : `Live academic report aggregated over the last ${days} days`,
     });

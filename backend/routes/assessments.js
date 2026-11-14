@@ -3,11 +3,27 @@ const express = require('express');
 const router = express.Router();
 const Assessment = require('../models/Assessment');
 const Teacher = require('../models/Teacher');
-const { protect } = require('../middleware/auth');
+const User = require('../models/User');
+const teachersRouter = require('./teachers');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const { protect, authorize } = require('../middleware/auth');
 
-router.post('/', protect, async (req, res) => {
+function sanitizeTeacherSuggestion(doc) {
+  if (typeof teachersRouter.sanitizePublicTeacher === 'function') {
+    return teachersRouter.sanitizePublicTeacher(doc);
+  }
+  const raw = typeof doc?.toObject === 'function' ? doc.toObject() : { ...doc };
+  delete raw.documents;
+  delete raw.reviewNotes;
+  delete raw.reviewChecklist;
+  delete raw.earnings;
+  return raw;
+}
+
+router.post('/', protect, authorize('student'), async (req, res) => {
   try {
-    const { answers } = req.body;
+    const answers = req.body?.answers && typeof req.body.answers === 'object' ? req.body.answers : {};
+    const student = await User.findById(req.user.id).select('gender age enrollmentSection').lean();
 
     let calculatedLevel = 'beginner';
     const scores = {
@@ -16,10 +32,10 @@ router.post('/', protect, async (req, res) => {
       tajweed: { none: 0, basic: 1, good: 2, excellent: 3 }
     };
 
-    const totalScore = 
-      scores.reading[answers.readingLevel] +
-      scores.memorization[answers.memorizationLevel] +
-      scores.tajweed[answers.tajweedLevel];
+    const totalScore =
+      (scores.reading[answers.readingLevel] ?? 0) +
+      (scores.memorization[answers.memorizationLevel] ?? 0) +
+      (scores.tajweed[answers.tajweedLevel] ?? 0);
 
     if (totalScore >= 8) calculatedLevel = 'advanced';
     else if (totalScore >= 4) calculatedLevel = 'intermediate';
@@ -35,18 +51,36 @@ router.post('/', protect, async (req, res) => {
       isVerified: true
     };
 
-    if (answers.preferredTeacherGender !== 'any') {
-      teacherFilter['personalInfo.gender'] = answers.preferredTeacherGender;
+    if (answers.preferredTeacherGender && ['male', 'female'].includes(String(answers.preferredTeacherGender))) {
+      teacherFilter['personalInfo.gender'] = String(answers.preferredTeacherGender);
     }
 
-    if (answers.goals && answers.goals.length > 0) {
-      teacherFilter['quranInfo.specializations'] = { $in: answers.goals };
+    if (Array.isArray(answers.goals) && answers.goals.length > 0) {
+      const safeGoals = answers.goals.slice(0, 10).map((g) => String(g).trim().slice(0, 60)).filter(Boolean);
+      if (safeGoals.length > 0) {
+        teacherFilter['quranInfo.specializations'] = { $in: safeGoals };
+      }
     }
 
-    const suggestedTeachers = await Teacher.find(teacherFilter)
-      .populate('user', 'name avatar')
+    const candidates = await Teacher.find(teacherFilter)
+      .populate('user', 'name avatar bio')
       .sort({ 'rating.average': -1 })
-      .limit(5);
+      .limit(15);
+
+    const compatibleTeachers = candidates.filter((t) => {
+      try {
+        assertGenderAndAgeCompatibility({
+          student,
+          teacher: t,
+          section: student?.enrollmentSection || null,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }).slice(0, 5);
+
+    const suggestedTeachers = compatibleTeachers.map(sanitizeTeacherSuggestion);
 
     const assessment = await Assessment.create({
       user: req.user.id,
@@ -54,7 +88,7 @@ router.post('/', protect, async (req, res) => {
       result: {
         calculatedLevel,
         recommendedPlan,
-        suggestedTeachers: suggestedTeachers.map(t => t._id)
+        suggestedTeachers: compatibleTeachers.map(t => t._id)
       },
       status: 'completed'
     });
@@ -69,20 +103,25 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-router.get('/my-assessment', protect, async (req, res) => {
+router.get('/my-assessment', protect, authorize('student'), async (req, res) => {
   try {
     const assessment = await Assessment.findOne({ user: req.user.id })
       .sort({ createdAt: -1 })
       .populate({
         path: 'result.suggestedTeachers',
-        populate: { path: 'user', select: 'name avatar' }
+        populate: { path: 'user', select: 'name avatar bio' }
       });
 
     if (!assessment) {
       return res.status(404).json({ error: 'No assessment found' });
     }
 
-    res.json(assessment);
+    const value = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
+    if (Array.isArray(value.result?.suggestedTeachers)) {
+      value.result.suggestedTeachers = value.result.suggestedTeachers.map(sanitizeTeacherSuggestion);
+    }
+
+    res.json(value);
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }

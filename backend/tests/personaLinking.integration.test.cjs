@@ -198,8 +198,13 @@ Guardian.find = (filter = {}) => {
   return query([]);
 };
 LiveSession.find = () => query([]);
-// The QA student has not chosen a tutor on any subscription, so no tutor lock applies.
-StudentSubscription.findOne = () => query(null);
+let activePrivateSubscription = null;
+StudentSubscription.findOne = (filter = {}) => {
+  if (filter.planKey === 'private') {
+    return query(activePrivateSubscription);
+  }
+  return query(null);
+};
 const notifications = [];
 Notification.createAndSend = async (userId, payload) => {
   notifications.push({ userId: String(userId), ...payload });
@@ -446,6 +451,30 @@ test('four-persona state linking works through real HTTP routes', async (t) => {
   assert.equal(sameTeacherTrialAgain.status, 409);
   assert.equal(sameTeacherTrialAgain.data.code, 'TRIAL_ALREADY_COMPLETED_WITH_TEACHER');
   assert.deepEqual(sameTeacherTrialAgain.data.nextActions, ['continue-with-teacher', 'try-another-teacher']);
+
+  const regularWithoutSub = await call(base, '/api/sessions/regular', {
+    method: 'POST',
+    token: studentToken,
+    body: {
+      teacherId: ids.teacher,
+      scheduledAt: new Date(Date.now() + 5 * 86400000).toISOString(),
+      timezone: 'Africa/Cairo',
+    },
+  });
+  assert.equal(regularWithoutSub.status, 403);
+  assert.equal(regularWithoutSub.data.code, 'SUBSCRIPTION_REQUIRED');
+
+  activePrivateSubscription = {
+    _id: oid(),
+    student: ids.student,
+    planKey: 'private',
+    section: 'men_children',
+    status: 'active',
+    sessionsTotal: 4,
+    sessionsUsed: 0,
+    sessionsRemaining: 4,
+    preferredTeacher: ids.teacher,
+  };
 
   const regularAfterCompletion = await call(base, '/api/sessions/regular', {
     method: 'POST',
