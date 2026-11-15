@@ -556,7 +556,8 @@ function sanitizeSessionForStudentArchive(doc, studentId) {
     timezone: s.timezone,
     recordingUrl: safeRecordingUrl || undefined,
     report: s.report || undefined,
-    teacherEvaluation: ownReport || s.teacherEvaluation || undefined,
+    teacherEvaluation: s.teacherEvaluation || undefined,
+    studentReports: ownReport ? [ownReport] : [],
     teacher: s.teacher
       ? {
           _id: s.teacher._id,

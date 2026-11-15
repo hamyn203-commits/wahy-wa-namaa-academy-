@@ -1020,7 +1020,7 @@ test('V4-HIGH-12 & V4-HIGH-13: teacher cannot mutate published course price to 0
 // ============================================================================
 // 13. V4-HIGH-14 & V4-HIGH-17: Fullwidth Unicode Chat Safety & Clarity Privacy Exclusion
 // ============================================================================
-test('V4-HIGH-14 & V4-HIGH-17: inspectChatSafety catches NFKC fullwidth digits/domains and analytics blocks Clarity on private/minor/KYC routes', () => {
+test('V4-HIGH-14 & V4-HIGH-17: inspectChatSafety catches NFKC fullwidth digits/domains and analytics blocks Clarity on private/minor/KYC routes', async () => {
   assert.equal(inspectChatSafety('رقمي ０１０１２３４５６７８').isSafe, false, 'Fullwidth digits must be caught');
   assert.equal(inspectChatSafety('تواصل عبر ｗａ．ｍｅ/201012345678').isSafe, false, 'Fullwidth domain must be caught');
   assert.equal(inspectChatSafety('راسلني user＠gmail．com').isSafe, false, 'Fullwidth email must be caught');
@@ -1031,4 +1031,54 @@ test('V4-HIGH-14 & V4-HIGH-17: inspectChatSafety catches NFKC fullwidth digits/d
     /admin[\s\S]*student[\s\S]*teacher[\s\S]*guardian[\s\S]*live|isPublicMarketingPath/i,
     'Microsoft Clarity must be blocked across admin KYC, payment, teacher OTP, and minor classroom routes'
   );
+
+  const origSessionFind = Session.find;
+  try {
+    Session.find = () => chainableQuery([
+      {
+        _id: ids.session,
+        type: 'trial',
+        status: 'completed',
+        scheduledAt: new Date(),
+        duration: 60,
+        timezone: 'Africa/Cairo',
+        agreedHourlyRate: 90,
+        earnings: { amount: 90, status: 'pending' },
+        teacherEvaluation: {
+          attendance: 5,
+          memorization: 4,
+          tajweed: 5,
+          behavior: 5,
+          commitment: 5,
+          surahRecited: 'سورة الفاتحة',
+          overallNotes: 'تقرير Playwright آلي للتحقق من دورة الحصة',
+        },
+        studentReports: [
+          { student: ids.adultStudent, notes: 'تقرير Playwright آلي للتحقق من دورة الحصة' },
+          { student: ids.minorStudent, notes: 'تقرير طالب آخر سري' },
+        ],
+        teacher: {
+          _id: ids.teacherProfile,
+          personalInfo: { fullName: 'Approved Teacher', gender: 'male' },
+          user: { _id: ids.teacherUser, name: 'Approved Teacher' },
+        },
+      },
+    ]);
+    const studentToken = generateAccessToken(userStore.get(ids.adultStudent));
+    const evalRes = await fetch(`${baseUrl}/api/students/dashboard/evaluations`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    assert.equal(evalRes.status, 200);
+    const evalBody = await evalRes.json();
+    assert.equal(evalBody.evaluations.length, 1);
+    const evDoc = evalBody.evaluations[0];
+    assert.equal(evDoc.earnings, undefined, 'Teacher earnings must be stripped from student evaluations DTO');
+    assert.equal(evDoc.agreedHourlyRate, undefined, 'agreedHourlyRate must be stripped from student evaluations DTO');
+    assert.equal(evDoc.teacherEvaluation.overallNotes, 'تقرير Playwright آلي للتحقق من دورة الحصة');
+    assert.equal(evDoc.teacherEvaluation.attendance, 5);
+    assert.equal(evDoc.studentReports.length, 1, 'Only caller own report may be returned');
+    assert.equal(String(evDoc.studentReports[0].student), String(ids.adultStudent));
+  } finally {
+    Session.find = origSessionFind;
+  }
 });
