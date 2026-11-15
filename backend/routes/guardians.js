@@ -29,8 +29,26 @@ router.get('/my-children', protect, authorize('guardian', 'admin'), async (req, 
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
     }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
-    res.json(guardian.children);
+    const safeChildren = guardian.children.map((child) => {
+      const raw = typeof child.toObject === 'function' ? child.toObject() : { ...child };
+      const studentId = raw.student?._id || raw.student;
+      const access = findChildAccess(guardian, studentId);
+      const canSeeContact = Boolean(
+        access?.permissions?.viewProgress
+        || access?.permissions?.viewGrades
+        || access?.permissions?.viewAttendance
+      );
+      if (!canSeeContact && raw.student && typeof raw.student === 'object') {
+        raw.student = { _id: raw.student._id, name: raw.student.name, avatar: raw.student.avatar };
+      }
+      return raw;
+    });
+
+    res.json(safeChildren);
   } catch (error) {
     console.error('Get my children error:', error);
     res.status(500).json({ error: 'Failed to fetch children' });
@@ -186,6 +204,9 @@ router.get('/child/:studentId/progress', protect, authorize('guardian', 'admin')
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
     }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
     if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
       return res.status(403).json({ error: 'Permission denied' });
@@ -216,6 +237,9 @@ router.get('/child/:studentId/enrollments', protect, authorize('guardian', 'admi
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
     }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
     if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
       return res.status(403).json({ error: 'Permission denied' });
@@ -244,6 +268,9 @@ router.get('/child/:studentId/achievements', protect, authorize('guardian', 'adm
 
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
+    }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
     }
 
     if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
@@ -278,13 +305,19 @@ router.post('/report/:studentId', protect, authorize('guardian', 'admin'), async
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
     }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
     const access = findChildAccess(guardian, req.params.studentId);
     if (!access?.permissions.viewProgress) {
       return res.status(403).json({ error: 'Permission denied' });
     }
 
-    await guardian.generateReport(req.params.studentId, type);
+    const generated = await guardian.generateReport(req.params.studentId, type);
+    if (!generated || !Array.isArray(guardian.reports) || guardian.reports.length === 0) {
+      return res.status(404).json({ error: 'لا توجد بيانات دورات كافية لإصدار التقرير حالياً' });
+    }
 
     const latestReport = guardian.reports[guardian.reports.length - 1];
     res.status(201).json(filterReportForPermissions(latestReport, access.permissions));
@@ -304,6 +337,9 @@ router.get('/reports', protect, authorize('guardian', 'admin'), async (req, res)
 
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
+    }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
     }
 
     const visibleReports = guardian.reports
@@ -507,6 +543,9 @@ router.get('/dashboard', protect, authorize('guardian', 'admin'), async (req, re
     if (!guardian) {
       return res.status(404).json({ error: 'Guardian profile not found' });
     }
+    if (guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
     const childrenData = await Promise.all(
       guardian.children.map(async (child) => {
@@ -531,8 +570,17 @@ router.get('/dashboard', protect, authorize('guardian', 'admin'), async (req, re
               .slice(0, 5)
           : [];
 
+        const canSeeContact = Boolean(
+          access?.permissions?.viewProgress
+          || access?.permissions?.viewGrades
+          || access?.permissions?.viewAttendance
+        );
+        const safeStudent = (!canSeeContact && child.student && typeof child.student === 'object')
+          ? { _id: child.student._id, name: child.student.name, avatar: child.student.avatar }
+          : child.student;
+
         return {
-          student: child.student,
+          student: safeStudent,
           relationship: child.relationship,
           permissions: access?.permissions || null,
           stats: canViewProgress ? {

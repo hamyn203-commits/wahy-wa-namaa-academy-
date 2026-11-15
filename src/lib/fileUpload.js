@@ -1,6 +1,6 @@
 import { upload } from '@vercel/blob/client';
 import { apiUrl } from '../config';
-import { getAccessToken } from './authSession';
+import { getAccessToken, refreshAccessToken } from './authSession';
 
 function decodeJwt(token) {
   try {
@@ -28,9 +28,20 @@ function currentAccessToken() {
 export async function uploadFileDirect(file, purpose, options = {}) {
   if (!file) throw new Error('No file selected');
 
-  const accessToken = options.accessToken || currentAccessToken();
+  let accessToken = options.accessToken || currentAccessToken();
   const verificationToken = options.verificationToken || '';
   const phoneVerificationToken = options.phoneVerificationToken || '';
+
+  if (accessToken && !options.accessToken) {
+    const claims = decodeJwt(accessToken);
+    if (!claims.exp || claims.exp * 1000 < Date.now() + 60 * 1000) {
+      try {
+        accessToken = await refreshAccessToken();
+      } catch {
+        // Keep existing token if refresh is unavailable; server will validate.
+      }
+    }
+  }
 
   let owner = '';
   if (accessToken) owner = decodeJwt(accessToken).id || '';

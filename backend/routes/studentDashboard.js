@@ -10,10 +10,18 @@ const User = require('../models/User');
 const GuardianInvitation = require('../models/GuardianInvitation');
 const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const { findMockUserById } = require('../mockStore');
 const { isMockMode } = require('../config/runtime');
 const { createGuardianInvitation, expireStaleInvitations, presentStudentInvitation } = require('../services/guardianInvitations');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+
+const guardianInvitationLimiter = createScopedRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  scope: 'student-guardian-invitation',
+  message: 'تم تجاوز عدد دعوات ربط ولي الأمر المسموحة مؤقتاً. حاول بعد 15 دقيقة.',
+});
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
@@ -56,10 +64,11 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
     }
 
     const user = await User.findById(req.user.id)
-      .select('name email phone avatar role createdAt currentLevel preferredTrack onboarding +guardianLinkCode');
+      .select('name email phone avatar role age enrollmentSection createdAt currentLevel preferredTrack onboarding +guardianLinkCode');
     if (!user) return res.status(404).json({ error: 'Student not found' });
 
-    if (!user.guardianLinkCode) {
+    const isMinorStudent = (Number(user.age) > 0 && Number(user.age) < 18) || user.enrollmentSection === 'children';
+    if (!isMinorStudent && !user.guardianLinkCode) {
       user.guardianLinkCode = await createUniqueGuardianLinkCode();
       await user.save();
     }
@@ -71,7 +80,7 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
     ]);
 
     const safeUser = user.toObject();
-    safeUser.guardianLinkCode = user.guardianLinkCode;
+    safeUser.guardianLinkCode = isMinorStudent ? null : user.guardianLinkCode;
 
     res.json({
       user: safeUser,
@@ -95,9 +104,15 @@ router.post('/guardian-link-code/rotate', protect, authorize('student'), async (
       return res.status(503).json({ error: 'Guardian linking requires the database' });
     }
 
-    const user = await User.findById(req.user.id).select('+guardianLinkCode role');
+    const user = await User.findById(req.user.id).select('+guardianLinkCode role age enrollmentSection');
     if (!user || user.role !== 'student') {
       return res.status(404).json({ error: 'Student not found' });
+    }
+    if ((Number(user.age) > 0 && Number(user.age) < 18) || user.enrollmentSection === 'children') {
+      return res.status(403).json({
+        error: 'يتم ربط حسابات الطلاب القُصَّر عبر دعوة موجهة لرقم هاتف ولي الأمر فقط',
+        code: 'MINOR_INVITATION_ONLY',
+      });
     }
 
     user.guardianLinkCode = await createUniqueGuardianLinkCode();
@@ -148,7 +163,7 @@ router.get('/guardian-invitations', protect, authorize('student'), async (req, r
   }
 });
 
-router.post('/guardian-invitations', protect, authorize('student'), async (req, res) => {
+router.post('/guardian-invitations', protect, authorize('student'), guardianInvitationLimiter, async (req, res) => {
   try {
     const invitation = await createGuardianInvitation({
       studentId: req.user.id,
@@ -437,7 +452,14 @@ router.get('/matches', protect, authorize('student'), async (req, res) => {
       .lean();
 
     const matches = teachers
-      .filter((teacher) => assertGenderAndAgeCompatibility(studentUser, teacher).valid)
+      .filter((teacher) => {
+        try {
+          assertGenderAndAgeCompatibility({ student: studentUser, teacher, section: studentUser?.enrollmentSection });
+          return true;
+        } catch {
+          return false;
+        }
+      })
       .map((teacher) => {
         const result = scoreTutorMatch(teacher, matching);
         return {

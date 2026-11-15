@@ -341,8 +341,14 @@ export default function AdminDashboard() {
       );
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(url), 120000);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `student-homework-${taskId}`;
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) {
       toast.error(error.message || 'تعذر فتح تسليم الطالب');
     }

@@ -804,6 +804,8 @@ router.put('/students/:id', async (req, res) => {
           return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر' });
         }
         student.email = normalizedEmail;
+        student.googleSubject = undefined;
+        student.emailVerified = false;
       }
     }
     if (phone !== undefined) {

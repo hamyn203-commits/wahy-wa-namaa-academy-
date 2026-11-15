@@ -285,6 +285,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
                     $project: {
                       market: '$preferences.market',
                       currency: '$preferences.currency',
+                      phone: { $ifNull: ['$phoneNormalized', { $ifNull: ['$phone', ''] }] },
                       country: {
                         $toLower: {
                           $ifNull: ['$personalInfo.country', { $ifNull: ['$country', ''] }],
@@ -301,9 +302,15 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
               $project: {
                 isEgyptian: {
                   $or: [
-                    { $eq: ['$studentDoc.market', 'egypt'] },
+                    { $in: ['$studentDoc.market', ['egypt', 'egyptian']] },
                     { $eq: ['$studentDoc.currency', 'EGP'] },
                     { $eq: ['$studentDoc.country', 'eg'] },
+                    {
+                      $regexMatch: {
+                        input: { $ifNull: ['$studentDoc.phone', ''] },
+                        regex: /^\+?20/,
+                      },
+                    },
                     {
                       $regexMatch: {
                         input: { $ifNull: ['$studentDoc.country', ''] },
@@ -573,51 +580,36 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
 
 router.post('/admin/deduction', protect, authorize('admin'), async (req, res) => {
   try {
-    const { teacherId, amount, currency = 'EGP', reason } = req.body || {};
-    const numAmount = Number(amount);
-    const curr = String(currency || 'EGP').trim().toUpperCase();
-    const cleanReason = String(reason || '').trim().slice(0, 500);
+    const { teacherId, amount, currency = 'EGP', reason, idempotencyKey } = req.body || {};
+    const { recordTeacherDeduction } = require('../services/teacherFinance');
+    const headerKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
 
-    if (!teacherId || !mongoose.Types.ObjectId.isValid(String(teacherId))) {
-      return res.status(400).json({ error: 'معرف المعلم غير صالح' });
-    }
-    if (!Number.isFinite(numAmount) || numAmount <= 0 || Math.abs(Math.round(numAmount * 100) - (numAmount * 100)) > 1e-6) {
-      return res.status(400).json({ error: 'مبلغ الخصم غير صالح' });
-    }
-    if (!['EGP', 'USD'].includes(curr)) {
-      return res.status(400).json({ error: 'العملة يجب أن تكون EGP أو USD' });
-    }
-    if (!cleanReason) {
-      return res.status(400).json({ error: 'سبب القيد العكسي مطلوب' });
-    }
-
-    const teacher = await Teacher.findById(teacherId);
-    if (!teacher) return res.status(404).json({ error: 'لم يتم العثور على ملف المعلم' });
-
-    const entry = await TeacherLedger.create({
-      teacher: teacher._id,
-      type: 'deduction',
-      amount: fromMinor(toMinor(numAmount)),
-      currency: curr,
-      status: 'completed',
-      processedBy: req.user.id,
-      processedAt: new Date(),
-      notes: cleanReason,
-      description: `خصم إداري: ${cleanReason.slice(0, 120)}`,
+    const entry = await recordTeacherDeduction({
+      teacherId,
+      amount,
+      currency,
+      reason,
+      adminUserId: req.user.id,
+      idempotencyKey: idempotencyKey || headerKey,
     });
 
+    const cleanReason = String(reason || '').trim().slice(0, 500);
     await logAdminAction({
       req,
       action: 'teacher_ledger.deduction',
       entityType: 'TeacherLedger',
       entityId: entry._id,
       reason: cleanReason,
-      metadata: { teacherId: String(teacher._id), amount: entry.amount, currency: curr },
+      metadata: { teacherId: String(entry.teacher), amount: entry.amount, currency: entry.currency },
     }).catch(() => {});
 
     return res.status(201).json({ success: true, transaction: entry });
   } catch (error) {
-    return res.status(400).json({ error: 'تعذر تسجيل القيد العكسي' });
+    const status = error?.status || 400;
+    return res.status(status).json({
+      error: error?.publicMessage || 'تعذر تسجيل القيد العكسي',
+      ...(error?.code ? { code: error.code } : {}),
+    });
   }
 });
 

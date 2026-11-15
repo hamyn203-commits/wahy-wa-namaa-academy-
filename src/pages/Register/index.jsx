@@ -12,7 +12,7 @@ import { useI18n } from '../../i18n';
 import { useMarket } from '../../context/MarketProvider';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { localizedPath } from '../../lib/locale';
-import { dashboardPathForRole, isSafeInternalRedirect } from '../../lib/navigation';
+import { dashboardPathForRole, isSafeInternalRedirect, postAuthDestination } from '../../lib/navigation';
 import '../../styles/public-experience.css';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { useToast } from '../../context/ToastProvider';
@@ -191,6 +191,7 @@ export default function Register() {
           const token = (await import('../../lib/authSession')).getAccessToken();
           const updateResponse = await fetch((await import('../../config')).apiUrl('/api/auth/me'), {
             method: 'PATCH',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
             body: JSON.stringify({ avatar: uploaded.url }),
           });
@@ -202,8 +203,11 @@ export default function Register() {
         }
       }
 
+      const rawRedirect = searchParams.get('redirect');
       navigate(
-        role === 'student' && isSafeInternalRedirect(searchParams.get('redirect')) ? searchParams.get('redirect') : dashboardPathForRole(result.user?.role, locale),
+        role === 'student' && isSafeInternalRedirect(rawRedirect)
+          ? postAuthDestination({ redirect: rawRedirect, role: result.user?.role, locale })
+          : dashboardPathForRole(result.user?.role, locale),
         { replace: true }
       );
     } catch (err) {

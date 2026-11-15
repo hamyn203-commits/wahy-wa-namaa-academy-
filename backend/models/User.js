@@ -125,11 +125,12 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  emailVerificationToken: String,
-  emailVerificationExpires: Date,
-  passwordResetToken: String,
-  passwordResetExpires: Date,
+  emailVerificationToken: { type: String, select: false },
+  emailVerificationExpires: { type: Date, select: false },
+  passwordResetToken: { type: String, select: false },
+  passwordResetExpires: { type: Date, select: false },
   refreshTokenVersion: { type: Number, default: 0, select: false },
+  consumedRefreshJtis: { type: [String], default: [], select: false },
   failedLoginAttempts: { type: Number, default: 0, select: false },
   lockUntil: { type: Date, default: null, select: false },
   sessionsRevokedAt: { type: Date, default: null, select: false },
@@ -191,6 +192,24 @@ UserSchema.pre('save', async function(next) {
     }
   }
 
+  if (!this.isNew) {
+    if (this.isModified('email')) {
+      this.googleSubject = undefined;
+      if (!this.isModified('emailVerified')) {
+        this.emailVerified = false;
+      }
+    }
+    if (this.isModified('password') || this.isModified('role') || this.isModified('email')) {
+      if (!this.isModified('refreshTokenVersion')) {
+        this.refreshTokenVersion = Number(this.refreshTokenVersion || 0) + 1;
+      }
+      if (!this.isModified('sessionsRevokedAt')) {
+        this.sessionsRevokedAt = new Date();
+      }
+      this.consumedRefreshJtis = [];
+    }
+  }
+
   if (!this.isModified('password')) return next();
   
   try {
@@ -228,6 +247,7 @@ UserSchema.methods.toJSON = function() {
   delete obj.passwordResetToken;
   delete obj.passwordResetExpires;
   delete obj.refreshTokenVersion;
+  delete obj.consumedRefreshJtis;
   delete obj.failedLoginAttempts;
   delete obj.lockUntil;
   delete obj.sessionsRevokedAt;

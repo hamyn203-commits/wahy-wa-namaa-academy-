@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
 const StudentSubscription = require('../models/StudentSubscription');
+const Session = require('../models/Session');
 const { protect, authorize } = require('../middleware/auth');
 const { getPlan } = require('../config/subscriptionPlans');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
@@ -700,6 +701,10 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
           { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
           { $set: { status: 'awaiting_placement', circle: null } }
         ),
+        Session.updateMany(
+          { circle: circle._id, status: { $in: ['pending', 'accepted'] } },
+          { $set: { status: 'cancelled', cancellationReason: 'تمت أرشفة الحلقة' } }
+        ),
       ]);
 
       return res.json({
@@ -713,6 +718,10 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       StudentSubscription.updateMany(
         { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      Session.updateMany(
+        { circle: circle._id, status: { $in: ['pending', 'accepted'] } },
+        { $set: { status: 'cancelled', cancellationReason: 'تم حذف الحلقة' } }
       ),
     ]);
     await GroupCircle.findByIdAndDelete(req.params.id);

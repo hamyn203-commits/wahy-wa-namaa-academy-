@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
-import { dashboardPathForRole, isSafeInternalRedirect } from '../../lib/navigation';
+import { dashboardPathForRole, isSafeInternalRedirect, postAuthDestination } from '../../lib/navigation';
 import { useAuth } from '../../hooks/useAuth.jsx';
 
 export default function ProfileSetup() {
@@ -13,7 +13,9 @@ export default function ProfileSetup() {
   const [searchParams] = useSearchParams();
   const next = searchParams.get('next');
   const dashboardDestination = dashboardPathForRole(user?.role, locale);
-  const destination = isSafeInternalRedirect(next) ? next : dashboardDestination;
+  const destination = isSafeInternalRedirect(next)
+    ? postAuthDestination({ redirect: next, role: user?.role, locale })
+    : dashboardDestination;
   const [data, setData] = useState({ name: '', phone: '', age: '', gender: '', whatsappPhone: '', preferredTrack: 'memorization', currentLevel: 'beginner', memorizedJuz: 0, memorizationDetails: '', bio: '', guardianContact: { name: '', phone: '', relationship: '' } });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,12 +29,24 @@ export default function ProfileSetup() {
     }
   }, [ready, user, next, navigate]);
   if (!ready) return null;
+  const demographicsLocked = Boolean(user?.role === 'student' && user?.onboarding?.completed && user?.age && user?.gender);
   const save = async (event) => {
     event.preventDefault();
     setSaving(true); setError('');
     try {
+      if (user.role === 'student' && !demographicsLocked && (!data.age || !['male', 'female'].includes(data.gender))) {
+        throw new Error('يرجى تحديد العمر والجنس لاستكمال الملف الشخصي.');
+      }
       const payload = { name: data.name, phone: data.phone, whatsappPhone: data.whatsappPhone, bio: data.bio };
-      if (user.role === 'student') Object.assign(payload, { age: data.age ? Number(data.age) : undefined, gender: data.gender || undefined, memorizedJuz: Number(data.memorizedJuz), preferredTrack: data.preferredTrack, currentLevel: data.currentLevel, memorizationDetails: data.memorizationDetails });
+      if (user.role === 'student') {
+        Object.assign(payload, {
+          ...(demographicsLocked ? {} : { age: data.age ? Number(data.age) : undefined, gender: data.gender || undefined }),
+          memorizedJuz: Number(data.memorizedJuz),
+          preferredTrack: data.preferredTrack,
+          currentLevel: data.currentLevel,
+          memorizationDetails: data.memorizationDetails,
+        });
+      }
       if (user.role === 'student') payload.guardianContact = data.guardianContact;
       const saved = await saveOnboarding(payload);
       if (!saved.onboarding?.completed) throw new Error('لم تكتمل البيانات بعد، تحقق من الحقول المطلوبة');
@@ -48,7 +62,7 @@ export default function ProfileSetup() {
     <p className="text-sm text-slate-600 mb-6">بياناتك محفوظة ويمكنك استكمالها لاحقًا. {user.role === 'teacher' ? 'لا يمكنك التدريس أو الظهور للطلاب قبل اعتماد الإدارة.' : ''}</p>
     <form className="space-y-4" onSubmit={save}>
       {field('الاسم الكامل', 'name')}<label className="block text-sm font-semibold">رقم الهاتف (مطلوب)<input className="input-field w-full mt-2" type="tel" autoComplete="tel" required value={data.phone || ''} onChange={event => setData(prev => ({ ...prev, phone: event.target.value }))}/><span className="block text-xs font-normal text-slate-500 mt-1">اكتب رقمًا صحيحًا، مثال: 01012345678</span></label>{field('واتساب (اختياري)', 'whatsappPhone', 'tel')}
-      {user.role === 'student' && <>{field('العمر', 'age', 'number')}<label className="block text-sm">الجنس<select className="input-field w-full mt-2" value={data.gender} onChange={e => setData(p => ({...p, gender:e.target.value}))}><option value="">غير محدد</option><option value="male">ذكر</option><option value="female">أنثى</option></select></label><label className="block text-sm font-semibold">مستواك الحالي (تقييم مبدئي)
+      {user.role === 'student' && <><label className="block text-sm font-semibold">العمر<input className="input-field w-full mt-2" type="number" min="4" max="100" required={!demographicsLocked} disabled={demographicsLocked} value={data.age ?? ''} onChange={e => setData(p => ({ ...p, age: e.target.value }))} /></label><label className="block text-sm font-semibold">الجنس<select className="input-field w-full mt-2" required={!demographicsLocked} disabled={demographicsLocked} value={data.gender} onChange={e => setData(p => ({ ...p, gender: e.target.value }))}><option value="">اختر الجنس</option><option value="male">ذكر</option><option value="female">أنثى</option></select></label><label className="block text-sm font-semibold">مستواك الحالي (تقييم مبدئي)
           <select className="input-field w-full mt-2" value={data.currentLevel || 'beginner'} onChange={e => setData(p => ({ ...p, currentLevel: e.target.value }))}>
             <option value="beginner">مبتدئ</option>
             <option value="intermediate">متوسط</option>

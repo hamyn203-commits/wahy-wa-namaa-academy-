@@ -30,6 +30,7 @@ const {
   processTeacherPayout,
 } = require('../services/teacherFinance');
 const { settleSubscriptionUsageForSession } = require('../services/subscriptionUsage');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 
 const coursesUploadDir = path.join(__dirname, '..', 'uploads', 'courses');
 if (process.env.FILE_STORAGE_DRIVER !== 'external') {
@@ -382,7 +383,7 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
       }
 
       const teacher = session.teacher ? await Teacher.findById(session.teacher) : null;
-      const hourlyRate = Number(teacher?.hourlyRate || 50);
+      const hourlyRate = Number(session.agreedHourlyRate ?? teacher?.hourlyRate ?? 50);
       const sessionDuration = Math.max(1, Number(session.duration || 60));
       const sessionRate = calculateSessionEarning(hourlyRate, sessionDuration);
 
@@ -391,26 +392,30 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
         session.earnings = session.earnings || {};
         session.earnings.amount = session.earnings.amount || sessionRate;
         session.earnings.status = session.earnings.status || 'pending';
+      }
+
+      if (['group_circle', 'regular'].includes(session.type)) {
+        subscriptionUsage = await settleSubscriptionUsageForSession(session);
+      }
+
+      if (!wasAlreadyCompleted) {
         await session.save();
       }
 
       if (session.teacher) {
+        const attendedCount = (session.attendance || []).filter((entry) => entry.status === 'attended').length;
         await ensureSessionEarning({
           sessionId: session._id,
           teacherId: session.teacher,
           amount: session.earnings?.amount || sessionRate,
           currency: 'EGP',
-          attendeesCount: session.student ? 1 : Math.max(1, session.attendance?.length || 0),
+          attendeesCount: session.student ? 1 : Math.max(0, attendedCount),
           notes: session.type === 'trial'
             ? 'حصة تجريبية مكتملة (إغلاق إداري)'
             : session.type === 'group_circle'
               ? 'حصة جماعية مكتملة (إغلاق إداري)'
               : 'حصة منتظمة مكتملة (إغلاق إداري)',
         });
-      }
-
-      if (['group_circle', 'regular'].includes(session.type)) {
-        subscriptionUsage = await settleSubscriptionUsageForSession(session);
       }
 
       if (teacher?._id) {
@@ -556,8 +561,10 @@ router.get('/teachers/approved', protect, authorize('admin'), async (req, res) =
   }
   try {
     const teachers = await Teacher.find({ status: 'approved', isVerified: true })
+      .select('-documents -storageOwner')
       .populate('user', 'name email avatar')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(200);
     res.json(teachers);
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -576,8 +583,10 @@ router.get('/teachers/pending', protect, authorize('admin'), async (req, res) =>
   }
   try {
     const teachers = await Teacher.find({ status: { $in: ['pending', 'under-review'] } })
+      .select('-documents -storageOwner')
       .populate('user', 'name email avatar')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(200);
     res.json(teachers);
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -901,6 +910,8 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
           return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر' });
         }
         userDoc.email = resolvedEmail;
+        userDoc.googleSubject = undefined;
+        userDoc.emailVerified = false;
       }
       if (resolvedName) userDoc.name = resolvedName;
       if (resolvedPhone !== undefined && String(resolvedPhone).trim()) {
@@ -962,6 +973,27 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       teacher.personalInfo.address = String(resolvedAddress || '').trim();
     }
     if (resolvedGender === 'male' || resolvedGender === 'female') {
+      if (teacher.personalInfo?.gender && resolvedGender !== teacher.personalInfo.gender) {
+        const existingCircles = await GroupCircle.find({
+          teacher: teacher._id,
+          status: { $nin: ['completed', 'cancelled'] },
+        }).select('gender subscriptionSection');
+        const candidateTeacher = { personalInfo: { gender: resolvedGender } };
+        for (const circle of existingCircles) {
+          try {
+            assertGenderAndAgeCompatibility({
+              teacher: candidateTeacher,
+              circleGender: circle.gender,
+              section: circle.subscriptionSection,
+            });
+          } catch (safeguardErr) {
+            return res.status(409).json({
+              error: safeguardErr.publicMessage || 'لا يمكن تغيير جنس المعلم لوجود حلقات نشطة غير متوافقة',
+              code: safeguardErr.code || 'GENDER_SEPARATION_VIOLATION',
+            });
+          }
+        }
+      }
       teacher.personalInfo.gender = resolvedGender;
     }
     if (resolvedAge !== undefined && Number.isFinite(Number(resolvedAge))) {
@@ -1102,14 +1134,19 @@ router.delete('/teachers/:id', protect, authorize('admin'), async (req, res) => 
             code: 'REPLACEMENT_TEACHER_NOT_APPROVED',
           });
         }
-        const incompatibleCircle = teacherCircles.find(
-          (circle) => ['male', 'female'].includes(circle.gender) && replacement.personalInfo?.gender !== circle.gender
-        );
-        if (incompatibleCircle) {
-          return res.status(409).json({
-            error: 'جنس المعلم البديل غير متوافق مع جنس إحدى الحلقات المسجلة',
-            code: 'GENDER_SEPARATION_VIOLATION',
-          });
+        for (const circle of teacherCircles) {
+          try {
+            assertGenderAndAgeCompatibility({
+              teacher: replacement,
+              circleGender: circle.gender,
+              section: circle.subscriptionSection,
+            });
+          } catch (safeguardErr) {
+            return res.status(409).json({
+              error: safeguardErr.publicMessage || 'جنس المعلم البديل غير متوافق مع جنس إحدى الحلقات المسجلة',
+              code: 'GENDER_SEPARATION_VIOLATION',
+            });
+          }
         }
         await GroupCircle.updateMany({ teacher: teacher._id }, { $set: { teacher: replacement._id } });
       } else {
@@ -1303,6 +1340,19 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/courses/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    const Enrollment = require('../models/Enrollment');
+    const Payment = require('../models/Payment');
+    const [hasEnrollment, hasPayment] = await Promise.all([
+      Enrollment.exists({ course: req.params.id, status: { $in: ['active', 'completed'] } }),
+      Payment.exists({ course: req.params.id, status: { $in: ['pending', 'succeeded'] } }),
+    ]);
+    if (hasEnrollment || hasPayment) {
+      await Course.findByIdAndUpdate(req.params.id, { $set: { status: 'archived' } });
+      return res.json({
+        message: 'تمت أرشفة الدورة بدلاً من الحذف النهائي لوجود طلاب أو مدفوعات مرتبطة بها',
+        archived: true,
+      });
+    }
     await Lesson.deleteMany({ course: req.params.id });
     await Course.findByIdAndDelete(req.params.id);
     res.json({ message: 'تم حذف الدورة' });
@@ -1320,6 +1370,18 @@ router.get('/courses/:id/lessons', protect, authorize('admin'), async (req, res)
   }
 });
 
+function isSafeLessonVideoSource(raw) {
+  const val = String(raw || '').trim();
+  if (!val) return true;
+  if (val.startsWith('/uploads/') || val.startsWith('uploads/course-media/')) return true;
+  try {
+    const parsed = new URL(val);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
@@ -1331,7 +1393,10 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
     } = req.body;
 
     const count = await Lesson.countDocuments({ course: course._id });
-    const videoSrc = videoUrl || youtubeUrl || '';
+    const videoSrc = String(videoUrl || youtubeUrl || '').trim();
+    if (type === 'video' && videoSrc && !isSafeLessonVideoSource(videoSrc)) {
+      return res.status(400).json({ error: 'رابط الفيديو غير آمن. استخدم رابط HTTPS صالح أو ملف الدورة المرفوع' });
+    }
     const provider = youtubeUrl || videoSrc.includes('youtube') ? 'youtube' : 'self-hosted';
 
     const lesson = await Lesson.create({
@@ -1370,7 +1435,10 @@ router.put('/lessons/:id', protect, authorize('admin'), async (req, res) => {
       if (isPublished) lesson.publishedAt = new Date();
     }
     if (videoUrl && lesson.type === 'video') {
-      lesson.content.video = { ...lesson.content.video, url: videoUrl };
+      if (!isSafeLessonVideoSource(videoUrl)) {
+        return res.status(400).json({ error: 'رابط الفيديو غير آمن. استخدم رابط HTTPS صالح أو ملف الدورة المرفوع' });
+      }
+      lesson.content.video = { ...lesson.content.video, url: String(videoUrl).trim() };
     }
     if (textAr && lesson.type === 'text') {
       lesson.content.text = { ...lesson.content.text, ar: textAr };
@@ -1405,6 +1473,11 @@ router.get('/blog', protect, authorize('admin'), async (req, res) => {
 router.post('/blog', protect, authorize('admin'), async (req, res) => {
   try {
     const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, status = 'published' } = req.body;
+    let authorName = req.user.name;
+    if (!authorName) {
+      const adminUser = await User.findById(req.user.id).select('name').lean();
+      authorName = adminUser?.name || 'إدارة الأكاديمية';
+    }
     const post = await Blog.create({
       slug: slug.toLowerCase().replace(/\s+/g, '-'),
       title: { ar: titleAr, en: titleEn || titleAr },
@@ -1413,7 +1486,7 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
       coverImage: coverImage || '',
       category: category || 'general',
       author: req.user.id,
-      authorName: req.user.name,
+      authorName,
       status,
     });
     res.status(201).json(post);

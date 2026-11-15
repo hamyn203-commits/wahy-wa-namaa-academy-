@@ -103,7 +103,14 @@ async function placeSubscription({
       const expectedTrack = student.preferredTrack || 'memorization';
       const expectedLevel = student.currentLevel || 'beginner';
 
-      if (subscription.section === 'ladies' && student.gender && student.gender !== 'female') {
+      const studentAge = Number(student.age || 0);
+      if (!['male', 'female'].includes(String(student.gender || '')) || !(studentAge > 0)) {
+        const error = new Error('يرجى استكمال العمر والجنس في الملف الشخصي قبل تسكين الحلقة');
+        error.code = 'PROFILE_DEMOGRAPHICS_REQUIRED';
+        throw error;
+      }
+
+      if (subscription.section === 'ladies' && student.gender !== 'female') {
         const error = new Error('قسم السيدات مخصص للطالبات فقط');
         error.code = 'LADIES_SECTION_STUDENT_MISMATCH';
         throw error;
@@ -116,8 +123,17 @@ async function placeSubscription({
             status: { $nin: ['completed'] },
           }).session(dbSession);
           if (circle && (!teacher || String(circle.teacher) !== String(teacher._id))) {
-            teacher = await Teacher.findOne({ _id: circle.teacher }).session(dbSession);
-            if (teacher) subscription.preferredTeacher = teacher._id;
+            teacher = await Teacher.findOne({
+              _id: circle.teacher,
+              status: 'approved',
+              isVerified: true,
+            }).session(dbSession);
+            if (!teacher) {
+              const error = new Error('Preferred teacher is not available');
+              error.code = 'PREFERRED_TEACHER_UNAVAILABLE';
+              throw error;
+            }
+            subscription.preferredTeacher = teacher._id;
           }
         } else {
           if (!teacher) {
@@ -183,39 +199,49 @@ async function placeSubscription({
         circle = created[0];
       }
 
-      if (teacher?.personalInfo?.gender) {
-        const tGender = teacher.personalInfo.gender;
-        const sGender = student.gender;
-        const sAge = Number(student.age || 0);
-        if (subscription.section === 'ladies' && tGender !== 'female') {
-          const error = new Error('قسم السيدات متاح مع المعلمات فقط');
-          error.code = 'CIRCLE_NOT_COMPATIBLE';
-          throw error;
-        }
-        if (sAge >= 18 && sGender === 'male' && tGender === 'female') {
-          const error = new Error('الحصص والحلقات للرجال متاحة مع المعلمين الرجال فقط');
-          error.code = 'CIRCLE_NOT_COMPATIBLE';
-          throw error;
-        }
-        if (sAge >= 18 && sGender === 'female' && tGender === 'male') {
-          const error = new Error('حلقات وحصص السيدات البالغات متاحة مع المعلمات فقط');
-          error.code = 'CIRCLE_NOT_COMPATIBLE';
-          throw error;
-        }
+      const tGender = teacher?.personalInfo?.gender ? String(teacher.personalInfo.gender) : '';
+      const sGender = String(student.gender || '');
+      const sAge = Number(student.age || 0);
+      if (subscription.section === 'ladies' && tGender && tGender !== 'female') {
+        const error = new Error('قسم السيدات متاح مع المعلمات فقط');
+        error.code = 'CIRCLE_NOT_COMPATIBLE';
+        throw error;
+      }
+      if (tGender === 'female' && !(sGender === 'female' || (sGender === 'male' && sAge > 0 && sAge < 18))) {
+        const error = new Error('الحصص والحلقات للرجال متاحة مع المعلمين الرجال فقط');
+        error.code = 'CIRCLE_NOT_COMPATIBLE';
+        throw error;
+      }
+      if (tGender === 'male' && sGender === 'female' && (!(sAge > 0) || sAge >= 18)) {
+        const error = new Error('حلقات وحصص السيدات البالغات متاحة مع المعلمات فقط');
+        error.code = 'CIRCLE_NOT_COMPATIBLE';
+        throw error;
       }
 
-      if (circle?.gender && student.gender) {
-        if (['boys', 'men'].includes(circle.gender) && student.gender !== 'male') {
-          const error = new Error('هذه الحلقة مخصصة للبنين والرجال فقط');
-          error.code = 'CIRCLE_NOT_COMPATIBLE';
-          throw error;
-        }
-        if (['girls', 'women'].includes(circle.gender) && student.gender !== 'female') {
-          const error = new Error('هذه الحلقة مخصصة للفتيات والسيدات فقط');
-          error.code = 'CIRCLE_NOT_COMPATIBLE';
-          throw error;
-        }
-        if (circle.gender === 'kids_mixed' && Number(student.age || 0) > 12) {
+      if (circle?.gender) {
+        if (['boys', 'men'].includes(circle.gender)) {
+          if (sGender !== 'male' || tGender === 'female') {
+            const error = new Error('هذه الحلقة مخصصة للبنين والرجال فقط');
+            error.code = 'CIRCLE_NOT_COMPATIBLE';
+            throw error;
+          }
+          if ((circle.gender === 'boys' && sAge >= 18) || (circle.gender === 'men' && sAge < 18)) {
+            const error = new Error('الفئة العمرية للطالب لا تتوافق مع هذه الحلقة');
+            error.code = 'CIRCLE_NOT_COMPATIBLE';
+            throw error;
+          }
+        } else if (['girls', 'women'].includes(circle.gender)) {
+          if (sGender !== 'female' || (tGender && tGender !== 'female')) {
+            const error = new Error('هذه الحلقة مخصصة للفتيات والسيدات فقط');
+            error.code = 'CIRCLE_NOT_COMPATIBLE';
+            throw error;
+          }
+          if ((circle.gender === 'girls' && sAge >= 18) || (circle.gender === 'women' && sAge < 18)) {
+            const error = new Error('الفئة العمرية للطالبة لا تتوافق مع هذه الحلقة');
+            error.code = 'CIRCLE_NOT_COMPATIBLE';
+            throw error;
+          }
+        } else if (circle.gender === 'kids_mixed' && (!(sAge > 0) || sAge > 12)) {
           const error = new Error('حلقات البراعم المختلطة متاحة للأطفال حتى 12 سنة فقط');
           error.code = 'CIRCLE_NOT_COMPATIBLE';
           throw error;
@@ -340,9 +366,7 @@ async function startSubscriptionCircle({ circleId, schedule, timezone = 'Africa/
       }
       const plan = getPlan(circle.subscriptionPlanKey || 'group');
       if (!plan) fail('SUBSCRIPTION_PLAN_INVALID', 'خطة الحلقة غير صحيحة');
-      const teacher = allowUnderMinimum
-        ? await Teacher.findOne({ _id: circle.teacher }).session(dbSession)
-        : await Teacher.findOne({ _id: circle.teacher, status: 'approved', isVerified: true }).session(dbSession);
+      const teacher = await Teacher.findOne({ _id: circle.teacher, status: 'approved', isVerified: true }).session(dbSession);
       if (!teacher) fail('PREFERRED_TEACHER_UNAVAILABLE', 'معلم الحلقة غير متاح');
       const placed = await StudentSubscription.find(
         allowUnderMinimum

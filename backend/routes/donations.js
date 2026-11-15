@@ -53,18 +53,25 @@ router.post('/', async (req, res) => {
       });
     }
 
+    const amountMinor = Math.round(numericAmount * 100);
+    const roundedAmount = amountMinor / 100;
+    if (!Number.isSafeInteger(amountMinor) || amountMinor < 100) {
+      return res.status(400).json({ error: 'المبلغ غير صالح' });
+    }
+
     const donation = await Donation.create({
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
-      amount: numericAmount,
+      amount: roundedAmount,
+      amountMinor,
       currency: normalizedCurrency,
       category: normalizedCategory,
       message: cleanMessage,
       isAnonymous: Boolean(isAnonymous),
     });
     notifyAdmin({
-      subject: `تبرع جديد — ${numericAmount} ${normalizedCurrency}`,
+      subject: `تبرع جديد — ${roundedAmount} ${normalizedCurrency}`,
       html: '<p>تم تسجيل تعهد تبرع جديد.</p><p>راجع لوحة الإدارة للاطلاع على بيانات المتبرع.</p>',
     }).catch(() => {});
     res.status(201).json({ success: true, message: 'شكراً لتبرعك — سنتواصل معك لإتمام العملية', id: donation._id });
@@ -92,7 +99,11 @@ router.get('/stats', async (_req, res) => {
         {
           $group: {
             _id: '$currency',
-            total: { $sum: '$amount' },
+            totalMinor: {
+              $sum: {
+                $ifNull: ['$amountMinor', { $round: [{ $multiply: ['$amount', 100] }, 0] }],
+              },
+            },
             count: { $sum: 1 },
           },
         },
@@ -102,7 +113,11 @@ router.get('/stats', async (_req, res) => {
         {
           $group: {
             _id: { category: '$category', currency: '$currency' },
-            total: { $sum: '$amount' },
+            totalMinor: {
+              $sum: {
+                $ifNull: ['$amountMinor', { $round: [{ $multiply: ['$amount', 100] }, 0] }],
+              },
+            },
             count: { $sum: 1 },
           },
         },
@@ -110,7 +125,7 @@ router.get('/stats', async (_req, res) => {
     ]);
 
     const totalsByCurrency = totalsByCurrencyRows.reduce((acc, row) => {
-      acc[row._id] = { total: row.total, count: row.count };
+      acc[row._id] = { total: Math.round(Number(row.totalMinor || 0)) / 100, count: row.count };
       return acc;
     }, {});
 
@@ -123,7 +138,7 @@ router.get('/stats', async (_req, res) => {
       }
 
       acc[category].currencies[currency] = {
-        total: row.total,
+        total: Math.round(Number(row.totalMinor || 0)) / 100,
         count: row.count,
       };
       acc[category].count += row.count;
@@ -185,13 +200,27 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ error: 'معرف التبرع غير صالح' });
     }
     const status = String(req.body?.status || '').trim();
+    const paymentReference = typeof req.body?.paymentReference === 'string'
+      ? req.body.paymentReference.trim().slice(0, 120)
+      : '';
     const allowedStatuses = ['pledged', 'confirmed', 'cancelled'];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ error: 'حالة التبرع غير صالحة' });
     }
+    const existingDonation = await Donation.findById(req.params.id);
+    if (!existingDonation) return res.status(404).json({ error: 'التبرع غير موجود' });
+
+    const beforeStatus = existingDonation.status;
+    const updatePayload = { status };
+    if (status === 'confirmed') {
+      updatePayload.confirmedAt = existingDonation.confirmedAt || new Date();
+      updatePayload.confirmedBy = req.user.id;
+      if (paymentReference) updatePayload.paymentReference = paymentReference;
+    }
+
     const donation = await Donation.findByIdAndUpdate(
       req.params.id,
-      { status },
+      updatePayload,
       { new: true, runValidators: true }
     );
     if (!donation) return res.status(404).json({ error: 'التبرع غير موجود' });
@@ -201,10 +230,13 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
       action: `donation.status.${status}`,
       entityType: 'donation',
       entityId: String(donation._id),
-      reason: `تحديث حالة التبرع إلى ${status}`,
+      reason: paymentReference ? `تحديث حالة التبرع إلى ${status} (${paymentReference})` : `تحديث حالة التبرع إلى ${status}`,
+      before: { status: beforeStatus },
+      after: { status: donation.status, paymentReference: donation.paymentReference || null },
       metadata: {
         status,
         amount: donation.amount,
+        amountMinor: donation.amountMinor || Math.round(Number(donation.amount || 0) * 100),
         currency: donation.currency,
       },
     }).catch(() => {});

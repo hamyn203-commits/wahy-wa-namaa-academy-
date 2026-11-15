@@ -9,12 +9,35 @@ const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
 const Session = require('../models/Session');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const { findChildAccess } = require('../utils/guardianSafeguarding');
 
-async function isGuardianLinkedToStudent(guardianUserId, studentId) {
+async function isGuardianLinkedToStudent(guardianUserId, studentId, { requireEnrollmentApprovalForAdults = false } = {}) {
   if (!guardianUserId || !studentId) return false;
-  const guardianDoc = await Guardian.findOne({ user: guardianUserId, 'children.student': studentId }).select('_id').lean();
-  if (guardianDoc) return true;
-  const userDoc = await User.findOne({ _id: guardianUserId, children: studentId }).select('_id').lean();
+  const guardianDoc = await Guardian.findOne({
+    user: guardianUserId,
+    isActive: { $ne: false },
+    'children.student': studentId,
+  }).select('children isActive').lean();
+  if (guardianDoc) {
+    const access = findChildAccess(guardianDoc, studentId);
+    if (!access) return false;
+    if (requireEnrollmentApprovalForAdults) {
+      const studentDoc = await User.findById(studentId).select('age enrollmentSection').lean();
+      const isMinor = Boolean(
+        studentDoc && (
+          (Number(studentDoc.age) > 0 && Number(studentDoc.age) < 18)
+          || studentDoc.enrollmentSection === 'children'
+        )
+      );
+      if (!isMinor && access.permissions.approveEnrollments !== true) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const existingProfile = await Guardian.findOne({ user: guardianUserId }).select('_id isActive').lean();
+  if (existingProfile) return false;
+  const userDoc = await User.findOne({ _id: guardianUserId, isActive: { $ne: false }, children: studentId }).select('_id').lean();
   return Boolean(userDoc);
 }
 const mongoose = require('mongoose');
@@ -120,7 +143,7 @@ router.get('/me', protect, authorize('student'), async (req, res) => {
 router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req, res) => {
   if (req.user.role === 'guardian') {
     const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
-    if (!targetSub || !(await isGuardianLinkedToStudent(req.user.id, targetSub.student))) {
+    if (!targetSub || !(await isGuardianLinkedToStudent(req.user.id, targetSub.student, { requireEnrollmentApprovalForAdults: true }))) {
       return res.status(403).json({ error: 'غير مصرح بتجديد اشتراك هذا الطالب' });
     }
     req.user = { ...req.user, id: String(targetSub.student) };
@@ -223,7 +246,7 @@ router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req,
 router.post('/select', protect, authorize('student', 'guardian'), async (req, res) => {
   if (req.user.role === 'guardian') {
     const requestedStudentId = String(req.body.studentId || '').trim();
-    if (!requestedStudentId || !(await isGuardianLinkedToStudent(req.user.id, requestedStudentId))) {
+    if (!requestedStudentId || !(await isGuardianLinkedToStudent(req.user.id, requestedStudentId, { requireEnrollmentApprovalForAdults: true }))) {
       return res.status(403).json({ error: 'غير مصرح باختيار باقة لهذا الطالب' });
     }
     req.user = { ...req.user, id: requestedStudentId };
@@ -240,15 +263,28 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       });
     }
 
-    const student = await User.findById(req.user.id).select('enrollmentSection gender age role isActive');
+    const student = await User.findById(req.user.id).select('enrollmentSection gender age role isActive onboarding');
     if (!student || student.role !== 'student' || student.isActive === false) {
       return res.status(403).json({ error: 'حساب الطالب غير متاح', code: 'STUDENT_ACCOUNT_UNAVAILABLE' });
     }
-    assertGenderAndAgeCompatibility({ student, section });
+    if (student.onboarding?.required === true && student.onboarding?.completed !== true) {
+      return res.status(403).json({
+        error: 'يرجى استكمال إعداد الحساب الشخصي قبل اختيار الباقة',
+        code: 'ONBOARDING_REQUIRED',
+      });
+    }
     if (!isCompatibleStudentSection(student.enrollmentSection, section)) {
       return res.status(409).json({
         error: 'القسم المحدد لا يتطابق مع القسم المسجل في حسابك. تواصل مع الإدارة لتصحيح القسم.',
         code: 'SUBSCRIPTION_SECTION_MISMATCH',
+      });
+    }
+    try {
+      assertGenderAndAgeCompatibility({ student, section });
+    } catch (safeguardErr) {
+      return res.status(safeguardErr.status || 403).json({
+        error: safeguardErr.publicMessage || safeguardErr.message,
+        code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
       });
     }
 
@@ -871,8 +907,26 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
     }).sort({ createdAt: -1 });
 
     if (sub) {
+      const targetPlanKey = circle.subscriptionPlanKey || 'group';
+      const targetSection = circle.subscriptionSection || (student.gender === 'female' ? 'ladies' : 'men_children');
+      if (sub.planKey !== targetPlanKey || sub.section !== targetSection) {
+        return res.status(409).json({
+          error: 'باقة الطالب الحالية أو قسمها لا يتطابق مع نوع وقسم هذه الحلقة',
+          code: 'SUBSCRIPTION_PLAN_CIRCLE_MISMATCH',
+        });
+      }
       if (sub.circle && String(sub.circle) !== String(circle._id)) {
-        await GroupCircle.updateOne({ _id: sub.circle }, { $pull: { students: student._id } });
+        await Promise.all([
+          GroupCircle.updateOne({ _id: sub.circle }, { $pull: { students: student._id } }),
+          Session.updateMany(
+            {
+              circle: sub.circle,
+              status: { $in: ['pending', 'accepted'] },
+              scheduledAt: { $gt: now },
+            },
+            { $pull: { attendance: { student: student._id } } }
+          ),
+        ]);
       }
       sub.circle = circle._id;
       sub.preferredTeacher = circle.teacher;
@@ -972,8 +1026,16 @@ router.delete('/admin/circles/:id/students/:studentId', protect, authorize('admi
     await Promise.all([
       User.updateOne({ _id: studentId, circle: circle._id }, { $unset: { circle: 1 } }),
       StudentSubscription.updateMany(
-        { student: studentId, circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
+        { student: studentId, circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      Session.updateMany(
+        {
+          circle: circle._id,
+          status: { $in: ['pending', 'accepted'] },
+          scheduledAt: { $gt: new Date() },
+        },
+        { $pull: { attendance: { student: studentId } } }
       ),
     ]);
 
@@ -1111,8 +1173,12 @@ router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res
     await Promise.all([
       User.updateMany({ circle: circleId }, { $unset: { circle: 1 } }),
       StudentSubscription.updateMany(
-        { circle: circleId, status: { $in: ['placed', 'active', 'paused'] } },
+        { circle: circleId, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      Session.updateMany(
+        { circle: circleId, status: { $in: ['pending', 'accepted'] } },
+        { $set: { status: 'cancelled', cancellationReason: 'تم حذف الحلقة من الإدارة' } }
       ),
     ]);
 

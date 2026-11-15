@@ -13,7 +13,7 @@ const {
   readRefreshTokenIfValid,
   requireRole 
 } = require('../middleware/auth');
-const { addMockUser, findMockUserByEmail, findMockUserById, updateMockUser } = require('../mockStore');
+const { addMockUser, findMockUserByEmail, findMockUserById, updateMockUser, getMockUsers } = require('../mockStore');
 const { sendEmail } = require('../services/notificationDispatcher');
 const { getEmailProviderStatus } = require('../config/emailProvider');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
@@ -36,6 +36,24 @@ const LOCKOUT_DURATION_MS = Number(process.env.LOCKOUT_DURATION_MS || 15 * 60 * 
 const REFRESH_COOKIE_MAX_AGE_SECONDS = Number(
   process.env.REFRESH_COOKIE_MAX_AGE_SECONDS || 7 * 24 * 60 * 60
 );
+const consumedRefreshJtisFallback = new Map();
+
+function markRefreshJtiConsumedInMemory(jti, expSeconds) {
+  if (!jti) return false;
+  const now = Date.now();
+  if (consumedRefreshJtisFallback.size > 5000) {
+    for (const [key, expiresAt] of consumedRefreshJtisFallback.entries()) {
+      if (expiresAt <= now) consumedRefreshJtisFallback.delete(key);
+    }
+  }
+  const existingExp = consumedRefreshJtisFallback.get(jti);
+  if (existingExp && existingExp > now) {
+    return true;
+  }
+  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : REFRESH_COOKIE_MAX_AGE_SECONDS * 1000;
+  consumedRefreshJtisFallback.set(jti, now + ttlMs);
+  return false;
+}
 
 function setRefreshCookie(res, refreshToken) {
   const cookieName = getRefreshCookieName();
@@ -154,8 +172,14 @@ router.post('/register', async (req, res) => {
     }
     const assignedRole = role || 'student';
     // A guardian may manage children from both divisions, so do not bind guardians.
+    const normalizedGender = ['male', 'female'].includes(String(gender || '').trim().toLowerCase())
+      ? String(gender).trim().toLowerCase()
+      : undefined;
     if (assignedRole === 'student' && enrollmentSection !== undefined && !isSection(enrollmentSection)) {
       return res.status(400).json({ error: 'القسم التعليمي المختار غير صحيح', code: 'ENROLLMENT_SECTION_INVALID' });
+    }
+    if (assignedRole === 'student' && enrollmentSection === 'ladies' && normalizedGender === 'male') {
+      return res.status(400).json({ error: 'قسم السيدات متاح للطالبات فقط', code: 'SECTION_GENDER_MISMATCH' });
     }
     const normalizedPhone = normalizePhone(phone);
 
@@ -210,7 +234,8 @@ router.post('/register', async (req, res) => {
         role: assignedRole,
         ...(assignedRole === 'student' ? {
           whatsappPhone: String(whatsappPhone || '').trim().slice(0, 32),
-          ...(parsedAge !== undefined ? { age: parsedAge } : { onboarding: { required: true, completed: false } }),
+          ...(parsedAge !== undefined ? { age: parsedAge } : {}),
+          ...((parsedAge === undefined || !normalizedGender) ? { onboarding: { required: true, completed: false } } : {}),
           ...(parsedAge !== undefined && parsedAge < 18 && guardianPhone ? {
             guardianContact: {
               name: String(req.body.guardianName || '').trim().slice(0, 100),
@@ -218,7 +243,7 @@ router.post('/register', async (req, res) => {
               relationship: ['father', 'mother', 'guardian', 'other'].includes(guardianRelationship) ? guardianRelationship : 'guardian',
             },
           } : {}),
-          ...(gender ? { gender } : {}),
+          ...(normalizedGender ? { gender: normalizedGender } : {}),
           ...(enrollmentSection ? { enrollmentSection } : {}),
           currentLevel: ['beginner', 'intermediate', 'advanced', 'ijazah'].includes(currentLevel) ? currentLevel : 'beginner',
           preferredTrack: ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(preferredTrack) ? preferredTrack : 'memorization',
@@ -228,7 +253,7 @@ router.post('/register', async (req, res) => {
         } : {}),
       });
 
-      if (req.body.referralCode && user.role === 'student' && user.emailVerified === true) {
+      if (req.body.referralCode && user.role === 'student') {
         const { processReferralSignup } = require('./referrals');
         await processReferralSignup(req.body.referralCode, user._id).catch(() => {});
       }
@@ -337,6 +362,13 @@ router.post('/google', async (req, res) => {
     let user = await User.findOne({ googleSubject: identity.sub })
       .select('+googleSubject +refreshTokenVersion +failedLoginAttempts +lockUntil +sessionsRevokedAt');
 
+    if (user && String(user.email || '').toLowerCase() !== String(identity.email || '').toLowerCase()) {
+      return res.status(409).json({
+        error: 'Google identity email no longer matches this account. Please sign in with your updated email.',
+        code: 'GOOGLE_EMAIL_MISMATCH',
+      });
+    }
+
     if (!user) {
       const existing = await User.findOne({ email: identity.email })
         .select('+googleSubject +refreshTokenVersion +failedLoginAttempts +lockUntil +sessionsRevokedAt');
@@ -352,19 +384,45 @@ router.post('/google', async (req, res) => {
         if (existing.googleSubject && existing.googleSubject !== identity.sub) {
           return res.status(409).json({ error: 'This account is linked to another Google identity' });
         }
-        // CRIT-03 defense: If an unverified @gmail.com account was pre-registered before the
-        // real Gmail owner signed in via Google, purge any attacker-planted credentials,
-        // sessions, and pending guardian invitations before claiming the account.
+        // CRIT-03 / V3-HIGH-04 defense: If an unverified @gmail.com account was pre-registered
+        // before the real Gmail owner signed in via Google, purge ALL attacker-planted
+        // credentials, sessions, accepted/pending guardian links, phones, and demographics.
         if (!existing.googleSubject && existing.emailVerified !== true) {
           existing.password = crypto.randomBytes(48).toString('base64url');
           existing.refreshTokenVersion = Number(existing.refreshTokenVersion || 0) + 1;
           existing.sessionsRevokedAt = new Date();
+          existing.consumedRefreshJtis = [];
+          existing.guardian = null;
+          existing.children = [];
+          existing.guardianLinkCode = undefined;
           existing.guardianContact = { name: '', phone: '', relationship: '' };
+          existing.phone = '';
+          existing.phoneNormalized = undefined;
+          existing.phoneVerified = false;
+          existing.whatsappPhone = '';
+          existing.gender = undefined;
+          existing.age = undefined;
+          existing.referredBy = undefined;
+          existing.role = requestedRole;
           existing.onboarding = { required: true, completed: false };
-          await GuardianInvitation.updateMany(
-            { student: existing._id, status: 'pending' },
-            { $set: { status: 'cancelled' } }
-          ).catch(() => {});
+          await Promise.all([
+            GuardianInvitation.updateMany?.(
+              { student: existing._id, status: { $in: ['pending', 'accepted'] } },
+              { $set: { status: 'cancelled' } }
+            ),
+            Guardian.updateMany?.(
+              { 'children.student': existing._id },
+              { $pull: { children: { student: existing._id }, reports: { student: existing._id } } }
+            ),
+            User.updateMany?.(
+              { children: existing._id },
+              { $pull: { children: existing._id } }
+            ),
+          ]).catch(() => {});
+          try {
+            const Referral = require('../models/Referral');
+            await Referral.deleteOne?.({ referee: existing._id }).catch(() => {});
+          } catch { /* ignore */ }
         }
         existing.googleSubject = identity.sub;
         existing.emailVerified = true;
@@ -382,6 +440,10 @@ router.post('/google', async (req, res) => {
           emailVerified: true,
           avatar: identity.picture,
         });
+        if (req.body?.referralCode && requestedRole === 'student') {
+          const { processReferralSignup } = require('./referrals');
+          await processReferralSignup(req.body.referralCode, user._id).catch(() => {});
+        }
       }
     }
     if (!['student', 'guardian', 'teacher'].includes(user.role) || user.isActive === false) {
@@ -481,12 +543,12 @@ router.post('/login', async (req, res) => {
           ? new Date(Date.now() + LOCKOUT_DURATION_MS)
           : null;
         if (typeof User.findByIdAndUpdate === 'function' && user._id) {
-          await User.findByIdAndUpdate(
+          await Promise.resolve(User.findByIdAndUpdate(
             user._id,
             lockExpired
               ? { $set: { failedLoginAttempts: 1, lockUntil: nextLock } }
               : { $inc: { failedLoginAttempts: 1 }, ...(nextLock ? { $set: { lockUntil: nextLock } } : {}) }
-          ).catch(() => {});
+          )).catch(() => {});
         } else {
           user.failedLoginAttempts = nextAttempts;
           user.lockUntil = nextLock;
@@ -545,7 +607,7 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
   try {
     const user = isMockMode && !isDBConnected()
       ? findMockUserById(req.refreshToken.id)
-      : await User.findById(req.refreshToken.id).select('+refreshTokenVersion');
+      : await User.findById(req.refreshToken.id).select('+refreshTokenVersion +sessionsRevokedAt +lockUntil +consumedRefreshJtis');
     
     if (!user || !user.isActive) {
       clearRefreshCookie(res);
@@ -554,11 +616,80 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
       });
     }
 
+    if (user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
+      clearRefreshCookie(res);
+      return res.status(423).json({
+        error: 'Account temporarily locked. Please try again later.',
+        code: 'ACCOUNT_LOCKED',
+      });
+    }
+
+    if (req.refreshToken.role && user.role && req.refreshToken.role !== user.role) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ error: 'Refresh session role invalidated', code: 'SESSION_REVOKED' });
+    }
+
     const expectedVersion = Number(user.refreshTokenVersion || 0);
     const tokenVersion = Number(req.refreshToken.v || 0);
     if (tokenVersion !== expectedVersion) {
       clearRefreshCookie(res);
       return res.status(401).json({ error: 'Refresh session has been revoked' });
+    }
+
+    if (user.sessionsRevokedAt && req.refreshToken.iat) {
+      const revokedMs = new Date(user.sessionsRevokedAt).getTime();
+      if (Number.isFinite(revokedMs) && req.refreshToken.iat * 1000 < revokedMs - 1000) {
+        clearRefreshCookie(res);
+        return res.status(401).json({ error: 'Refresh session has been revoked' });
+      }
+    }
+
+    const presentedJti = typeof req.refreshToken.jti === 'string' ? req.refreshToken.jti : '';
+    if (presentedJti) {
+      const canRotateInDb = isDBConnected() && User.findOneAndUpdate === mongoose.Model.findOneAndUpdate;
+      if (canRotateInDb) {
+        if (Array.isArray(user.consumedRefreshJtis) && user.consumedRefreshJtis.includes(presentedJti)) {
+          await Promise.resolve(User.findByIdAndUpdate(user._id, {
+            $inc: { refreshTokenVersion: 1 },
+            $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
+          })).catch(() => {});
+          clearRefreshCookie(res);
+          return res.status(401).json({ error: 'Refresh token reuse detected. All sessions revoked.', code: 'REFRESH_TOKEN_REUSED' });
+        }
+        const rotated = await User.findOneAndUpdate(
+          {
+            _id: user._id,
+            refreshTokenVersion: expectedVersion,
+            consumedRefreshJtis: { $ne: presentedJti },
+          },
+          {
+            $push: { consumedRefreshJtis: { $each: [presentedJti], $slice: -24 } },
+          },
+          { new: true }
+        );
+        if (!rotated) {
+          await Promise.resolve(User.findByIdAndUpdate(user._id, {
+            $inc: { refreshTokenVersion: 1 },
+            $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
+          })).catch(() => {});
+          clearRefreshCookie(res);
+          return res.status(401).json({ error: 'Refresh session has been revoked', code: 'REFRESH_TOKEN_REUSED' });
+        }
+      } else if (markRefreshJtiConsumedInMemory(presentedJti, req.refreshToken.exp)) {
+        if (isDBConnected() && typeof User.findByIdAndUpdate === 'function') {
+          await Promise.resolve(User.findByIdAndUpdate(user._id, {
+            $inc: { refreshTokenVersion: 1 },
+            $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
+          })).catch(() => {});
+        } else if (isMockMode) {
+          updateMockUser(user._id || user.id, {
+            refreshTokenVersion: expectedVersion + 1,
+            sessionsRevokedAt: new Date(),
+          });
+        }
+        clearRefreshCookie(res);
+        return res.status(401).json({ error: 'Refresh session has been revoked', code: 'REFRESH_TOKEN_REUSED' });
+      }
     }
 
     if (user.role === 'teacher') {
@@ -593,17 +724,25 @@ router.post('/logout', readRefreshTokenIfValid, async (req, res) => {
 
   try {
     if (req.refreshToken?.id) {
+      const tokenVersion = Number(req.refreshToken.v || 0);
       if (isMockMode && !isDBConnected()) {
         const user = findMockUserById(req.refreshToken.id);
-        if (user) {
+        if (user && Number(user.refreshTokenVersion || 0) === tokenVersion) {
           updateMockUser(user._id || user.id, {
             refreshTokenVersion: Number(user.refreshTokenVersion || 0) + 1,
+            sessionsRevokedAt: new Date(),
+            pushToken: undefined,
           });
         }
       } else {
-        await User.findByIdAndUpdate(req.refreshToken.id, {
-          $inc: { refreshTokenVersion: 1 },
-        });
+        await User.findOneAndUpdate(
+          { _id: req.refreshToken.id, refreshTokenVersion: tokenVersion },
+          {
+            $inc: { refreshTokenVersion: 1 },
+            $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
+            $unset: { pushToken: 1 },
+          }
+        );
       }
     }
   } catch (error) {
@@ -650,8 +789,7 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'avatar') && req.user.role === 'student') {
       const value = String(req.body.avatar || '');
-      if (value && (!storage.referenceMatches(value, 'student-avatar', req.user.id) ||
-          (storage.getDriver() === 'vercel-blob' && !storage.isVercelBlobReference(value)))) {
+      if (value && !storage.isOwnedObjectReference(value, 'student-avatar', req.user.id)) {
         return res.status(400).json({ error: 'Invalid student avatar reference' });
       }
       patchFields.avatar = value;
@@ -659,10 +797,9 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'avatar') && req.user.role !== 'student') {
       const value = String(req.body.avatar || '');
-      const validOwnerRef = storage.referenceMatches(value, 'teacher-public', req.user.id)
-        || storage.referenceMatches(value, 'student-avatar', req.user.id);
-      const validBlobHost = storage.getDriver() !== 'vercel-blob' || storage.isVercelBlobReference(value);
-      if (value && (!validOwnerRef || !validBlobHost)) {
+      const validOwnerRef = storage.isOwnedObjectReference(value, 'teacher-public', req.user.id)
+        || storage.isOwnedObjectReference(value, 'student-avatar', req.user.id);
+      if (value && !validOwnerRef) {
         return res.status(400).json({ error: 'Invalid avatar reference' });
       }
       patchFields.avatar = value;
@@ -762,6 +899,31 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
     if (Object.keys(submitted).some(key => !allowed.includes(key))) return res.status(400).json({ error: 'Invalid fields' });
     const updated = await User.findById(req.user.id).select('+phoneNormalized');
     if (!updated || !updated.isActive || updated.role !== req.user.role) return res.status(403).json({ error: 'Invalid account' });
+    if (updated.onboarding?.completed === true) {
+      if (
+        Object.prototype.hasOwnProperty.call(submitted, 'age')
+        && submitted.age !== undefined
+        && updated.age !== undefined
+        && updated.age !== null
+        && Math.trunc(Number(submitted.age)) !== Number(updated.age)
+      ) {
+        return res.status(403).json({
+          code: 'DEMOGRAPHICS_LOCKED',
+          error: 'لا يمكن تعديل العمر بعد إكمال إعداد الملف الشخصي إلا عبر التواصل مع الإدارة',
+        });
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(submitted, 'gender')
+        && submitted.gender !== undefined
+        && updated.gender
+        && String(submitted.gender) !== String(updated.gender)
+      ) {
+        return res.status(403).json({
+          code: 'DEMOGRAPHICS_LOCKED',
+          error: 'لا يمكن تعديل الجنس بعد إكمال إعداد الملف الشخصي إلا عبر التواصل مع الإدارة',
+        });
+      }
+    }
     const previousNormalizedPhone = updated.phoneNormalized || normalizePhone(updated.phone) || '';
     if (submitted.guardianContact !== undefined) {
       if (req.user.role !== 'student' || !submitted.guardianContact || typeof submitted.guardianContact !== 'object' || Array.isArray(submitted.guardianContact)) return res.status(400).json({ error: 'Invalid guardian contact' });
@@ -803,22 +965,40 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
         return res.status(400).json({ code: 'AGE_REQUIRED', error: 'يرجى تحديد عمر الطالب بشكل صحيح (بين 4 و 100 سنة)' });
       }
       updated.age = Math.trunc(parsedAge);
+      if (!['male', 'female'].includes(String(updated.gender || ''))) {
+        return res.status(400).json({ code: 'GENDER_REQUIRED', error: 'يرجى تحديد جنس الطالب لإكمال إعداد الملف الشخصي' });
+      }
     }
     const isMinor = updated.role === 'student' && Number(updated.age) > 0 && Number(updated.age) < 18;
     if (isMinor && (!updated.guardianContact?.name?.trim() || !updated.guardianContact?.phone?.trim() || !updated.guardianContact?.relationship)) {
       return res.status(400).json({ code: 'GUARDIAN_CONTACT_REQUIRED', error: 'بيانات ولي الأمر مطلوبة للطالب أقل من 18 سنة' });
     }
+    if (updated.role === 'student' && updated.guardianContact?.phone?.trim()) {
+      const normalizedGuardianPhone = normalizePhone(updated.guardianContact.phone);
+      if (normalizedGuardianPhone && normalizedGuardianPhone === nextNormalizedPhone) {
+        return res.status(400).json({
+          code: 'GUARDIAN_SELF_LINK_FORBIDDEN',
+          error: 'لا يمكن استخدام رقم هاتف الطالب نفسه كرقم لولي الأمر',
+        });
+      }
+    }
     updated.phoneNormalized = nextNormalizedPhone;
     if (nextNormalizedPhone !== previousNormalizedPhone) {
       updated.phoneVerified = false;
     }
-    if (isMinor) {
-      updated.set('privacyConsent.parentalConsentVerified', true);
-      updated.set('privacyConsent.parentalConsentAt', new Date());
-    }
     updated.set('onboarding.required', true);
     updated.set('onboarding.completed', true);
     await updated.save();
+    if (isMinor && updated.guardianContact?.phone?.trim()) {
+      await createGuardianInvitation({
+        studentId: updated._id,
+        guardianPhone: updated.guardianContact.phone,
+        relationship: updated.guardianContact.relationship || 'guardian',
+        source: 'student-onboarding',
+      }).catch((error) => {
+        console.warn('Onboarding guardian invitation warning:', error.message);
+      });
+    }
     return res.json({ user: await presentUser(updated) });
   } catch (error) {
     if (error.name === 'ValidationError') return res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1011,7 +1191,7 @@ router.post('/reset-password', async (req, res) => {
     const user = await User.findOne({
       passwordResetToken: hashedToken,
       passwordResetExpires: { $gt: Date.now() }
-    }).select('+refreshTokenVersion');
+    }).select('+passwordResetToken +passwordResetExpires +refreshTokenVersion');
 
     if (!user) {
       return res.status(400).json({ 
@@ -1140,6 +1320,19 @@ router.post('/privacy/delete-request', verifyAccessToken, async (req, res) => {
     if (isMockMode && !isDBConnected()) {
       const user = findMockUserById(req.user.id);
       if (!user) return res.status(404).json({ error: 'User not found' });
+      if (deactivateImmediately && user.role === 'admin') {
+        const otherAdmins = getMockUsers().filter((candidate) => (
+          candidate.role === 'admin'
+          && candidate.isActive !== false
+          && String(candidate._id || candidate.id) !== String(user._id || user.id)
+        ));
+        if (otherAdmins.length === 0) {
+          return res.status(409).json({
+            error: 'Cannot deactivate the sole active administrator account',
+            code: 'LAST_ADMIN_CANNOT_DEACTIVATE',
+          });
+        }
+      }
       updateMockUser(user._id || user.id, {
         privacyConsent: {
           ...(user.privacyConsent || {}),
@@ -1154,6 +1347,20 @@ router.post('/privacy/delete-request', verifyAccessToken, async (req, res) => {
         deletionRequestedAt: requestedAt,
         deactivated: deactivateImmediately,
       });
+    }
+
+    if (deactivateImmediately && req.user.role === 'admin') {
+      const remainingActiveAdmins = await User.countDocuments({
+        role: 'admin',
+        isActive: { $ne: false },
+        _id: { $ne: req.user.id },
+      });
+      if (remainingActiveAdmins === 0) {
+        return res.status(409).json({
+          error: 'Cannot deactivate the sole active administrator account',
+          code: 'LAST_ADMIN_CANNOT_DEACTIVATE',
+        });
+      }
     }
 
     const updateDoc = {

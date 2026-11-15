@@ -2,11 +2,30 @@ const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
 const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID;
 const IS_PRODUCTION = import.meta.env.PROD;
 
+const SENSITIVE_PARAMS = ['token', 'code', 'ticket', 'state', 'credential'];
+
+function sanitizeLocationForAnalytics(rawHref) {
+  try {
+    const parsed = new URL(rawHref || window.location.href, window.location.origin);
+    for (const key of SENSITIVE_PARAMS) {
+      parsed.searchParams.delete(key);
+    }
+    if (parsed.hash && /token=|code=|credential=/i.test(parsed.hash)) {
+      parsed.hash = '';
+    }
+    return parsed.toString();
+  } catch {
+    return window.location.origin + window.location.pathname;
+  }
+}
+
 export function initAnalytics() {
   if (!IS_PRODUCTION) {
     console.log('Analytics disabled in development');
     return;
   }
+
+  const isSensitiveAuthRoute = /\/reset-password(?:\/|$)/i.test(window.location.pathname || '');
 
   if (GA_MEASUREMENT_ID) {
     const script = document.createElement('script');
@@ -21,11 +40,11 @@ export function initAnalytics() {
     window.gtag('js', new Date());
     window.gtag('config', GA_MEASUREMENT_ID, {
       page_title: document.title,
-      page_location: window.location.href
+      page_location: sanitizeLocationForAnalytics(window.location.href)
     });
   }
 
-  if (CLARITY_PROJECT_ID) {
+  if (CLARITY_PROJECT_ID && !isSensitiveAuthRoute) {
     (function(c, l, a, r, i, t, y) {
       c[a] = c[a] || function() {
         (c[a].q = c[a].q || []).push(arguments);
@@ -41,14 +60,15 @@ export function initAnalytics() {
 
 export function trackPageView(path, title) {
   if (!IS_PRODUCTION || !window.gtag) return;
+  const safePath = String(path || '').split('?')[0].split('#')[0] || '/';
 
   window.gtag('config', GA_MEASUREMENT_ID, {
-    page_path: path,
+    page_path: safePath,
     page_title: title || document.title
   });
 
-  if (window.clarity) {
-    window.clarity('set', 'page', path);
+  if (window.clarity && !/\/reset-password(?:\/|$)/i.test(safePath)) {
+    window.clarity('set', 'page', safePath);
   }
 }
 

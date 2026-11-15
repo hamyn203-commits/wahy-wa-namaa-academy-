@@ -174,8 +174,8 @@ EnrollmentSchema.methods.updateProgress = async function(lessonId, score = 100) 
     // Update current lesson
     this.progress.currentLesson = lessonId;
 
-    // Check if course is completed
-    if (totalLessons > 0 && this.progress.percentage === 100) {
+    // Check if course is completed (require every published lesson, never rounding up)
+    if (totalLessons > 0 && completedCount >= totalLessons) {
       this.status = 'completed';
       this.completedAt = new Date();
       

@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const VerificationCode = require('../models/VerificationCode');
+const VerificationLedger = require('../models/VerificationLedger');
 const { sendEmail } = require('../services/notificationDispatcher');
 
 const OTP_MSG = (code) => `رمز التحقق — أكاديمية وَحْيٌ وَنَمَاء: ${code}\nصالح 10 دقائق.`;
@@ -10,8 +12,14 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/;
 const EMAIL_SEND_COOLDOWN_MS = 45 * 1000;
 const EMAIL_HOURLY_WINDOW_MS = 60 * 60 * 1000;
 const EMAIL_HOURLY_CAP = 6;
+const MAX_VERIFICATION_UPLOADS_PER_JTI = 16;
 const emailSendLedger = new Map();
 const consumedVerificationTokens = new Map();
+const verificationTokenUploadCounts = new Map();
+
+function canUseDbLedger() {
+  return mongoose.connection.readyState === 1 && typeof VerificationLedger?.findOneAndUpdate === 'function';
+}
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
@@ -54,9 +62,126 @@ function checkEmailSendQuota(email) {
   };
 }
 
-function consumeVerificationTokenJti(jti, expSeconds) {
-  if (!jti) return true;
+async function checkEmailSendQuotaAsync(email) {
+  if (!canUseDbLedger()) {
+    return checkEmailSendQuota(email);
+  }
   const now = Date.now();
+  const existing = await VerificationLedger.findOne({ kind: 'email_send_quota', key: email }).lean();
+  if (!existing || !existing.windowStart || now - new Date(existing.windowStart).getTime() > EMAIL_HOURLY_WINDOW_MS) {
+    return {
+      allowed: true,
+      nextEntry: {
+        windowStart: new Date(now),
+        lastSentAt: new Date(now),
+        count: 1,
+        expiresAt: new Date(now + EMAIL_HOURLY_WINDOW_MS),
+      },
+    };
+  }
+  if (existing.lastSentAt && now - new Date(existing.lastSentAt).getTime() < EMAIL_SEND_COOLDOWN_MS) {
+    return { allowed: false, reason: 'Please wait before requesting another verification code' };
+  }
+  if (Number(existing.count || 0) >= EMAIL_HOURLY_CAP) {
+    return { allowed: false, reason: 'Hourly verification code limit reached for this email' };
+  }
+  return {
+    allowed: true,
+    nextEntry: {
+      windowStart: new Date(existing.windowStart),
+      lastSentAt: new Date(now),
+      count: Number(existing.count || 0) + 1,
+      expiresAt: new Date(new Date(existing.windowStart).getTime() + EMAIL_HOURLY_WINDOW_MS),
+    },
+  };
+}
+
+async function persistEmailSendQuotaAsync(email, nextEntry) {
+  if (!canUseDbLedger()) {
+    emailSendLedger.set(email, {
+      windowStart: new Date(nextEntry.windowStart).getTime(),
+      lastSentAt: new Date(nextEntry.lastSentAt).getTime(),
+      count: nextEntry.count,
+    });
+    return;
+  }
+  await VerificationLedger.findOneAndUpdate(
+    { kind: 'email_send_quota', key: email },
+    {
+      $set: {
+        windowStart: nextEntry.windowStart,
+        lastSentAt: nextEntry.lastSentAt,
+        count: nextEntry.count,
+        expiresAt: nextEntry.expiresAt,
+      },
+    },
+    { upsert: true, new: true }
+  );
+}
+
+async function registerVerificationTokenUpload(jti, expSeconds, maxUploads = MAX_VERIFICATION_UPLOADS_PER_JTI) {
+  if (!jti) return false;
+  const now = Date.now();
+  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : 30 * 60 * 1000;
+  if (canUseDbLedger()) {
+    const existing = await VerificationLedger.findOne({ kind: 'token_jti', key: String(jti) }).lean();
+    if (existing?.consumed || Number(existing?.uploadCount || 0) >= maxUploads) {
+      return false;
+    }
+    const updated = await VerificationLedger.findOneAndUpdate(
+      {
+        kind: 'token_jti',
+        key: String(jti),
+        consumed: { $ne: true },
+        $or: [{ uploadCount: { $lt: maxUploads } }, { uploadCount: { $exists: false } }],
+      },
+      {
+        $inc: { uploadCount: 1 },
+        $setOnInsert: {
+          consumed: false,
+          expiresAt: new Date(now + ttlMs),
+        },
+      },
+      { upsert: true, new: true }
+    ).catch((err) => (err?.code === 11000 ? null : Promise.reject(err)));
+    return Boolean(updated && !updated.consumed && Number(updated.uploadCount || 0) <= maxUploads);
+  }
+  const consumedExp = consumedVerificationTokens.get(jti);
+  if (consumedExp && consumedExp > now) return false;
+  const current = verificationTokenUploadCounts.get(jti) || { count: 0, expiresAt: now + ttlMs };
+  if (current.expiresAt <= now) {
+    current.count = 0;
+    current.expiresAt = now + ttlMs;
+  }
+  if (current.count >= maxUploads) return false;
+  current.count += 1;
+  verificationTokenUploadCounts.set(jti, current);
+  return true;
+}
+
+async function consumeVerificationTokenJti(jti, expSeconds) {
+  if (!jti) return false;
+  const now = Date.now();
+  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : 30 * 60 * 1000;
+  if (canUseDbLedger()) {
+    const existing = await VerificationLedger.findOne({ kind: 'token_jti', key: String(jti) }).lean();
+    if (existing?.consumed) return false;
+    const updated = await VerificationLedger.findOneAndUpdate(
+      {
+        kind: 'token_jti',
+        key: String(jti),
+        consumed: { $ne: true },
+      },
+      {
+        $set: {
+          consumed: true,
+          expiresAt: new Date(now + ttlMs),
+        },
+      },
+      { upsert: true, new: true }
+    ).catch((err) => (err?.code === 11000 ? null : Promise.reject(err)));
+    return Boolean(updated);
+  }
   if (consumedVerificationTokens.size > 5000) {
     for (const [k, expiresAt] of consumedVerificationTokens.entries()) {
       if (expiresAt <= now) consumedVerificationTokens.delete(k);
@@ -66,7 +191,6 @@ function consumeVerificationTokenJti(jti, expSeconds) {
   if (existingExp && existingExp > now) {
     return false;
   }
-  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : 30 * 60 * 1000;
   consumedVerificationTokens.set(jti, now + ttlMs);
   return true;
 }
@@ -78,7 +202,7 @@ router.post('/send-verification', async (req, res) => {
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
-    const quota = checkEmailSendQuota(email);
+    const quota = await checkEmailSendQuotaAsync(email);
     if (!quota.allowed) {
       return res.status(429).json({ error: quota.reason, code: 'OTP_COOLDOWN_ACTIVE' });
     }
@@ -126,7 +250,7 @@ router.post('/send-verification', async (req, res) => {
       });
     }
 
-    emailSendLedger.set(email, quota.nextEntry);
+    await persistEmailSendQuotaAsync(email, quota.nextEntry);
 
     return res.json({
       success: true,
@@ -220,4 +344,5 @@ router.post('/verify-code', async (req, res) => {
 });
 
 router.consumeVerificationTokenJti = consumeVerificationTokenJti;
+router.registerVerificationTokenUpload = registerVerificationTokenUpload;
 module.exports = router;

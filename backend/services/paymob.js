@@ -215,9 +215,11 @@ async function createIntention(input, options = {}) {
       throw error;
     }
 
+    const resolvedOrderId = data.intention_order_id ?? data.order_id ?? data.payment_keys?.[0]?.order_id ?? null;
+
     return {
       id: String(data.id),
-      orderId: data.intention_order_id == null ? '' : String(data.intention_order_id),
+      orderId: resolvedOrderId == null ? '' : String(resolvedOrderId),
       clientSecret: String(data.client_secret),
       checkoutUrl: checkoutUrl(String(data.client_secret), config),
     };

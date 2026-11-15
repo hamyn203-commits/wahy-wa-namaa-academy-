@@ -22,6 +22,7 @@ const manualPayments = require('../config/manualPayments');
 const objectStorage = require('../services/objectStorage');
 const { validateMagicBytes, normalizeContentType } = require('../config/uploadPolicy');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const { hasChildPermission } = require('../utils/guardianSafeguarding');
 const { processPaymobWebhook } = require('../services/paymentSettlement');
 const { processManualPaymentReview } = require('../services/manualPaymentSettlement');
 const { placeSubscription } = require('../services/subscriptionPlacement');
@@ -183,14 +184,26 @@ async function streamPrivateProof(reference, res) {
     return res.status(404).json({ error: 'Payment proof not found' });
   }
 
-  if (objectStorage.getDriver() === 'vercel-blob' && !objectStorage.isVercelBlobReference(reference)) {
+  const driver = objectStorage.getDriver();
+  if (
+    (driver === 'vercel-blob' && !objectStorage.isVercelBlobReference(reference))
+    || (driver !== 'vercel-blob' && objectStorage.isVercelBlobReference(reference))
+  ) {
     return res.status(404).json({ error: 'Payment proof not found' });
   }
 
   const result = await objectStorage.getPrivateObject(reference);
   if (!result) return res.status(404).json({ error: 'Payment proof not found' });
 
-  res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+  const normalizedMime = normalizeContentType(result.blob?.contentType || '');
+  const safeContentType = ALLOWED_PROOF_MIMES.has(normalizedMime)
+    ? normalizedMime
+    : 'application/octet-stream';
+
+  res.setHeader('Content-Type', safeContentType);
+  if (safeContentType === 'application/octet-stream' || safeContentType === 'application/pdf') {
+    res.setHeader('Content-Disposition', 'attachment');
+  }
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'none'; script-src 'none'; sandbox");
   res.setHeader('Cache-Control', 'private, no-store');
@@ -244,6 +257,7 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
     const existingEnrollment = await Enrollment.findOne({
       student: req.user.id,
       course: course._id,
+      status: { $in: ['active', 'completed'] },
     }).select('_id status');
 
     if (existingEnrollment) {
@@ -395,6 +409,7 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
     const existingEnrollment = await Enrollment.findOne({
       student: req.user.id,
       course: course._id,
+      status: { $in: ['active', 'completed'] },
     }).select('_id status');
 
     if (existingEnrollment) {
@@ -507,7 +522,7 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       reviewRequired: true,
     });
   } catch (error) {
-    if (error?.code === 'DUPLICATE_PAYMENT_PROOF') {
+    if (error?.code === 'DUPLICATE_PAYMENT_PROOF' || error?.code === 'SUBSCRIPTION_MODIFIED_CONCURRENTLY') {
       const publicMsg = String(error.publicMessage || error.message || 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى');
       return res.status(409).json({ error: publicMsg, code: error.code });
     }
@@ -577,12 +592,28 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
     const preferredTeacherId = cleanText(req.body?.preferredTeacherId, 80);
     if (req.user.role === 'guardian') {
       const targetSub = await StudentSubscription.findById(req.params.id).select('student').lean();
-      const linked = targetSub && (
-        await Guardian.exists({ user: req.user.id, 'children.student': targetSub.student })
-        || await User.exists({ _id: req.user.id, children: targetSub.student })
-      );
-      if (!linked) {
+      if (!targetSub?.student) {
+        return res.status(404).json({ error: 'الاشتراك غير موجود', code: 'SUBSCRIPTION_NOT_FOUND' });
+      }
+      const guardianDoc = await Guardian.findOne({
+        user: req.user.id,
+        isActive: { $ne: false },
+        'children.student': targetSub.student,
+      }).lean();
+      const legacyLinked = !guardianDoc && await User.exists({ _id: req.user.id, isActive: { $ne: false }, children: targetSub.student });
+      if (!guardianDoc && !legacyLinked) {
         return res.status(403).json({ error: 'غير مصرح بسداد اشتراك هذا الطالب' });
+      }
+      const studentCheck = await User.findById(targetSub.student).select('age').lean().catch(() => null);
+      if (
+        guardianDoc
+        && Number(studentCheck?.age || 0) >= 18
+        && !hasChildPermission(guardianDoc, targetSub.student, 'approveEnrollments')
+      ) {
+        return res.status(403).json({
+          error: 'غير مصرح بإدارة اشتراكات الطالب البالغ بدون صلاحية اعتماد التسجيل',
+          code: 'GUARDIAN_PERMISSION_DENIED',
+        });
       }
       req.user = { ...req.user, id: String(targetSub.student) };
     }
@@ -730,10 +761,42 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
         }], { session: dbSession });
 
         payment = created[0];
-        subscription.preferredTeacher = teacher._id;
-        subscription.payment = payment._id;
-        subscription.status = 'payment_review';
-        await subscription.save({ session: dbSession });
+        const useCasUpdate = StudentSubscription.findOne === mongoose.Model.findOne
+          || StudentSubscription.findOneAndUpdate !== mongoose.Model.findOneAndUpdate;
+        if (useCasUpdate) {
+          const updatedSub = await StudentSubscription.findOneAndUpdate(
+            {
+              _id: subscription._id,
+              student: req.user.id,
+              status: 'pending_payment',
+              planKey: subscription.planKey,
+              section: subscription.section,
+              sessionCount: subscription.sessionCount,
+              totalAmountMinor: subscription.totalAmountMinor,
+              currency: subscription.currency,
+            },
+            {
+              $set: {
+                preferredTeacher: teacher._id,
+                payment: payment._id,
+                status: 'payment_review',
+              },
+            },
+            { new: true, session: dbSession }
+          );
+          if (!updatedSub) {
+            const conflictErr = new Error('تغيرت بيانات الباقة أثناء رفع الإيصال، يرجى إعادة المحاولة');
+            conflictErr.publicMessage = conflictErr.message;
+            conflictErr.code = 'SUBSCRIPTION_MODIFIED_CONCURRENTLY';
+            conflictErr.status = 409;
+            throw conflictErr;
+          }
+        } else {
+          subscription.preferredTeacher = teacher._id;
+          subscription.payment = payment._id;
+          subscription.status = 'payment_review';
+          await subscription.save({ session: dbSession });
+        }
       });
     } catch (error) {
       if (error?.code === 11000) {
@@ -801,7 +864,7 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
       reviewRequired: true,
     });
   } catch (error) {
-    if (error?.code === 'DUPLICATE_PAYMENT_PROOF') {
+    if (error?.code === 'DUPLICATE_PAYMENT_PROOF' || error?.code === 'SUBSCRIPTION_MODIFIED_CONCURRENTLY') {
       const publicMsg = String(error.publicMessage || error.message || 'تم استخدام إثبات التحويل أو رقم المرجع هذا مسبقاً في عملية أخرى');
       return res.status(409).json({ error: publicMsg, code: error.code });
     }
@@ -1025,7 +1088,14 @@ router.patch('/admin/manual/:id/review', protect, authorize('admin'), async (req
     if (error.code === 'PAYMENT_NOT_FOUND') {
       return res.status(404).json({ error: safeErrorMessage(error, 404), code: error.code });
     }
-    if (error.code === 'PAYMENT_ALREADY_REVIEWED' || error.code === 'ALREADY_ENROLLED') {
+    if (
+      error.code === 'PAYMENT_ALREADY_REVIEWED'
+      || error.code === 'ALREADY_ENROLLED'
+      || error.code === 'PAYMENT_AMOUNT_MISMATCH'
+      || error.code === 'PAYMENT_CURRENCY_MISMATCH'
+      || error.code === 'SUBSCRIPTION_NOT_IN_REVIEW'
+      || error.code === 'COURSE_UNAVAILABLE'
+    ) {
       return res.status(409).json({ error: safeErrorMessage(error, 409), code: error.code });
     }
     if (error.code === 'INVALID_REVIEW_ACTION') {
@@ -1066,9 +1136,17 @@ router.post('/paymob/webhook', async (req, res) => {
 
     const merchantReference = String(obj.order?.merchant_order_id || '');
     const classification = paymob.classifyTransaction(obj);
+    const baseTxId = String(obj.id);
+    const lifecycleSuffix = obj.is_refunded === true
+      ? ':refunded'
+      : obj.is_voided === true
+        ? ':voided'
+        : classification === 'succeeded'
+          ? ''
+          : `:${classification}`;
 
     const result = await processPaymobWebhook({
-      eventId: String(obj.id),
+      eventId: `${baseTxId}${lifecycleSuffix}`,
       eventType: String(req.body?.type || 'TRANSACTION'),
       payloadHash,
       merchantReference,
@@ -1076,7 +1154,7 @@ router.post('/paymob/webhook', async (req, res) => {
       amountMinor: Number(obj.amount_cents),
       currency: String(obj.currency || '').toUpperCase(),
       classification,
-      transactionId: String(obj.id),
+      transactionId: baseTxId,
     });
 
     if (result?.enrollmentCreated && result.studentId && result.courseId) {
@@ -1114,8 +1192,8 @@ router.get('/:id/status', protect, authorize('student', 'guardian', 'admin'), as
       || String(payment.manual?.submittedBy || '') === String(req.user.id);
 
     if (!isAllowed && req.user.role === 'guardian' && payment.student) {
-      const linked = await Guardian.exists({ user: req.user.id, 'children.student': payment.student })
-        || await User.exists({ _id: req.user.id, children: payment.student });
+      const linked = await Guardian.exists({ user: req.user.id, isActive: { $ne: false }, 'children.student': payment.student })
+        || await User.exists({ _id: req.user.id, isActive: { $ne: false }, children: payment.student });
       isAllowed = Boolean(linked);
     }
 

@@ -161,7 +161,11 @@ router.get('/leaderboard', async (req, res) => {
 });
 
 async function awardSignupReferralIfVerified(referral) {
-  if (!referral) return false;
+  if (!referral || !referral.referee) return false;
+  const refereeUser = await User.findById(referral.referee).select('emailVerified isActive').lean().catch(() => null);
+  if (!refereeUser || refereeUser.emailVerified !== true || refereeUser.isActive === false) {
+    return false;
+  }
   const exists = await ReferralReward.findOne({ referral: referral._id, type: 'signup' });
   if (exists) return false;
   try {
@@ -186,6 +190,11 @@ async function awardSignupReferralIfVerified(referral) {
 async function processReferralFirstSession(studentUserId) {
   const referral = await Referral.findOne({ referee: studentUserId });
   if (!referral) return null;
+
+  const refereeUser = await User.findById(studentUserId).select('emailVerified isActive').lean().catch(() => null);
+  if (!refereeUser || refereeUser.emailVerified !== true || refereeUser.isActive === false) {
+    return null;
+  }
 
   await awardSignupReferralIfVerified(referral);
 

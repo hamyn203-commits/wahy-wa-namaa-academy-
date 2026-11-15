@@ -477,6 +477,19 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
     // Attempt to match or find student User account (explicit link, email, or phone)
     const studentUser = await findStudentUserForTrial(trial);
 
+    const syntheticTrialStudent = studentUser || (
+      (trial.gender || trial.age)
+        ? { gender: trial.gender, age: trial.age, onboarding: { required: false } }
+        : null
+    );
+    if (syntheticTrialStudent) {
+      const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+      assertGenderAndAgeCompatibility({
+        student: syntheticTrialStudent,
+        teacher,
+      });
+    }
+
     const resolvedTimezone = safeTimeZone(timezone || teacher.availabilityTimezone || 'Africa/Cairo');
     const sessionDate = parseRequestedDateTime(scheduledAt, resolvedTimezone);
     if (!sessionDate || sessionDate.getTime() <= Date.now()) {
@@ -498,7 +511,7 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
 
     const activeSessions = await Session.find({
       teacher: teacher._id,
-      status: { $in: ['pending', 'accepted'] },
+      status: { $in: ['pending', 'accepted', 'completed'] },
       // A rescheduled trial must not conflict with its own previous session.
       ...(trial.scheduledSession ? { _id: { $ne: trial.scheduledSession } } : {}),
     }).select('scheduledAt duration');
@@ -726,9 +739,28 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
 
     trial.status = 'completed';
 
-    // Mark associated Session as completed if exists
+    // Mark associated Session as completed if exists and eligible
     if (trial.scheduledSession) {
-      await Session.findByIdAndUpdate(trial.scheduledSession, { status: 'completed' });
+      const linkedSession = await Session.findById(trial.scheduledSession);
+      if (linkedSession) {
+        if (linkedSession.scheduledAt && new Date(linkedSession.scheduledAt).getTime() > Date.now()) {
+          return res.status(409).json({
+            error: 'لا يمكن اعتماد تقييم الحصة التجريبية قبل موعد انعقادها',
+            code: 'SESSION_NOT_STARTED',
+          });
+        }
+        const absentOrExcused = (linkedSession.attendance || []).some(
+          (entry) => ['absent', 'excused'].includes(String(entry.status || ''))
+        );
+        if (absentOrExcused || ['cancelled', 'no-show', 'rejected'].includes(linkedSession.status)) {
+          return res.status(409).json({
+            error: 'لا يمكن إكمال تقييم حصة تجريبية ملغاة أو مسجل بها غياب الطالب',
+            code: 'SESSION_ATTENDANCE_NOT_ELIGIBLE',
+          });
+        }
+        linkedSession.status = 'completed';
+        await linkedSession.save();
+      }
     }
 
     let enrolledCircle = null;

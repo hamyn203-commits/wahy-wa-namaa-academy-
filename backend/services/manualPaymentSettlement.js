@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const Payment = require('../models/Payment');
 const Enrollment = require('../models/Enrollment');
+const Course = require('../models/Course');
 const Session = require('../models/Session');
 const StudentSubscription = require('../models/StudentSubscription');
 const GroupCircle = require('../models/GroupCircle');
@@ -69,14 +70,68 @@ async function processManualPaymentReview({
       payment.manual.reviewNote = String(note || '').trim().slice(0, 500);
 
       if (normalizedAction === 'approve') {
+        let subscription = null;
         if (payment.kind === 'course_enrollment') {
+          if (mongoose.connection.readyState === 1 || Course.findOne !== mongoose.Model.findOne) {
+            const targetCourse = await Course.findOne({
+              _id: payment.course,
+              status: 'published',
+            }).session(session);
+            if (!targetCourse) {
+              const error = new Error('Course is no longer published or available');
+              error.code = 'COURSE_UNAVAILABLE';
+              error.status = 409;
+              throw error;
+            }
+          }
           const alreadyEnrolled = await Enrollment.findOne({
             student: payment.student,
             course: payment.course,
           }).session(session);
-          if (alreadyEnrolled) {
+          if (alreadyEnrolled && alreadyEnrolled.status !== 'cancelled') {
             const error = new Error('Student is already enrolled in this course');
             error.code = 'ALREADY_ENROLLED';
+            throw error;
+          }
+        } else if (payment.kind === 'subscription') {
+          subscription = await StudentSubscription.findOne({
+            _id: payment.subscription,
+            student: payment.student,
+          }).session(session);
+
+          if (!subscription) {
+            const error = new Error('Subscription not found for payment');
+            error.code = 'SUBSCRIPTION_NOT_FOUND';
+            throw error;
+          }
+
+          if (
+            subscription.status
+            && !['payment_review', 'pending_payment'].includes(String(subscription.status))
+          ) {
+            const error = new Error('Subscription is not awaiting payment review');
+            error.code = 'SUBSCRIPTION_NOT_IN_REVIEW';
+            error.status = 409;
+            throw error;
+          }
+
+          if (
+            subscription.totalAmountMinor !== undefined
+            && Number(payment.amountMinor) !== Number(subscription.totalAmountMinor)
+          ) {
+            const error = new Error('Payment amount does not match subscription totalAmountMinor');
+            error.code = 'PAYMENT_AMOUNT_MISMATCH';
+            error.status = 409;
+            throw error;
+          }
+
+          if (
+            subscription.currency !== undefined
+            && String(payment.currency || '').toUpperCase() !== String(subscription.currency || '').toUpperCase()
+          ) {
+            const error = new Error('Payment currency does not match subscription currency');
+            error.code = 'PAYMENT_CURRENCY_MISMATCH';
+            error.status = 409;
             throw error;
           }
         }
@@ -89,16 +144,6 @@ async function processManualPaymentReview({
         await payment.save({ session });
 
         if (payment.kind === 'subscription') {
-          const subscription = await StudentSubscription.findOne({
-            _id: payment.subscription,
-            student: payment.student,
-          }).session(session);
-
-          if (!subscription) {
-            const error = new Error('Subscription not found for payment');
-            error.code = 'SUBSCRIPTION_NOT_FOUND';
-            throw error;
-          }
 
           const paidAt = new Date();
           let renewalQueued = false;

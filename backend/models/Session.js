@@ -36,6 +36,15 @@ const SessionSchema = new mongoose.Schema({
     type: String,
     default: 'Africa/Cairo'
   },
+  agreedHourlyRate: {
+    type: Number,
+    min: 0,
+  },
+  scheduledSlotKey: {
+    type: String,
+    trim: true,
+    maxlength: 160,
+  },
   meetingLink: String,
   recordingUrl: String,
   meetingProvider: { type: String, enum: ['jitsi', 'google_meet', 'zoom', 'livekit'], default: 'jitsi' },
@@ -135,6 +144,27 @@ SessionSchema.index(
     partialFilterExpression: {
       type: { $in: ['trial', 'regular'] },
       status: { $in: ['pending', 'accepted'] },
+    },
+  }
+);
+SessionSchema.index(
+  { student: 1, teacher: 1, type: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'regular',
+      status: { $in: ['pending', 'accepted'] },
+    },
+  }
+);
+SessionSchema.index(
+  { circle: 1, scheduledSlotKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'group_circle',
+      scheduledSlotKey: { $type: 'string' },
+      status: { $in: ['pending', 'accepted', 'completed'] },
     },
   }
 );

@@ -29,14 +29,31 @@ function assertGenderAndAgeCompatibility({
   const normalizedSection = section ? String(section).trim() : '';
   const normalizedCircleGender = circleGender ? String(circleGender).trim() : '';
 
+  if (student && (!studentGender || studentAge === null) && student.onboarding?.required !== false) {
+    throw safeguardingError(
+      'PROFILE_DEMOGRAPHICS_REQUIRED',
+      'يرجى استكمال العمر والجنس في الملف الشخصي قبل المتابعة',
+      403
+    );
+  }
+
+  if (normalizedSection === 'men_children') {
+    if (student && studentGender === 'female' && (studentAge === null || studentAge >= 18)) {
+      throw safeguardingError(
+        'SECTION_GENDER_MISMATCH',
+        'قسم الرجال والأطفال غير متاح للطالبات البالغات، يرجى اختيار قسم السيدات'
+      );
+    }
+  }
+
   if (normalizedSection === 'ladies') {
-    if (studentGender && studentGender !== 'female') {
+    if (student && studentGender !== 'female') {
       throw safeguardingError(
         'SECTION_GENDER_MISMATCH',
         'قسم السيدات متاح للطالبات فقط'
       );
     }
-    if (teacherGender && teacherGender !== 'female') {
+    if (teacher && teacherGender !== 'female') {
       throw safeguardingError(
         'LADIES_SECTION_TEACHER_MISMATCH',
         'قسم السيدات متاح مع المعلمات فقط'
@@ -51,31 +68,38 @@ function assertGenderAndAgeCompatibility({
   }
 
   if (student && teacherGender) {
-    if (studentGender === 'male' && studentAge !== null && studentAge >= 18 && teacherGender === 'female') {
-      throw safeguardingError(
-        'ADULT_MALE_FEMALE_TEACHER_FORBIDDEN',
-        'لا يُسمح للطلاب الرجال البالغين بالحجز مع المعلمات'
-      );
+    if (teacherGender === 'female') {
+      const allowedWithFemaleTeacher =
+        studentGender === 'female'
+        || (studentGender === 'male' && studentAge !== null && studentAge < 18);
+      if (!allowedWithFemaleTeacher) {
+        throw safeguardingError(
+          'ADULT_MALE_FEMALE_TEACHER_FORBIDDEN',
+          'لا يُسمح للطلاب الرجال البالغين بالحجز مع المعلمات'
+        );
+      }
     }
-    if (studentGender === 'female' && studentAge !== null && studentAge >= 18 && teacherGender === 'male') {
-      throw safeguardingError(
-        'ADULT_FEMALE_MALE_TEACHER_FORBIDDEN',
-        'لا يُسمح للطالبات البالغات بالحجز مع المعلمين الرجال'
-      );
+    if (teacherGender === 'male') {
+      if (studentGender === 'female' && (studentAge === null || studentAge >= 18)) {
+        throw safeguardingError(
+          'ADULT_FEMALE_MALE_TEACHER_FORBIDDEN',
+          'لا يُسمح للطالبات البالغات بالحجز مع المعلمين الرجال'
+        );
+      }
     }
   }
 
-  if (normalizedCircleGender && teacherGender) {
+  if (normalizedCircleGender && teacher) {
     if (['girls', 'women'].includes(normalizedCircleGender) && teacherGender !== 'female') {
       throw safeguardingError(
         'CIRCLE_TEACHER_GENDER_MISMATCH',
         'حلقات الفتيات والسيدات مخصصة للمعلمات فقط'
       );
     }
-    if (normalizedCircleGender === 'men' && teacherGender === 'female') {
+    if (['boys', 'men'].includes(normalizedCircleGender) && teacherGender === 'female') {
       throw safeguardingError(
         'CIRCLE_TEACHER_GENDER_MISMATCH',
-        'حلقات الرجال البالغين مخصصة للمعلمين الرجال فقط'
+        'حلقات البنين والرجال مخصصة للمعلمين الرجال فقط'
       );
     }
   }
@@ -89,29 +113,41 @@ function assertGenderAndAgeCompatibility({
         );
       }
     } else if (['boys', 'men'].includes(normalizedCircleGender)) {
-      if (studentGender !== 'male') {
+      if (studentGender !== 'male' || studentAge === null) {
         throw safeguardingError(
           'GENDER_MISMATCH',
           'هذه الحلقة مخصصة للبنين/الرجال فقط، يرجى اختيار حلقة متطابقة'
         );
       }
-      if (normalizedCircleGender === 'boys' && studentAge !== null && studentAge >= 18) {
+      if (normalizedCircleGender === 'boys' && studentAge >= 18) {
         throw safeguardingError(
           'AGE_GROUP_MISMATCH',
           'هذه الحلقة مخصصة للفتيان دون 18 عاماً'
         );
       }
+      if (normalizedCircleGender === 'men' && studentAge < 18) {
+        throw safeguardingError(
+          'AGE_GROUP_MISMATCH',
+          'هذه الحلقة مخصصة للرجال البالغين (18 عاماً فأكثر)'
+        );
+      }
     } else if (['girls', 'women'].includes(normalizedCircleGender)) {
-      if (studentGender !== 'female') {
+      if (studentGender !== 'female' || studentAge === null) {
         throw safeguardingError(
           'GENDER_MISMATCH',
           'هذه الحلقة مخصصة للفتيات/النساء فقط، يرجى اختيار حلقة متطابقة'
         );
       }
-      if (normalizedCircleGender === 'girls' && studentAge !== null && studentAge >= 18) {
+      if (normalizedCircleGender === 'girls' && studentAge >= 18) {
         throw safeguardingError(
           'AGE_GROUP_MISMATCH',
           'هذه الحلقة مخصصة للفتيات دون 18 عاماً'
+        );
+      }
+      if (normalizedCircleGender === 'women' && studentAge < 18) {
+        throw safeguardingError(
+          'AGE_GROUP_MISMATCH',
+          'هذه الحلقة مخصصة للسيدات البالغات (18 عاماً فأكثر)'
         );
       }
     }

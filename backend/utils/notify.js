@@ -10,8 +10,8 @@ async function notifyUser(userId, { type, title, message, data = {}, priority = 
     inApp: { enabled: true },
     email: { enabled: prefs.email !== false },
     push: { enabled: prefs.push !== false && !!user?.pushToken },
-    telegram: { enabled: !!(process.env.TELEGRAM_BOT_TOKEN && user?.telegramId) },
-    sms: { enabled: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && user?.phone) },
+    telegram: { enabled: !!(prefs.telegram !== false && process.env.TELEGRAM_BOT_TOKEN && user?.telegramId) },
+    sms: { enabled: !!(prefs.sms !== false && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && user?.phone) },
   };
 
   return Notification.createAndSend(userId, {

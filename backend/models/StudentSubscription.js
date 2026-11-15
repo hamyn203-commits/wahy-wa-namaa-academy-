@@ -99,7 +99,7 @@ const StudentSubscriptionSchema = new mongoose.Schema({
   startedAt: Date,
   completedAt: Date,
   lowBalanceNotifiedAt: Date,
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 StudentSubscriptionSchema.index({ student: 1, status: 1, createdAt: -1 });
 StudentSubscriptionSchema.index(
