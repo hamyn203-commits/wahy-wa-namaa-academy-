@@ -136,9 +136,13 @@ router.get('/', protect, attachTeacherProfile, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    const selectFields = req.user.role === 'student'
+      ? '-questions'
+      : '-questions.options.isCorrect -questions.correctAnswer -questions.explanation';
+
     const quizzes = await Quiz.find(filter)
       .populate('instructor', 'name')
-      .select('-questions.options.isCorrect -questions.correctAnswer -questions.explanation')
+      .select(selectFields)
       .sort({ createdAt: -1 });
 
     res.json(quizzes);
@@ -195,17 +199,45 @@ router.get('/:id', protect, attachTeacherProfile, async (req, res) => {
     }
 
     if (req.user.role === 'student') {
-      const enrollment = await Enrollment.exists({
+      const enrollment = await Enrollment.findOne({
         student: req.user.id,
         course: quiz.course?._id || quiz.course,
         status: { $in: ['active', 'completed'] }
-      });
+      }).select('_id status');
 
       if (!enrollment || quiz.status !== 'published') {
         return res.status(403).json({ error: 'Not authorized to access this quiz' });
       }
 
-      return res.json(hideQuizAnswers(quiz));
+      const availableNow = typeof quiz.isAvailableNow === 'function' ? Boolean(quiz.isAvailableNow()) : true;
+      const attempts = await QuizAttempt.find({
+        quiz: quiz._id,
+        student: req.user.id,
+      }).select('status startedAt submittedAt');
+      const attemptList = Array.isArray(attempts) ? attempts : [];
+      const hasActiveAttempt = availableNow && attemptList.some(
+        (att) => att?.status === 'in-progress' && !isAttemptTimedOut(att, quiz)
+      );
+      const hasReviewableAttempt = attemptList.some(
+        (att) => att?.status && att.status !== 'in-progress' && canRevealAttemptResults(quiz, att.status) && quiz.settings?.allowReview !== false
+      );
+
+      const sanitized = hideQuizAnswers(quiz, { allowExplanations: hasReviewableAttempt });
+      const questionCount = Array.isArray(sanitized.questions) ? sanitized.questions.length : 0;
+      if (!hasActiveAttempt && !hasReviewableAttempt) {
+        return res.json({
+          ...sanitized,
+          questions: [],
+          questionCount,
+          questionsLocked: true,
+        });
+      }
+
+      return res.json({
+        ...sanitized,
+        questionCount,
+        questionsLocked: false,
+      });
     }
 
     if (req.user.role === 'teacher') {
@@ -503,10 +535,16 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
     });
 
     attempt.calculateScore();
+    const hasEssayQuestions = Array.isArray(attempt.quiz?.questions)
+      && attempt.quiz.questions.some((q) => q?.type === 'essay');
     attempt.checkPassing(attempt.quiz.settings.passingScore);
-    attempt.status = 'graded';
+    if (hasEssayQuestions && !attempt.isPassed) {
+      attempt.status = 'submitted';
+    } else {
+      attempt.status = 'graded';
+    }
     attempt.submittedAt = new Date();
-    attempt.timeSpent = (attempt.submittedAt - attempt.startedAt) / 1000;
+    attempt.timeSpent = Math.max(0, (attempt.submittedAt - attempt.startedAt) / 1000);
     await attempt.save();
 
     // Update Progress model with gamification points only on first pass of this quiz
@@ -528,22 +566,33 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
               totalLessons: lessons.length
             }
           });
+          await progress.save();
         }
 
         const quizPoints = attempt.quiz.calculateMaxScore() || 20;
-        await progress.addMilestone(
-          'quiz-passed',
-          { 
-            ar: `اجتياز اختبار: ${attempt.quiz.title.ar}`, 
-            en: `Passed Quiz: ${attempt.quiz.title.en}`, 
-            id: `Lulus Kuis: ${attempt.quiz.title.id || attempt.quiz.title.en}` 
-          },
-          { 
-            ar: `أحسنت! لقد اجتزت اختبار "${attempt.quiz.title.ar}" بنجاح`, 
-            en: `Congratulations! You passed "${attempt.quiz.title.en}"`, 
-            id: `Selamat! Anda berhasil lulus "${attempt.quiz.title.id || attempt.quiz.title.en}"` 
-          },
-          quizPoints
+        const quizBadgeKey = `quiz:${attempt.quiz._id}`;
+        await Progress.updateOne(
+          { _id: progress._id, 'milestones.badge': { $ne: quizBadgeKey } },
+          {
+            $push: {
+              milestones: {
+                type: 'quiz-passed',
+                title: {
+                  ar: `اجتياز اختبار: ${attempt.quiz.title?.ar || ''}`,
+                  en: `Passed Quiz: ${attempt.quiz.title?.en || ''}`,
+                  id: `Lulus Kuis: ${attempt.quiz.title?.id || attempt.quiz.title?.en || ''}`,
+                },
+                description: {
+                  ar: `أحسنت! لقد اجتزت اختبار "${attempt.quiz.title?.ar || ''}" بنجاح`,
+                  en: `Congratulations! You passed "${attempt.quiz.title?.en || ''}"`,
+                  id: `Selamat! Anda berhasil lulus "${attempt.quiz.title?.id || attempt.quiz.title?.en || ''}"`,
+                },
+                achievedAt: new Date(),
+                points: quizPoints,
+                badge: quizBadgeKey,
+              },
+            },
+          }
         );
       } catch (err) {
         console.warn('Failed to update gamification progress for quiz attempt:', err.message);

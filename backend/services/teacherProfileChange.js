@@ -24,7 +24,7 @@ function sanitizeTeacherProfileChange(input = {}) {
   const qualification = cleanText(input.academicInfo?.qualification, 160);
   const teachingExperience = cleanNumber(input.quranInfo?.teachingExperience, 0, 80);
   const numberOfIjazat = cleanNumber(input.quranInfo?.numberOfIjazat, 0, 100);
-  const bio = cleanText(input.user?.bio, 1200);
+  const bio = cleanText(input.user?.bio, 500);
 
   if (fullName !== undefined) personalInfo.fullName = fullName;
   if (city !== undefined) personalInfo.city = city;

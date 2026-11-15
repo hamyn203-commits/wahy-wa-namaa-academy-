@@ -238,6 +238,29 @@ router.post('/', publicTrialLimiter, readAccessTokenIfValid, async (req, res) =>
   }
 });
 
+function sanitizeTrialForTeacher(item) {
+  if (!item || typeof item !== 'object') return item;
+  const raw = typeof item.toObject === 'function' ? item.toObject() : { ...item };
+  delete raw.phone;
+  delete raw.whatsappPhone;
+  delete raw.email;
+  if (raw.studentUser && typeof raw.studentUser === 'object') {
+    raw.studentUser = {
+      _id: raw.studentUser._id,
+      name: raw.studentUser.name,
+    };
+  }
+  if (raw.scheduledSession && typeof raw.scheduledSession === 'object') {
+    const canSeeMeeting = raw.scheduledSession.status === 'accepted'
+      && sessionParticipantWindow(raw.scheduledSession).within;
+    if (!canSeeMeeting) {
+      const { meetingLink, ...restSession } = raw.scheduledSession;
+      raw.scheduledSession = restSession;
+    }
+  }
+  return raw;
+}
+
 // @route   GET /api/trials
 // @desc    Get all trial requests with filters (status, track)
 // @access  Protected (admin, teacher)
@@ -297,9 +320,13 @@ router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
       TrialRequest.countDocuments(filter)
     ]);
 
+    const presentedTrials = req.user.role === 'teacher'
+      ? (trials || []).map(sanitizeTrialForTeacher)
+      : trials;
+
     res.json({
       success: true,
-      trials,
+      trials: presentedTrials,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -398,6 +425,10 @@ router.get('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       if (!teacherDoc || !trial.assignedTeacher || String(trial.assignedTeacher._id || trial.assignedTeacher) !== String(teacherDoc._id)) {
         return res.status(403).json({ error: 'غير مصرح بالاطلاع على هذا الطلب' });
       }
+      return res.json({
+        success: true,
+        trial: sanitizeTrialForTeacher(trial),
+      });
     }
 
     res.json({
@@ -430,16 +461,17 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
         }
         trial.assignedTeacher = teacherId;
         trial.status = 'scheduled';
+        const mockSessionId = 'mock-session-trial-' + Date.now();
         const session = {
-          _id: 'mock-session-trial-' + Date.now(),
+          _id: mockSessionId,
           teacher: teacherId,
           type: 'trial',
           status: 'accepted',
           scheduledAt: mockScheduledAt,
           duration: 30,
           timezone: mockTimezone,
-          meetingLink: 'https://meet.jit.si/wahy-namaa-trial-' + Date.now(),
-          meetingProvider: meetingProvider || 'jitsi'
+          meetingLink: `/live/session_${mockSessionId}`,
+          meetingProvider: meetingProvider === 'zoom' && process.env.ZOOM_MEETING_BASE_URL ? 'zoom' : 'livekit'
         };
         trial.scheduledSession = session;
         if (notes) trial.notes = notes;
@@ -477,15 +509,20 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
     // Attempt to match or find student User account (explicit link, email, or phone)
     const studentUser = await findStudentUserForTrial(trial);
 
-    const syntheticTrialStudent = studentUser || (
-      (trial.gender || trial.age)
-        ? { gender: trial.gender, age: trial.age, onboarding: { required: false } }
-        : null
-    );
-    if (syntheticTrialStudent) {
-      const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+    const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+    assertGenderAndAgeCompatibility({
+      student: {
+        gender: trial.gender || studentUser?.gender,
+        age: trial.age ?? studentUser?.age,
+      },
+      teacher,
+    });
+    if (studentUser && (studentUser.gender || studentUser.age != null)) {
       assertGenderAndAgeCompatibility({
-        student: syntheticTrialStudent,
+        student: {
+          gender: studentUser.gender || trial.gender,
+          age: studentUser.age ?? trial.age,
+        },
         teacher,
       });
     }
@@ -534,7 +571,7 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
       await Session.findByIdAndUpdate(previousSessionId, { status: 'cancelled' });
     }
 
-    const provider = meetingProvider || process.env.DEFAULT_MEETING_PROVIDER || 'jitsi';
+    const provider = meetingProvider || process.env.DEFAULT_MEETING_PROVIDER || 'livekit';
 
     // Create session record in Session model
     const session = new Session({
@@ -545,7 +582,7 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
       scheduledAt: sessionDate,
       duration: 30, // Free trial standard duration: 30 mins
       timezone: resolvedTimezone,
-      notes: notes || ('حصة تجريبية للطالب: ' + trial.studentName + ' - واتساب: ' + trial.whatsappPhone)
+      notes: notes || ('حصة تجريبية للطالب: ' + trial.studentName)
     });
 
     // Attach meeting link using meetingService
@@ -618,6 +655,12 @@ router.put('/:id/assign', protect, authorize('admin'), async (req, res) => {
       studentLinked: Boolean(studentUser),
     });
   } catch (error) {
+    if (error?.status === 400 || error?.status === 403) {
+      return res.status(error.status).json({
+        error: String(error.publicMessage || error.message || 'تعذر تعيين المعلم بسبب ضوابط الحماية'),
+        code: error.code || 'SAFEGUARDING_VALIDATION_FAILED',
+      });
+    }
     res.status(500).json({ error: 'فشل تعيين المعلم وجدولة الحصة' });
   }
 });

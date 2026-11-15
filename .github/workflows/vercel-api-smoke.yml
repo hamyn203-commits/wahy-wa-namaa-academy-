@@ -9,11 +9,16 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -22,6 +27,6 @@ jobs:
       - name: Test candidate API
         working-directory: backend
         env:
-          API_URL: https://wahy-wa-namaa-api.vercel.app
+          API_URL: https://api.wahywanamaa.com
           REQUIRE_READY: ${{ inputs.require_ready }}
         run: node scripts/smoke.mjs

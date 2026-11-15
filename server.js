@@ -9,8 +9,10 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const distDir = path.join(__dirname, 'dist');
 
+const PRIVATE_ROBOTS_PATH_RE = /^\/(?:(?:ar|en|fr|de|tr|ur|id|ms|ku)\/)?(?:admin|student\/dashboard|teacher\/dashboard|guardian\/dashboard|login|register|forgot-password|reset-password|live|meeting|payment|profile|settings|notifications|ai|journey|verify-certificate|book-trial|courses\/[^/]+\/learn)(?:\/|$)/i;
+
 app.disable('x-powered-by');
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -18,8 +20,11 @@ app.use((_req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.clarity.ms https://scripts.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://accept.paymob.com https://meet.jit.si; worker-src 'self' blob:"
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src-attr 'none'; script-src 'self' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.clarity.ms https://scripts.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://accept.paymob.com; worker-src 'self' blob:"
   );
+  if (PRIVATE_ROBOTS_PATH_RE.test(req.path || '')) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  }
   next();
 });
 

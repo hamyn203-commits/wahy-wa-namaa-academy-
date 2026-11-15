@@ -1,7 +1,17 @@
 const objectStorage = require('../services/objectStorage');
+const { isWeakProductionSecret } = require('../middleware/auth');
 
 function hasValue(name) {
   return Boolean(String(process.env[name] || '').trim());
+}
+
+function hasStrongSecret(name) {
+  const val = String(process.env[name] || '').trim();
+  if (!val) return false;
+  if (process.env.NODE_ENV === 'production') {
+    return !isWeakProductionSecret(val);
+  }
+  return true;
 }
 
 function hasAny(names) {
@@ -12,6 +22,9 @@ function isValidHttpUrl(name) {
   if (!hasValue(name)) return false;
   try {
     const url = new URL(process.env[name]);
+    if (process.env.NODE_ENV === 'production') {
+      return url.protocol === 'https:';
+    }
     return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
     return false;
@@ -20,7 +33,8 @@ function isValidHttpUrl(name) {
 
 function getConfigurationReadiness() {
   const databaseConfigured = hasAny(['MONGODB_URI', 'MONGODB_URL']);
-  const authConfigured = hasValue('JWT_SECRET') && hasValue('JWT_REFRESH_SECRET');
+  const distinctJwtSecrets = String(process.env.JWT_SECRET || '').trim() !== String(process.env.JWT_REFRESH_SECRET || '').trim();
+  const authConfigured = hasStrongSecret('JWT_SECRET') && hasStrongSecret('JWT_REFRESH_SECRET') && distinctJwtSecrets;
   const runtimeConfigured = process.env.NODE_ENV === 'production';
   const urlsConfigured = ['FRONTEND_URL', 'SITE_URL', 'API_PUBLIC_URL'].every(isValidHttpUrl);
   const corsConfigured = hasValue('ALLOWED_ORIGINS');
@@ -33,7 +47,7 @@ function getConfigurationReadiness() {
 
   const externalSchedulerRequired = Boolean(process.env.VERCEL)
     || process.env.ENABLE_IN_PROCESS_SCHEDULER === 'false';
-  const schedulerConfigured = !externalSchedulerRequired || hasValue('CRON_SECRET');
+  const schedulerConfigured = !externalSchedulerRequired || hasStrongSecret('CRON_SECRET');
 
   const missingConfiguration = [];
   if (!runtimeConfigured) missingConfiguration.push('NODE_ENV=production');

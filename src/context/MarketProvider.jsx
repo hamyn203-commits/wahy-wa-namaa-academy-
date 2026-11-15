@@ -18,89 +18,33 @@ export function MarketProvider({ children }) {
   }, [locale]);
 
   useEffect(() => {
-    let active = true;
-    const detectGeo = async () => {
-      try {
-        if (typeof window !== 'undefined') {
-          const hostname = window.location.hostname;
-          if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-            // Avoid external GeoIP lookup during local development to prevent CORS and network noise.
-            return;
-          }
-        }
+    try {
+      if (typeof window === 'undefined') return;
+      if (localStorage.getItem('wn_market_prefs')) return;
 
-        let countryCode = '';
-
-        // QA-only market override. Never allow query-string market spoofing in production.
-        if (
-          import.meta.env.DEV &&
-          typeof window !== 'undefined' &&
-          window.location.search.includes('mock_country=ID')
-        ) {
-          countryCode = 'ID';
+      let inferredSlug = '';
+      if (import.meta.env.DEV && window.location.search.includes('mock_country=ID')) {
+        inferredSlug = 'indonesia-malaysia';
+      } else {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        if (/^Asia\/(?:Jakarta|Makassar|Jayapura|Pontianak|Kuala_Lumpur|Kuching)$/i.test(browserTz)) {
+          inferredSlug = 'indonesia-malaysia';
         }
-
-        // 1. Try FreeIPAPI
-        if (!countryCode) {
-          try {
-            const res = await fetch('https://freeipapi.com/api/json');
-            if (res.ok) {
-              const data = await res.json();
-              countryCode = data.countryCode;
-            }
-          } catch (e) {
-            console.warn('FreeIPAPI failed:', e);
-          }
-        }
-
-        // 2. Fallback to ipapi.co
-        if (!countryCode) {
-          try {
-            const res = await fetch('https://ipapi.co/json/');
-            if (res.ok) {
-              const data = await res.json();
-              countryCode = data.country_code;
-            }
-          } catch (e) {
-            console.warn('ipapi.co fallback failed:', e);
-          }
-        }
-
-        // 3. Fallback to ip-api
-        if (!countryCode) {
-          try {
-            const res = await fetch('https://ip-api.com/json/');
-            if (res.ok) {
-              const data = await res.json();
-              countryCode = data.countryCode;
-            }
-          } catch (e) {
-            console.warn('ip-api.com fallback failed:', e);
-          }
-        }
-
-        if (active && countryCode === 'ID') {
-          localStorage.setItem('is_indonesia_ip', 'true');
-          const next = { marketSlug: 'indonesia-malaysia', currency: 'IDR', timezone: 'Asia/Jakarta' };
-          setPrefs(next);
-          saveMarketPrefs(next);
-        }
-      } catch (err) {
-        console.warn('GeoIP detection failed:', err);
       }
-    };
-    detectGeo();
-    return () => { active = false; };
+
+      if (inferredSlug === 'indonesia-malaysia') {
+        const next = { marketSlug: 'indonesia-malaysia', currency: 'IDR', timezone: 'Asia/Jakarta' };
+        setPrefs(next);
+        saveMarketPrefs(next);
+      }
+    } catch {
+      // Ignore timezone detection failures.
+    }
   }, []);
 
   const market = getMarketBySlug(prefs.marketSlug);
 
   const setMarket = useCallback((slug) => {
-    const isIndoIP = typeof window !== 'undefined' && localStorage.getItem('is_indonesia_ip') === 'true';
-    if (isIndoIP) {
-      console.warn('Market change blocked: User IP is geolocked to Indonesia');
-      return;
-    }
     const m = getMarketBySlug(slug);
     if (!m) return;
     const next = { marketSlug: slug, currency: m.currency, timezone: m.timezone };
@@ -109,8 +53,6 @@ export function MarketProvider({ children }) {
   }, []);
 
   const setCurrency = useCallback((currency) => {
-    const isIndoIP = typeof window !== 'undefined' && localStorage.getItem('is_indonesia_ip') === 'true';
-    if (isIndoIP) return;
     setPrefs((prev) => {
       const next = { ...prev, currency };
       saveMarketPrefs(next);

@@ -5,7 +5,39 @@ const mongoose = require('mongoose');
 const Course = require('../models/Course');
 const Lesson = require('../models/Lesson');
 const Enrollment = require('../models/Enrollment');
+const objectStorage = require('../services/objectStorage');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
+
+function sanitizeCourseLessonMedia(lessonDoc) {
+  const lesson = typeof lessonDoc?.toObject === 'function' ? lessonDoc.toObject() : { ...lessonDoc };
+  if (!lesson?.content || typeof lesson.content !== 'object') return lesson;
+  const content = { ...lesson.content };
+  const isPrivateCourseRef = (url) => {
+    const pathname = objectStorage.extractPathname(url);
+    return Boolean(pathname && pathname.startsWith('uploads/course-media/'));
+  };
+  if (content.video && typeof content.video === 'object') {
+    const cleanVideo = { ...content.video };
+    delete cleanVideo.protectedMediaUrl;
+    if (cleanVideo.url && isPrivateCourseRef(cleanVideo.url)) {
+      cleanVideo.url = '';
+    }
+    content.video = cleanVideo;
+  }
+  if (content.audio && typeof content.audio === 'object') {
+    const cleanAudio = { ...content.audio };
+    delete cleanAudio.protectedMediaUrl;
+    if (cleanAudio.url && isPrivateCourseRef(cleanAudio.url)) {
+      cleanAudio.url = '';
+    }
+    content.audio = cleanAudio;
+  }
+  if (Array.isArray(content.resources)) {
+    content.resources = content.resources.filter((r) => !(r?.url && isPrivateCourseRef(r.url)));
+  }
+  lesson.content = content;
+  return lesson;
+}
 
 const escapeRegex = (s) => String(s || '').slice(0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
@@ -301,6 +333,19 @@ router.put('/:id', protect, attachTeacherProfile, authorize('admin', 'teacher'),
       return res.status(403).json({ error: 'Only admins can publish courses' });
     }
 
+    if (req.user.role !== 'admin' && course.status === 'published') {
+      const lockedCommercialFields = ['price', 'currency', 'slug', 'certificate', 'status'];
+      const attemptedLockedField = lockedCommercialFields.find(
+        (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field) && req.body[field] !== undefined
+      );
+      if (attemptedLockedField) {
+        return res.status(403).json({
+          error: 'Published course pricing, slug, certificate, and publication status can only be modified by an administrator',
+          code: 'PUBLISHED_COURSE_COMMERCIAL_LOCKED',
+        });
+      }
+    }
+
     const updates = pickCourseFields(req.body || {});
     if (req.user.role === 'admin') {
       if (req.body?.instructor && isValidObjectId(req.body.instructor)) {
@@ -437,7 +482,11 @@ router.get('/:id/lessons', protect, attachTeacherProfile, async (req, res) => {
       .sort({ order: 1 })
       .select('-content.quiz -content.assignment');
 
-    res.json(lessons);
+    res.json(
+      req.user.role === 'student'
+        ? lessons.map(sanitizeCourseLessonMedia)
+        : lessons
+    );
   } catch (error) {
     console.error('Get lessons error:', error);
     res.status(500).json({ error: 'Failed to fetch lessons' });

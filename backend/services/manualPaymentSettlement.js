@@ -252,6 +252,7 @@ async function processManualPaymentReview({
       await payment.save({ session });
 
       if (payment.kind === 'subscription' && payment.subscription) {
+        let shouldResetSubscription = true;
         let nextSubStatus = 'pending_payment';
         let isRenewal = false;
 
@@ -260,31 +261,46 @@ async function processManualPaymentReview({
             _id: payment.subscription,
             student: payment.student,
           }).session(session);
-          isRenewal = Boolean(targetSub?.renewalOf);
+          if (
+            !targetSub
+            || targetSub.status !== 'payment_review'
+            || (targetSub.payment && String(targetSub.payment) !== String(payment._id))
+          ) {
+            shouldResetSubscription = false;
+          } else {
+            isRenewal = Boolean(targetSub?.renewalOf);
 
-          const otherPendingSub = await StudentSubscription.findOne({
-            student: payment.student,
-            status: 'pending_payment',
-            _id: { $ne: payment.subscription },
-          }).session(session);
+            const otherPendingSub = await StudentSubscription.findOne({
+              student: payment.student,
+              status: 'pending_payment',
+              _id: { $ne: payment.subscription },
+            }).session(session);
 
-          if (otherPendingSub) {
-            nextSubStatus = 'cancelled';
+            if (otherPendingSub) {
+              nextSubStatus = 'cancelled';
+            }
           }
         }
 
-        await StudentSubscription.updateOne(
-          { _id: payment.subscription, student: payment.student },
-          {
-            $set: { status: nextSubStatus },
-            $unset: {
-              payment: 1,
-              paidAt: 1,
-              ...(!isRenewal ? { preferredTeacher: 1 } : {}),
+        if (shouldResetSubscription) {
+          await StudentSubscription.updateOne(
+            {
+              _id: payment.subscription,
+              student: payment.student,
+              status: 'payment_review',
+              $or: [{ payment: payment._id }, { payment: null }, { payment: { $exists: false } }],
             },
-          },
-          { session }
-        );
+            {
+              $set: { status: nextSubStatus },
+              $unset: {
+                payment: 1,
+                paidAt: 1,
+                ...(!isRenewal ? { preferredTeacher: 1 } : {}),
+              },
+            },
+            { session }
+          );
+        }
       }
 
       result = {

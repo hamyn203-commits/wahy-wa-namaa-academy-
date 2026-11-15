@@ -3,8 +3,15 @@
 import { DEFAULT_SITE_URL, SEO_LOCALES, STATIC_SEO_ROUTES } from '../src/seo/staticRoutes.js';
 
 const SITE = String(process.env.VITE_SITE_URL || process.env.SITE_URL || DEFAULT_SITE_URL).replace(/\/$/, '');
-const HOST = new URL(SITE).hostname;
-const KEY = 'wahywanamaa2026indexnow01';
+const PARSED_SITE = new URL(SITE);
+const HOST = PARSED_SITE.hostname.toLowerCase();
+const ALLOWED_INDEXNOW_HOSTS = new Set(['wahywanamaa.com', 'www.wahywanamaa.com', 'wahy-wa-namaa-academy.vercel.app']);
+const KEY = String(process.env.INDEXNOW_API_KEY || 'wahywanamaa2026indexnow01').trim();
+
+if (PARSED_SITE.protocol !== 'https:' || !ALLOWED_INDEXNOW_HOSTS.has(HOST)) {
+  console.log(`IndexNow skipped (untrusted or non-HTTPS site host: ${HOST})`);
+  process.exit(0);
+}
 
 const shouldRun =
   process.argv.includes('--force')

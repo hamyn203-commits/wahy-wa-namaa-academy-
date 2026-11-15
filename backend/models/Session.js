@@ -47,7 +47,7 @@ const SessionSchema = new mongoose.Schema({
   },
   meetingLink: String,
   recordingUrl: String,
-  meetingProvider: { type: String, enum: ['jitsi', 'google_meet', 'zoom', 'livekit'], default: 'jitsi' },
+  meetingProvider: { type: String, enum: ['jitsi', 'google_meet', 'zoom', 'livekit'], default: 'livekit' },
   notes: String,
   studentFeedback: {
     rating: { type: Number, min: 1, max: 5 },

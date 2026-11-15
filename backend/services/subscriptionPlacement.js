@@ -260,8 +260,9 @@ async function placeSubscription({
           throw error;
         }
       }
+      const circlePlan = getPlan(circle.subscriptionPlanKey || subscription.planKey) || plan;
       circle.subscriptionSection = circle.subscriptionSection || subscription.section;
-      circle.capacity = operationalCapacity(circle, plan);
+      circle.capacity = operationalCapacity(circle, circlePlan);
 
       const alreadyInCircle = (circle.students || []).some(
         (studentId) => String(studentId) === String(student._id)
@@ -276,7 +277,7 @@ async function placeSubscription({
         circle.students.push(student._id);
       }
 
-      circle.status = circleStatusForCount(circle, plan);
+      circle.status = circleStatusForCount(circle, circlePlan);
 
       await circle.save({ session: dbSession });
 

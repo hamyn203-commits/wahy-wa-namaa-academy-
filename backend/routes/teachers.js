@@ -29,6 +29,7 @@ const {
   coreMediaAreDistinct,
 } = require('../services/teacherReview');
 const { mergeTeacherMedia, applyTeacherProfileChange } = require('../services/teacherProfileChange');
+const { validateMagicBytes } = require('../utils/magicBytes');
 const multer = require('multer');
 const {
   addMockUser,
@@ -347,6 +348,73 @@ function guardExternalMultipartBeforeMulter(req, res, next) {
   return next();
 }
 
+function sanitizeParsedMultipartValue(value, depth = 0) {
+  if (depth > 12) return undefined;
+  if (typeof value === 'string') {
+    return value
+      .replace(/<\s*\/?\s*script\b[^>]*>/gi, '')
+      .replace(/\b(?:javascript|vbscript)\s*:/gi, '')
+      .replace(/\bon[a-z]{2,20}\s*=/gi, '');
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeParsedMultipartValue(entry, depth + 1));
+  }
+  if (value && typeof value === 'object') {
+    const clean = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (k.startsWith('$') || k.includes('.') || k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        continue;
+      }
+      clean[k] = sanitizeParsedMultipartValue(v, depth + 1);
+    }
+    return clean;
+  }
+  return value;
+}
+
+function parseSafeMultipartJson(raw, fallback) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (typeof raw === 'object') return sanitizeParsedMultipartValue(raw);
+  const str = String(raw);
+  if (str.length > 65536) {
+    const err = new Error('JSON field exceeds maximum allowed length');
+    err.status = 400;
+    throw err;
+  }
+  return sanitizeParsedMultipartValue(JSON.parse(str));
+}
+
+function verifyMultipartFilesMagicBytes(filesMap) {
+  if (!filesMap || typeof filesMap !== 'object') return { ok: true };
+  for (const list of Object.values(filesMap)) {
+    if (!Array.isArray(list)) continue;
+    for (const file of list) {
+      if (!file) continue;
+      let headerBytes = null;
+      if (Buffer.isBuffer(file.buffer)) {
+        headerBytes = file.buffer.subarray(0, 64);
+      } else if (file.path && fs.existsSync(file.path)) {
+        const fd = fs.openSync(file.path, 'r');
+        try {
+          const buf = Buffer.alloc(64);
+          const bytesRead = fs.readSync(fd, buf, 0, 64, 0);
+          headerBytes = buf.subarray(0, bytesRead);
+        } finally {
+          fs.closeSync(fd);
+        }
+      }
+      if (headerBytes) {
+        const normalizedMime = String(file.mimetype || '').split(';')[0].trim().toLowerCase();
+        const check = validateMagicBytes(headerBytes, normalizedMime);
+        if (!check.valid) {
+          return { ok: false, error: 'Invalid uploaded file signature' };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 router.post(
   '/register',
   optionalTeacherRegistrationAuth,
@@ -373,14 +441,8 @@ router.post(
         email, password, verificationToken, phoneVerificationToken
       } = req.body;
       const normalizedEmail = String(email || '').trim().toLowerCase();
-      const uploadedFiles = req.body.uploadedFiles
-        ? (typeof req.body.uploadedFiles === 'string' ? JSON.parse(req.body.uploadedFiles) : req.body.uploadedFiles)
-        : {};
-      const documentAvailability = req.body.documentAvailability
-        ? (typeof req.body.documentAvailability === 'string'
-          ? JSON.parse(req.body.documentAvailability)
-          : req.body.documentAvailability)
-        : {};
+      const uploadedFiles = parseSafeMultipartJson(req.body.uploadedFiles, {});
+      const documentAvailability = parseSafeMultipartJson(req.body.documentAvailability, {});
       const declaredDocuments = {
         graduationCertificate: documentAvailability.graduationCertificate === true,
         tajweedCertificates: documentAvailability.tajweedCertificates === true,
@@ -391,10 +453,16 @@ router.post(
       if (externalStorage && uploadedFileCount > 0) {
         return res.status(503).json({ error: 'External file storage is not configured yet', code: 'FILE_STORAGE_NOT_READY' });
       }
+      if (uploadedFileCount > 0) {
+        const magicStatus = verifyMultipartFilesMagicBytes(req.files);
+        if (!magicStatus.ok) {
+          return res.status(400).json({ error: magicStatus.error, code: 'INVALID_FILE_MAGIC_BYTES' });
+        }
+      }
 
       let userId = req.user?.id;
       let uploadOwner = req.user?.id || null;
-      const parsedPersonalForVerification = personalInfo ? JSON.parse(personalInfo) : {};
+      const parsedPersonalForVerification = parseSafeMultipartJson(personalInfo, {});
 
       if (!userId) {
         const teacherVerificationToken = verificationToken;
@@ -565,13 +633,14 @@ router.post(
             return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
           }
 
-          const parsedPersonal = personalInfo ? JSON.parse(personalInfo) : {};
+          const parsedPersonal = parseSafeMultipartJson(personalInfo, {});
           const user = addMockUser({
             name: parsedPersonal.fullName || 'معلم أزهري',
             email: normalizedEmail,
             password,
             phone: parsedPersonal.phone,
             role: 'teacher',
+            emailVerified: true,
             isActive: true,
           });
 
@@ -582,12 +651,14 @@ router.post(
             return res.status(409).json({ error: 'Email already registered' });
           }
 
+          const parsedPersonal = parseSafeMultipartJson(personalInfo, {});
           const user = await User.create({
-            name: JSON.parse(personalInfo).fullName,
+            name: parsedPersonal.fullName,
             email: normalizedEmail,
             password,
-            phone: JSON.parse(personalInfo).phone,
+            phone: parsedPersonal.phone,
             role: 'teacher',
+            emailVerified: true,
           });
 
           userId = user._id;
@@ -599,9 +670,9 @@ router.post(
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const parsedPersonal = personalInfo ? JSON.parse(personalInfo) : {};
-      const parsedAcademic = academicInfo ? JSON.parse(academicInfo) : {};
-      const parsedQuran = quranInfo ? JSON.parse(quranInfo) : {};
+      const parsedPersonal = parseSafeMultipartJson(personalInfo, {});
+      const parsedAcademic = parseSafeMultipartJson(academicInfo, {});
+      const parsedQuran = parseSafeMultipartJson(quranInfo, {});
 
       if (isMockMode && !isDBConnected()) {
         const existingT = findMockTeacherByUserId(userId);
@@ -630,8 +701,8 @@ router.post(
             specializations: parsedQuran.specializations?.length ? parsedQuran.specializations : ['tajweed', 'hifz'],
             ...parsedQuran,
           },
-          languages: JSON.parse(languages || '["arabic"]'),
-          availability: JSON.parse(availability || '[]'),
+          languages: parseSafeMultipartJson(languages, ['arabic']),
+          availability: parseSafeMultipartJson(availability, []),
           status: 'pending',
           isVerified: false,
         });
@@ -754,8 +825,8 @@ router.post(
         specializations: parsedQuran.specializations?.length ? parsedQuran.specializations : ['tajweed'],
         ...parsedQuran,
       },
-      languages: JSON.parse(languages || '["arabic"]'),
-      availability: JSON.parse(availability || '[]'),
+      languages: parseSafeMultipartJson(languages, ['arabic']),
+      availability: parseSafeMultipartJson(availability, []),
       documents,
       media,
       storageOwner: externalStorage && uploadOwner ? String(uploadOwner) : undefined,
@@ -1052,6 +1123,7 @@ router.get('/admin/:id/profile-change/media-playback/:kind', protect, authorize(
       index: 0,
       scope: 'proposed',
       issuedBy: req.user?.id,
+      issuedVersion: req.user?.v,
     });
 
     await logAdminAction({
@@ -1147,6 +1219,7 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
       }
 
       applyTeacherProfileChange(teacher, userDoc, request.proposed || {});
+      await Promise.all([teacher.validate(), userDoc.validate()]);
       await Promise.all([teacher.save(), userDoc.save()]);
       request.status = 'approved';
 
@@ -1359,7 +1432,7 @@ const TEACHER_MEDIA_KINDS = new Set([
 ]);
 const TEACHER_MEDIA_TICKET_PURPOSE = 'teacher-admin-media-range';
 
-function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'original', issuedBy = undefined) {
+function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'original', issuedBy = undefined, issuedVersion = undefined) {
   const indexNumber = Number(index ?? 0);
   const referenceDigest = crypto.createHash('sha256').update(String(reference)).digest('hex');
   const ticket = jwt.sign({
@@ -1370,6 +1443,7 @@ function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'or
     scope,
     referenceDigest,
     ...(issuedBy ? { issuedBy: String(issuedBy) } : {}),
+    ...(issuedVersion !== undefined ? { issuedVersion: Number(issuedVersion || 0) } : {}),
   }, getAccessSecret(), { expiresIn: '30m', algorithm: 'HS256' });
   // The frontend rewrites /api to the backend. Keep video requests on the
   // academy's own origin: Helmet's same-origin CORP otherwise blocks media
@@ -1386,7 +1460,7 @@ class TeacherPlaybackError extends Error {
   }
 }
 
-async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index = 0, scope = 'original', issuedBy = undefined }) {
+async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index = 0, scope = 'original', issuedBy = undefined, issuedVersion = undefined }) {
   const metadata = await objectStorage.inspectPrivateMedia(reference);
   const size = Number(metadata?.sizeBytes);
   if (!Number.isSafeInteger(size) || size <= 0) {
@@ -1415,7 +1489,7 @@ async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index
       else result?.stream?.destroy?.();
     }
     return {
-      url: createAdminMediaRangeUrl(teacherId, kind, index, reference, scope, issuedBy),
+      url: createAdminMediaRangeUrl(teacherId, kind, index, reference, scope, issuedBy, issuedVersion),
       streamingMode: 'authenticated-range',
       contentType: metadata.contentType,
       sizeBytes: size,
@@ -1456,6 +1530,12 @@ router.get('/admin-media-range/:id/:kind/:index', async (req, res) => {
     if (payload.issuedBy) {
       const principalOk = await verifyLiveSessionPrincipal(payload.issuedBy, 'admin', payload.iat);
       if (!principalOk) return res.status(401).end();
+      if (payload.issuedVersion !== undefined && (Boolean(mongoose.connection?.db) || User.findById !== mongoose.Model.findById)) {
+        const issuerDoc = await User.findById(payload.issuedBy).select('+refreshTokenVersion').lean();
+        if (!issuerDoc || Number(issuerDoc.refreshTokenVersion || 0) !== Number(payload.issuedVersion || 0)) {
+          return res.status(401).end();
+        }
+      }
     }
     const index = Number(req.params.index);
     if (
@@ -1585,6 +1665,7 @@ router.get('/admin/:id/media-playback/:kind{/:index}', protect, authorize('admin
       index: req.params.index,
       scope: 'original',
       issuedBy: req.user?.id,
+      issuedVersion: req.user?.v,
     });
 
     await logAdminAction({
@@ -1752,9 +1833,36 @@ router.put('/admin/:id/review', protect, authorize('admin'), async (req, res) =>
 
     const teacherUser = await User.findByIdAndUpdate(
       teacher.user,
-      { $inc: { refreshTokenVersion: 1 } },
+      {
+        $inc: { refreshTokenVersion: 1 },
+        ...(action !== 'approve' ? { $set: { sessionsRevokedAt: new Date() } } : {}),
+      },
       { new: true }
     ).select('name email');
+
+    if (['rejected', 'suspended'].includes(teacher.status)) {
+      const SessionModel = require('../models/Session');
+      const StudentSubscriptionModel = require('../models/StudentSubscription');
+      if (Boolean(mongoose.connection?.db) || SessionModel.updateMany !== mongoose.Model.updateMany) {
+        await SessionModel.updateMany(
+          {
+            teacher: teacher._id,
+            status: { $in: ['pending', 'confirmed'] },
+            scheduledAt: { $gt: new Date() },
+          },
+          { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }
+        ).catch(() => {});
+      }
+      if (Boolean(mongoose.connection?.db) || StudentSubscriptionModel.updateMany !== mongoose.Model.updateMany) {
+        await StudentSubscriptionModel.updateMany(
+          {
+            preferredTeacher: teacher._id,
+            status: { $nin: ['cancelled', 'expired'] },
+          },
+          { $set: { preferredTeacher: null } }
+        ).catch(() => {});
+      }
+    }
 
     if (teacherUser?.email) {
       const notification = {

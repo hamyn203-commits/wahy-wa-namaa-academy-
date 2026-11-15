@@ -110,25 +110,35 @@ async function verifyAndHashPaymentProof(proofReference, declaredContentType) {
     }
   } else if (result.stream?.getReader) {
     const reader = result.stream.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const buf = Buffer.from(value);
-      totalBytes += buf.length;
-      if (totalBytes > maxBytes) {
-        const err = new Error('حجم ملف الإثبات يتجاوز الحد المسموح (10MB)');
-        err.code = 'INVALID_PAYMENT_PROOF';
-        err.status = 400;
-        throw err;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const buf = Buffer.from(value);
+        totalBytes += buf.length;
+        if (totalBytes > maxBytes) {
+          const err = new Error('حجم ملف الإثبات يتجاوز الحد المسموح (10MB)');
+          err.code = 'INVALID_PAYMENT_PROOF';
+          err.status = 400;
+          throw err;
+        }
+        hash.update(buf);
+        if (headerBytes < 64) {
+          const slice = buf.subarray(0, 64 - headerBytes);
+          headerChunks.push(slice);
+          headerBytes += slice.length;
+        }
       }
-      hash.update(buf);
-      if (headerBytes < 64) {
-        const slice = buf.subarray(0, 64 - headerBytes);
-        headerChunks.push(slice);
-        headerBytes += slice.length;
-      }
+    } finally {
+      await reader.cancel().catch(() => {});
     }
   } else {
+    if (process.env.NODE_ENV === 'production') {
+      const err = new Error('تعذر قراءة محتوى ملف إثبات الدفع للتحقق الأمني');
+      err.code = 'INVALID_PAYMENT_PROOF';
+      err.status = 400;
+      throw err;
+    }
     return { proofHash: undefined, detectedContentType: undefined };
   }
 
@@ -283,13 +293,13 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
     const currency = normalizeCurrency(course.currency || 'USD');
     const amountMinor = toMinorUnits(course.price, currency);
 
-    const recentWindow = new Date(Date.now() - 30 * 60 * 1000);
+    const recentWindow = new Date(Date.now() - 60 * 60 * 1000);
     const activePendingCheckout = await Payment.findOne({
       kind: 'course_enrollment',
       provider: 'paymob',
       student: user._id,
       course: course._id,
-      status: 'pending',
+      status: { $in: ['created', 'pending'] },
       createdAt: { $gte: recentWindow },
     }).select('_id');
 
@@ -362,6 +372,13 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
       payment.failedAt = new Date();
       payment.failureCode = error.code || 'PAYMENT_PROVIDER_ERROR';
       await payment.save().catch(() => {});
+    }
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        error: 'A payment session is already pending for this course',
+        code: 'PAYMENT_ALREADY_PENDING',
+      });
     }
 
     if (error.code === 'PAYMENT_PROVIDER_NOT_CONFIGURED') {

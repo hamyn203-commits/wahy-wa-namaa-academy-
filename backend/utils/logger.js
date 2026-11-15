@@ -40,7 +40,12 @@ function maskJwtString(str) {
 }
 
 function maskPII(value, depth = 0, seen = new WeakSet()) {
-  if (depth > 5 || value === null || value === undefined) return value;
+  if (value === null || value === undefined) return value;
+  if (depth > 6) {
+    if (typeof value === 'string') return maskPhoneString(maskEmail(maskJwtString(value)));
+    if (typeof value === 'object') return '[MaxDepth]';
+    return value;
+  }
 
   if (typeof value === 'string') {
     return maskPhoneString(maskEmail(maskJwtString(value)));

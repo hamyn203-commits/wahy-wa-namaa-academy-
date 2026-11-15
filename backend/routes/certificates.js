@@ -50,14 +50,15 @@ router.post('/generate', protect, async (req, res) => {
 
     const existingCert = await Certificate.findOne({
       student: certificateStudentId,
-      course: enrollment.course._id
+      course: enrollment.course._id,
+      status: 'active',
     });
 
     if (existingCert) {
       return res.status(400).json({ error: 'Certificate already exists' });
     }
 
-    const certificateId = enrollment.certificate?.certificateId || Certificate.generateCertificateId();
+    const certificateId = Certificate.generateCertificateId();
     const verificationUrl = `${process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'}/verify-certificate/${certificateId}`;
     
     const qrCode = await Certificate.generateQRCode(verificationUrl);
@@ -108,7 +109,7 @@ router.get('/my-certificates', protect, async (req, res) => {
       return res.json([]);
     }
 
-    const certificates = await Certificate.find({ student: req.user.id })
+    const certificates = await Certificate.find({ student: req.user.id, status: 'active' })
       .populate('course', 'title slug image')
       .sort({ issuedAt: -1 });
 
@@ -288,7 +289,8 @@ router.post('/batch-generate', protect, async (req, res) => {
 
       const existingCert = await Certificate.findOne({
         student: req.user.id,
-        course: enrollment.course._id
+        course: enrollment.course._id,
+        status: 'active',
       });
 
       if (existingCert) {
@@ -303,7 +305,7 @@ router.post('/batch-generate', protect, async (req, res) => {
         continue;
       }
 
-      const certificateId = enrollment.certificate?.certificateId || Certificate.generateCertificateId();
+      const certificateId = Certificate.generateCertificateId();
       const verificationUrl = `${process.env.FRONTEND_URL || 'https://wahy-wa-namaa-academy.vercel.app'}/verify-certificate/${certificateId}`;
       const qrCode = await Certificate.generateQRCode(verificationUrl);
 

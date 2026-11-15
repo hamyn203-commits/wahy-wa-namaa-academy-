@@ -20,7 +20,13 @@ export const SAFETY_WARNING_MESSAGE = 'حفاظاً على خصوصية وسلا
  */
 export function normalizeSafetyText(text = '') {
   return String(text || '')
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0640]/g, '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF\u0640\u00AD\u061C\u180E]/g, '')
+    .replace(/\u034F/g, '')
+    .replace(/[。．｡]/g, '.')
+    .replace(/[＠﹫]/g, '@')
+    .replace(/[／⁄∕]/g, '/')
+    .replace(/[：﹕]/g, ':')
     .replace(/[\u0660-\u0669]/g, (char) => String(char.charCodeAt(0) - 0x0660))
     .replace(/[\u06F0-\u06F9]/g, (char) => String(char.charCodeAt(0) - 0x06f0));
 }
@@ -103,12 +109,12 @@ export function containsExternalLink(text = '') {
     if (lower.includes(s)) return true;
   }
 
-  // 4. نطاقات عامة شهيرة (.com, .org, .net, .io, إلخ)
-  const domainPattern = /\b[a-z0-9\-_]{2,}\.(com|org|net|edu|gov|io|me|app|ai|info|biz|site|online|link|store|top|xyz|co|cc|live|space|club|tv|dev)\b/i;
+  // 4. نطاقات عامة ودولية شهيرة (.com, .eg, .sa, .id, إلخ)
+  const domainPattern = /\b[a-z0-9\-_]{2,}\.(com|org|net|edu|gov|io|me|app|ai|info|biz|site|online|link|store|top|xyz|co|cc|live|space|club|tv|dev|eg|sa|ae|kw|qa|bh|om|jo|ma|dz|tn|tr|pk|id|my|uk|us|de|fr|gg|ly|gy|gd|gl|to|sh|vc|ws|fm|im)\b/i;
   if (domainPattern.test(lower)) return true;
 
-  // 5. التحايل بكتابة dot أو دوت
-  if (/[a-z0-9\-_]{3,}\s*(?:\[dot\]|\(dot\)|\.|\sdot\s|دوت)\s*(?:com|net|org|io)/i.test(lower)) {
+  // 5. التحايل بكتابة dot أو دوت أو نقطة
+  if (/[a-z0-9\-_]{2,}\s*(?:\[dot\]|\(dot\)|\.|\sdot\s|دوت|نقطة|نقطه)\s*(?:com|net|org|io|me|co|app|gg|eg|sa|ae|id|my)/i.test(lower)) {
     return true;
   }
 

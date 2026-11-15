@@ -488,7 +488,7 @@ router.post('/group-circle', protect, authorize('teacher', 'admin'), async (req,
       attendance,
     });
 
-    meetingService.attachToSession(session, req.body.provider || process.env.DEFAULT_MEETING_PROVIDER || 'jitsi');
+    meetingService.attachToSession(session, req.body.provider || process.env.DEFAULT_MEETING_PROVIDER || 'livekit');
     await session.save();
 
     const notifications = rosterIds.flatMap((studentId) => ([
@@ -898,7 +898,7 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
 
     if (action === 'accept') {
       session.status = 'accepted';
-      const provider = req.body.provider || process.env.DEFAULT_MEETING_PROVIDER || 'jitsi';
+      const provider = req.body.provider || process.env.DEFAULT_MEETING_PROVIDER || 'livekit';
       meetingService.attachToSession(session, provider);
     } else if (action === 'reject') {
       session.status = 'rejected';
@@ -954,18 +954,28 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
       delete source.meetingLink;
       delete source.recordingUrl;
 
-      const newSession = await Session.create({
-        ...source,
-        scheduledAt: proposedDate,
-        timezone,
-        status: 'pending',
-        rescheduledFrom: session._id,
-        cancellationReason: undefined,
-      });
-      
+      const previousStatus = session.status;
+      const previousCancellationReason = session.cancellationReason;
       session.status = 'cancelled';
       session.cancellationReason = 'Rescheduled';
       await session.save();
+
+      let newSession;
+      try {
+        newSession = await Session.create({
+          ...source,
+          scheduledAt: proposedDate,
+          timezone,
+          status: 'pending',
+          rescheduledFrom: session._id,
+          cancellationReason: undefined,
+        });
+      } catch (createErr) {
+        session.status = previousStatus;
+        session.cancellationReason = previousCancellationReason;
+        await session.save().catch(() => {});
+        throw createErr;
+      }
 
       try {
         const arTime = proposedDate.toLocaleString('ar-EG', { timeZone: timezone });
@@ -1117,6 +1127,9 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       session.teacherEvaluation = evaluation || {};
       session.earnings.amount = SESSION_RATE;
       session.earnings.status = 'pending';
+      if (typeof session.validate === 'function') {
+        await session.validate();
+      }
     }
 
     const subscriptionUsage = (session.type === 'regular' || session.type === 'group_circle')

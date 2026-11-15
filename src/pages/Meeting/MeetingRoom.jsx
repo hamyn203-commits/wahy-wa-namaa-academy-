@@ -5,6 +5,7 @@ import GlobalHeader from '../../components/GlobalHeader';
 import SessionTranslateChat from '../../components/live/SessionTranslateChat';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
+import { localizedPath } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
 import api from '../../lib/api';
 import '../../styles/session-experience.css';
@@ -14,7 +15,7 @@ export default function MeetingRoom() {
   const navigate = useNavigate();
   const { locale } = useI18n();
   const isAr = locale === 'ar';
-  const { user, ready } = useRequireAuth(['student', 'teacher', 'admin']);
+  const { user, ready } = useRequireAuth(['student', 'guardian', 'teacher', 'admin']);
 
   const [loading, setLoading] = useState(true);
   const [meeting, setMeeting] = useState(null);
@@ -25,8 +26,13 @@ export default function MeetingRoom() {
     if (!ready || !user) return;
     Promise.all([
       api.get('/api/meetings/session/' + sessionId, { auth: true }),
-      api.get('/api/sessions/' + sessionId + '/translate/languages', { auth: true }),
+      api.get('/api/sessions/' + sessionId + '/translate/languages', { auth: true }).catch(() => ({})),
     ]).then(([meet, langData]) => {
+      const rawUrl = String(meet?.meeting?.url || '').trim();
+      if (rawUrl.startsWith('/live/')) {
+        navigate(localizedPath(rawUrl, locale), { replace: true });
+        return;
+      }
       setMeeting(meet);
       const isTeacher = user.role === 'teacher' || user.role === 'admin';
       if (isTeacher) {
@@ -43,7 +49,9 @@ export default function MeetingRoom() {
     return <div className="wn-meeting-shell grid place-items-center"><span className="w-9 h-9 rounded-full border-2 border-white/20 border-t-[#efd28e] animate-spin" /></div>;
   }
 
-  const meetUrl = meeting?.meeting?.url;
+  const rawMeetUrl = String(meeting?.meeting?.url || '').trim();
+  const isObserver = Boolean(meeting?.meeting?.isObserver || user?.role === 'guardian');
+  const meetUrl = /^https:\/\//i.test(rawMeetUrl) ? rawMeetUrl : '';
 
   return (
     <div className="wn-meeting-shell">
@@ -58,7 +66,12 @@ export default function MeetingRoom() {
       <div className="wn-meeting-content">
         <div className="wn-meeting-stage">
           {meetUrl ? (
-            <iframe title="meeting" src={meetUrl} allow="camera; microphone; fullscreen" />
+            <iframe
+              title="meeting"
+              src={meetUrl}
+              referrerPolicy="no-referrer"
+              allow={isObserver ? 'fullscreen' : 'camera; microphone; fullscreen'}
+            />
           ) : (
             <div className="wn-meeting-empty">
               <div>
@@ -69,9 +82,11 @@ export default function MeetingRoom() {
           )}
         </div>
 
-        <aside className="wn-meeting-chat">
-          <SessionTranslateChat sessionId={sessionId} myLang={myLang} partnerLang={partnerLang} isAr={isAr} />
-        </aside>
+        {!isObserver && (
+          <aside className="wn-meeting-chat">
+            <SessionTranslateChat sessionId={sessionId} myLang={myLang} partnerLang={partnerLang} isAr={isAr} />
+          </aside>
+        )}
       </div>
     </div>
   );

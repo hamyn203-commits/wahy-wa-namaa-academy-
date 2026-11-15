@@ -15,7 +15,11 @@ const { getLaunchReadiness } = require('./config/launchReadiness');
 const { getEmailProviderStatus } = require('./config/emailProvider');
 const { isTrustedOrigin, requireTrustedOrigin } = require('./config/origins');
 const correlationId = require('./middleware/correlationId');
-const { userRateLimiter } = require('./middleware/userRateLimit');
+const {
+  userRateLimiter,
+  resolveClientIp,
+  createDistributedRateLimiter,
+} = require('./middleware/userRateLimit');
 const logger = require('./utils/logger');
 const { version: APP_VERSION } = require('./package.json');
 
@@ -50,73 +54,73 @@ app.use(helmet({
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.RATE_LIMIT_MAX || 220),
+  keyGenerator: (req) => `general:${resolveClientIp(req)}`,
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
-const authLimiter = rateLimit({
+const authLimiter = createDistributedRateLimiter({
+  scope: 'auth',
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.AUTH_RATE_LIMIT_MAX || 8),
   message: { error: 'Too many login attempts, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const registrationLimiter = rateLimit({
+const registrationLimiter = createDistributedRateLimiter({
+  scope: 'register',
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.REGISTRATION_RATE_LIMIT_MAX || 6),
   message: { error: 'Too many registration attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const otpSendLimiter = rateLimit({
+const otpSendLimiter = createDistributedRateLimiter({
+  scope: 'otp-send',
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.OTP_SEND_RATE_LIMIT_MAX || 4),
   message: { error: 'Too many verification code requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const otpVerifyLimiter = rateLimit({
+const otpVerifyLimiter = createDistributedRateLimiter({
+  scope: 'otp-verify',
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.OTP_VERIFY_RATE_LIMIT_MAX || 10),
   message: { error: 'Too many verification attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const passwordResetLimiter = rateLimit({
+const passwordResetLimiter = createDistributedRateLimiter({
+  scope: 'password-reset',
   windowMs: 30 * 60 * 1000,
   max: Number(process.env.PASSWORD_RESET_RATE_LIMIT_MAX || 5),
   message: { error: 'Too many password reset requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.REFRESH_RATE_LIMIT_MAX || 60),
+  keyGenerator: (req) => `refresh:${resolveClientIp(req)}`,
   message: { error: 'Too many token refresh requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
-const bootstrapLimiter = rateLimit({
+const bootstrapLimiter = createDistributedRateLimiter({
+  scope: 'bootstrap',
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.ADMIN_BOOTSTRAP_RATE_LIMIT_MAX || 3),
   message: { error: 'Too many bootstrap attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const publicSubmissionLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: Number(process.env.PUBLIC_SUBMISSION_RATE_LIMIT_MAX || 12),
+  keyGenerator: (req) => `public-submit:${resolveClientIp(req)}`,
   message: { error: 'Too many submissions. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   skip: (req) => req.method !== 'POST',
 });
 
@@ -141,6 +145,7 @@ app.use('/api/auth/change-password', requireTrustedOrigin);
 app.use('/api/auth/forgot-password', requireTrustedOrigin);
 app.use('/api/auth/reset-password', requireTrustedOrigin);
 app.use('/api/auth/onboarding', requireTrustedOrigin);
+app.use('/api/auth/me', requireTrustedOrigin);
 app.use('/api/auth/profile', requireTrustedOrigin);
 app.use('/api/auth/learning-track', requireTrustedOrigin);
 app.use('/api/auth/privacy/delete-request', requireTrustedOrigin);
@@ -148,9 +153,11 @@ app.use('/api/auth/privacy/delete-request', requireTrustedOrigin);
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.AI_RATE_LIMIT_MAX || 25),
+  keyGenerator: (req) => `ai:${resolveClientIp(req)}`,
   message: { error: 'Too many AI assistant requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
 });
 
 if (process.env.DISABLE_RATE_LIMIT !== 'true') {
@@ -158,6 +165,7 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/', userRateLimiter);
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/google', authLimiter);
+  app.use('/api/auth/change-password', authLimiter);
   app.use('/api/auth/register', registrationLimiter);
   app.use('/api/auth/send-verification', otpSendLimiter);
   app.use('/api/auth/verify-code', otpVerifyLimiter);

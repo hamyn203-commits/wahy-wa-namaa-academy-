@@ -24,14 +24,29 @@ router.get('/summary', protect, authorize('admin'), async (_req, res) => {
       monthlyRegs
     ] = await Promise.all([
       Donation.aggregate([
-        { $group: { _id: { status: '$status', currency: '$currency' }, count: { $sum: 1 }, total: { $sum: '$amount' } } },
+        {
+          $group: {
+            _id: { status: '$status', currency: '$currency' },
+            count: { $sum: 1 },
+            totalMinor: {
+              $sum: { $ifNull: ['$amountMinor', { $round: [{ $multiply: ['$amount', 100] }, 0] }] },
+            },
+          },
+        },
       ]),
       JobApplication.countDocuments({ status: 'new' }),
       VideoAsset.countDocuments({ isPublished: true }),
       Referral.countDocuments(),
       Donation.aggregate([
         { $match: { status: { $in: ['pledged', 'confirmed'] } } },
-        { $group: { _id: { category: '$category', currency: '$currency' }, total: { $sum: '$amount' } } }
+        {
+          $group: {
+            _id: { category: '$category', status: '$status', currency: '$currency' },
+            totalMinor: {
+              $sum: { $ifNull: ['$amountMinor', { $round: [{ $multiply: ['$amount', 100] }, 0] }] },
+            },
+          },
+        },
       ]),
       Enrollment.aggregate([
         { $group: { _id: '$course', count: { $sum: 1 } } },
@@ -59,23 +74,31 @@ router.get('/summary', protect, authorize('admin'), async (_req, res) => {
     const donationsSummary = donations.reduce((acc, row) => {
       const statusKey = row._id?.status || 'pledged';
       const currencyKey = row._id?.currency || 'USD';
+      const rowTotal = Math.round(Number(row.totalMinor ?? Math.round(Number(row.total || 0) * 100))) / 100;
       if (!acc[statusKey]) {
         acc[statusKey] = { count: 0, total: 0, byCurrency: {} };
       }
       acc[statusKey].count += row.count;
-      acc[statusKey].total += row.total;
-      acc[statusKey].byCurrency[currencyKey] = { count: row.count, total: row.total };
+      acc[statusKey].total = Math.round((acc[statusKey].total + rowTotal) * 100) / 100;
+      acc[statusKey].byCurrency[currencyKey] = { count: row.count, total: rowTotal };
       return acc;
     }, {});
 
     const donationsByCategorySummary = donationsByCategory.reduce((acc, row) => {
       const catKey = row._id?.category || 'general';
+      const statusKey = row._id?.status || 'confirmed';
       const currencyKey = row._id?.currency || 'USD';
+      const rowTotal = Math.round(Number(row.totalMinor ?? Math.round(Number(row.total || 0) * 100))) / 100;
       if (!acc[catKey]) {
-        acc[catKey] = { total: 0, byCurrency: {} };
+        acc[catKey] = { total: 0, pledgedTotal: 0, byCurrency: {}, pledgedByCurrency: {} };
       }
-      acc[catKey].total += row.total;
-      acc[catKey].byCurrency[currencyKey] = row.total;
+      if (statusKey === 'confirmed') {
+        acc[catKey].total = Math.round((acc[catKey].total + rowTotal) * 100) / 100;
+        acc[catKey].byCurrency[currencyKey] = Math.round(((acc[catKey].byCurrency[currencyKey] || 0) + rowTotal) * 100) / 100;
+      } else {
+        acc[catKey].pledgedTotal = Math.round((acc[catKey].pledgedTotal + rowTotal) * 100) / 100;
+        acc[catKey].pledgedByCurrency[currencyKey] = Math.round(((acc[catKey].pledgedByCurrency[currencyKey] || 0) + rowTotal) * 100) / 100;
+      }
       return acc;
     }, {});
 

@@ -4,7 +4,10 @@ const SAFETY_WARNING_MESSAGE = 'حفاظاً على خصوصية وسلامة ا
 
 function normalizeSafetyText(text = '') {
   return String(text || '')
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0640]/g, '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u0640\u00AD\u034F]/g, '')
+    .replace(/[\u3002\uFF0E\uFF61\u2024\uFE52]/g, '.')
+    .replace(/[\uFF20\uFE6B]/g, '@')
     .replace(/[\u0660-\u0669]/g, (ch) => String(ch.charCodeAt(0) - 0x0660))
     .replace(/[\u06F0-\u06F9]/g, (ch) => String(ch.charCodeAt(0) - 0x06f0));
 }
@@ -37,18 +40,18 @@ function containsExternalLink(text = '') {
   if (/www\.[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(lower)) return true;
   const shorteners = [
     'wa.me', 'api.whatsapp.com', 'chat.whatsapp.com',
-    't.me', 'telegram.me', 'bit.ly', 'tinyurl.com', 'cutt.ly', 'is.gd', 'rb.gy',
+    't.me', 'telegram.me', 'bit.ly', 'tinyurl.com', 'cutt.ly', 'is.gd', 'rb.gy', 't.co', 'goo.gl',
     'zoom.us', 'meet.google.com', 'teams.microsoft.com',
     'facebook.com', 'fb.me', 'instagram.com', 'twitter.com', 'x.com',
-    'tiktok.com', 'youtube.com', 'youtu.be', 'discord.gg',
+    'tiktok.com', 'youtube.com', 'youtu.be', 'discord.gg', 'snapchat.com',
   ];
   for (const s of shorteners) {
     if (lower.includes(s)) return true;
   }
-  if (/\b[a-z0-9\-_]{2,}\.(com|org|net|edu|gov|io|me|app|ai|info|biz|site|online|link|store|top|xyz|co|cc|live|space|club|tv|dev)\b/i.test(lower)) {
+  if (/\b[a-z0-9\-_]{2,}\.(com|org|net|edu|gov|io|me|app|ai|info|biz|site|online|link|store|top|xyz|co|cc|live|space|club|tv|dev|eg|sa|ae|id|my|tr|pk|uk|de|fr|qa|kw|bh|om|jo|ma|dz|tn)\b/i.test(lower)) {
     return true;
   }
-  if (/[a-z0-9\-_]{3,}\s*(?:\[dot\]|\(dot\)|\.|\sdot\s|دوت)\s*(?:com|net|org|io)/i.test(lower)) {
+  if (/[a-z0-9\-_]{2,}\s*(?:\[dot\]|\(dot\)|\.|\sdot\s|دوت)\s*(?:com|net|org|io|me|co|eg|sa|ae|id|my|tr|uk|de|fr)/i.test(lower)) {
     return true;
   }
   return false;

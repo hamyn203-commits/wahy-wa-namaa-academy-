@@ -155,14 +155,24 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       });
     }
 
-    const wasAlreadyCompleted = Array.isArray(progress.lessonProgress)
-      && progress.lessonProgress.some(
-        (lp) => String(lp.lesson) === String(lessonId) && lp.status === 'completed'
-      );
+    const existingLessonEntry = Array.isArray(progress.lessonProgress)
+      ? progress.lessonProgress.find((lp) => String(lp.lesson) === String(lessonId))
+      : null;
+    const wasAlreadyCompleted = existingLessonEntry?.status === 'completed';
     const hadWeekStreakMilestone = Array.isArray(progress.milestones)
       && progress.milestones.some((m) => m.badge === 'week-streak');
 
-    await progress.updateLessonProgress(String(lessonId), status, effectiveScore, numericTimeSpent);
+    let boundedTimeSpent = numericTimeSpent;
+    if (existingLessonEntry?.lastAccessedAt) {
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((Date.now() - new Date(existingLessonEntry.lastAccessedAt).getTime()) / 1000) + 60
+      );
+      boundedTimeSpent = Math.min(numericTimeSpent, elapsedSeconds);
+    }
+    const effectiveStatus = wasAlreadyCompleted ? 'completed' : status;
+
+    await progress.updateLessonProgress(String(lessonId), effectiveStatus, effectiveScore, boundedTimeSpent);
 
     const lessonMilestoneKey = `lesson:${lessonId}`;
     if (status === 'completed' && !wasAlreadyCompleted) {

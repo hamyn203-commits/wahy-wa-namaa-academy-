@@ -369,59 +369,85 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
     const grossRevenueEGP = revenue.EGP || 0;
     const grossRevenueUSD = revenue.USD || 0;
 
-    // 2. Aggregate TeacherLedger data for dues and payouts
+    // 2. Aggregate TeacherLedger data per teacher in minor units so per-teacher clamping prevents cross-teacher deficit offsetting
     const ledgerAgg = await TeacherLedger.aggregate([
       {
         $group: {
-          _id: { currency: '$currency', type: '$type', status: '$status' },
-          totalAmount: { $sum: '$amount' },
+          _id: {
+            teacher: '$teacher',
+            currency: '$currency',
+            type: '$type',
+            status: '$status',
+          },
+          totalMinor: { $sum: { $round: [{ $multiply: ['$amount', 100] }, 0] } },
           count: { $sum: 1 },
         },
       },
     ]);
 
-    const duesMinor = {
-      EGP: { earned: 0, deducted: 0, withdrawn: 0, pendingPayouts: 0 },
-      USD: { earned: 0, deducted: 0, withdrawn: 0, pendingPayouts: 0 },
-    };
-
+    const perTeacherMinor = new Map();
     let pendingPayoutsCount = 0;
     let processingPayoutsCount = 0;
 
     for (const item of ledgerAgg) {
       const curr = item._id.currency === 'USD' ? 'USD' : 'EGP';
+      const teacherKey = `${String(item._id.teacher || 'unassigned')}:${curr}`;
+      if (!perTeacherMinor.has(teacherKey)) {
+        perTeacherMinor.set(teacherKey, {
+          curr,
+          earned: 0,
+          deducted: 0,
+          withdrawn: 0,
+          pendingPayouts: 0,
+        });
+      }
+      const bucket = perTeacherMinor.get(teacherKey);
       const type = item._id.type;
       const status = item._id.status;
-      const amountMinor = toMinor(item.totalAmount || 0);
+      const amountMinor = item.totalMinor !== undefined
+        ? (Number(item.totalMinor) || 0)
+        : toMinor(item.totalAmount || 0);
 
       if (type === 'session_earning' || type === 'bonus' || type === 'adjustment') {
         if (status === 'completed') {
-          duesMinor[curr].earned += amountMinor;
+          bucket.earned += amountMinor;
         }
       } else if (type === 'deduction') {
         if (status === 'completed') {
-          duesMinor[curr].deducted += amountMinor;
+          bucket.deducted += amountMinor;
         }
       } else if (type === 'payout') {
         if (status === 'completed') {
-          duesMinor[curr].withdrawn += amountMinor;
+          bucket.withdrawn += amountMinor;
         } else if (status === 'pending' || status === 'processing') {
-          duesMinor[curr].pendingPayouts += amountMinor;
+          bucket.pendingPayouts += amountMinor;
           if (status === 'pending') pendingPayoutsCount += item.count;
           if (status === 'processing') processingPayoutsCount += item.count;
         }
       }
     }
 
+    const duesMinor = {
+      EGP: { netEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
+      USD: { netEarned: 0, withdrawn: 0, pendingPayouts: 0, availableLiability: 0 },
+    };
+
+    for (const bucket of perTeacherMinor.values()) {
+      const netTeacherEarned = Math.max(0, bucket.earned - bucket.deducted);
+      const availTeacherMinor = Math.max(0, netTeacherEarned - bucket.withdrawn - bucket.pendingPayouts);
+      duesMinor[bucket.curr].netEarned += netTeacherEarned;
+      duesMinor[bucket.curr].withdrawn += bucket.withdrawn;
+      duesMinor[bucket.curr].pendingPayouts += bucket.pendingPayouts;
+      duesMinor[bucket.curr].availableLiability += availTeacherMinor;
+    }
+
     const teacherDues = {};
     for (const curr of ['EGP', 'USD']) {
-      const netEarnedMinor = Math.max(0, duesMinor[curr].earned - duesMinor[curr].deducted);
-      const availMinor = Math.max(0, netEarnedMinor - duesMinor[curr].withdrawn - duesMinor[curr].pendingPayouts);
       teacherDues[curr] = {
-        totalEarned: fromMinor(netEarnedMinor),
+        totalEarned: fromMinor(duesMinor[curr].netEarned),
         withdrawn: fromMinor(duesMinor[curr].withdrawn),
         pendingPayouts: fromMinor(duesMinor[curr].pendingPayouts),
-        availableLiability: fromMinor(availMinor),
+        availableLiability: fromMinor(duesMinor[curr].availableLiability),
       };
     }
 

@@ -595,11 +595,6 @@ router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
       });
     }
 
-    if (guardianUser.phoneNormalized !== normalizedPhone) {
-      guardianUser.phoneNormalized = normalizedPhone;
-      await guardianUser.save();
-    }
-
     const duplicateCount = await countGuardianPhoneDuplicates(guardianUser, normalizedPhone);
 
     if (duplicateCount > 1) {
@@ -798,24 +793,20 @@ router.post('/link-child', protect, authorize('guardian'), linkChildLimiter, asy
       {
         role: 'student',
         guardianLinkCode: normalizedCode,
-        $nor: [
-          { age: { $gt: 0, $lt: 18 } },
-          { enrollmentSection: 'children' },
-        ],
+        age: { $gte: 18 },
+        enrollmentSection: { $ne: 'children' },
+        'onboarding.completed': { $ne: false },
       },
       { $unset: { guardianLinkCode: 1 } },
       { new: false },
-    ).select('+guardianLinkCode guardian name age enrollmentSection');
+    ).select('+guardianLinkCode guardian name age enrollmentSection onboarding');
 
     if (!student) {
       const minorCandidate = await User.findOne({
         role: 'student',
         guardianLinkCode: normalizedCode,
-      }).select('_id age enrollmentSection');
-      if (
-        minorCandidate
-        && ((Number(minorCandidate.age) > 0 && Number(minorCandidate.age) < 18) || minorCandidate.enrollmentSection === 'children')
-      ) {
+      }).select('_id age enrollmentSection onboarding');
+      if (minorCandidate) {
         return res.status(403).json({
           error: 'ربط حسابات الطلاب القُصَّر يتطلب دعوة موجهة لرقم هاتف ولي الأمر المسجل',
           code: 'MINOR_INVITATION_REQUIRED',
@@ -825,8 +816,10 @@ router.post('/link-child', protect, authorize('guardian'), linkChildLimiter, asy
     }
 
     if (
-      (Number(student.age) > 0 && Number(student.age) < 18)
+      !Number.isFinite(Number(student.age))
+      || Number(student.age) < 18
       || student.enrollmentSection === 'children'
+      || student.onboarding?.completed === false
     ) {
       await User.updateOne({ _id: student._id }, { $set: { guardianLinkCode: normalizedCode } }).catch(() => {});
       return res.status(403).json({
@@ -984,7 +977,7 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
     childIds = childIds.filter((childId) => {
       const access = guardian ? findChildAccess(guardian, childId) : null;
       if (!access) return true;
-      return Boolean(access.permissions?.viewAttendance || access.permissions?.viewProgress);
+      return Boolean(access.permissions?.viewAttendance);
     });
 
     if (childIds.length === 0) {

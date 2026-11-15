@@ -120,6 +120,15 @@ const PaymentSchema = new mongoose.Schema({
       message: 'Payment amountMinor must be a safe integer',
     },
   },
+  refundedAmountMinor: {
+    type: Number,
+    default: 0,
+    min: 0,
+    validate: {
+      validator: (val) => Number.isSafeInteger(val) && val >= 0,
+      message: 'Payment refundedAmountMinor must be a non-negative safe integer',
+    },
+  },
   currency: {
     type: String,
     enum: SUPPORTED_CURRENCIES,
@@ -206,6 +215,17 @@ PaymentSchema.index(
       provider: 'manual',
       status: { $in: ['pending', 'succeeded'] },
       'manual.transferReference': { $type: 'string' },
+    },
+  }
+);
+PaymentSchema.index(
+  { student: 1, course: 1, provider: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      kind: 'course_enrollment',
+      provider: 'paymob',
+      status: { $in: ['created', 'pending'] },
     },
   }
 );

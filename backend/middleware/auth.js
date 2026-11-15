@@ -4,12 +4,14 @@ const mongoose = require('mongoose');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const { isMockMode } = require('../config/runtime');
 const { findMockUserById } = require('../mockStore');
+const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 const DEFAULT_JWT_SECRET = 'wahy-namaa-dev-access-secret-change-me';
 const DEFAULT_REFRESH_SECRET = 'wahy-namaa-dev-refresh-secret-change-me';
+const VALID_SESSION_ROLES = new Set(['student', 'teacher', 'admin', 'guardian', 'supervisor']);
 
 function isWeakProductionSecret(value) {
   const secret = String(value || '');
@@ -61,9 +63,29 @@ const refreshSecret = () => {
   return process.env.JWT_REFRESH_SECRET || JWT_REFRESH_SECRET || DEFAULT_REFRESH_SECRET;
 };
 
+function isValidAccessPayload(decoded) {
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return false;
+  if (decoded.typ !== 'access') return false;
+  if (decoded.purpose !== undefined) return false;
+  const rawId = String(decoded.id || '').trim();
+  if (!rawId) return false;
+  if (!VALID_SESSION_ROLES.has(String(decoded.role || ''))) return false;
+  return true;
+}
+
+function isValidRefreshPayload(decoded) {
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return false;
+  if (decoded.typ !== 'refresh') return false;
+  if (decoded.purpose !== undefined) return false;
+  const rawId = String(decoded.id || '').trim();
+  if (!rawId) return false;
+  return true;
+}
+
 const generateAccessToken = (user) => {
   return jwt.sign(
     {
+      typ: 'access',
       id: user._id || user.id,
       email: user.email,
       role: user.role,
@@ -77,6 +99,7 @@ const generateAccessToken = (user) => {
 const generateRefreshToken = (user) => {
   return jwt.sign(
     {
+      typ: 'refresh',
       id: user._id || user.id,
       role: user.role,
       v: Number(user.refreshTokenVersion || 0),
@@ -88,7 +111,7 @@ const generateRefreshToken = (user) => {
 };
 
 async function loadLiveSessionState(userId) {
-  if (!userId) return { mode: 'stateless', user: null };
+  if (!userId || !String(userId).trim()) return { mode: 'invalid', user: null };
   if (mongoose.connection.readyState === 1) {
     const User = require('../models/User');
     const query = User.findById(userId);
@@ -104,10 +127,25 @@ async function loadLiveSessionState(userId) {
   if (isMockMode) {
     return { mode: 'mock', user: findMockUserById(userId) };
   }
+  if (process.env.NODE_ENV === 'production') {
+    return { mode: 'unavailable', user: null };
+  }
   return { mode: 'stateless', user: null };
 }
 
 function evaluateRevocation(decoded, liveUser, mode) {
+  if (mode === 'invalid') {
+    return { status: 401, body: { error: 'Invalid token', code: 'INVALID_ACCESS_TOKEN' } };
+  }
+  if (mode === 'unavailable') {
+    return {
+      status: 503,
+      body: {
+        error: 'Authentication verification is temporarily unavailable',
+        code: 'AUTH_CHECK_UNAVAILABLE',
+      },
+    };
+  }
   if (mode === 'db' && !liveUser) {
     return { status: 401, body: { error: 'Invalid or revoked session', code: 'SESSION_REVOKED' } };
   }
@@ -138,6 +176,12 @@ function evaluateRevocation(decoded, liveUser, mode) {
 
 async function verifyAccessTokenString(token) {
   const decoded = jwt.verify(String(token || ''), accessSecret(), { algorithms: ['HS256'] });
+  if (!isValidAccessPayload(decoded)) {
+    const err = new Error('Invalid access token');
+    err.status = 401;
+    err.code = 'INVALID_ACCESS_TOKEN';
+    throw err;
+  }
   const { mode, user: liveUser } = await loadLiveSessionState(decoded?.id);
   const rejection = evaluateRevocation(decoded, liveUser, mode);
   if (rejection) {
@@ -149,14 +193,18 @@ async function verifyAccessTokenString(token) {
   return { decoded, liveUser };
 }
 
-async function verifyLiveSessionPrincipal(userId, expectedRole, tokenIat) {
-  if (!userId) return true;
+async function verifyLiveSessionPrincipal(userId, expectedRole, tokenIat, tokenVersion) {
+  if (!userId || !String(userId).trim()) return false;
   const { mode, user: liveUser } = await loadLiveSessionState(userId);
+  if (mode === 'invalid' || mode === 'unavailable') return false;
   if (mode === 'db' && !liveUser) return false;
-  if (!liveUser) return true;
+  if (!liveUser) return process.env.NODE_ENV !== 'production';
   if (liveUser.isActive === false) return false;
   if (liveUser.lockUntil && new Date(liveUser.lockUntil).getTime() > Date.now()) return false;
   if (expectedRole && liveUser.role && liveUser.role !== expectedRole) return false;
+  if (tokenVersion !== undefined && liveUser.refreshTokenVersion !== undefined) {
+    if (Number(liveUser.refreshTokenVersion || 0) !== Number(tokenVersion || 0)) return false;
+  }
   if (liveUser.sessionsRevokedAt && tokenIat) {
     const revokedMs = new Date(liveUser.sessionsRevokedAt).getTime();
     if (Number.isFinite(revokedMs) && tokenIat * 1000 < revokedMs - 1000) return false;
@@ -174,7 +222,11 @@ const verifyAccessToken = async (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    req.user = jwt.verify(token, accessSecret(), { algorithms: ['HS256'] });
+    const decoded = jwt.verify(token, accessSecret(), { algorithms: ['HS256'] });
+    if (!isValidAccessPayload(decoded)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    req.user = decoded;
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
@@ -189,7 +241,7 @@ const verifyAccessToken = async (req, res, next) => {
       return res.status(rejection.status).json(rejection.body);
     }
   } catch (error) {
-    console.error('Access session state check failed:', error.message);
+    logger.error('Access session state check failed', { error: error?.message });
     return res.status(503).json({
       error: 'Authentication verification is temporarily unavailable',
       code: 'AUTH_CHECK_UNAVAILABLE',
@@ -208,7 +260,7 @@ const verifyAccessToken = async (req, res, next) => {
         });
       }
     } catch (error) {
-      console.error('Teacher approval gate failed:', error.message);
+      logger.error('Teacher approval gate failed', { error: error?.message });
       return res.status(503).json({
         error: 'Teacher access verification is temporarily unavailable',
         code: 'TEACHER_ACCESS_CHECK_UNAVAILABLE',
@@ -226,9 +278,13 @@ const readAccessTokenIfValid = async (req, _res, next) => {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const decoded = jwt.verify(authHeader.split(' ')[1], accessSecret(), { algorithms: ['HS256'] });
-      const { mode, user: liveUser } = await loadLiveSessionState(decoded?.id);
-      const rejection = evaluateRevocation(decoded, liveUser, mode);
-      req.user = rejection ? undefined : decoded;
+      if (isValidAccessPayload(decoded)) {
+        const { mode, user: liveUser } = await loadLiveSessionState(decoded?.id);
+        const rejection = evaluateRevocation(decoded, liveUser, mode);
+        req.user = rejection ? undefined : decoded;
+      } else {
+        req.user = undefined;
+      }
     } catch {
       req.user = undefined;
     }
@@ -269,8 +325,12 @@ const verifyRefreshToken = (req, res, next) => {
   }
 
   try {
+    const decoded = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    if (!isValidRefreshPayload(decoded)) {
+      return res.status(401).json({ error: 'Invalid or expired refresh session' });
+    }
     req.refreshTokenRaw = refreshToken;
-    req.refreshToken = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    req.refreshToken = decoded;
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired refresh session' });
@@ -282,8 +342,13 @@ const readRefreshTokenIfValid = (req, _res, next) => {
   if (!refreshToken) return next();
 
   try {
-    req.refreshTokenRaw = refreshToken;
-    req.refreshToken = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    const decoded = jwt.verify(refreshToken, refreshSecret(), { algorithms: ['HS256'] });
+    if (isValidRefreshPayload(decoded)) {
+      req.refreshTokenRaw = refreshToken;
+      req.refreshToken = decoded;
+    } else {
+      req.refreshToken = null;
+    }
   } catch {
     req.refreshToken = null;
   }
@@ -314,6 +379,7 @@ const attachTeacherProfile = async (req, res, next) => {
 };
 
 module.exports = {
+  isWeakProductionSecret,
   getAccessSecret: accessSecret,
   generateAccessToken,
   generateRefreshToken,

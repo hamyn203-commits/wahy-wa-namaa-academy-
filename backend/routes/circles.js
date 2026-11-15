@@ -236,9 +236,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // @route   POST /api/circles
-// @desc    Create a new group circle (admin or teacher)
-// @access  Protected (admin, teacher)
-router.post('/', protect, authorize('admin', 'teacher'), async (req, res) => {
+// @desc    Create a new group circle (admin only)
+// @access  Protected (admin)
+router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
     const {
       name,
@@ -573,6 +573,19 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       subscriptionPlanKey
     } = req.body;
 
+    if (req.user.role !== 'admin') {
+      const forbiddenTeacherField = [
+        track, level, gender, targetAgeGroup, status,
+        pricePerSession, teacherId, capacity, subscriptionPlanKey,
+      ].some((v) => v !== undefined);
+      if (forbiddenTeacherField) {
+        return res.status(403).json({
+          error: 'يقتصر تعديل المعلم على اسم الحلقة والجدول والملاحظات والسورة الحالية فقط',
+          code: 'TEACHER_CIRCLE_STRUCTURAL_EDIT_FORBIDDEN',
+        });
+      }
+    }
+
     if (circle.subscriptionPlanKey && (
       (status !== undefined && ['active', 'full'].includes(status) && !['active', 'full'].includes(circle.status))
       || (teacherId && String(teacherId) !== String(circle.teacher))
@@ -621,20 +634,31 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       }
     }
 
+    let targetTeacher = null;
     if (teacherId && req.user.role === 'admin') {
-      const teacherExists = await Teacher.findById(teacherId);
-      if (teacherExists) {
-        assertGenderAndAgeCompatibility({
-          teacher: teacherExists,
-          circleGender: circle.gender,
-        });
-        circle.teacher = teacherId;
+      targetTeacher = await Teacher.findById(teacherId);
+      if (!targetTeacher) {
+        return res.status(404).json({ error: 'المعلم المحدد غير موجود' });
       }
+      circle.teacher = teacherId;
     } else if (gender !== undefined) {
-      const currentTeacher = await Teacher.findById(circle.teacher);
-      if (currentTeacher) {
+      targetTeacher = await Teacher.findById(circle.teacher);
+    }
+
+    if (targetTeacher) {
+      assertGenderAndAgeCompatibility({
+        teacher: targetTeacher,
+        circleGender: circle.gender,
+      });
+    }
+
+    if ((gender !== undefined || teacherId !== undefined) && Array.isArray(circle.students) && circle.students.length > 0) {
+      const rosterTeacher = targetTeacher || await Teacher.findById(circle.teacher);
+      const enrolledStudents = await User.find({ _id: { $in: circle.students } }).select('gender age enrollmentSection onboarding');
+      for (const enrolledStudent of enrolledStudents || []) {
         assertGenderAndAgeCompatibility({
-          teacher: currentTeacher,
+          student: enrolledStudent,
+          teacher: rosterTeacher,
           circleGender: circle.gender,
         });
       }
@@ -656,9 +680,9 @@ router.put('/:id', protect, authorize('admin', 'teacher'), async (req, res) => {
       circle
     });
   } catch (error) {
-    if (error?.status === 400) {
+    if (error?.status === 400 || error?.status === 403) {
       const publicMsg = String(error.publicMessage || error.message || 'بيانات التحديث غير متوافقة');
-      return res.status(400).json({ error: publicMsg, code: error.code || 'CIRCLE_UPDATE_FAILED' });
+      return res.status(error.status).json({ error: publicMsg, code: error.code || 'CIRCLE_UPDATE_FAILED' });
     }
     res.status(400).json({ error: 'فشل تحديث بيانات الحلقة' });
   }
@@ -698,8 +722,12 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
       await Promise.all([
         User.updateMany({ circle: circle._id }, { $unset: { circle: '' } }),
         StudentSubscription.updateMany(
-          { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+          { circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
           { $set: { status: 'awaiting_placement', circle: null } }
+        ),
+        StudentSubscription.updateMany(
+          { circle: circle._id, status: 'renewal_queued' },
+          { $set: { circle: null } }
         ),
         Session.updateMany(
           { circle: circle._id, status: { $in: ['pending', 'accepted'] } },
@@ -716,8 +744,12 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     await Promise.all([
       User.updateMany({ circle: circle._id }, { $unset: { circle: '' } }),
       StudentSubscription.updateMany(
-        { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+        { circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      StudentSubscription.updateMany(
+        { circle: circle._id, status: 'renewal_queued' },
+        { $set: { circle: null } }
       ),
       Session.updateMany(
         { circle: circle._id, status: { $in: ['pending', 'accepted'] } },

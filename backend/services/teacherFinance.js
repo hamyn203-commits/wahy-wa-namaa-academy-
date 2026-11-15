@@ -204,31 +204,61 @@ async function calculateTeacherBalance(teacherId, { session = null } = {}) {
 
 async function ensureLegacyOpeningEntries(teacherId) {
   const teacher = await Teacher.findById(teacherId).select('earnings');
-  if (!teacher?.earnings) return;
+  if (!teacher?.earnings || teacher.earnings.ledgerMigratedAt) return;
 
-  const existingNonMigrationEntry = await TeacherLedger.exists({
+  const existingLedgerEntry = await TeacherLedger.exists({
     teacher: teacherId,
-    idempotencyKey: { $exists: false },
     type: { $in: ['session_earning', 'bonus', 'adjustment', 'deduction', 'payout'] },
   });
-  if (existingNonMigrationEntry) return;
+  if (existingLedgerEntry) {
+    if (typeof Teacher.updateOne === 'function') {
+      await Teacher.updateOne(
+        { _id: teacherId, 'earnings.ledgerMigratedAt': null },
+        { $set: { 'earnings.ledgerMigratedAt': new Date() } },
+      ).catch(() => {});
+    }
+    return;
+  }
 
   const legacyTotal = Number(teacher.earnings.totalEarned) || 0;
   const legacyPending = Number(teacher.earnings.pendingEarnings) || 0;
   const legacyWithdrawn = Number(teacher.earnings.withdrawnEarnings) || 0;
   const openingEarned = fromMinor(Math.max(0, toMinor(legacyTotal) + toMinor(legacyPending)));
 
-  if (openingEarned <= 0 && legacyWithdrawn <= 0) return;
+  const hasRealDb = Boolean(mongoose.connection?.db);
+  const canQueryLegacyWithdrawals = (
+    mongoose.connection.readyState === 1
+    && typeof WithdrawRequest?.find === 'function'
+    && (hasRealDb || WithdrawRequest.find !== mongoose.Model.find)
+  );
+  const legacyRequests = canQueryLegacyWithdrawals
+    ? await WithdrawRequest.find({
+        teacher: teacherId,
+        status: 'pending',
+      }).sort({ createdAt: 1 })
+    : [];
+
+  if (openingEarned <= 0 && legacyWithdrawn <= 0 && legacyRequests.length === 0) {
+    if (typeof Teacher.updateOne === 'function') {
+      await Teacher.updateOne(
+        { _id: teacherId },
+        { $set: { 'earnings.ledgerMigratedAt': new Date() } },
+      ).catch(() => {});
+    }
+    return;
+  }
 
   const safeOpeningUpsert = async (filter, update) => {
     try {
-      await TeacherLedger.findOneAndUpdate(
+      const doc = await TeacherLedger.findOneAndUpdate(
         filter,
         update,
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
+      return Boolean(doc);
     } catch (error) {
-      if (error?.code !== 11000) throw error;
+      if (error?.code === 11000) return true;
+      throw error;
     }
   };
 
@@ -274,50 +304,55 @@ async function ensureLegacyOpeningEntries(teacherId) {
 
   // Migrate any legacy pending WithdrawRequest documents and zero legacy pendingEarnings
   // so legacy balances can never be withdrawn twice.
-  if (mongoose.connection.readyState === 1 && typeof WithdrawRequest?.find === 'function') {
-    const legacyRequests = await WithdrawRequest.find({
-      teacher: teacherId,
-      status: 'pending',
-    }).sort({ createdAt: 1 });
-
-    for (const wr of legacyRequests) {
-      const idempotencyKey = `legacy-withdraw:${wr._id}`;
-      const mappedMethod = wr.method === 'bank' ? 'bank_transfer' : (wr.method || 'vodafone_cash');
-      await safeOpeningUpsert(
-        { idempotencyKey },
-        {
-          $setOnInsert: {
-            idempotencyKey,
-            teacher: teacherId,
-            type: 'payout',
-            amount: fromMinor(toMinor(wr.amount)),
-            currency: 'EGP',
-            status: 'pending',
-            payoutMethod: mappedMethod,
-            payoutDetails: mappedMethod === 'bank_transfer'
-              ? { bankName: 'Legacy Bank', bankAccountNumber: String(wr.accountInfo || '').trim() }
-              : mappedMethod === 'instapay'
-                ? { ipaAddress: String(wr.accountInfo || '').trim() }
-                : { phone: String(wr.accountInfo || '').trim() },
-            notes: 'legacy-pending-withdrawal',
-            description: 'طلب سحب معلّق مرحّل من النظام القديم',
-          },
-        }
-      );
+  for (const wr of legacyRequests) {
+    const idempotencyKey = `legacy-withdraw:${wr._id}`;
+    const mappedMethod = wr.method === 'bank' ? 'bank_transfer' : (wr.method || 'vodafone_cash');
+    const migrated = await safeOpeningUpsert(
+      { idempotencyKey },
+      {
+        $setOnInsert: {
+          idempotencyKey,
+          teacher: teacherId,
+          type: 'payout',
+          amount: fromMinor(toMinor(wr.amount)),
+          currency: 'EGP',
+          status: 'pending',
+          payoutMethod: mappedMethod,
+          payoutDetails: mappedMethod === 'bank_transfer'
+            ? { bankName: 'Legacy Bank', bankAccountNumber: String(wr.accountInfo || '').trim() }
+            : mappedMethod === 'instapay'
+              ? { ipaAddress: String(wr.accountInfo || '').trim() }
+              : { phone: String(wr.accountInfo || '').trim() },
+          notes: 'legacy-pending-withdrawal',
+          description: 'طلب سحب معلّق مرحّل من النظام القديم',
+        },
+      }
+    );
+    if (migrated) {
       wr.status = 'rejected';
       wr.adminNote = 'تم ترحيل الطلب إلى دفتر الأستاذ الموحد (TeacherLedger)';
       await wr.save().catch(() => {});
     }
   }
 
-  if (legacyPending > 0 && typeof Teacher.updateOne === 'function') {
-    await Teacher.updateOne(
-      { _id: teacherId, 'earnings.pendingEarnings': { $gt: 0 } },
-      {
-        $inc: { 'earnings.totalEarned': legacyPending },
-        $set: { 'earnings.pendingEarnings': 0 },
-      }
-    ).catch(() => {});
+  if (typeof Teacher.updateOne === 'function') {
+    if (legacyPending > 0) {
+      await Teacher.updateOne(
+        { _id: teacherId, 'earnings.pendingEarnings': { $gt: 0 } },
+        {
+          $inc: { 'earnings.totalEarned': legacyPending },
+          $set: {
+            'earnings.pendingEarnings': 0,
+            'earnings.ledgerMigratedAt': new Date(),
+          },
+        }
+      ).catch(() => {});
+    } else {
+      await Teacher.updateOne(
+        { _id: teacherId },
+        { $set: { 'earnings.ledgerMigratedAt': new Date() } },
+      ).catch(() => {});
+    }
   }
 }
 

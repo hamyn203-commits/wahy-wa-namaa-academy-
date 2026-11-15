@@ -3,17 +3,26 @@ const crypto = require('crypto');
 
 const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
-let keyCache = { keys: [], expiresAt: 0 };
+const MIN_FORCE_REFRESH_INTERVAL_MS = 60 * 1000;
+let keyCache = { keys: [], expiresAt: 0, lastFetchedAt: 0 };
 
 async function googleKeys(forceRefresh = false) {
-  if (!forceRefresh && Date.now() < keyCache.expiresAt && keyCache.keys.length) return keyCache.keys;
+  const now = Date.now();
+  if (!forceRefresh && now < keyCache.expiresAt && keyCache.keys.length) return keyCache.keys;
+  if (forceRefresh && keyCache.keys.length && now - keyCache.lastFetchedAt < MIN_FORCE_REFRESH_INTERVAL_MS) {
+    return keyCache.keys;
+  }
   const response = await fetch(GOOGLE_JWKS_URL, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error('Google verification unavailable');
   const data = await response.json();
   if (!Array.isArray(data.keys) || !data.keys.length) throw new Error('Invalid Google keys');
   const cacheHeader = response.headers.get('cache-control') || '';
   const maxAge = Number(cacheHeader.match(/max-age=(\d+)/)?.[1] || 900);
-  keyCache = { keys: data.keys, expiresAt: Date.now() + Math.min(maxAge, 3600) * 1000 };
+  keyCache = {
+    keys: data.keys,
+    expiresAt: Date.now() + Math.min(maxAge, 3600) * 1000,
+    lastFetchedAt: Date.now(),
+  };
   return keyCache.keys;
 }
 

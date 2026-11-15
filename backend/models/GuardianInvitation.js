@@ -50,7 +50,7 @@ const GuardianInvitationSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['student-registration', 'student-dashboard', 'legacy'],
+    enum: ['student-registration', 'student-onboarding', 'student-dashboard', 'legacy'],
     default: 'student-dashboard',
   },
   expiresAt: {

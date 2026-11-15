@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { addMockUser, findMockUserByEmail, updateMockUser } = require('../mockStore');
+const logger = require('../utils/logger');
 
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
@@ -110,6 +111,12 @@ const ensureAdminHandler = async (req, res) => {
       password,
       role: 'admin',
       isActive: true,
+    });
+
+    logger.warn('Admin bootstrap created administrator account', {
+      userId: String(user._id),
+      email: normalizedEmail,
+      ip: req.ip,
     });
 
     return res.status(201).json({ message: 'Administrator created', email: user.email });

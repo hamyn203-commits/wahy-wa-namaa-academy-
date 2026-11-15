@@ -1,79 +1,72 @@
 const crypto = require('crypto');
 
-const PROVIDERS = ['jitsi', 'google_meet', 'zoom'];
+function isValidConfiguredZoomBase(raw) {
+  if (!raw || typeof raw !== 'string') return false;
+  try {
+    const parsed = new URL(raw.trim());
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getAllowedProviders() {
+  return isValidConfiguredZoomBase(process.env.ZOOM_MEETING_BASE_URL)
+    ? ['livekit', 'zoom']
+    : ['livekit'];
+}
+
+const PROVIDERS = getAllowedProviders();
 
 function randomRoomToken() {
   return crypto.randomBytes(16).toString('hex');
 }
 
-function generateJitsiLink(_sessionId, roomName) {
-  const room = roomName || `wahy-namaa-${randomRoomToken()}`;
+function generateLiveKitLink(sessionId) {
+  const safeId = sessionId ? String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '') : randomRoomToken();
+  const room = `session_${safeId}`;
   return {
-    provider: 'jitsi',
-    url: `https://meet.jit.si/${room}`,
+    provider: 'livekit',
+    url: `/live/${room}`,
     room,
     instructions: {
-      ar: 'انضم للحصة عبر الرابط — لا يحتاج تسجيل',
-      en: 'Join via link — no signup required',
+      ar: 'انضم لقاعة الأكاديمية المباشرة المؤمنة',
+      en: 'Join the safeguarded academy live classroom',
     },
   };
 }
 
-function generateZoomLink() {
+function generateZoomLink(sessionId) {
   const base = process.env.ZOOM_MEETING_BASE_URL;
-  if (base) {
+  if (isValidConfiguredZoomBase(base)) {
     return {
       provider: 'zoom',
-      url: `${base.replace(/\/$/, '')}/${randomRoomToken()}`,
+      url: `${base.trim().replace(/\/$/, '')}/${randomRoomToken()}`,
       instructions: { ar: 'انضم عبر Zoom', en: 'Join via Zoom' },
     };
   }
-  const demoId = `${100000000 + crypto.randomInt(0, 899999999)}`;
-  return {
-    provider: 'zoom',
-    url: `https://zoom.us/j/${demoId}`,
-    instructions: {
-      ar: 'رابط Zoom تجريبي — اضبط ZOOM_MEETING_BASE_URL للإنتاج',
-      en: 'Demo Zoom link — set ZOOM_MEETING_BASE_URL for production',
-    },
-  };
+  return generateLiveKitLink(sessionId);
 }
 
-function generateGoogleMeetLink() {
-  const custom = process.env.GOOGLE_MEET_BASE_URL;
-  if (custom) {
-    return {
-      provider: 'google_meet',
-      url: custom,
-      instructions: { ar: 'انضم عبر Google Meet', en: 'Join via Google Meet' },
-    };
-  }
-  return {
-    provider: 'google_meet',
-    url: `https://meet.jit.si/wahy-namaa-gmeet-${randomRoomToken()}`,
-    instructions: {
-      ar: 'جلسة عبر Jitsi (بديل Meet) — اضبط GOOGLE_MEET_BASE_URL لرابط Meet حقيقي',
-      en: 'Jitsi fallback — set GOOGLE_MEET_BASE_URL for real Meet links',
-    },
-  };
-}
-
-function generateMeetingLink(sessionId, provider = 'jitsi') {
-  const p = PROVIDERS.includes(provider) ? provider : 'jitsi';
+function generateMeetingLink(sessionId, provider = 'livekit') {
+  const allowed = getAllowedProviders();
+  const p = allowed.includes(provider) ? provider : 'livekit';
   if (p === 'zoom') return generateZoomLink(sessionId);
-  if (p === 'google_meet') return generateGoogleMeetLink(sessionId);
-  return generateJitsiLink(sessionId);
+  return generateLiveKitLink(sessionId);
 }
 
 function attachToSession(session, provider) {
-  const meeting = generateMeetingLink(session._id, provider || process.env.DEFAULT_MEETING_PROVIDER || 'jitsi');
+  const meeting = generateMeetingLink(session._id, provider || process.env.DEFAULT_MEETING_PROVIDER || 'livekit');
   session.meetingLink = meeting.url;
   session.meetingProvider = meeting.provider;
   return meeting;
 }
 
 module.exports = {
-  PROVIDERS,
+  get PROVIDERS() {
+    return getAllowedProviders();
+  },
+  generateLiveKitLink,
   generateMeetingLink,
   attachToSession,
 };

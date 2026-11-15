@@ -68,7 +68,10 @@ const CertificateSchema = new mongoose.Schema({
 });
 
 CertificateSchema.index({ certificateId: 1 });
-CertificateSchema.index({ student: 1, course: 1 }, { unique: true });
+CertificateSchema.index(
+  { student: 1, course: 1 },
+  { unique: true, partialFilterExpression: { status: 'active' } }
+);
 CertificateSchema.index({ status: 1 });
 
 CertificateSchema.statics.generateCertificateId = function() {

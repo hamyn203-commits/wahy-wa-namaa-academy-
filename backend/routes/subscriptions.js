@@ -368,11 +368,39 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       subscription: serializeSubscription(subscription),
     });
   } catch (error) {
-    if (error?.status === 400) {
+    if (error?.status === 400 || error?.status === 403) {
       const publicMsg = String(error.publicMessage || error.message || 'القسم المحدد غير متوافق مع بيانات الطالب');
-      return res.status(400).json({ error: publicMsg, code: error.code || 'SUBSCRIPTION_SELECTION_INVALID' });
+      return res.status(error.status).json({ error: publicMsg, code: error.code || 'SUBSCRIPTION_SELECTION_INVALID' });
     }
     return res.status(500).json({ error: 'فشل حفظ اختيار الاشتراك' });
+  }
+});
+
+router.delete('/:id/draft', protect, authorize('student', 'guardian'), async (req, res) => {
+  try {
+    let targetStudentId = String(req.user.id);
+    if (req.user.role === 'guardian') {
+      const subDoc = await StudentSubscription.findById(req.params.id).select('student').lean();
+      if (!subDoc?.student) {
+        return res.status(404).json({ error: 'مسودة الاشتراك غير موجودة', code: 'SUBSCRIPTION_NOT_FOUND' });
+      }
+      if (!(await isGuardianLinkedToStudent(req.user.id, String(subDoc.student), { requireEnrollmentApprovalForAdults: true }))) {
+        return res.status(403).json({ error: 'غير مصرح بإلغاء هذه المسودة' });
+      }
+      targetStudentId = String(subDoc.student);
+    }
+
+    const cancelled = await StudentSubscription.findOneAndUpdate(
+      { _id: req.params.id, student: targetStudentId, status: 'pending_payment' },
+      { $set: { status: 'cancelled' } },
+      { new: true }
+    );
+    if (!cancelled) {
+      return res.status(404).json({ error: 'مسودة الاشتراك غير موجودة أو لم تعد قابلة للإلغاء', code: 'SUBSCRIPTION_DRAFT_NOT_FOUND' });
+    }
+    return res.json({ success: true, subscription: serializeSubscription(cancelled) });
+  } catch {
+    return res.status(500).json({ error: 'تعذر إلغاء مسودة الاشتراك' });
   }
 });
 
@@ -757,10 +785,20 @@ router.put('/admin/circles/:id', protect, authorize('admin'), async (req, res) =
         section: circle.subscriptionSection,
       });
       circle.teacher = nextTeacher._id;
-      await StudentSubscription.updateMany(
-        { circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
-        { $set: { preferredTeacher: nextTeacher._id } }
-      );
+      await Promise.all([
+        StudentSubscription.updateMany(
+          { circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+          { $set: { preferredTeacher: nextTeacher._id } }
+        ),
+        Session.updateMany(
+          {
+            circle: circle._id,
+            status: { $in: ['pending', 'accepted'] },
+            scheduledAt: { $gt: new Date() },
+          },
+          { $set: { teacher: nextTeacher._id } }
+        ),
+      ]);
       changedFields.push('teacher');
     }
 
@@ -935,8 +973,14 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
       if (targetSubStatus === 'active' && !sub.startedAt) sub.startedAt = now;
       await sub.save();
     } else {
+      const grantScholarship = Boolean(req.body?.grantScholarship);
+      if (!grantScholarship) {
+        return res.status(409).json({
+          error: 'لا يمكن إضافة طالب للحلقة بدون اشتراك مدفوع؛ استخدم خيار المنحة الدراسية الصريح (grantScholarship) عند الحاجة',
+          code: 'PAID_SUBSCRIPTION_REQUIRED',
+        });
+      }
       const validCount = [4, 8, 12, 24].includes(Number(sessionCount)) ? Number(sessionCount) : 8;
-      const pricePerSessionMinor = plan?.pricePerSessionMinor || 5500;
       sub = await StudentSubscription.create({
         student: student._id,
         planKey: circle.subscriptionPlanKey || 'group',
@@ -945,12 +989,12 @@ router.post('/admin/circles/:id/students', protect, authorize('admin'), async (r
         sessionsUsed: 0,
         sessionsRemaining: validCount,
         currency: 'EGP',
-        pricePerSessionMinor,
-        totalAmountMinor: pricePerSessionMinor * validCount,
+        pricePerSessionMinor: 0,
+        totalAmountMinor: 0,
+        isScholarship: true,
         status: targetSubStatus,
         preferredTeacher: circle.teacher,
         circle: circle._id,
-        paidAt: now,
         placedAt: now,
         startedAt: targetSubStatus === 'active' ? now : undefined,
         pricingSnapshot: plan ? {
@@ -1026,8 +1070,12 @@ router.delete('/admin/circles/:id/students/:studentId', protect, authorize('admi
     await Promise.all([
       User.updateOne({ _id: studentId, circle: circle._id }, { $unset: { circle: 1 } }),
       StudentSubscription.updateMany(
-        { student: studentId, circle: circle._id, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+        { student: studentId, circle: circle._id, status: { $in: ['placed', 'active', 'paused'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      StudentSubscription.updateMany(
+        { student: studentId, circle: circle._id, status: 'renewal_queued' },
+        { $set: { circle: null } }
       ),
       Session.updateMany(
         {
@@ -1173,8 +1221,12 @@ router.delete('/admin/circles/:id', protect, authorize('admin'), async (req, res
     await Promise.all([
       User.updateMany({ circle: circleId }, { $unset: { circle: 1 } }),
       StudentSubscription.updateMany(
-        { circle: circleId, status: { $in: ['placed', 'active', 'paused', 'renewal_queued'] } },
+        { circle: circleId, status: { $in: ['placed', 'active', 'paused'] } },
         { $set: { status: 'awaiting_placement', circle: null } }
+      ),
+      StudentSubscription.updateMany(
+        { circle: circleId, status: 'renewal_queued' },
+        { $set: { circle: null } }
       ),
       Session.updateMany(
         { circle: circleId, status: { $in: ['pending', 'accepted'] } },
@@ -1220,8 +1272,17 @@ router.put('/admin/circles/:id/status', protect, authorize('admin'), async (req,
     }
 
     const plan = getPlan(circle.subscriptionPlanKey);
-    const nextStatus = requestedStatus === 'paused' ? 'paused' : circleStatusForCount(circle, plan);
-    circle.status = nextStatus === 'paused' ? 'paused' : (circle.startedAt ? 'active' : nextStatus);
+    if (requestedStatus === 'paused') {
+      circle.status = 'paused';
+    } else {
+      const probeCircle = {
+        status: circle.startedAt ? 'active' : 'forming',
+        students: circle.students,
+        capacity: circle.capacity,
+        subscriptionPlanKey: circle.subscriptionPlanKey,
+      };
+      circle.status = circleStatusForCount(probeCircle, plan);
+    }
     await circle.save();
 
     await logAdminAction({

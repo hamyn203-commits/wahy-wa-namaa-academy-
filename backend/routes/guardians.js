@@ -15,10 +15,39 @@ const {
   filterReportForPermissions,
 } = require('../utils/guardianSafeguarding');
 
+const ADMIN_CHILD_PERMISSIONS = Object.freeze({
+  viewProgress: true,
+  viewGrades: true,
+  viewAttendance: true,
+  receiveNotifications: true,
+  approveEnrollments: true,
+});
+
+async function resolveGuardianOrAdminChildAccess(req, studentId, requiredPermission) {
+  if (req.user.role === 'admin') {
+    return { ok: true, permissions: ADMIN_CHILD_PERMISSIONS, guardian: null };
+  }
+  const guardian = await Guardian.findOne({ user: req.user.id });
+  if (!guardian) {
+    return { ok: false, status: 404, error: 'Guardian profile not found' };
+  }
+  if (guardian.isActive === false) {
+    return { ok: false, status: 403, error: 'حساب متابعة ولي الأمر غير مفعل' };
+  }
+  const access = findChildAccess(guardian, studentId);
+  if (!access) {
+    return { ok: false, status: 403, error: 'Permission denied' };
+  }
+  if (requiredPermission && !hasChildPermission(guardian, studentId, requiredPermission)) {
+    return { ok: false, status: 403, error: 'Permission denied' };
+  }
+  return { ok: true, permissions: access.permissions, guardian };
+}
+
 // @route   GET /api/guardians/my-children
 // @desc    Get all children for the current guardian
 // @access  Private (Guardian)
-router.get('/my-children', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.get('/my-children', protect, authorize('guardian'), async (req, res) => {
   try {
     const guardian = await Guardian.findOne({ user: req.user.id })
       .populate({
@@ -58,7 +87,7 @@ router.get('/my-children', protect, authorize('guardian', 'admin'), async (req, 
 // @route   POST /api/guardians/add-child
 // @desc    Add a child to guardian
 // @access  Private (Guardian)
-router.post('/add-child', protect, authorize('guardian', 'admin'), (_req, res) => {
+router.post('/add-child', protect, authorize('guardian'), (_req, res) => {
   return res.status(410).json({
     error: 'هذا المسار تم إيقافه. استخدم كود ربط ولي الأمر من حساب الطالب.'
   });
@@ -199,17 +228,9 @@ router.put('/permissions/:studentId', protect, authorize('student', 'admin'), as
 // @access  Private (Guardian)
 router.get('/child/:studentId/progress', protect, authorize('guardian', 'admin'), async (req, res) => {
   try {
-    const guardian = await Guardian.findOne({ user: req.user.id });
-
-    if (!guardian) {
-      return res.status(404).json({ error: 'Guardian profile not found' });
-    }
-    if (guardian.isActive === false) {
-      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
-    }
-
-    if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
-      return res.status(403).json({ error: 'Permission denied' });
+    const accessCheck = await resolveGuardianOrAdminChildAccess(req, req.params.studentId, 'viewProgress');
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({ error: accessCheck.error });
     }
 
     const progress = await Progress.find({ student: req.params.studentId })
@@ -232,17 +253,9 @@ router.get('/child/:studentId/progress', protect, authorize('guardian', 'admin')
 // @access  Private (Guardian)
 router.get('/child/:studentId/enrollments', protect, authorize('guardian', 'admin'), async (req, res) => {
   try {
-    const guardian = await Guardian.findOne({ user: req.user.id });
-
-    if (!guardian) {
-      return res.status(404).json({ error: 'Guardian profile not found' });
-    }
-    if (guardian.isActive === false) {
-      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
-    }
-
-    if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
-      return res.status(403).json({ error: 'Permission denied' });
+    const accessCheck = await resolveGuardianOrAdminChildAccess(req, req.params.studentId, 'viewProgress');
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({ error: accessCheck.error });
     }
 
     const enrollments = await Enrollment.find({ student: req.params.studentId })
@@ -264,17 +277,9 @@ router.get('/child/:studentId/enrollments', protect, authorize('guardian', 'admi
 // @access  Private (Guardian)
 router.get('/child/:studentId/achievements', protect, authorize('guardian', 'admin'), async (req, res) => {
   try {
-    const guardian = await Guardian.findOne({ user: req.user.id });
-
-    if (!guardian) {
-      return res.status(404).json({ error: 'Guardian profile not found' });
-    }
-    if (guardian.isActive === false) {
-      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
-    }
-
-    if (!hasChildPermission(guardian, req.params.studentId, 'viewProgress')) {
-      return res.status(403).json({ error: 'Permission denied' });
+    const accessCheck = await resolveGuardianOrAdminChildAccess(req, req.params.studentId, 'viewProgress');
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({ error: accessCheck.error });
     }
 
     const progress = await Progress.find({ student: req.params.studentId })
@@ -297,7 +302,7 @@ router.get('/child/:studentId/achievements', protect, authorize('guardian', 'adm
 // @route   POST /api/guardians/report/:studentId
 // @desc    Generate a report for a child
 // @access  Private (Guardian)
-router.post('/report/:studentId', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.post('/report/:studentId', protect, authorize('guardian'), async (req, res) => {
   try {
     const { type = 'weekly' } = req.body;
     const guardian = await Guardian.findOne({ user: req.user.id });
@@ -330,7 +335,7 @@ router.post('/report/:studentId', protect, authorize('guardian', 'admin'), async
 // @route   GET /api/guardians/reports
 // @desc    Get all reports for guardian's children
 // @access  Private (Guardian)
-router.get('/reports', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.get('/reports', protect, authorize('guardian'), async (req, res) => {
   try {
     const guardian = await Guardian.findOne({ user: req.user.id })
       .populate('reports.childId', 'name');
@@ -448,11 +453,10 @@ router.put('/settings', protect, authorize('guardian'), async (req, res) => {
 // @route   GET /api/guardians/child/:studentId/weekly-summary
 router.get('/child/:studentId/weekly-summary', protect, authorize('guardian', 'admin'), async (req, res) => {
   try {
-    const guardian = await Guardian.findOne({ user: req.user.id });
-    if (!guardian) return res.status(404).json({ error: 'Guardian profile not found' });
-
-    const access = findChildAccess(guardian, req.params.studentId);
-    if (!access || (!access.permissions.viewProgress && !access.permissions.viewAttendance)) {
+    const accessCheck = await resolveGuardianOrAdminChildAccess(req, req.params.studentId, null);
+    if (!accessCheck.ok) return res.status(accessCheck.status).json({ error: accessCheck.error });
+    const access = { permissions: accessCheck.permissions };
+    if (!access.permissions.viewProgress && !access.permissions.viewAttendance) {
       return res.status(403).json({ error: 'Permission denied' });
     }
 
@@ -532,7 +536,7 @@ router.get('/child/:studentId/weekly-summary', protect, authorize('guardian', 'a
 // @route   GET /api/guardians/dashboard
 // @desc    Get guardian dashboard overview
 // @access  Private (Guardian)
-router.get('/dashboard', protect, authorize('guardian', 'admin'), async (req, res) => {
+router.get('/dashboard', protect, authorize('guardian'), async (req, res) => {
   try {
     const guardian = await Guardian.findOne({ user: req.user.id })
       .populate({

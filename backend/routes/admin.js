@@ -353,6 +353,13 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
     let subscriptionUsage = null;
 
     if (status === 'completed') {
+      if (!wasAlreadyCompleted && session.status !== 'accepted') {
+        return res.status(409).json({
+          error: 'لا يمكن إغلاق الحصة كمكتملة إلا إذا كانت مقبولة ومجدولة (accepted)',
+          code: 'SESSION_NOT_ACCEPTED',
+          currentStatus: session.status,
+        });
+      }
       if (!wasAlreadyCompleted && session.scheduledAt && new Date(session.scheduledAt).getTime() > Date.now()) {
         return res.status(409).json({
           error: 'لا يمكن إنهاء الحصة قبل موعد بدايتها',
@@ -386,15 +393,34 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
       const hourlyRate = Number(session.agreedHourlyRate ?? teacher?.hourlyRate ?? 50);
       const sessionDuration = Math.max(1, Number(session.duration || 60));
       const sessionRate = calculateSessionEarning(hourlyRate, sessionDuration);
+      const attendedCount = (session.attendance || []).filter((entry) => entry.status === 'attended').length;
+      const oneOnOneStudentAttendance = session.student
+        ? (session.attendance || []).find(
+            (entry) => entry.student && String(entry.student) === String(session.student)
+          )
+        : null;
+      const hasEligibleRegularExcuse = Boolean(
+        session.type === 'regular'
+        && oneOnOneStudentAttendance?.status === 'excused'
+        && oneOnOneStudentAttendance?.eligibleForCompensation === true
+      );
 
       if (!wasAlreadyCompleted) {
         session.status = 'completed';
         session.earnings = session.earnings || {};
-        session.earnings.amount = session.earnings.amount || sessionRate;
+        session.earnings.amount = (session.type === 'group_circle' && attendedCount === 0)
+          ? 0
+          : (session.earnings.amount || sessionRate);
         session.earnings.status = session.earnings.status || 'pending';
+        if (typeof session.validate === 'function') {
+          await session.validate();
+        }
       }
 
-      if (['group_circle', 'regular'].includes(session.type)) {
+      if (
+        (session.type === 'group_circle' || session.type === 'regular')
+        && !hasEligibleRegularExcuse
+      ) {
         subscriptionUsage = await settleSubscriptionUsageForSession(session);
       }
 
@@ -402,8 +428,7 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
         await session.save();
       }
 
-      if (session.teacher) {
-        const attendedCount = (session.attendance || []).filter((entry) => entry.status === 'attended').length;
+      if (session.teacher && !(session.type === 'group_circle' && attendedCount === 0)) {
         await ensureSessionEarning({
           sessionId: session._id,
           teacherId: session.teacher,
@@ -436,7 +461,10 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
 
       if (!wasAlreadyCompleted) {
         const { processReferralFirstSession } = require('./referrals');
-        if (session.student) {
+        if (
+          session.student
+          && (!oneOnOneStudentAttendance || !['absent', 'excused'].includes(oneOnOneStudentAttendance.status))
+        ) {
           processReferralFirstSession(String(session.student)).catch(() => {});
         } else if (session.type === 'group_circle') {
           for (const entry of session.attendance || []) {
@@ -1066,15 +1094,43 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
 
     if (status && VALID_TEACHER_STATUSES.has(status)) {
       teacher.status = status;
-      if (typeof isVerified === 'boolean') {
-        teacher.isVerified = isVerified;
-      } else {
-        teacher.isVerified = status === 'approved';
-      }
+      teacher.isVerified = status === 'approved' ? (typeof isVerified === 'boolean' ? isVerified : true) : false;
       if (status === 'approved' && !teacher.reviewCompletedAt) {
         teacher.reviewCompletedAt = new Date();
       }
+      if (['suspended', 'rejected'].includes(status)) {
+        if (userDoc) {
+          userDoc.refreshTokenVersion = Number(userDoc.refreshTokenVersion || 0) + 1;
+          userDoc.sessionsRevokedAt = new Date();
+          await userDoc.save();
+        }
+        if (Boolean(require('mongoose').connection?.db) || Session.updateMany !== require('mongoose').Model.updateMany) {
+          await Session.updateMany(
+            {
+              teacher: teacher._id,
+              status: { $in: ['pending', 'confirmed'] },
+              scheduledAt: { $gt: new Date() },
+            },
+            { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }
+          ).catch(() => {});
+        }
+        if (Boolean(require('mongoose').connection?.db) || StudentSubscription.updateMany !== require('mongoose').Model.updateMany) {
+          await StudentSubscription.updateMany(
+            {
+              preferredTeacher: teacher._id,
+              status: { $nin: ['cancelled', 'expired'] },
+            },
+            { $set: { preferredTeacher: null } }
+          ).catch(() => {});
+        }
+      }
     } else if (typeof isVerified === 'boolean') {
+      if (isVerified === true && teacher.status !== 'approved') {
+        return res.status(409).json({
+          error: 'لا يمكن توثيق المعلم قبل اعتماده عبر بوابة المراجعة',
+          code: 'USE_TEACHER_REVIEW_GATE',
+        });
+      }
       teacher.isVerified = isVerified;
     }
 
