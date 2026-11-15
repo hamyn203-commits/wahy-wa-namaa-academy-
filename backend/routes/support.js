@@ -6,7 +6,7 @@ const User = require('../models/User');
 const Message = require('../models/SupportMessage');
 const Notification = require('../models/Notification');
 const { publishRealtimeNotification } = require('../services/realtimeNotificationBus');
-const { inspectChatSafety } = require('../utils/chatSafety');
+const { SAFETY_WARNING_MESSAGE, containsExternalLink, inspectChatSafety } = require('../utils/chatSafety');
 const router = express.Router();
 
 router.use(protect, authorize('student', 'admin'));
@@ -93,12 +93,31 @@ router.post('/:studentId/messages', sendLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'اكتب رسالة من 1 إلى 2000 حرف مع معرّف إرسال صالح' });
     }
     if (req.user.role === 'student') {
-      const safety = inspectChatSafety(text.trim());
-      if (!safety.isSafe) {
+      const profileQuery = User.findById(student._id);
+      const safetyProfile = typeof profileQuery?.select === 'function'
+        ? await profileQuery.select('age enrollmentSection').lean()
+        : await profileQuery;
+      const rawAge = safetyProfile?.age;
+      const parsedAge = rawAge !== undefined && rawAge !== null && rawAge !== '' ? Number(rawAge) : NaN;
+      const isMinorOrUnverifiedAge =
+        safetyProfile?.enrollmentSection === 'children'
+        || !Number.isFinite(parsedAge)
+        || parsedAge < 18;
+
+      if (isMinorOrUnverifiedAge) {
+        const safety = inspectChatSafety(text.trim());
+        if (!safety.isSafe) {
+          return res.status(400).json({
+            error: safety.warning,
+            code: 'CHAT_SAFETY_VIOLATION',
+            reason: safety.reason,
+          });
+        }
+      } else if (containsExternalLink(text.trim())) {
         return res.status(400).json({
-          error: safety.warning,
+          error: SAFETY_WARNING_MESSAGE,
           code: 'CHAT_SAFETY_VIOLATION',
-          reason: safety.reason,
+          reason: 'url',
         });
       }
     }

@@ -202,6 +202,8 @@ User.findOne = (filter = {}) => {
     }
     if (filter._id && typeof filter._id === 'object' && filter._id.$ne) {
       if (String(raw._id) === String(filter._id.$ne)) ok = false;
+    } else if (filter._id && String(raw._id) !== String(filter._id)) {
+      ok = false;
     }
     if (ok) return chainableQuery(makeMutableUserDoc(raw));
   }
@@ -858,4 +860,74 @@ test('V3-HIGH-06b: concurrent /api/auth/refresh with same refresh JTI rotates on
     Number(userStore.get(ids.adultStudent).refreshTokenVersion || 0) >= 1,
     'Refresh token reuse detection must increment refreshTokenVersion to revoke stolen token family'
   );
+});
+
+// ============================================================================
+// 14. V3-MED-10: Minor Safeguarding vs Adult Reference Numbers in Support Chat
+// ============================================================================
+test('V3-MED-10: POST /api/support/me/messages enforces full chat safety on minors while allowing adult numeric references and blocking phishing URLs', async () => {
+  resetUsers();
+  const SupportMessage = require('../models/SupportMessage');
+  const origMsgFindOneAndUpdate = SupportMessage.findOneAndUpdate;
+  const origMsgFindById = SupportMessage.findById;
+  const origNotifFindOneAndUpdate = Notification.findOneAndUpdate;
+  const origUserFind = User.find;
+
+  try {
+    User.find = () => chainableQuery([{ _id: ids.admin }]);
+    SupportMessage.findOneAndUpdate = async (_filter, update) => ({
+      _id: oid(),
+      student: update.$setOnInsert.student,
+      senderRole: update.$setOnInsert.senderRole,
+      text: update.$setOnInsert.text,
+      readAt: null,
+    });
+    SupportMessage.findById = () => chainableQuery({ readAt: null });
+    Notification.findOneAndUpdate = async () => ({
+      _id: oid(),
+      isRead: false,
+      toObject() { return { _id: this._id, isRead: false }; },
+    });
+
+    const minorToken = generateAccessToken(userStore.get(ids.minorStudent));
+    const adultToken = generateAccessToken(userStore.get(ids.adultStudent));
+
+    // 1) Minor student sending phone/7+ digit sequence is blocked
+    const minorPhoneRes = await fetch(`${baseUrl}/api/support/me/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${minorToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'رقمي هو 01012345678', clientId: 'minor-phone-test-1' }),
+    });
+    assert.equal(minorPhoneRes.status, 400, 'Minor student must not share phone numbers in support chat');
+
+    // 2) Adult student sending phishing URL is blocked
+    const adultUrlRes = await fetch(`${baseUrl}/api/support/me/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adultToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'افتح https://evil-phish.com', clientId: 'adult-url-test-1' }),
+    });
+    assert.equal(adultUrlRes.status, 400, 'External URLs must be blocked even for adult support messages');
+
+    // 3) Adult student sending numeric reference / timestamp succeeds (201)
+    const adultRefRes = await fetch(`${baseUrl}/api/support/me/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adultToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: `رسالة آمنة ${Date.now()}`, clientId: `retry-${Date.now()}` }),
+    });
+    assert.equal(adultRefRes.status, 201, 'Adult student must be able to send numeric reference IDs to administration');
+  } finally {
+    User.find = origUserFind;
+    SupportMessage.findOneAndUpdate = origMsgFindOneAndUpdate;
+    SupportMessage.findById = origMsgFindById;
+    Notification.findOneAndUpdate = origNotifFindOneAndUpdate;
+  }
 });
