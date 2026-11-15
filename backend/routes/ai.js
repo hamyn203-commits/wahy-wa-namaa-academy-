@@ -254,7 +254,7 @@ router.get('/recitation-reports/:reportId', protect, async (req, res) => {
   }
 });
 
-router.post('/homework-generate', protect, authorize('teacher', 'admin'), async (req, res) => {
+router.post('/homework-generate', protect, authorize('teacher', 'admin'), aiChatLimiter, async (req, res) => {
   try {
     const { topic, level, count = 5, locale = 'ar' } = req.body || {};
     const safeLoc = sanitizeLocale(locale);
@@ -268,7 +268,7 @@ router.post('/homework-generate', protect, authorize('teacher', 'admin'), async 
   }
 });
 
-router.post('/exam-generate', protect, authorize('teacher', 'admin'), async (req, res) => {
+router.post('/exam-generate', protect, authorize('teacher', 'admin'), aiChatLimiter, async (req, res) => {
   try {
     const { topic, questionCount = 5, locale = 'ar' } = req.body || {};
     const safeLoc = sanitizeLocale(locale);

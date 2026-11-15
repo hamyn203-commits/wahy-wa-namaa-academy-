@@ -25,13 +25,14 @@ dist-ssr
 
 # Environment files
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
 backend/.env
-backend/.env.production
-backend/appsettings.json
-backend/azure-settings.json
-backend/publish-profile.xml
+backend/.env.*
+!backend/.env.example
+backend/appsettings*.json
+backend/azure-settings*.json
+backend/*publish-profile*.xml
 backend/deploy.zip
 
 # Backend logs

@@ -21,6 +21,9 @@ class ApiClient {
   }
 
   async request(path, options = {}) {
+    if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) {
+      throw new ApiError('Invalid API path', 400, { code: 'INVALID_API_PATH' });
+    }
     const { auth = false, json = true, body, headers = {}, ...rest } = options;
     const reqHeaders = { ...headers };
 

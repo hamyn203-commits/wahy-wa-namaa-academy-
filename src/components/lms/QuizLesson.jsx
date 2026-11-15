@@ -24,6 +24,8 @@ export default function QuizLesson({ lesson, locale, onComplete }) {
 
   const startQuiz = async () => {
     const att = await api.post(`/api/quizzes/${quizId}/start`, {}, { auth: true });
+    const unlockedQuiz = await api.get(`/api/quizzes/${quizId}`, { auth: true }).catch(() => null);
+    if (unlockedQuiz) setQuiz(unlockedQuiz);
     setAttempt(att);
   };
 
@@ -120,7 +122,7 @@ export default function QuizLesson({ lesson, locale, onComplete }) {
     return (
       <div className="max-w-xl mx-auto bg-gray-800 rounded-xl p-8 text-center text-white">
         <h2 className="text-2xl font-bold mb-4">{t(quiz.title)}</h2>
-        <p className="text-gray-400 mb-6">{quiz.questions?.length} أسئلة — {quiz.settings?.maxAttempts || 3} محاولات</p>
+        <p className="text-gray-400 mb-6">{quiz.questionCount ?? quiz.questions?.length ?? 0} أسئلة — {quiz.settings?.maxAttempts || 3} محاولات</p>
         <button type="button" onClick={startQuiz} className="btn-primary">بدء الاختبار</button>
       </div>
     );

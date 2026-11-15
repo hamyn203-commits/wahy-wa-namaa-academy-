@@ -1,16 +1,31 @@
-# ============================================
+﻿# ============================================
 # Claude Code + Bedrock + agent-browser (AgentCore)
 # ============================================
 # 1) انسخ Bedrock API key من AWS Console (Bedrock > API keys)
 # 2) شغّل: .\scripts\setup-bedrock-claude.ps1 -BedrockApiKey "YOUR_KEY"
 
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$BedrockApiKey,
+    [Parameter(Mandatory = $false)]
+    [Security.SecureString]$BedrockApiKeySecure,
     [string]$Region = "us-east-1"
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $BedrockApiKeySecure) {
+    $BedrockApiKeySecure = Read-Host -Prompt "Enter AWS Bedrock API Key" -AsSecureString
+}
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($BedrockApiKeySecure)
+try {
+    $BedrockApiKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+} finally {
+    if ($bstr -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+if (-not $BedrockApiKey) {
+    throw "Bedrock API key is required."
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Bedrock + Claude Code + agent-browser" -ForegroundColor Cyan
@@ -47,30 +62,11 @@ if (Test-Path $claudeSettings) {
 $settings | ConvertTo-Json -Depth 5 | Set-Content $claudeSettings -Encoding UTF8
 Write-Host "[OK] Claude Code settings -> $claudeSettings" -ForegroundColor Green
 
-# agent-browser AgentCore (متصفح سحابي)
-$profileBlock = @"
-
-# Bedrock / AgentCore (agent-browser)
-`$env:AGENT_BROWSER_PROVIDER = "agentcore"
-`$env:AGENTCORE_REGION = "$Region"
-`$env:AWS_BEARER_TOKEN_BEDROCK = "$BedrockApiKey"
-"@
-
-$profilePath = Join-Path $env:USERPROFILE "Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-if (-not (Test-Path (Split-Path $profilePath))) {
-    $profilePath = Join-Path $env:USERPROFILE "Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-}
-
-if (Test-Path $profilePath) {
-    $content = Get-Content $profilePath -Raw
-    if ($content -notmatch "AGENT_BROWSER_PROVIDER") {
-        Add-Content $profilePath "`n$profileBlock"
-    }
-} else {
-    New-Item -ItemType File -Path $profilePath -Force | Out-Null
-    Set-Content $profilePath $profileBlock
-}
-Write-Host "[OK] agent-browser env -> $profilePath" -ForegroundColor Green
+# Never persist plaintext bearer tokens in Microsoft.PowerShell_profile.ps1.
+$env:AGENT_BROWSER_PROVIDER = "agentcore"
+$env:AGENTCORE_REGION = $Region
+$env:AWS_BEARER_TOKEN_BEDROCK = $BedrockApiKey
+Write-Host "[OK] agent-browser env set for current session only (not written to shell profile)" -ForegroundColor Green
 
 # backend .env (اختياري)
 $backendEnv = Join-Path $PSScriptRoot "..\backend\.env"

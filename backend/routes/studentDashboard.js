@@ -67,8 +67,13 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
       .select('name email phone avatar role age enrollmentSection createdAt currentLevel preferredTrack onboarding +guardianLinkCode');
     if (!user) return res.status(404).json({ error: 'Student not found' });
 
-    const isMinorStudent = (Number(user.age) > 0 && Number(user.age) < 18) || user.enrollmentSection === 'children';
-    if (!isMinorStudent && !user.guardianLinkCode) {
+    const isEligibleAdultStudent = (
+      Number.isFinite(Number(user.age))
+      && Number(user.age) >= 18
+      && user.enrollmentSection !== 'children'
+      && user.onboarding?.completed !== false
+    );
+    if (isEligibleAdultStudent && !user.guardianLinkCode) {
       user.guardianLinkCode = await createUniqueGuardianLinkCode();
       await user.save();
     }
@@ -80,7 +85,7 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
     ]);
 
     const safeUser = user.toObject();
-    safeUser.guardianLinkCode = isMinorStudent ? null : user.guardianLinkCode;
+    safeUser.guardianLinkCode = isEligibleAdultStudent ? user.guardianLinkCode : null;
 
     res.json({
       user: safeUser,
@@ -104,11 +109,17 @@ router.post('/guardian-link-code/rotate', protect, authorize('student'), async (
       return res.status(503).json({ error: 'Guardian linking requires the database' });
     }
 
-    const user = await User.findById(req.user.id).select('+guardianLinkCode role age enrollmentSection');
+    const user = await User.findById(req.user.id).select('+guardianLinkCode role age enrollmentSection onboarding');
     if (!user || user.role !== 'student') {
       return res.status(404).json({ error: 'Student not found' });
     }
-    if ((Number(user.age) > 0 && Number(user.age) < 18) || user.enrollmentSection === 'children') {
+    const isEligibleAdultStudent = (
+      Number.isFinite(Number(user.age))
+      && Number(user.age) >= 18
+      && user.enrollmentSection !== 'children'
+      && user.onboarding?.completed !== false
+    );
+    if (!isEligibleAdultStudent) {
       return res.status(403).json({
         error: 'يتم ربط حسابات الطلاب القُصَّر عبر دعوة موجهة لرقم هاتف ولي الأمر فقط',
         code: 'MINOR_INVITATION_ONLY',
@@ -211,7 +222,7 @@ router.delete('/guardian-invitations/:id', protect, authorize('student'), async 
             _id: { $ne: invitation._id },
           }),
         ]);
-        if (invitation.source === 'student-registration' || (!hasLinkedGuardian && !hasOtherPending)) {
+        if (['student-registration', 'student-onboarding'].includes(invitation.source) || (!hasLinkedGuardian && !hasOtherPending)) {
           return res.status(403).json({
             error: 'حسابات الطلاب القُصَّر تتطلب وجود ولي أمر مرتبط أو طلب ربط نشط لحمايتهم',
             code: 'MINOR_GUARDIAN_SAFEGUARD',
@@ -526,6 +537,45 @@ router.get('/teachers', protect, authorize('student'), async (req, res) => {
   }
 });
 
+function sanitizeSessionForStudentArchive(doc, studentId) {
+  const s = typeof doc?.toObject === 'function' ? doc.toObject() : { ...doc };
+  const rawRec = String(s.recordingUrl || '').trim();
+  const safeRecordingUrl = (/^https:\/\/[^\s<>"'`\\]+$/i.test(rawRec) || rawRec.startsWith('/api/'))
+    ? rawRec
+    : '';
+  const ownReport = Array.isArray(s.studentReports)
+    ? s.studentReports.find((r) => String(r?.student?._id || r?.student) === String(studentId))
+    : null;
+
+  return {
+    _id: s._id,
+    type: s.type,
+    status: s.status,
+    scheduledAt: s.scheduledAt,
+    duration: s.duration,
+    timezone: s.timezone,
+    recordingUrl: safeRecordingUrl || undefined,
+    report: s.report || undefined,
+    teacherEvaluation: s.teacherEvaluation || undefined,
+    studentReports: ownReport ? [ownReport] : [],
+    teacher: s.teacher
+      ? {
+          _id: s.teacher._id,
+          personalInfo: {
+            fullName: s.teacher.personalInfo?.fullName,
+            country: s.teacher.personalInfo?.country,
+            gender: s.teacher.personalInfo?.gender,
+          },
+          media: s.teacher.media ? { profilePhoto: s.teacher.media.profilePhoto } : undefined,
+          rating: s.teacher.rating,
+          user: s.teacher.user
+            ? { _id: s.teacher.user._id, name: s.teacher.user.name, avatar: s.teacher.user.avatar }
+            : undefined,
+        }
+      : null,
+  };
+}
+
 router.get('/evaluations', protect, authorize('student'), async (req, res) => {
   try {
     if (!isDBConnected() || !isValidObjectId(req.user.id)) {
@@ -547,7 +597,7 @@ router.get('/evaluations', protect, authorize('student'), async (req, res) => {
       })
       .sort({ updatedAt: -1 });
 
-    res.json({ evaluations: sessions });
+    res.json({ evaluations: sessions.map((s) => sanitizeSessionForStudentArchive(s, req.user.id)) });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -574,7 +624,7 @@ router.get('/recordings', protect, authorize('student'), async (req, res) => {
       .sort({ scheduledAt: -1 })
       .limit(50);
 
-    res.json({ sessions });
+    res.json({ sessions: sessions.map((s) => sanitizeSessionForStudentArchive(s, req.user.id)) });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }

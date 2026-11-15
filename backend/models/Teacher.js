@@ -93,7 +93,8 @@ const TeacherSchema = new mongoose.Schema({
   earnings: {
     totalEarned: { type: Number, default: 0 },
     pendingEarnings: { type: Number, default: 0 },
-    withdrawnEarnings: { type: Number, default: 0 }
+    withdrawnEarnings: { type: Number, default: 0 },
+    ledgerMigratedAt: { type: Date, default: null }
   },
   hourlyRate: { type: Number, default: 50 },
   availabilityTimezone: { type: String, default: 'Africa/Cairo', trim: true },

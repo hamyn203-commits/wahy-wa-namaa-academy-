@@ -11,6 +11,7 @@ const {
   verifyAccessToken, 
   verifyRefreshToken,
   readRefreshTokenIfValid,
+  readAccessTokenIfValid,
   requireRole 
 } = require('../middleware/auth');
 const { addMockUser, findMockUserByEmail, findMockUserById, updateMockUser, getMockUsers } = require('../mockStore');
@@ -21,12 +22,15 @@ const { normalizePhone } = require('../utils/phone');
 const { isSection } = require('../config/subscriptionPlans');
 const storage = require('../services/objectStorage');
 const { createGuardianInvitation } = require('../services/guardianInvitations');
+const VerificationLedger = require('../models/VerificationLedger');
+const logger = require('../utils/logger');
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const GuardianInvitation = require('../models/GuardianInvitation');
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const hasRealMongoDriver = () => isDBConnected() && Boolean(mongoose.connection?.db);
 
 const MAX_PASSWORD_LENGTH = 128;
 const DUMMY_PASSWORD_HASH = '$2b$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
@@ -36,7 +40,54 @@ const LOCKOUT_DURATION_MS = Number(process.env.LOCKOUT_DURATION_MS || 15 * 60 * 
 const REFRESH_COOKIE_MAX_AGE_SECONDS = Number(
   process.env.REFRESH_COOKIE_MAX_AGE_SECONDS || 7 * 24 * 60 * 60
 );
+const MAX_CONSUMED_REFRESH_JTIS = 512;
+const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_HOURLY_CAP = 4;
 const consumedRefreshJtisFallback = new Map();
+const passwordResetQuotaFallback = new Map();
+
+async function recordFailedPasswordAttempt(user, lockExpired, maxAttempts = MAX_FAILED_LOGIN_ATTEMPTS) {
+  const lockValue = new Date(Date.now() + LOCKOUT_DURATION_MS);
+  if (typeof User.findByIdAndUpdate === 'function' && user?._id) {
+    const updated = await Promise.resolve(User.findByIdAndUpdate(
+      user._id,
+      lockExpired
+        ? { $set: { failedLoginAttempts: 1, lockUntil: null } }
+        : { $inc: { failedLoginAttempts: 1 } },
+      { new: true }
+    )).catch(() => null);
+    const attempts = Number(updated?.failedLoginAttempts ?? (lockExpired ? 1 : Number(user.failedLoginAttempts || 0) + 1));
+    if (attempts >= maxAttempts) {
+      await Promise.resolve(User.findByIdAndUpdate(
+        user._id,
+        { $set: { lockUntil: lockValue } },
+        { new: true }
+      )).catch(() => {});
+    }
+    return;
+  }
+  const baseAttempts = lockExpired ? 0 : Number(user.failedLoginAttempts || 0);
+  const nextAttempts = baseAttempts + 1;
+  user.failedLoginAttempts = nextAttempts;
+  user.lockUntil = nextAttempts >= maxAttempts ? lockValue : null;
+  await user.save?.().catch(() => {});
+}
+
+async function hasEstablishedStudentActivity(studentDoc) {
+  if (!studentDoc) return false;
+  if (studentDoc.guardian) return true;
+  if (!hasRealMongoDriver()) return false;
+  const StudentSubscription = require('../models/StudentSubscription');
+  const Enrollment = require('../models/Enrollment');
+  const Session = require('../models/Session');
+  const [hasSub, hasEnroll, hasSession, hasAcceptedGuardian] = await Promise.all([
+    StudentSubscription.exists({ student: studentDoc._id, status: { $nin: ['cancelled', 'expired'] } }),
+    Enrollment.exists({ student: studentDoc._id, status: { $ne: 'cancelled' } }),
+    Session.exists({ student: studentDoc._id, status: { $in: ['accepted', 'completed'] } }),
+    Guardian.exists({ 'children.student': studentDoc._id, isActive: true }),
+  ]);
+  return Boolean(hasSub || hasEnroll || hasSession || hasAcceptedGuardian);
+}
 
 function markRefreshJtiConsumedInMemory(jti, expSeconds) {
   if (!jti) return false;
@@ -198,6 +249,23 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({
           error: 'رقم هاتف ولي الأمر مطلوب لتسجيل الطالب أقل من 18 سنة',
           code: 'GUARDIAN_CONTACT_REQUIRED',
+        });
+      }
+    }
+
+    if (assignedRole === 'student' && guardianPhone) {
+      const normalizedGuardianPhone = normalizePhone(guardianPhone);
+      const normalizedWhatsapp = normalizePhone(whatsappPhone);
+      if (
+        normalizedGuardianPhone
+        && (
+          (normalizedPhone && normalizedGuardianPhone === normalizedPhone)
+          || (normalizedWhatsapp && normalizedGuardianPhone === normalizedWhatsapp)
+        )
+      ) {
+        return res.status(400).json({
+          error: 'لا يمكن استخدام رقم هاتف الطالب نفسه كرقم لولي الأمر',
+          code: 'GUARDIAN_SELF_LINK_FORBIDDEN',
         });
       }
     }
@@ -373,8 +441,17 @@ router.post('/google', async (req, res) => {
       const existing = await User.findOne({ email: identity.email })
         .select('+googleSubject +refreshTokenVersion +failedLoginAttempts +lockUntil +sessionsRevokedAt');
       if (existing) {
-        if (!['student', 'guardian', 'teacher'].includes(existing.role)) {
+        if (!['student', 'guardian', 'teacher'].includes(existing.role) || existing.isActive === false) {
           return res.status(403).json({ error: 'Use the account login method for this role' });
+        }
+        if (existing.lockUntil && new Date(existing.lockUntil).getTime() > Date.now()) {
+          const retryAfterSeconds = Math.ceil((new Date(existing.lockUntil).getTime() - Date.now()) / 1000);
+          res.setHeader('Retry-After', String(retryAfterSeconds));
+          return res.status(423).json({
+            error: 'Account temporarily locked due to repeated failed login attempts. Please try again later.',
+            code: 'ACCOUNT_LOCKED',
+            retryAfterSeconds,
+          });
         }
         // An existing non-Gmail address must be linked from an authenticated session.
         // Google is authoritative for Gmail addresses it operates.
@@ -384,10 +461,45 @@ router.post('/google', async (req, res) => {
         if (existing.googleSubject && existing.googleSubject !== identity.sub) {
           return res.status(409).json({ error: 'This account is linked to another Google identity' });
         }
-        // CRIT-03 / V3-HIGH-04 defense: If an unverified @gmail.com account was pre-registered
-        // before the real Gmail owner signed in via Google, purge ALL attacker-planted
-        // credentials, sessions, accepted/pending guardian links, phones, and demographics.
-        if (!existing.googleSubject && existing.emailVerified !== true) {
+        if (existing.role === 'teacher') {
+          const teacherAccess = await getTeacherAccessDecision(existing._id || existing.id);
+          if (!teacherAccess.allowed) {
+            return res.status(403).json({
+              error: teacherAccess.error,
+              code: teacherAccess.code,
+              applicationStatus: teacherAccess.status,
+            });
+          }
+          if (!existing.googleSubject && existing.emailVerified !== true) {
+            return res.status(409).json({
+              error: 'Sign in with your existing teacher password to link Google',
+              code: 'PASSWORD_LINK_REQUIRED',
+            });
+          }
+        }
+        if (
+          existing.role === 'guardian'
+          && !existing.googleSubject
+          && existing.emailVerified !== true
+          && Array.isArray(existing.children)
+          && existing.children.length > 0
+        ) {
+          return res.status(409).json({
+            error: 'Sign in with your existing guardian password to link Google',
+            code: 'PASSWORD_LINK_REQUIRED',
+          });
+        }
+        // CRIT-03 / V3-HIGH-04 / V4-CRIT-02 defense:
+        // Only purge genuinely empty unverified squatter accounts. Never wipe locked minor
+        // demographics, accepted guardian links, or active learning records!
+        if (!existing.googleSubject && existing.emailVerified !== true && existing.role !== 'teacher') {
+          const hasActivity = await hasEstablishedStudentActivity(existing);
+          if (hasActivity) {
+            return res.status(409).json({
+              error: 'Sign in with your existing password to link Google to an active account',
+              code: 'PASSWORD_LINK_REQUIRED',
+            });
+          }
           existing.password = crypto.randomBytes(48).toString('base64url');
           existing.refreshTokenVersion = Number(existing.refreshTokenVersion || 0) + 1;
           existing.sessionsRevokedAt = new Date();
@@ -402,27 +514,42 @@ router.post('/google', async (req, res) => {
           existing.whatsappPhone = '';
           existing.gender = undefined;
           existing.age = undefined;
+          existing.enrollmentSection = undefined;
           existing.referredBy = undefined;
           existing.role = requestedRole;
           existing.onboarding = { required: true, completed: false };
-          await Promise.all([
-            GuardianInvitation.updateMany?.(
-              { student: existing._id, status: { $in: ['pending', 'accepted'] } },
-              { $set: { status: 'cancelled' } }
-            ),
-            Guardian.updateMany?.(
-              { 'children.student': existing._id },
-              { $pull: { children: { student: existing._id }, reports: { student: existing._id } } }
-            ),
-            User.updateMany?.(
-              { children: existing._id },
-              { $pull: { children: existing._id } }
-            ),
-          ]).catch(() => {});
-          try {
-            const Referral = require('../models/Referral');
-            await Referral.deleteOne?.({ referee: existing._id }).catch(() => {});
-          } catch { /* ignore */ }
+          const cleanupTasks = [];
+          if (hasRealMongoDriver() || GuardianInvitation.updateMany !== mongoose.Model.updateMany) {
+            cleanupTasks.push(
+              GuardianInvitation.updateMany?.(
+                { student: existing._id, status: { $in: ['pending', 'accepted'] } },
+                { $set: { status: 'cancelled' } }
+              )
+            );
+          }
+          if (hasRealMongoDriver() || Guardian.updateMany !== mongoose.Model.updateMany) {
+            cleanupTasks.push(
+              Guardian.updateMany?.(
+                { 'children.student': existing._id },
+                { $pull: { children: { student: existing._id }, reports: { student: existing._id } } }
+              )
+            );
+          }
+          if (hasRealMongoDriver() || User.updateMany !== mongoose.Model.updateMany) {
+            cleanupTasks.push(
+              User.updateMany?.(
+                { children: existing._id },
+                { $pull: { children: existing._id } }
+              )
+            );
+          }
+          await Promise.all(cleanupTasks).catch(() => {});
+          if (hasRealMongoDriver()) {
+            try {
+              const Referral = require('../models/Referral');
+              await Referral.deleteOne?.({ referee: existing._id }).catch(() => {});
+            } catch { /* ignore */ }
+          }
         }
         existing.googleSubject = identity.sub;
         existing.emailVerified = true;
@@ -537,23 +664,7 @@ router.post('/login', async (req, res) => {
     
     if (!isPasswordValid) {
       if (!isMockMode || isDBConnected()) {
-        const baseAttempts = lockExpired ? 0 : Number(user.failedLoginAttempts || 0);
-        const nextAttempts = baseAttempts + 1;
-        const nextLock = nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
-          ? new Date(Date.now() + LOCKOUT_DURATION_MS)
-          : null;
-        if (typeof User.findByIdAndUpdate === 'function' && user._id) {
-          await Promise.resolve(User.findByIdAndUpdate(
-            user._id,
-            lockExpired
-              ? { $set: { failedLoginAttempts: 1, lockUntil: nextLock } }
-              : { $inc: { failedLoginAttempts: 1 }, ...(nextLock ? { $set: { lockUntil: nextLock } } : {}) }
-          )).catch(() => {});
-        } else {
-          user.failedLoginAttempts = nextAttempts;
-          user.lockUntil = nextLock;
-          await user.save?.().catch(() => {});
-        }
+        await recordFailedPasswordAttempt(user, lockExpired, MAX_FAILED_LOGIN_ATTEMPTS);
       }
       return res.status(401).json({ 
         error: 'Invalid email or password' 
@@ -648,6 +759,26 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
     if (presentedJti) {
       const canRotateInDb = isDBConnected() && User.findOneAndUpdate === mongoose.Model.findOneAndUpdate;
       if (canRotateInDb) {
+        if (hasRealMongoDriver()) {
+          const ttlExpiresAt = new Date(
+            req.refreshToken.exp
+              ? Math.max(Date.now() + 5000, req.refreshToken.exp * 1000)
+              : Date.now() + REFRESH_COOKIE_MAX_AGE_SECONDS * 1000
+          );
+          const ledgerClaim = await VerificationLedger.findOneAndUpdate(
+            { kind: 'refresh_jti', key: `${user._id}:${presentedJti}`, consumed: { $ne: true } },
+            { $set: { consumed: true, expiresAt: ttlExpiresAt } },
+            { upsert: true, new: true }
+          ).catch((err) => (err?.code === 11000 ? null : Promise.reject(err)));
+          if (!ledgerClaim) {
+            await Promise.resolve(User.findByIdAndUpdate(user._id, {
+              $inc: { refreshTokenVersion: 1 },
+              $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
+            })).catch(() => {});
+            clearRefreshCookie(res);
+            return res.status(401).json({ error: 'Refresh token reuse detected. All sessions revoked.', code: 'REFRESH_TOKEN_REUSED' });
+          }
+        }
         if (Array.isArray(user.consumedRefreshJtis) && user.consumedRefreshJtis.includes(presentedJti)) {
           await Promise.resolve(User.findByIdAndUpdate(user._id, {
             $inc: { refreshTokenVersion: 1 },
@@ -663,7 +794,7 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
             consumedRefreshJtis: { $ne: presentedJti },
           },
           {
-            $push: { consumedRefreshJtis: { $each: [presentedJti], $slice: -24 } },
+            $push: { consumedRefreshJtis: { $each: [presentedJti], $slice: -MAX_CONSUMED_REFRESH_JTIS } },
           },
           { new: true }
         );
@@ -719,14 +850,15 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
   }
 });
 
-router.post('/logout', readRefreshTokenIfValid, async (req, res) => {
+router.post('/logout', readRefreshTokenIfValid, readAccessTokenIfValid, async (req, res) => {
   clearRefreshCookie(res);
 
   try {
-    if (req.refreshToken?.id) {
-      const tokenVersion = Number(req.refreshToken.v || 0);
+    const targetId = req.refreshToken?.id || req.user?.id;
+    const tokenVersion = Number((req.refreshToken ? req.refreshToken.v : req.user?.v) || 0);
+    if (targetId) {
       if (isMockMode && !isDBConnected()) {
-        const user = findMockUserById(req.refreshToken.id);
+        const user = findMockUserById(targetId);
         if (user && Number(user.refreshTokenVersion || 0) === tokenVersion) {
           updateMockUser(user._id || user.id, {
             refreshTokenVersion: Number(user.refreshTokenVersion || 0) + 1,
@@ -736,7 +868,7 @@ router.post('/logout', readRefreshTokenIfValid, async (req, res) => {
         }
       } else {
         await User.findOneAndUpdate(
-          { _id: req.refreshToken.id, refreshTokenVersion: tokenVersion },
+          { _id: targetId, refreshTokenVersion: tokenVersion },
           {
             $inc: { refreshTokenVersion: 1 },
             $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
@@ -746,7 +878,7 @@ router.post('/logout', readRefreshTokenIfValid, async (req, res) => {
       }
     }
   } catch (error) {
-    console.warn('Logout token revocation warning:', error.message);
+    logger.warn('Logout token revocation warning', { error: error?.message });
   }
 
   return res.json({ message: 'Logged out successfully' });
@@ -824,9 +956,16 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
       Object.assign(patchFields, sanitizedPrefs);
     }
 
+    const unsetFields = {};
     if (Object.prototype.hasOwnProperty.call(req.body, 'phone')) {
       const cleanPhone = String(req.body.phone || '').trim().slice(0, 32);
       const normalizedPhone = normalizePhone(cleanPhone);
+      if (!cleanPhone && (!isMockMode || isDBConnected())) {
+        const currentDoc = await User.findById(req.user.id).select('onboarding');
+        if (currentDoc?.onboarding?.completed === true) {
+          return res.status(400).json({ error: 'لا يمكن حذف رقم الهاتف بعد إكمال إعداد الملف الشخصي' });
+        }
+      }
       if (req.user.role === 'guardian' && !normalizedPhone) {
         return res.status(400).json({ error: 'رقم هاتف ولي الأمر غير صالح' });
       }
@@ -848,7 +987,11 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
         }
       }
       patchFields.phone = cleanPhone;
-      patchFields.phoneNormalized = normalizedPhone || undefined;
+      if (normalizedPhone) {
+        patchFields.phoneNormalized = normalizedPhone;
+      } else {
+        unsetFields.phoneNormalized = 1;
+      }
       patchFields.phoneVerified = false;
     }
 
@@ -858,7 +1001,10 @@ router.patch('/me', verifyAccessToken, async (req, res) => {
     } else {
       user = await User.findByIdAndUpdate(
         req.user.id,
-        { $set: patchFields },
+        {
+          $set: patchFields,
+          ...(Object.keys(unsetFields).length > 0 ? { $unset: unsetFields } : {}),
+        },
         { new: true, runValidators: true }
       );
     }
@@ -968,8 +1114,17 @@ router.patch('/onboarding', verifyAccessToken, async (req, res) => {
       if (!['male', 'female'].includes(String(updated.gender || ''))) {
         return res.status(400).json({ code: 'GENDER_REQUIRED', error: 'يرجى تحديد جنس الطالب لإكمال إعداد الملف الشخصي' });
       }
+      if (updated.enrollmentSection === 'ladies' && updated.gender === 'male') {
+        return res.status(400).json({
+          code: 'SECTION_GENDER_MISMATCH',
+          error: 'قسم السيدات متاح للطالبات فقط',
+        });
+      }
     }
     const isMinor = updated.role === 'student' && Number(updated.age) > 0 && Number(updated.age) < 18;
+    if (isMinor) {
+      updated.guardianLinkCode = undefined;
+    }
     if (isMinor && (!updated.guardianContact?.name?.trim() || !updated.guardianContact?.phone?.trim() || !updated.guardianContact?.relationship)) {
       return res.status(400).json({ code: 'GUARDIAN_CONTACT_REQUIRED', error: 'بيانات ولي الأمر مطلوبة للطالب أقل من 18 سنة' });
     }
@@ -1065,13 +1220,7 @@ router.post('/change-password', verifyAccessToken, async (req, res) => {
     const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
       if (!isMockMode || isDBConnected()) {
-        const baseAttempts = lockExpired ? 0 : Number(user.failedLoginAttempts || 0);
-        const nextAttempts = baseAttempts + 1;
-        user.failedLoginAttempts = nextAttempts;
-        user.lockUntil = nextAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
-          ? new Date(Date.now() + LOCKOUT_DURATION_MS)
-          : null;
-        await user.save().catch(() => {});
+        await recordFailedPasswordAttempt(user, lockExpired);
       }
       return res.status(401).json({ 
         error: 'Current password is incorrect' 
@@ -1114,7 +1263,59 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    const normalizedEmail = email.trim().toLowerCase();
+    const now = Date.now();
+    const existingQuota = passwordResetQuotaFallback.get(normalizedEmail);
+    if (existingQuota && now - existingQuota.windowStart < 60 * 60 * 1000) {
+      if (now - existingQuota.lastSentAt < PASSWORD_RESET_COOLDOWN_MS || existingQuota.count >= PASSWORD_RESET_HOURLY_CAP) {
+        return res.json({
+          message: 'If your email is registered, you will receive a password reset link',
+        });
+      }
+      passwordResetQuotaFallback.set(normalizedEmail, {
+        windowStart: existingQuota.windowStart,
+        lastSentAt: now,
+        count: existingQuota.count + 1,
+      });
+    } else {
+      if (passwordResetQuotaFallback.size > 5000) passwordResetQuotaFallback.clear();
+      passwordResetQuotaFallback.set(normalizedEmail, { windowStart: now, lastSentAt: now, count: 1 });
+    }
+
+    if (hasRealMongoDriver()) {
+      const windowCutoff = new Date(now - 60 * 60 * 1000);
+      const cooldownCutoff = new Date(now - PASSWORD_RESET_COOLDOWN_MS);
+      const dbQuota = await VerificationLedger.findOne({ kind: 'password_reset_quota', key: normalizedEmail }).lean();
+      if (dbQuota && dbQuota.windowStart && new Date(dbQuota.windowStart).getTime() > windowCutoff.getTime()) {
+        if (
+          (dbQuota.lastSentAt && new Date(dbQuota.lastSentAt).getTime() > cooldownCutoff.getTime())
+          || Number(dbQuota.count || 0) >= PASSWORD_RESET_HOURLY_CAP
+        ) {
+          return res.json({
+            message: 'If your email is registered, you will receive a password reset link',
+          });
+        }
+        await VerificationLedger.updateOne(
+          { kind: 'password_reset_quota', key: normalizedEmail },
+          { $inc: { count: 1 }, $set: { lastSentAt: new Date(now) } }
+        ).catch(() => {});
+      } else {
+        await VerificationLedger.findOneAndUpdate(
+          { kind: 'password_reset_quota', key: normalizedEmail },
+          {
+            $set: {
+              windowStart: new Date(now),
+              lastSentAt: new Date(now),
+              count: 1,
+              expiresAt: new Date(now + 60 * 60 * 1000),
+            },
+          },
+          { upsert: true }
+        ).catch(() => {});
+      }
+    }
+
+    const user = await User.findOne({ email: normalizedEmail }).select('+passwordResetExpires');
     
     if (!user) {
       return res.json({ 
@@ -1148,6 +1349,12 @@ router.post('/forgot-password', async (req, res) => {
       user.passwordResetToken = undefined;
       user.passwordResetExpires = undefined;
       await user.save().catch(() => {});
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('Password reset email delivery failed', { email: normalizedEmail });
+        return res.json({
+          message: 'If your email is registered, you will receive a password reset link',
+        });
+      }
       return res.status(503).json({
         error: 'Password reset email delivery failed. Please try again later.',
         code: 'EMAIL_DELIVERY_FAILED',
@@ -1300,7 +1507,7 @@ router.get('/privacy/export', verifyAccessToken, async (req, res) => {
       account: presented,
       privacyConsent: user.privacyConsent || {
         termsAcceptedAt: user.createdAt || null,
-        parentalConsentVerified: Boolean(Number(user.age) > 0 && Number(user.age) < 18 && user.guardianContact?.phone),
+        parentalConsentVerified: Boolean(Number(user.age) > 0 && Number(user.age) < 18 && user.guardian),
         parentalConsentAt: null,
         deletionRequestedAt: null,
       },

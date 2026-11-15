@@ -504,11 +504,33 @@ export default function LibraryPage() {
               ))}
             </div>
 
-            {selectedVideo && (
-              <div className="aspect-video rounded-2xl overflow-hidden shadow-xl bg-black max-w-4xl mx-auto">
-                <iframe title={selectedVideo.title} src={selectedVideo.videoUrl} className="w-full h-full" allowFullScreen />
-              </div>
-            )}
+            {selectedVideo && (() => {
+              let safeEmbedSrc = '';
+              try {
+                const parsed = new URL(String(selectedVideo.videoUrl || ''));
+                const host = parsed.hostname.toLowerCase();
+                if (
+                  parsed.protocol === 'https:' &&
+                  ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'youtube-nocookie.com', 'youtu.be', 'player.vimeo.com'].includes(host)
+                ) {
+                  safeEmbedSrc = parsed.toString();
+                }
+              } catch {
+                safeEmbedSrc = '';
+              }
+              return safeEmbedSrc ? (
+                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl bg-black max-w-4xl mx-auto">
+                  <iframe
+                    title={selectedVideo.title}
+                    src={safeEmbedSrc}
+                    sandbox="allow-scripts allow-same-origin allow-presentation"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    className="w-full h-full"
+                    allowFullScreen
+                  />
+                </div>
+              ) : null;
+            })()}
 
             {loadingVideos ? (
               <div className="flex justify-center py-16"><div className="spinner spinner-lg" /></div>

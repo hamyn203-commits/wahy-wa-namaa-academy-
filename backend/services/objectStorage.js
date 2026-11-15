@@ -75,9 +75,10 @@ function unwrapPublicProxyReference(reference) {
 
 function extractPathname(reference) {
   const unwrapped = unwrapPublicProxyReference(reference);
-  if (!unwrapped) return '';
+  if (!unwrapped || /%(?:2e|2f|5c|00)/i.test(unwrapped)) return '';
   try {
     const parsed = new URL(unwrapped);
+    if (/%(?:2e|2f|5c|00)/i.test(parsed.pathname)) return '';
     return decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
   } catch {
     return String(unwrapped).replace(/^\/+/, '');
@@ -86,7 +87,7 @@ function extractPathname(reference) {
 
 function isSafeObjectPath(pathname) {
   const value = String(pathname || '');
-  if (!value || value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (!value || value.includes('\\') || /%(?:2e|2f|5c|00)/i.test(value) || /[\u0000-\u001f\u007f]/.test(value)) return false;
 
   const segments = value.split('/');
   return segments.length >= 2 && segments.every((segment) => (
@@ -94,6 +95,20 @@ function isSafeObjectPath(pathname) {
     segment !== '.' &&
     segment !== '..'
   ));
+}
+
+function assertUploadPath(pathname, purpose, owner) {
+  const raw = String(pathname || '');
+  if (!raw || raw.includes('\\') || raw.includes('..') || /%(?:2e|2f|5c|00)/i.test(raw)) {
+    throw new Error('Invalid upload path');
+  }
+  if (!isSafeObjectPath(raw)) {
+    throw new Error('Invalid upload path');
+  }
+  const prefix = `uploads/${sanitizeSegment(purpose)}/${sanitizeSegment(owner)}/`;
+  if (!raw.startsWith(prefix)) {
+    throw new Error('Invalid upload path');
+  }
 }
 
 function referenceMatches(reference, purpose, owner) {
@@ -250,9 +265,11 @@ async function getPrivateObject(reference, options = {}) {
   }
 
   if (getDriver() === 's3') {
+    const pathname = extractPathname(reference);
+    if (!isSafeObjectPath(pathname)) return null;
     const result = await getS3Client().send(new GetObjectCommand({
       Bucket: process.env.S3_BUCKET,
-      Key: extractPathname(reference),
+      Key: pathname,
       ...(options.headers?.Range ? { Range: options.headers.Range } : {}),
     }));
     return {
@@ -314,16 +331,26 @@ function isOwnedObjectReference(reference, purpose, owner, driver = getDriver())
 
 async function deleteObject(reference) {
   const stored = unwrapPublicProxyReference(reference);
+  const pathname = extractPathname(stored);
+  if (!isSafeObjectPath(pathname)) {
+    throw new Error('Invalid object path for deletion');
+  }
   if (getDriver() === 'vercel-blob') {
+    if (!isVercelBlobReference(stored)) {
+      throw new Error('Invalid Vercel Blob object reference');
+    }
     const { del } = await import('@vercel/blob');
     await del(stored, { token: process.env.BLOB_READ_WRITE_TOKEN });
     return;
   }
 
   if (getDriver() === 's3') {
+    if (!isS3ReferenceAllowed(stored)) {
+      throw new Error('Invalid S3 object reference');
+    }
     await getS3Client().send(new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET,
-      Key: extractPathname(stored),
+      Key: pathname,
     }));
     return;
   }
@@ -404,6 +431,7 @@ module.exports = {
   createObjectKey,
   extractPathname,
   isSafeObjectPath,
+  assertUploadPath,
   referenceMatches,
   isVercelBlobReference,
   isOwnedObjectReference,

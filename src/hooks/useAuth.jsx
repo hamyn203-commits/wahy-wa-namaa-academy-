@@ -39,6 +39,7 @@ export function AuthProvider({ children }) {
     clearTranslateCache();
     try {
       localStorage.removeItem('teacher_registration_draft');
+      sessionStorage.removeItem('teacher_registration_draft');
       sessionStorage.removeItem('teacher_application_status_token');
     } catch {
       // Ignore storage access failures.
@@ -47,9 +48,11 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
+      const currentToken = getAccessToken();
       await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include',
+        headers: currentToken ? { Authorization: `Bearer ${currentToken}` } : undefined,
       });
     } catch {
       // Clear client state even when the network is unavailable.
@@ -270,7 +273,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const authFetch = useCallback(async (url, options = {}) => {
-    const makeRequest = async (token) => fetch(url, {
+    const resolved = new URL(String(url || ''), window.location.origin);
+    const allowedOrigins = new Set([window.location.origin]);
+    if (API_BASE_URL) {
+      try {
+        allowedOrigins.add(new URL(API_BASE_URL, window.location.origin).origin);
+      } catch {
+        // Ignore malformed optional API_BASE_URL
+      }
+    }
+    if (!allowedOrigins.has(resolved.origin)) {
+      throw new Error('Refusing to send authentication token to untrusted origin');
+    }
+
+    const makeRequest = async (token) => fetch(resolved.toString(), {
       ...options,
       credentials: options.credentials || 'include',
       headers: {

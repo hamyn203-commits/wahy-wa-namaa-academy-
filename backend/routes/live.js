@@ -97,7 +97,7 @@ async function getRoomAccess(liveSession, user) {
 
     let assigned = false;
     for (const child of guardian.children || []) {
-      const canObserve = child?.permissions?.viewAttendance !== false || child?.permissions?.viewProgress !== false;
+      const canObserve = child?.permissions?.viewAttendance !== false;
       if (canObserve && (await sessionIncludesStudent(bookedSession, child.student))) {
         assigned = true;
         break;

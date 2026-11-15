@@ -18,7 +18,11 @@ const consumedVerificationTokens = new Map();
 const verificationTokenUploadCounts = new Map();
 
 function canUseDbLedger() {
-  return mongoose.connection.readyState === 1 && typeof VerificationLedger?.findOneAndUpdate === 'function';
+  return (
+    mongoose.connection.readyState === 1
+    && (Boolean(mongoose.connection?.db) || VerificationLedger.findOneAndUpdate !== mongoose.Model.findOneAndUpdate)
+    && typeof VerificationLedger?.findOneAndUpdate === 'function'
+  );
 }
 
 function normalizeEmail(value) {
@@ -62,61 +66,97 @@ function checkEmailSendQuota(email) {
   };
 }
 
-async function checkEmailSendQuotaAsync(email) {
-  if (!canUseDbLedger()) {
-    return checkEmailSendQuota(email);
-  }
+async function reserveEmailSendQuotaAsync(email) {
   const now = Date.now();
-  const existing = await VerificationLedger.findOne({ kind: 'email_send_quota', key: email }).lean();
-  if (!existing || !existing.windowStart || now - new Date(existing.windowStart).getTime() > EMAIL_HOURLY_WINDOW_MS) {
+  if (!canUseDbLedger()) {
+    const previous = emailSendLedger.get(email) || null;
+    const check = checkEmailSendQuota(email);
+    if (!check.allowed) return check;
+    emailSendLedger.set(email, {
+      windowStart: check.nextEntry.windowStart,
+      lastSentAt: check.nextEntry.lastSentAt,
+      count: check.nextEntry.count,
+    });
     return {
       allowed: true,
-      nextEntry: {
-        windowStart: new Date(now),
-        lastSentAt: new Date(now),
-        count: 1,
-        expiresAt: new Date(now + EMAIL_HOURLY_WINDOW_MS),
+      rollback: async () => {
+        if (previous) emailSendLedger.set(email, previous);
+        else emailSendLedger.delete(email);
       },
     };
   }
-  if (existing.lastSentAt && now - new Date(existing.lastSentAt).getTime() < EMAIL_SEND_COOLDOWN_MS) {
+
+  const windowCutoff = new Date(now - EMAIL_HOURLY_WINDOW_MS);
+  const cooldownCutoff = new Date(now - EMAIL_SEND_COOLDOWN_MS);
+  const existing = await VerificationLedger.findOne({ kind: 'email_send_quota', key: email }).lean();
+
+  if (!existing || !existing.windowStart || new Date(existing.windowStart).getTime() <= windowCutoff.getTime()) {
+    try {
+      const resetDoc = await VerificationLedger.findOneAndUpdate(
+        {
+          kind: 'email_send_quota',
+          key: email,
+          $or: [{ windowStart: { $lte: windowCutoff } }, { windowStart: { $exists: false } }],
+        },
+        {
+          $set: {
+            windowStart: new Date(now),
+            lastSentAt: new Date(now),
+            count: 1,
+            expiresAt: new Date(now + EMAIL_HOURLY_WINDOW_MS),
+          },
+        },
+        { upsert: true, new: true }
+      );
+      if (resetDoc) {
+        return {
+          allowed: true,
+          rollback: async () => {
+            await VerificationLedger.deleteOne({ kind: 'email_send_quota', key: email, count: 1 }).catch(() => {});
+          },
+        };
+      }
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      return { allowed: false, reason: 'Please wait before requesting another verification code' };
+    }
+  }
+
+  if (existing?.lastSentAt && new Date(existing.lastSentAt).getTime() > cooldownCutoff.getTime()) {
     return { allowed: false, reason: 'Please wait before requesting another verification code' };
   }
-  if (Number(existing.count || 0) >= EMAIL_HOURLY_CAP) {
+  if (Number(existing?.count || 0) >= EMAIL_HOURLY_CAP) {
     return { allowed: false, reason: 'Hourly verification code limit reached for this email' };
   }
+
+  const incremented = await VerificationLedger.findOneAndUpdate(
+    {
+      kind: 'email_send_quota',
+      key: email,
+      count: { $lt: EMAIL_HOURLY_CAP },
+      $or: [{ lastSentAt: { $lte: cooldownCutoff } }, { lastSentAt: { $exists: false } }],
+    },
+    {
+      $inc: { count: 1 },
+      $set: { lastSentAt: new Date(now) },
+    },
+    { new: true }
+  );
+
+  if (!incremented) {
+    return { allowed: false, reason: 'Please wait before requesting another verification code' };
+  }
+
+  const prevLastSentAt = existing?.lastSentAt ? new Date(existing.lastSentAt) : new Date(0);
   return {
     allowed: true,
-    nextEntry: {
-      windowStart: new Date(existing.windowStart),
-      lastSentAt: new Date(now),
-      count: Number(existing.count || 0) + 1,
-      expiresAt: new Date(new Date(existing.windowStart).getTime() + EMAIL_HOURLY_WINDOW_MS),
+    rollback: async () => {
+      await VerificationLedger.updateOne(
+        { kind: 'email_send_quota', key: email, count: { $gt: 0 } },
+        { $inc: { count: -1 }, $set: { lastSentAt: prevLastSentAt } }
+      ).catch(() => {});
     },
   };
-}
-
-async function persistEmailSendQuotaAsync(email, nextEntry) {
-  if (!canUseDbLedger()) {
-    emailSendLedger.set(email, {
-      windowStart: new Date(nextEntry.windowStart).getTime(),
-      lastSentAt: new Date(nextEntry.lastSentAt).getTime(),
-      count: nextEntry.count,
-    });
-    return;
-  }
-  await VerificationLedger.findOneAndUpdate(
-    { kind: 'email_send_quota', key: email },
-    {
-      $set: {
-        windowStart: nextEntry.windowStart,
-        lastSentAt: nextEntry.lastSentAt,
-        count: nextEntry.count,
-        expiresAt: nextEntry.expiresAt,
-      },
-    },
-    { upsert: true, new: true }
-  );
 }
 
 async function registerVerificationTokenUpload(jti, expSeconds, maxUploads = MAX_VERIFICATION_UPLOADS_PER_JTI) {
@@ -202,7 +242,7 @@ router.post('/send-verification', async (req, res) => {
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
-    const quota = await checkEmailSendQuotaAsync(email);
+    const quota = await reserveEmailSendQuotaAsync(email);
     if (!quota.allowed) {
       return res.status(429).json({ error: quota.reason, code: 'OTP_COOLDOWN_ACTIVE' });
     }
@@ -234,6 +274,7 @@ router.post('/send-verification', async (req, res) => {
         </div>`,
       });
     } catch (deliveryError) {
+      await quota.rollback?.().catch(() => {});
       await VerificationCode.deleteMany({ email }).catch(() => {});
       console.error('Verification email delivery error:', deliveryError?.message || 'unknown error');
       return res.status(503).json({
@@ -243,14 +284,13 @@ router.post('/send-verification', async (req, res) => {
     }
 
     if (!result?.sent) {
+      await quota.rollback?.().catch(() => {});
       await VerificationCode.deleteMany({ email });
       return res.status(503).json({
         error: 'Email verification is temporarily unavailable',
         code: 'EMAIL_PROVIDER_NOT_CONFIGURED',
       });
     }
-
-    await persistEmailSendQuotaAsync(email, quota.nextEntry);
 
     return res.json({
       success: true,

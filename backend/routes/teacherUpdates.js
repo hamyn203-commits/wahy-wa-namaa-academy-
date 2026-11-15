@@ -130,7 +130,7 @@ router.get('/:id/videos/:index/stream', async (req, res) => {
       return res.status(403).json({ error: 'Invalid media token' });
     }
     if (payload.viewerId) {
-      const principalOk = await verifyLiveSessionPrincipal(payload.viewerId, payload.viewerRole, payload.iat);
+      const principalOk = await verifyLiveSessionPrincipal(payload.viewerId, payload.viewerRole, payload.iat, payload.v);
       if (!principalOk) {
         return res.status(401).json({ error: 'Session revoked or account inactive' });
       }
@@ -350,6 +350,7 @@ router.post('/:id/videos/:index/access', authorize('teacher', 'student', 'admin'
       index,
       viewerId: String(req.user.id),
       viewerRole: req.user.role,
+      v: Number(req.user.v || 0),
     }, accessSecret(), { expiresIn: ACCESS_TOKEN_TTL });
 
     return res.json({

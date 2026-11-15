@@ -5,16 +5,19 @@ const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const User = require('../models/User');
+const Teacher = require('../models/Teacher');
 const { protect, getAccessSecret, verifyAccessTokenString } = require('../middleware/auth');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const storage = require('../services/objectStorage');
 const { validateUploadMetadata } = require('../config/uploadPolicy');
 const { registerVerificationTokenUpload } = require('./verification');
 
+const MAX_PUBLIC_MEDIA_RANGE_CHUNK = Math.floor(3.5 * 1024 * 1024);
+
 const blobUploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 40,
-  skip: (req) => Boolean(req.headers?.['x-vercel-signature']),
+  skip: (req) => Boolean(req.headers?.['x-vercel-signature']) && req.body?.type === 'blob.upload-completed',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many upload token requests, please try again later.' },
@@ -73,10 +76,7 @@ async function verifyClientIdentity(payload = {}) {
 }
 
 function assertUploadPath(pathname, purpose, owner) {
-  const prefix = `uploads/${storage.sanitizeSegment(purpose)}/${storage.sanitizeSegment(owner)}/`;
-  if (!String(pathname || '').startsWith(prefix)) {
-    throw new Error('Invalid upload path');
-  }
+  storage.assertUploadPath(pathname, purpose, owner);
 }
 
 router.get('/status', (_req, res) => {
@@ -227,8 +227,59 @@ router.get('/public', async (req, res) => {
       return res.status(400).json({ error: 'Invalid media reference' });
     }
 
+    if (Boolean(mongoose.connection?.db)) {
+      const candidateRefs = Array.from(new Set([
+        reference,
+        storage.unwrapPublicProxyReference(reference),
+        storage.publicProxyUrl(reference),
+      ].filter(Boolean)));
+
+      if (pathname.startsWith('uploads/teacher-public/')) {
+        const isPublishedTeacherMedia = await Teacher.exists({
+          status: 'approved',
+          isVerified: true,
+          $or: [
+            { 'media.profilePhoto': { $in: candidateRefs } },
+            { 'media.introductionVideo': { $in: candidateRefs } },
+            { 'media.recitationVideo': { $in: candidateRefs } },
+            { 'media.teachingMethodVideo': { $in: candidateRefs } },
+            { 'media.additionalVideos.url': { $in: candidateRefs } },
+            { 'media.audioRecordings.url': { $in: candidateRefs } },
+          ],
+        });
+        if (!isPublishedTeacherMedia) {
+          return res.status(404).end();
+        }
+      } else if (pathname.startsWith('uploads/student-avatar/')) {
+        const isActiveAvatar = await User.exists({
+          isActive: true,
+          avatar: { $in: candidateRefs },
+        });
+        if (!isActiveAvatar) {
+          return res.status(404).end();
+        }
+      }
+    }
+
+    let boundedRangeHeader = null;
+    const rawRange = String(req.headers.range || '').trim();
+    if (rawRange) {
+      const rangeMatch = rawRange.match(/^bytes=(\d+)-(\d*)$/i);
+      if (!rangeMatch) {
+        return res.status(416).end();
+      }
+      const start = Number(rangeMatch[1]);
+      const requestedEnd = rangeMatch[2] ? Number(rangeMatch[2]) : (start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
+      if (!Number.isFinite(start) || !Number.isFinite(requestedEnd) || requestedEnd < start) {
+        return res.status(416).end();
+      }
+      const clampedEnd = Math.min(requestedEnd, start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
+      boundedRangeHeader = `bytes=${start}-${clampedEnd}`;
+    }
+
     const result = await storage.getPrivateObject(reference, {
       ifNoneMatch: req.headers['if-none-match'],
+      ...(boundedRangeHeader ? { headers: { Range: boundedRangeHeader } } : {}),
     });
 
     if (!result) return res.status(404).end();
@@ -239,10 +290,16 @@ router.get('/public', async (req, res) => {
       ? rawType
       : 'application/octet-stream';
     res.setHeader('Content-Type', safeContentType);
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
     res.setHeader('Cache-Control', 'public, max-age=86400');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
+    const contentRange = result.headers?.get?.('content-range') || result.blob?.contentRange || null;
+    if (result.statusCode === 206 && contentRange) {
+      res.status(206);
+      res.setHeader('Content-Range', contentRange);
+    }
 
     if (result.stream?.pipe) {
       return result.stream.pipe(res);

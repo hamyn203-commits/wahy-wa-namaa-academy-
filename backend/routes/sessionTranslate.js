@@ -190,7 +190,19 @@ router.post('/messages', protect, sessionChatLimiter, async (req, res) => {
       const studentLang = session.student?.preferences?.language || 'id';
       const teacherLang = session.teacher?.user?.preferences?.language || 'ar';
       const targets = [...new Set([studentLang, teacherLang].filter((code) => SUPPORTED.includes(code)))];
-      translationsMap = await translateBatch(cleanText, fromLang, targets);
+      const rawTranslations = await translateBatch(cleanText, fromLang, targets);
+      translationsMap = {};
+      for (const [localeKey, translatedValue] of Object.entries(rawTranslations || {})) {
+        const translatedSafety = inspectChatSafety(translatedValue);
+        if (!translatedSafety.isSafe) {
+          return res.status(400).json({
+            error: translatedSafety.warning,
+            code: 'CHAT_SAFETY_VIOLATION',
+            reason: translatedSafety.reason,
+          });
+        }
+        translationsMap[localeKey] = translatedValue;
+      }
     } else {
       if (req.user.role !== 'admin' && !sessionParticipantWindow(session).within) {
         return res.status(409).json({

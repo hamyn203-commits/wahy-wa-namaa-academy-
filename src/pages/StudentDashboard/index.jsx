@@ -2054,8 +2054,8 @@ export default function StudentDashboard() {
                       <h3 className="font-bold">{s.teacher?.user?.name || 'المعلم'}</h3>
                       <p className="text-sm text-gray-600">{new Date(s.scheduledAt).toLocaleString(locale === 'id' ? 'id-ID' : 'ar-EG')}</p>
                     </div>
-                    {s.recordingUrl ? (
-                      <a href={s.recordingUrl} target="_blank" rel="noreferrer"
+                    {(/^https:\/\//i.test(String(s.recordingUrl || '').trim()) || String(s.recordingUrl || '').trim().startsWith('/api/')) ? (
+                      <a href={String(s.recordingUrl).trim()} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-1 text-sm text-emerald-600 font-semibold">
                         <Video size={16} /> {locale === 'id' ? 'Tonton' : locale === 'ar' ? 'مشاهدة' : 'Watch'}
                       </a>

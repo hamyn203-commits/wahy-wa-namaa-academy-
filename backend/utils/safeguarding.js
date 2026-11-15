@@ -29,7 +29,7 @@ function assertGenderAndAgeCompatibility({
   const normalizedSection = section ? String(section).trim() : '';
   const normalizedCircleGender = circleGender ? String(circleGender).trim() : '';
 
-  if (student && (!studentGender || studentAge === null) && student.onboarding?.required !== false) {
+  if (student && (!studentGender || studentAge === null)) {
     throw safeguardingError(
       'PROFILE_DEMOGRAPHICS_REQUIRED',
       'يرجى استكمال العمر والجنس في الملف الشخصي قبل المتابعة',

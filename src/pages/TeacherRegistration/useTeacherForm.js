@@ -144,7 +144,8 @@ export function useTeacherForm() {
     } catch { /* ignore */ }
 
     try {
-      const raw = localStorage.getItem(DRAFT_KEY);
+      localStorage.removeItem(DRAFT_KEY);
+      const raw = sessionStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       const d = JSON.parse(raw);
       if (d.formData) {
@@ -218,9 +219,11 @@ export function useTeacherForm() {
   }, [submitted, applicationStatusToken, checkApplicationStatus]);
 
   const saveDraft = useCallback(() => {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      formData, credentials: { email: credentials.email }, step,
-    }));
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+        formData, credentials: { email: credentials.email }, step,
+      }));
+    } catch { /* ignore */ }
   }, [formData, credentials.email, step]);
 
   useEffect(() => {
@@ -505,7 +508,10 @@ export function useTeacherForm() {
       if (data.success !== true) {
         throw new Error('تعذر تأكيد حفظ الطلب من رد الخادم. راجع حالة الطلب مع الإدارة قبل إعادة الإرسال.');
       }
-      localStorage.removeItem(DRAFT_KEY);
+      try {
+        sessionStorage.removeItem(DRAFT_KEY);
+        localStorage.removeItem(DRAFT_KEY);
+      } catch { /* ignore */ }
       const nextStatus = data.applicationStatus || 'pending';
       const nextToken = data.applicationStatusToken || '';
       setApplicationStatus(nextStatus);

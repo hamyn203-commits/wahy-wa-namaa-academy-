@@ -1,6 +1,15 @@
 node_modules
+uploads
+private
 .env
-.env.local
+.env.*
+!.env.example
+appsettings*.json
+azure-settings*.json
+*publish-profile*.xml
 deploy.zip
+test
+tests
+coverage
 logs
 *.log

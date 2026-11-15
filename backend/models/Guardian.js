@@ -140,7 +140,7 @@ GuardianSchema.index({ 'children.student': 1 });
 GuardianSchema.index({ isActive: 1 });
 
 GuardianSchema.methods.addChild = function(studentId, relationship, permissions = {}) {
-  const existingChild = this.children.find(c => c.student.toString() === studentId);
+  const existingChild = this.children.find(c => String(c.student?._id || c.student) === String(studentId));
   
   if (existingChild) {
     throw new Error('Child already added');
@@ -162,7 +162,7 @@ GuardianSchema.methods.addChild = function(studentId, relationship, permissions 
 };
 
 GuardianSchema.methods.removeChild = function(studentId) {
-  this.children = this.children.filter(c => c.student.toString() !== studentId);
+  this.children = this.children.filter(c => String(c.student?._id || c.student) !== String(studentId));
   if (Array.isArray(this.reports)) {
     this.reports = this.reports.filter(r => String(r.childId?._id || r.childId || r.student || '') !== String(studentId));
   }
@@ -170,7 +170,7 @@ GuardianSchema.methods.removeChild = function(studentId) {
 };
 
 GuardianSchema.methods.updatePermissions = function(studentId, permissions) {
-  const child = this.children.find(c => c.student.toString() === studentId);
+  const child = this.children.find(c => String(c.student?._id || c.student) === String(studentId));
   
   if (!child) {
     throw new Error('Child not found');
@@ -227,7 +227,7 @@ GuardianSchema.methods.generateReport = function(childId, type = 'weekly') {
 
 GuardianSchema.methods.hasPermission = function(studentId, permission) {
   if (this.isActive === false) return false;
-  const child = this.children.find(c => c.student.toString() === studentId);
+  const child = this.children.find(c => String(c.student?._id || c.student) === String(studentId));
   return Boolean(child && child.permissions[permission]);
 };
 

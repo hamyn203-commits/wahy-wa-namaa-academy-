@@ -11,6 +11,7 @@ const Session = require('../models/Session');
 const GroupCircle = require('../models/GroupCircle');
 const { protect, authorize } = require('../middleware/auth');
 const { createScopedRateLimiter } = require('../middleware/userRateLimit');
+const { inspectChatSafety } = require('../utils/chatSafety');
 const { createUserRealtimeToken, isRealtimeConfigured, publishRealtimeNotification } = require('../services/realtimeNotificationBus');
 router.use(protect, rateLimit({ windowMs: 15 * 60 * 1000, max: 900, keyGenerator: (req) => req.user.id, standardHeaders: true, legacyHeaders: false, skip: () => process.env.DISABLE_RATE_LIMIT === 'true' }));
 
@@ -493,6 +494,16 @@ router.post('/send', protect, authorize('admin', 'teacher'), async (req, res) =>
     });
 
     if (req.user.role === 'teacher') {
+      for (const textVal of [...Object.values(sanitizedNotification.title || {}), ...Object.values(sanitizedNotification.message || {})]) {
+        const safety = inspectChatSafety(textVal);
+        if (!safety.isSafe) {
+          return res.status(400).json({
+            error: safety.warning,
+            code: 'CHAT_SAFETY_VIOLATION',
+            reason: safety.reason,
+          });
+        }
+      }
       const allowedStudentIds = await getTeacherAllowedStudentIds(req.user.id);
       if (!allowedStudentIds) {
         return res.status(403).json({ error: 'Teacher profile not found' });

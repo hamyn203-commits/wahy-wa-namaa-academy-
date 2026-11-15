@@ -80,10 +80,12 @@ async function applyPaymobTransaction({
   payment,
   classification,
   transactionId,
+  amountMinor,
   session,
 }) {
   const effectiveClassification = (
-    classification === 'cancelled' && payment.status === 'succeeded'
+    classification === 'cancelled'
+    && (payment.status === 'succeeded' || payment.status === 'partially_refunded')
   )
     ? 'refunded'
     : classification;
@@ -93,7 +95,7 @@ async function applyPaymobTransaction({
   }
 
   if (effectiveClassification === 'succeeded') {
-    if (payment.status !== 'succeeded') {
+    if (payment.status !== 'succeeded' && payment.status !== 'partially_refunded' && payment.status !== 'refunded') {
       if (payment.status === 'created') {
         assertPaymentTransition('created', 'pending');
         payment.status = 'pending';
@@ -101,6 +103,7 @@ async function applyPaymobTransaction({
       assertPaymentTransition(payment.status, 'succeeded');
       payment.status = 'succeeded';
       payment.settledAt = new Date();
+      payment.failedAt = undefined;
       payment.providerTransactionId = String(transactionId);
       payment.failureCode = undefined;
       await payment.save({ session });
@@ -116,7 +119,12 @@ async function applyPaymobTransaction({
   }
 
   if (effectiveClassification === 'failed') {
-    if (payment.status === 'failed') {
+    if (
+      payment.status === 'failed'
+      || payment.status === 'succeeded'
+      || payment.status === 'partially_refunded'
+      || payment.status === 'refunded'
+    ) {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
     assertPaymentTransition(payment.status, 'failed');
@@ -148,8 +156,27 @@ async function applyPaymobTransaction({
     if (payment.status === 'refunded') {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
+
+    const totalPaidMinor = Math.max(0, Number(payment.amountMinor || 0));
+    const currentRefundedMinor = Math.max(0, Number(payment.refundedAmountMinor || 0));
+    const deltaMinor = Number.isFinite(Number(amountMinor)) && Number(amountMinor) > 0
+      ? Math.round(Number(amountMinor))
+      : Math.max(0, totalPaidMinor - currentRefundedMinor);
+    const nextRefundedMinor = Math.min(totalPaidMinor, currentRefundedMinor + deltaMinor);
+
+    if (totalPaidMinor > 0 && nextRefundedMinor < totalPaidMinor) {
+      assertPaymentTransition(payment.status, 'partially_refunded');
+      payment.status = 'partially_refunded';
+      payment.refundedAmountMinor = nextRefundedMinor;
+      payment.refundedAt = new Date();
+      payment.providerTransactionId = String(transactionId);
+      await payment.save({ session });
+      return { payment, enrollment: null, enrollmentCreated: false, changed: true };
+    }
+
     assertPaymentTransition(payment.status, 'refunded');
     payment.status = 'refunded';
+    payment.refundedAmountMinor = totalPaidMinor;
     payment.refundedAt = new Date();
     payment.providerTransactionId = String(transactionId);
     await payment.save({ session });
@@ -249,9 +276,15 @@ async function processPaymobWebhook({
       event.payment = payment._id;
 
       const isRefundEvent = classification === 'refunded'
-        || (classification === 'cancelled' && payment.status === 'succeeded');
+        || (classification === 'cancelled' && (payment.status === 'succeeded' || payment.status === 'partially_refunded'));
+      const remainingRefundable = Math.max(0, Number(payment.amountMinor || 0) - Number(payment.refundedAmountMinor || 0));
       const amountMatches = isRefundEvent
-        ? (Number.isFinite(Number(amountMinor)) && Number(amountMinor) > 0 && Number(amountMinor) <= Number(payment.amountMinor))
+        ? (
+          Number.isFinite(Number(amountMinor))
+          && Number(amountMinor) > 0
+          && Number(amountMinor) <= Number(payment.amountMinor)
+          && (remainingRefundable === 0 || Number(amountMinor) <= remainingRefundable)
+        )
         : Number(amountMinor) === Number(payment.amountMinor);
 
       if (
@@ -276,6 +309,7 @@ async function processPaymobWebhook({
           payment,
           classification,
           transactionId,
+          amountMinor,
           session,
         });
       } catch (txErr) {

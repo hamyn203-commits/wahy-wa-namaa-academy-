@@ -19,6 +19,15 @@ const ALLOWED_VIDEO_FIELDS = [
   'isPublished',
 ];
 
+const TRUSTED_VIDEO_EMBED_HOSTS = new Set([
+  'www.youtube.com',
+  'youtube.com',
+  'www.youtube-nocookie.com',
+  'youtube-nocookie.com',
+  'youtu.be',
+  'player.vimeo.com',
+]);
+
 function sanitizeVideoPayload(body = {}) {
   const out = {};
   for (const field of ALLOWED_VIDEO_FIELDS) {
@@ -33,6 +42,12 @@ function sanitizeVideoPayload(body = {}) {
         const err = new Error(`${urlField} must use HTTPS`);
         err.statusCode = 400;
         err.publicMessage = 'رابط الوسائط يجب أن يبدأ بـ https://';
+        throw err;
+      }
+      if (urlField === 'videoUrl' && !TRUSTED_VIDEO_EMBED_HOSTS.has(parsed.hostname.toLowerCase())) {
+        const err = new Error('videoUrl host is not in the trusted embed allowlist');
+        err.statusCode = 400;
+        err.publicMessage = 'يجب أن يكون رابط الفيديو من منصة موثوقة (YouTube أو Vimeo)';
         throw err;
       }
       out[urlField] = parsed.toString().slice(0, 1000);

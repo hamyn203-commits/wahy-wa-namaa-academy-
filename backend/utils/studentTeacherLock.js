@@ -1,6 +1,8 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const StudentSubscription = require('../models/StudentSubscription');
+const Teacher = require('../models/Teacher');
 
 // Once a student commits to a tutor (the tutor is recorded on a subscription
 // when the transfer proof is submitted), the student stays with that tutor.
@@ -33,8 +35,17 @@ async function findStudentTeacherLock(studentId) {
     .lean();
 
   if (!subscription?.preferredTeacher) return null;
+  const lockedTeacherId = teacherIdOf(subscription.preferredTeacher);
+
+  if (Boolean(mongoose.connection?.db) || Teacher.findById !== mongoose.Model.findById) {
+    const teacherDoc = await Teacher.findById(lockedTeacherId).select('status isVerified');
+    if (teacherDoc && (teacherDoc.status !== 'approved' || teacherDoc.isVerified === false)) {
+      return null;
+    }
+  }
+
   return {
-    teacherId: teacherIdOf(subscription.preferredTeacher),
+    teacherId: lockedTeacherId,
     subscriptionId: String(subscription._id),
     status: subscription.status,
   };

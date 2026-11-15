@@ -72,6 +72,15 @@ function pickAssignmentFields(source = {}) {
       out[key] = source[key];
     }
   }
+  if (Array.isArray(out.attachments)) {
+    out.attachments = out.attachments.filter((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const url = String(item.url || '').trim();
+      if (!url) return false;
+      if (url.startsWith('/uploads/') || url.startsWith('/api/uploads/')) return true;
+      return /^https:\/\/[^\s<>"'`\\]+$/i.test(url);
+    });
+  }
   return out;
 }
 

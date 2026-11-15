@@ -25,15 +25,40 @@ function maskDisplayName(name) {
 
 async function ensureReferralCode(user) {
   if (user.referralCode) return user.referralCode;
-  let code;
-  let exists = true;
-  while (exists) {
-    code = generateReferralCode();
-    exists = await User.findOne({ referralCode: code });
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = generateReferralCode();
+    try {
+      const existing = await User.findOne({ referralCode: code }).select('_id').lean();
+      if (existing) continue;
+      if (typeof User.findOneAndUpdate === 'function') {
+        const updated = await User.findOneAndUpdate(
+          {
+            _id: user._id,
+            $or: [{ referralCode: { $exists: false } }, { referralCode: null }, { referralCode: '' }],
+          },
+          { $set: { referralCode: code } },
+          { new: true }
+        );
+        if (updated?.referralCode) {
+          user.referralCode = updated.referralCode;
+          return updated.referralCode;
+        }
+        const refreshed = await User.findById(user._id).select('referralCode').lean();
+        if (refreshed?.referralCode) {
+          user.referralCode = refreshed.referralCode;
+          return refreshed.referralCode;
+        }
+      } else {
+        user.referralCode = code;
+        await user.save();
+        return code;
+      }
+    } catch (err) {
+      if (err?.code === 11000) continue;
+      throw err;
+    }
   }
-  user.referralCode = code;
-  await user.save();
-  return code;
+  throw new Error('Unable to allocate unique referral code');
 }
 
 router.get('/validate/:code', async (req, res) => {

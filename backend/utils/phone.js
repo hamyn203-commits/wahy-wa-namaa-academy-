@@ -1,3 +1,13 @@
+function normalizeEgyptDigits(digits) {
+  if (/^2001\d{9}$/.test(digits)) {
+    return '+20' + digits.slice(3);
+  }
+  if (/^201\d{9}$/.test(digits)) {
+    return '+' + digits;
+  }
+  return null;
+}
+
 function normalizePhone(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -7,10 +17,9 @@ function normalizePhone(value) {
 
   if (compact.startsWith('+')) {
     const digits = compact.slice(1).replace(/\D/g, '');
-    if (digits.startsWith('20') && digits.length === 12) {
-      return '+20' + digits.slice(2).replace(/^0/, '');
-    }
-    return digits.length >= 8 ? '+' + digits : '';
+    const egyptNormalized = normalizeEgyptDigits(digits);
+    if (egyptNormalized) return egyptNormalized;
+    return digits.length >= 8 && digits.length <= 15 ? '+' + digits : '';
   }
 
   const digits = compact.replace(/\D/g, '');
@@ -21,12 +30,13 @@ function normalizePhone(value) {
     return '+20' + digits.slice(1);
   }
 
-  // Egypt international without +: 201XXXXXXXXX
-  if (/^201\d{9}$/.test(digits)) {
-    return '+' + digits;
+  // Egypt international without + (201XXXXXXXXX or 2001XXXXXXXXX)
+  const egyptNormalized = normalizeEgyptDigits(digits);
+  if (egyptNormalized) {
+    return egyptNormalized;
   }
 
-  return digits.length >= 8 ? digits : '';
+  return digits.length >= 8 && digits.length <= 15 ? '+' + digits : '';
 }
 
 function maskPhone(value) {

@@ -211,19 +211,32 @@ router.put('/:id/status', protect, authorize('admin'), async (req, res) => {
     if (!existingDonation) return res.status(404).json({ error: 'التبرع غير موجود' });
 
     const beforeStatus = existingDonation.status;
-    const updatePayload = { status };
+    if (beforeStatus === 'confirmed' && status === 'pledged') {
+      return res.status(409).json({
+        error: 'لا يمكن إعادة تبرع مؤكد إلى حالة تعهد',
+        code: 'INVALID_DONATION_STATUS_TRANSITION',
+      });
+    }
+    const setFields = { status };
+    const unsetFields = {};
     if (status === 'confirmed') {
-      updatePayload.confirmedAt = existingDonation.confirmedAt || new Date();
-      updatePayload.confirmedBy = req.user.id;
-      if (paymentReference) updatePayload.paymentReference = paymentReference;
+      setFields.confirmedAt = existingDonation.confirmedAt || new Date();
+      setFields.confirmedBy = req.user.id;
+      if (paymentReference) setFields.paymentReference = paymentReference;
+    } else if (status === 'cancelled') {
+      unsetFields.confirmedAt = 1;
+      unsetFields.confirmedBy = 1;
     }
 
-    const donation = await Donation.findByIdAndUpdate(
-      req.params.id,
-      updatePayload,
+    const donation = await Donation.findOneAndUpdate(
+      { _id: req.params.id, status: beforeStatus },
+      {
+        $set: setFields,
+        ...(Object.keys(unsetFields).length ? { $unset: unsetFields } : {}),
+      },
       { new: true, runValidators: true }
     );
-    if (!donation) return res.status(404).json({ error: 'التبرع غير موجود' });
+    if (!donation) return res.status(409).json({ error: 'تغيرت حالة التبرع بالتزامن، أعد المحاولة' });
 
     await logAdminAction({
       req,

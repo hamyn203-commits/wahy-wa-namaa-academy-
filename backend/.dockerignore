@@ -1,9 +1,16 @@
 uploads/
+private/
 .env
 .env.*
+!.env.example
+appsettings*.json
+azure-settings*.json
+*publish-profile*.xml
+deploy.zip
 *.log
 coverage/
 node_modules/
+test/
 tests/
 scripts/
 .git/

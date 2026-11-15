@@ -1334,6 +1334,38 @@ requireContains(
   /"Content-Security-Policy"[\s\S]{0,600}script-src 'self'/
 );
 
+// Round 4 Zero-Escape Cybersecurity Closure Contracts:
+requireContains(
+  'backend/middleware/auth.js',
+  'JWT verification must enforce strict typ domain separation and reject purpose-scoped tokens',
+  /decoded\.typ\s*!==\s*['"]access['"][\s\S]{0,200}decoded\.purpose/
+);
+requireContains(
+  'backend/services/teacherFinance.js',
+  'teacher balance calculation must guard legacy opening migration behind ledgerMigratedAt',
+  /ledgerMigratedAt/
+);
+requireContains(
+  'backend/routes/courses.js',
+  'published courses must lock commercial fields from non-admin mutation',
+  /PUBLISHED_COURSE_COMMERCIAL_LOCKED/
+);
+requireContains(
+  'backend/routes/quizzes.js',
+  'unstarted or future-scheduled quizzes must lock questions from students',
+  /questionsLocked:\s*true/
+);
+requireContains(
+  'vercel.json',
+  'SPA CSP header rule must exclude /api/ and /uploads/ so backend sandbox CSP is preserved',
+  /"source":\s*"\/\(\(\?!api\/\|uploads\/\)\.\*\)"/
+);
+requireContains(
+  'src/utils/analytics.js',
+  'Microsoft Clarity must be restricted strictly to public marketing paths',
+  /function\s+isPublicMarketingPath\s*\(/
+);
+
 if (failures.length) {
   console.error('Security contracts failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

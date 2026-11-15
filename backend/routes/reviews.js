@@ -6,6 +6,7 @@ const Review = require('../models/Review');
 const Session = require('../models/Session');
 const { protect, authorize } = require('../middleware/auth');
 const { logAdminAction } = require('../services/adminAudit');
+const { inspectChatSafety } = require('../utils/chatSafety');
 
 const ALLOWED_REVIEW_CATEGORIES = ['teaching', 'patience', 'communication', 'punctuality'];
 
@@ -44,6 +45,16 @@ router.post('/', protect, authorize('student'), async (req, res) => {
     }
 
     const cleanComment = String(comment || '').trim().slice(0, 1500);
+    if (cleanComment) {
+      const commentSafety = inspectChatSafety(cleanComment);
+      if (!commentSafety.isSafe) {
+        return res.status(400).json({
+          error: commentSafety.warning,
+          code: 'CHAT_SAFETY_VIOLATION',
+          reason: commentSafety.reason,
+        });
+      }
+    }
 
     const session = await Session.findOne({
       _id: sessionId,

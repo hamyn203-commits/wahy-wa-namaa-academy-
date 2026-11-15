@@ -79,6 +79,10 @@ const StudentSubscriptionSchema = new mongoose.Schema({
     ref: 'Payment',
     default: null,
   },
+  isScholarship: {
+    type: Boolean,
+    default: false,
+  },
   pricingSnapshot: {
     minStudents: { type: Number, min: 1, max: 20 },
     maxStudents: { type: Number, min: 1, max: 20 },

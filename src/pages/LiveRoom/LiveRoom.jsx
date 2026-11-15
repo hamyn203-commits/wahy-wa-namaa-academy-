@@ -51,6 +51,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
   const [myLang, setMyLang] = useState(detectBrowserLocale());
   const [partnerLang, setPartnerLang] = useState(myLang === 'ar' ? 'id' : 'ar');
   const [autoTranslate, setAutoTranslate] = useState(false);
+  const autoTranslateBudgetRef = useRef({ windowStart: 0, count: 0 });
 
   // LiveKit hooks
   const participants = useParticipants();
@@ -66,20 +67,32 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
         return;
       }
     }
+    const safeLang = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'].includes(String(lang || '').toLowerCase())
+      ? String(lang).toLowerCase()
+      : 'ar';
     let displayText = cleanText;
     let original = null;
-    if (autoTranslate && lang && lang !== myLang) {
-      try {
-        displayText = await translateText(cleanText, lang, myLang, { auth: true });
-        original = cleanText;
-      } catch { /* keep original */ }
+    if (autoTranslate && !isMe && safeLang && safeLang !== myLang) {
+      const now = Date.now();
+      const budget = autoTranslateBudgetRef.current;
+      if (now - budget.windowStart > 60000) {
+        budget.windowStart = now;
+        budget.count = 0;
+      }
+      if (budget.count < 15) {
+        budget.count += 1;
+        try {
+          displayText = await translateText(cleanText, safeLang, myLang, { auth: true });
+          original = cleanText;
+        } catch { /* keep original */ }
+      }
     }
     setChatMessages((prev) => [...prev, {
       id: `${Date.now()}-${Math.random()}`,
       sender,
       text: displayText,
       original,
-      lang,
+      lang: safeLang,
       timestamp: new Date().toLocaleTimeString(),
       isMe,
     }]);
@@ -145,7 +158,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
   // إرسال رسالة شات آمنة مع فحص الشات الأخلاقي
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !localParticipant.localParticipant) return;
+    if (isObserver || !newMessage.trim() || !localParticipant.localParticipant) return;
 
     // فحص الأمان الأخلاقي وحظر أرقام الهواتف والروابط والبريد
     const inspection = inspectMessage(newMessage);

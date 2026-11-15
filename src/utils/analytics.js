@@ -3,6 +3,12 @@ const CLARITY_PROJECT_ID = import.meta.env.VITE_CLARITY_PROJECT_ID;
 const IS_PRODUCTION = import.meta.env.PROD;
 
 const SENSITIVE_PARAMS = ['token', 'code', 'ticket', 'state', 'credential'];
+const PRIVATE_NON_MARKETING_ROUTE_RE = /^\/(?:(?:ar|en|fr|de|tr|ur|id|ms|ku)\/)?(?:admin|student|teacher|guardian|live|meeting|payment|checkout|login|register|onboarding|forgot-password|reset-password|verify|profile|settings|notifications|ai|journey|book-trial|courses\/[^/]+\/learn)(?:\/|$)/i;
+
+export function isPublicMarketingPath(rawPath) {
+  const cleanPath = String(rawPath || '').split('?')[0].split('#')[0] || '/';
+  return !PRIVATE_NON_MARKETING_ROUTE_RE.test(cleanPath);
+}
 
 function sanitizeLocationForAnalytics(rawHref) {
   try {
@@ -25,7 +31,8 @@ export function initAnalytics() {
     return;
   }
 
-  const isSensitiveAuthRoute = /\/reset-password(?:\/|$)/i.test(window.location.pathname || '');
+  const currentPath = window.location.pathname || '/';
+  const allowSessionReplay = isPublicMarketingPath(currentPath);
 
   if (GA_MEASUREMENT_ID) {
     const script = document.createElement('script');
@@ -44,7 +51,7 @@ export function initAnalytics() {
     });
   }
 
-  if (CLARITY_PROJECT_ID && !isSensitiveAuthRoute) {
+  if (CLARITY_PROJECT_ID && allowSessionReplay) {
     (function(c, l, a, r, i, t, y) {
       c[a] = c[a] || function() {
         (c[a].q = c[a].q || []).push(arguments);
@@ -67,7 +74,7 @@ export function trackPageView(path, title) {
     page_title: title || document.title
   });
 
-  if (window.clarity && !/\/reset-password(?:\/|$)/i.test(safePath)) {
+  if (window.clarity && isPublicMarketingPath(safePath)) {
     window.clarity('set', 'page', safePath);
   }
 }
@@ -77,7 +84,7 @@ export function trackEvent(eventName, parameters = {}) {
 
   window.gtag('event', eventName, parameters);
 
-  if (window.clarity) {
+  if (window.clarity && isPublicMarketingPath(window.location?.pathname || '/')) {
     window.clarity('event', eventName);
   }
 }
@@ -88,12 +95,8 @@ export function trackUser(userId, properties = {}) {
   if (window.gtag) {
     window.gtag('set', {
       user_id: userId,
-      ...properties
+      role: properties?.role || undefined,
     });
-  }
-
-  if (window.clarity) {
-    window.clarity('identify', userId, properties);
   }
 }
 

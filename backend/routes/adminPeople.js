@@ -22,6 +22,7 @@ const { getSubscriptionPlan } = require('../config/subscriptionPlans');
 const { protect, authorize } = require('../middleware/auth');
 const { maskPhone } = require('../utils/phone');
 const { logAdminAction } = require('../services/adminAudit');
+const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
 const { isMockMode } = require('../config/runtime');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const {
@@ -783,7 +784,7 @@ router.put('/students/:id', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid student id' });
     }
-    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('+password +refreshTokenVersion +sessionsRevokedAt');
+    const student = await User.findOne({ _id: req.params.id, role: 'student' }).select('+password +refreshTokenVersion +sessionsRevokedAt +guardianLinkCode');
     if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
 
     const {
@@ -814,6 +815,12 @@ router.put('/students/:id', async (req, res) => {
     if (whatsappPhone !== undefined) {
       student.whatsappPhone = String(whatsappPhone || '').trim();
     }
+    const demographicsEdited = (
+      gender === 'male'
+      || gender === 'female'
+      || (enrollmentSection !== undefined && VALID_ENROLLMENT_SECTIONS.has(enrollmentSection))
+      || (age !== undefined && Number.isFinite(Number(age)))
+    );
     if (gender === 'male' || gender === 'female') {
       student.gender = gender;
     }
@@ -822,6 +829,51 @@ router.put('/students/:id', async (req, res) => {
     }
     if (age !== undefined && Number.isFinite(Number(age))) {
       student.age = Math.min(100, Math.max(4, Number(age)));
+    }
+    if ((Number(student.age) > 0 && Number(student.age) < 18) || student.enrollmentSection === 'children') {
+      student.guardianLinkCode = undefined;
+    }
+    if (demographicsEdited) {
+      try {
+        if (student.gender && student.age != null && student.enrollmentSection) {
+          assertGenderAndAgeCompatibility({
+            student,
+            section: student.enrollmentSection,
+          });
+        }
+        if (Boolean(mongoose.connection?.db) || GroupCircle.find !== mongoose.Model.find) {
+          const activeCircles = await GroupCircle.find({
+            students: student._id,
+            status: { $nin: ['completed'] },
+          }).populate('teacher', 'personalInfo.gender');
+          for (const circle of activeCircles || []) {
+            assertGenderAndAgeCompatibility({
+              student,
+              teacher: circle.teacher,
+              circleGender: circle.gender,
+              section: student.enrollmentSection,
+            });
+          }
+        }
+        if (Boolean(mongoose.connection?.db) || Session.find !== mongoose.Model.find) {
+          const activeSessions = await Session.find({
+            $or: [{ student: student._id }, { 'attendance.student': student._id }],
+            status: { $in: ['pending', 'accepted'] },
+          }).populate('teacher', 'personalInfo.gender');
+          for (const activeSession of activeSessions || []) {
+            assertGenderAndAgeCompatibility({
+              student,
+              teacher: activeSession.teacher,
+              section: student.enrollmentSection,
+            });
+          }
+        }
+      } catch (compatErr) {
+        return res.status(409).json({
+          error: String(compatErr.publicMessage || compatErr.message || 'بيانات العمر أو الجنس تتعارض مع حلقة أو حصة نشطة للطالب'),
+          code: compatErr.code || 'STUDENT_DEMOGRAPHICS_PLACEMENT_CONFLICT',
+        });
+      }
     }
     if (typeof currentLevel === 'string' && VALID_STUDENT_LEVELS.has(currentLevel.trim())) {
       student.currentLevel = currentLevel.trim();
@@ -903,6 +955,7 @@ router.delete('/students/:id', async (req, res) => {
     await Promise.all([
       GroupCircle.updateMany({ students: studentId }, { $pull: { students: studentId } }),
       Guardian.updateMany({ 'children.student': studentId }, { $pull: { children: { student: studentId } } }),
+      GuardianInvitation.updateMany({ student: studentId, status: 'pending' }, { $set: { status: 'cancelled' } }),
       User.updateMany({ children: studentId }, { $pull: { children: studentId } }),
       StudentSubscription.updateMany(
         { student: studentId, status: { $nin: ['completed', 'cancelled'] } },

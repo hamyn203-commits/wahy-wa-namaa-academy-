@@ -56,7 +56,7 @@ router.get('/session/:id', protect, async (req, res) => {
         .select('children.student children.permissions')
         .lean();
       for (const child of guardian?.children || []) {
-        const canObserve = child?.permissions?.viewAttendance !== false || child?.permissions?.viewProgress !== false;
+        const canObserve = child?.permissions?.viewAttendance !== false;
         if (canObserve && child?.student && (await sessionIncludesStudent(session, child.student))) {
           isGuardianObserver = true;
           break;
@@ -87,13 +87,14 @@ router.get('/session/:id', protect, async (req, res) => {
       }
     }
 
-    let meeting;
-    if (session.meetingLink) {
-      meeting = { url: session.meetingLink, provider: session.meetingProvider || 'jitsi' };
-    } else {
-      meeting = meetingService.attachToSession(session);
-      await session.save();
-    }
+    const hasUnsafeLegacyLink = (
+      !session.meetingLink
+      || /meet\.jit\.si/i.test(String(session.meetingLink))
+      || (/zoom\.us\/j\//i.test(String(session.meetingLink)) && !process.env.ZOOM_MEETING_BASE_URL)
+    );
+    const meeting = hasUnsafeLegacyLink
+      ? meetingService.generateMeetingLink(session._id, 'livekit')
+      : { url: session.meetingLink, provider: session.meetingProvider || 'livekit' };
 
     res.json({
       session: { _id: session._id, scheduledAt: session.scheduledAt, status: session.status },
@@ -105,7 +106,7 @@ router.get('/session/:id', protect, async (req, res) => {
   }
 });
 
-router.post('/session/:id/regenerate', protect, authorize('teacher', 'admin'), async (req, res) => {
+router.post('/session/:id/regenerate', protect, authorize('admin'), async (req, res) => {
   try {
     const { provider } = req.body;
     const session = await Session.findById(req.params.id);
@@ -113,13 +114,6 @@ router.post('/session/:id/regenerate', protect, authorize('teacher', 'admin'), a
 
     if (session.status !== 'accepted') {
       return res.status(400).json({ error: 'Meeting links can only be regenerated for accepted sessions' });
-    }
-
-    if (req.user.role === 'teacher') {
-      const teacher = await Teacher.findOne({ user: req.user.id });
-      if (!teacher || String(session.teacher) !== String(teacher._id)) {
-        return res.status(403).json({ error: 'Not your session' });
-      }
     }
 
     const meeting = meetingService.attachToSession(session, provider);
@@ -134,7 +128,7 @@ router.post('/session/:id/regenerate', protect, authorize('teacher', 'admin'), a
 router.get('/providers', protect, (_req, res) => {
   res.json({
     providers: meetingService.PROVIDERS,
-    default: process.env.DEFAULT_MEETING_PROVIDER || 'jitsi',
+    default: 'livekit',
   });
 });
 
