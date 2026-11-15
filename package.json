@@ -23,7 +23,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@livekit/components-react": "^2.9.21",
+    "@livekit/components-react": "^2.9.25",
     "@livekit/components-styles": "^1.2.0",
     "@vercel/blob": "^2.0.0",
     "express": "^5.2.1",
