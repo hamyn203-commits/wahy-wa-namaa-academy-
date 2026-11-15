@@ -13,6 +13,49 @@ const Certificate = require('../models/Certificate');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
 const { notifyCourseEnrollment, notifyCertificateIssued } = require('../utils/notify');
 const { isMockMode } = require('../config/runtime');
+const objectStorage = require('../services/objectStorage');
+
+function isPrivateCourseMediaRef(url) {
+  const pathname = objectStorage.extractPathname(url);
+  return Boolean(pathname && pathname.startsWith('uploads/course-media/'));
+}
+
+function sanitizeLessonForViewer(lessonDoc, courseSlug) {
+  const lesson = typeof lessonDoc?.toObject === 'function' ? lessonDoc.toObject() : { ...lessonDoc };
+  if (lesson.content?.quiz && Array.isArray(lesson.content.quiz.questions)) {
+    lesson.content = {
+      ...lesson.content,
+      quiz: {
+        ...lesson.content.quiz,
+        questions: lesson.content.quiz.questions.map((question) => {
+          const safeQ = { ...question };
+          delete safeQ.correctAnswer;
+          delete safeQ.explanation;
+          if (Array.isArray(safeQ.options)) {
+            safeQ.options = safeQ.options.map((opt) => {
+              const safeOpt = { ...opt };
+              delete safeOpt.isCorrect;
+              return safeOpt;
+            });
+          }
+          return safeQ;
+        }),
+      },
+    };
+  }
+  const rawVideoUrl = lesson.content?.video?.url || '';
+  if (rawVideoUrl && isPrivateCourseMediaRef(rawVideoUrl)) {
+    lesson.content = {
+      ...lesson.content,
+      video: {
+        ...lesson.content.video,
+        url: '',
+        protectedMediaUrl: `/api/lms/course/${encodeURIComponent(courseSlug)}/lesson/${lesson._id}/media`,
+      },
+    };
+  }
+  return lesson;
+}
 
 async function getCourseBySlug(slug) {
   return Course.findOne({ slug, status: 'published' });
@@ -63,18 +106,24 @@ async function resolveLessonCompletionScore(lesson, studentId) {
     const submission = await AssignmentSubmission.findOne({
       assignment: assignmentId,
       student: studentId,
-      status: { $in: ['submitted', 'graded', 'late'] },
+      status: 'graded',
     }).lean();
     if (!submission) {
-      const err = new Error('Assignment not submitted');
+      const err = new Error('Assignment not graded');
       err.statusCode = 400;
-      err.publicMessage = 'Assignment must be submitted before completing this lesson';
-      err.code = 'ASSIGNMENT_REQUIRED';
+      err.publicMessage = 'Assignment must be graded and passed before completing this lesson';
+      err.code = 'ASSIGNMENT_NOT_GRADED';
       throw err;
     }
-    return submission.grade?.percentage != null
-      ? Math.round(Number(submission.grade.percentage))
-      : 100;
+    const pct = Number(submission.grade?.percentage ?? 0);
+    if (!Number.isFinite(pct) || pct < 60) {
+      const err = new Error('Assignment passing score not met');
+      err.statusCode = 400;
+      err.publicMessage = 'Assignment passing score has not been reached';
+      err.code = 'ASSIGNMENT_NOT_PASSED';
+      throw err;
+    }
+    return Math.round(pct);
   }
 
   return 100;
@@ -170,7 +219,11 @@ router.get('/course/:slug', protect, attachTeacherProfile, authorize('student', 
     }
 
     const lessons = await Lesson.find({ course: course._id, isPublished: true }).sort({ order: 1 });
-    res.json({ course, lessons, enrollment });
+    res.json({
+      course,
+      lessons: lessons.map((item) => sanitizeLessonForViewer(item, course.slug)),
+      enrollment,
+    });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -268,9 +321,56 @@ router.get('/course/:slug/lesson/:lessonId', protect, attachTeacherProfile, auth
       (cl) => cl.lesson.toString() === lesson._id.toString()
     ) || false;
 
-    res.json({ lesson, enrollment, completed, courseId: course._id });
+    res.json({
+      lesson: sanitizeLessonForViewer(lesson, course.slug),
+      enrollment,
+      completed,
+      courseId: course._id,
+    });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+// GET /api/lms/course/:slug/lesson/:lessonId/media — authenticated temporary playback URL for private course media
+router.get('/course/:slug/lesson/:lessonId/media', protect, attachTeacherProfile, authorize('student', 'teacher', 'admin'), async (req, res) => {
+  try {
+    const course = await getCourseBySlug(req.params.slug);
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    const lesson = await Lesson.findOne({ _id: req.params.lessonId, course: course._id, isPublished: true }).lean();
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+    if (req.user.role === 'student' && !lesson.isFree) {
+      const enrolled = await Enrollment.exists({
+        student: req.user.id,
+        course: course._id,
+        status: { $in: ['active', 'completed'] },
+      });
+      if (!enrolled) {
+        return res.status(403).json({ error: 'Not enrolled in this course', code: 'ENROLLMENT_REQUIRED' });
+      }
+    } else if (
+      req.user.role === 'teacher' &&
+      (!req.user.teacherProfile || String(course.instructor) !== String(req.user.teacherProfile))
+    ) {
+      return res.status(403).json({ error: 'Not authorized to access this course' });
+    }
+
+    const rawVideoUrl = String(lesson.content?.video?.url || '').trim();
+    if (!rawVideoUrl || !isPrivateCourseMediaRef(rawVideoUrl)) {
+      return res.status(404).json({ error: 'No private course media attached to this lesson' });
+    }
+
+    const signed = await objectStorage.createTemporaryReadUrl(rawVideoUrl, { expiresIn: 15 * 60 });
+    if (!signed?.url) {
+      return res.status(404).json({ error: 'Course media is temporarily unavailable' });
+    }
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ url: signed.url, expiresAt: signed.expiresAt });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

@@ -168,7 +168,7 @@ export function renderStaticRouteHtml(templateHtml, route, locale, siteUrl) {
   html = html.replace(/<html\b[^>]*>/i, `<html lang="${locale}" dir="${dir}">`);
   html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`);
 
-  html = html.replace(/<script\s+data-seo-bootstrap[^>]*>[\s\S]*?<\/script>\s*/gi, '');
+  html = html.replace(/<script\b[^>]*\bdata-seo-bootstrap\b[^>]*>[\s\S]*?<\/script>\s*/gi, '');
   html = html.replace(/<link\b[^>]*rel=["']canonical["'][^>]*>\s*/gi, '');
   html = html.replace(/<link\b[^>]*rel=["']alternate["'][^>]*hreflang=["'][^"']*["'][^>]*>\s*/gi, '');
   html = html.replace(/<meta\b[^>]*property=["']og:locale:alternate["'][^>]*>\s*/gi, '');

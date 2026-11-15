@@ -6,6 +6,7 @@ function childIdOf(child) {
 }
 
 function findChildAccess(guardian, studentId) {
+  if (!guardian || guardian.isActive === false) return null;
   const wanted = String(studentId || '');
   const child = guardian?.children?.find((entry) => childIdOf(entry) === wanted);
   if (!child) return null;

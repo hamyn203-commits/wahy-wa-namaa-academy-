@@ -2,20 +2,27 @@ function normalizeOrigin(value) {
   return String(value || '').trim().replace(/\/$/, '');
 }
 
+function isValidProductionOrigin(origin) {
+  if (!origin || !/^https:\/\//i.test(origin)) return false;
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin)) return false;
+  return true;
+}
+
 function configuredOrigins() {
   const origins = new Set();
+  const isProduction = process.env.NODE_ENV === 'production';
 
   for (const value of String(process.env.ALLOWED_ORIGINS || '').split(',')) {
     const origin = normalizeOrigin(value);
-    if (origin) origins.add(origin);
+    if (origin && (!isProduction || isValidProductionOrigin(origin))) origins.add(origin);
   }
 
   for (const name of ['FRONTEND_URL', 'SITE_URL']) {
     const origin = normalizeOrigin(process.env[name]);
-    if (origin) origins.add(origin);
+    if (origin && (!isProduction || isValidProductionOrigin(origin))) origins.add(origin);
   }
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     origins.add('http://localhost:5173');
     origins.add('http://localhost:5174');
     origins.add('http://localhost:5175');
@@ -37,7 +44,7 @@ function isTrustedOrigin(origin) {
     return true;
   }
 
-  if (process.env.ALLOW_VERCEL_PREVIEW_ORIGINS === 'true') {
+  if (process.env.ALLOW_VERCEL_PREVIEW_ORIGINS === 'true' && process.env.NODE_ENV !== 'production') {
     const teamSlug = String(process.env.VERCEL_TEAM_SLUG || '').trim().toLowerCase();
     if (/^[a-z0-9-]+$/.test(teamSlug)) {
       const escapedSlug = teamSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

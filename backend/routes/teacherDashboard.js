@@ -79,14 +79,20 @@ router.get('/profile', protect, authorize('teacher'), async (req, res) => {
       count: reviewCount,
     };
 
+    const balances = (mongoose.connection.readyState === 1 || TeacherLedger.find !== mongoose.Model.find)
+      ? await calculateTeacherBalance(teacher._id).catch(() => null)
+      : null;
+
     res.json({
       teacher: teacherValue,
       wallet: {
         sessionRate: Number(teacher.hourlyRate || SESSION_RATE),
         sessionDurationMinutes: 60,
-        pendingEarnings: teacher.earnings.pendingEarnings,
-        totalEarned: teacher.earnings.totalEarned,
-        withdrawn: teacher.earnings.withdrawnEarnings,
+        pendingEarnings: balances ? balances.EGP.pending : teacher.earnings.pendingEarnings,
+        totalEarned: balances ? balances.EGP.available : teacher.earnings.totalEarned,
+        grossTotalEarned: balances ? balances.EGP.totalEarned : (teacher.earnings.totalEarned + teacher.earnings.withdrawnEarnings),
+        withdrawn: balances ? balances.EGP.withdrawn : teacher.earnings.withdrawnEarnings,
+        balances: balances || undefined,
         completedSessions: teacher.stats.totalSessions,
       },
     });
@@ -106,7 +112,7 @@ router.get('/profile-change', protect, authorize('teacher'), async (req, res) =>
 
     const request = await TeacherProfileChangeRequest.findOne({ teacher: teacher._id })
       .sort({ createdAt: -1 })
-      .populate('reviewedBy', 'name email')
+      .populate('reviewedBy', 'name')
       .lean();
 
     return res.json({ request: request || null });
@@ -559,14 +565,24 @@ router.get('/stats', protect, authorize('teacher'), async (req, res) => {
       status: 'completed' 
     });
 
+    const balances = (mongoose.connection.readyState === 1 || TeacherLedger.find !== mongoose.Model.find)
+      ? await calculateTeacherBalance(teacher._id).catch(() => null)
+      : null;
+
     const totalHours = Math.round(teacher.stats.totalHours);
-    const totalEarnings = teacher.earnings.totalEarned + teacher.earnings.withdrawnEarnings;
+    const totalEarnings = balances
+      ? balances.EGP.totalEarned
+      : (teacher.earnings.totalEarned + teacher.earnings.withdrawnEarnings);
+    const pendingEarnings = balances
+      ? balances.EGP.pending
+      : teacher.earnings.pendingEarnings;
 
     res.json({
       totalStudents: teacher.stats.totalStudents,
       totalSessions: completedSessions,
       totalHours,
-      pendingEarnings: teacher.earnings.pendingEarnings,
+      pendingEarnings,
+      availableEarnings: balances ? balances.EGP.available : teacher.earnings.totalEarned,
       totalEarnings,
       averageRating: Number(teacher.rating?.count || 0) > 0 ? Number(teacher.rating?.average || 0) : 0,
       sessionRate: Number(teacher.hourlyRate || SESSION_RATE),
@@ -651,15 +667,17 @@ router.get('/analytics', protect, authorize('teacher'), async (req, res) => {
 
     const [allSessions, tasks, ledgerEntries, balances] = await Promise.all([
       Session.find({ teacher: teacher._id })
+        .sort({ scheduledAt: -1 })
+        .limit(2000)
         .select('student type status scheduledAt updatedAt duration')
         .lean(),
-      TeacherTask.find({ teacher: teacher._id }).select('status').lean(),
+      TeacherTask.find({ teacher: teacher._id }).sort({ createdAt: -1 }).limit(1000).select('status').lean(),
       TeacherLedger.find({
         teacher: teacher._id,
         type: 'session_earning',
         status: 'completed',
         createdAt: { $gte: sixMonthsAgo },
-      }).select('amount currency createdAt').lean(),
+      }).sort({ createdAt: -1 }).limit(2000).select('amount currency createdAt').lean(),
       calculateTeacherBalance(teacher._id),
     ]);
 

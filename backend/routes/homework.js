@@ -72,9 +72,24 @@ async function streamPrivateFile(res, req, reference) {
     if (!result) return res.status(404).json({ error: 'File not found' });
     if (result.statusCode === 304) return res.status(304).end();
 
-    res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+    const SAFE_HOMEWORK_STREAM_TYPES = new Set([
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/ogg',
+      'audio/webm',
+      'audio/mp4',
+      'audio/aac',
+      'audio/x-m4a',
+    ]);
+    const rawMime = String(result.blob?.contentType || '').split(';', 1)[0].trim().toLowerCase();
+    res.setHeader('Content-Type', SAFE_HOMEWORK_STREAM_TYPES.has(rawMime) ? rawMime : 'application/octet-stream');
     res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Cache-Control', 'private, no-store');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 
@@ -341,13 +356,23 @@ router.post('/:homeworkId/submit', protect, authorize('student'), upload.single(
 
     if (directFile) {
       const reference = directFile.url || directFile.pathname;
+      const driver = objectStorage.getDriver();
       const validReference =
         Boolean(reference) &&
         objectStorage.referenceMatches(reference, 'homework', req.user.id) &&
-        (objectStorage.getDriver() !== 'vercel-blob' || objectStorage.isVercelBlobReference(reference));
+        ((driver !== 'vercel-blob' && driver !== 's3') || objectStorage.isOwnedObjectReference(reference, 'homework', req.user.id));
 
       if (!validReference) {
         return res.status(400).json({ error: 'Invalid homework upload reference' });
+      }
+
+      const magicVerify = await objectStorage.verifyUploadedObjectMagicBytes(
+        reference,
+        directFile.contentType,
+        25 * 1024 * 1024
+      );
+      if (!magicVerify.ok) {
+        return res.status(400).json({ error: magicVerify.error, code: magicVerify.code });
       }
     }
 

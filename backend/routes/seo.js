@@ -75,7 +75,7 @@ router.get('/sitemap.xml', async (_req, res) => {
           .sort({ updatedAt: -1 })
           .limit(500)
           .lean(),
-        Teacher.find({ status: 'approved', isActive: { $ne: false } })
+        Teacher.find({ status: 'approved', isVerified: true, isActive: { $ne: false } })
           .select('_id updatedAt')
           .sort({ updatedAt: -1 })
           .limit(500)

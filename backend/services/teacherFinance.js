@@ -49,6 +49,9 @@ async function withInProcessTeacherLock(teacherId, work) {
 
 async function runWithOptionalMongoTransaction(work) {
   if (typeof mongoose.startSession !== 'function' || mongoose.connection.readyState !== 1) {
+    if (process.env.NODE_ENV === 'production') {
+      throw createFinanceError(503, 'خدمة المعاملات المالية غير متاحة حالياً', 'FINANCE_TRANSACTION_UNAVAILABLE');
+    }
     return work(null);
   }
   const dbSession = await mongoose.startSession();
@@ -95,26 +98,66 @@ async function calculateTeacherBalance(teacherId, { session = null } = {}) {
   if (!session) {
     await ensureLegacyOpeningEntries(teacherId);
   }
-  const ledgerEntries = await attachSession(TeacherLedger.find({ teacher: teacherId }), session);
 
   const minor = {
     EGP: { earned: 0, deducted: 0, pending: 0, withdrawn: 0 },
     USD: { earned: 0, deducted: 0, pending: 0, withdrawn: 0 },
   };
 
-  for (const entry of ledgerEntries) {
-    const currency = entry.currency === 'USD' ? 'USD' : 'EGP';
-    const amountMinor = toMinor(entry.amount);
+  const canAggregateInDb = (
+    mongoose.connection.readyState === 1
+    && TeacherLedger.find === mongoose.Model.find
+    && typeof TeacherLedger.aggregate === 'function'
+    && mongoose.Types.ObjectId.isValid(String(teacherId))
+  );
 
-    if (['session_earning', 'bonus', 'adjustment'].includes(entry.type) && entry.status === 'completed') {
-      minor[currency].earned += amountMinor;
-    } else if (entry.type === 'deduction' && entry.status === 'completed') {
-      minor[currency].deducted += amountMinor;
-    } else if (entry.type === 'payout') {
-      if (entry.status === 'pending' || entry.status === 'processing') {
-        minor[currency].pending += amountMinor;
-      } else if (entry.status === 'completed') {
-        minor[currency].withdrawn += amountMinor;
+  if (canAggregateInDb) {
+    let agg = TeacherLedger.aggregate([
+      { $match: { teacher: new mongoose.Types.ObjectId(String(teacherId)) } },
+      {
+        $group: {
+          _id: { currency: '$currency', type: '$type', status: '$status' },
+          totalMinor: { $sum: { $round: [{ $multiply: ['$amount', 100] }, 0] } },
+        },
+      },
+    ]);
+    if (session && typeof agg.session === 'function') {
+      agg = agg.session(session);
+    }
+    const grouped = await agg;
+    for (const row of grouped) {
+      const currency = row._id?.currency === 'USD' ? 'USD' : 'EGP';
+      const amountMinor = Number(row.totalMinor) || 0;
+      const type = row._id?.type;
+      const status = row._id?.status;
+      if (['session_earning', 'bonus', 'adjustment'].includes(type) && status === 'completed') {
+        minor[currency].earned += amountMinor;
+      } else if (type === 'deduction' && status === 'completed') {
+        minor[currency].deducted += amountMinor;
+      } else if (type === 'payout') {
+        if (status === 'pending' || status === 'processing') {
+          minor[currency].pending += amountMinor;
+        } else if (status === 'completed') {
+          minor[currency].withdrawn += amountMinor;
+        }
+      }
+    }
+  } else {
+    const ledgerEntries = await attachSession(TeacherLedger.find({ teacher: teacherId }), session);
+    for (const entry of ledgerEntries) {
+      const currency = entry.currency === 'USD' ? 'USD' : 'EGP';
+      const amountMinor = toMinor(entry.amount);
+
+      if (['session_earning', 'bonus', 'adjustment'].includes(entry.type) && entry.status === 'completed') {
+        minor[currency].earned += amountMinor;
+      } else if (entry.type === 'deduction' && entry.status === 'completed') {
+        minor[currency].deducted += amountMinor;
+      } else if (entry.type === 'payout') {
+        if (entry.status === 'pending' || entry.status === 'processing') {
+          minor[currency].pending += amountMinor;
+        } else if (entry.status === 'completed') {
+          minor[currency].withdrawn += amountMinor;
+        }
       }
     }
   }
@@ -667,6 +710,87 @@ async function listTeacherTransactions(teacherId, {
   };
 }
 
+async function recordTeacherDeduction({
+  teacherId,
+  amount,
+  currency = 'EGP',
+  reason,
+  adminUserId,
+  idempotencyKey,
+}) {
+  const numAmount = Number(amount);
+  const curr = String(currency || 'EGP').trim().toUpperCase();
+  const cleanReason = String(reason || '').trim().slice(0, 500);
+
+  if (!teacherId || !mongoose.Types.ObjectId.isValid(String(teacherId))) {
+    throw createFinanceError(400, 'معرف المعلم غير صالح', 'INVALID_TEACHER_ID');
+  }
+  if (!Number.isFinite(numAmount) || numAmount <= 0 || Math.abs(Math.round(numAmount * 100) - (numAmount * 100)) > 1e-6) {
+    throw createFinanceError(400, 'مبلغ الخصم غير صالح', 'INVALID_DEDUCTION_AMOUNT');
+  }
+  if (!['EGP', 'USD'].includes(curr)) {
+    throw createFinanceError(400, 'العملة يجب أن تكون EGP أو USD', 'INVALID_DEDUCTION_CURRENCY');
+  }
+  if (!cleanReason) {
+    throw createFinanceError(400, 'سبب القيد العكسي مطلوب', 'DEDUCTION_REASON_REQUIRED');
+  }
+
+  const normalizedAmount = fromMinor(toMinor(numAmount));
+  const cleanKey = idempotencyKey
+    ? `admin-deduction:${String(idempotencyKey).trim().slice(0, 180)}`
+    : undefined;
+
+  await ensureLegacyOpeningEntries(teacherId);
+
+  return withInProcessTeacherLock(teacherId, () =>
+    runWithOptionalMongoTransaction(async (dbSession) => {
+      const teacher = await attachSession(Teacher.findById(teacherId), dbSession);
+      if (!teacher) {
+        throw createFinanceError(404, 'لم يتم العثور على ملف المعلم', 'TEACHER_NOT_FOUND');
+      }
+
+      if (dbSession && typeof Teacher.updateOne === 'function') {
+        await Teacher.updateOne(
+          { _id: teacherId },
+          { $inc: { ledgerLockVersion: 1 } },
+          { session: dbSession }
+        );
+      }
+
+      if (cleanKey) {
+        const existing = await attachSession(TeacherLedger.findOne({ idempotencyKey: cleanKey }), dbSession);
+        if (existing) return existing;
+      }
+
+      const deductionDoc = {
+        teacher: teacher._id,
+        type: 'deduction',
+        amount: normalizedAmount,
+        currency: curr,
+        status: 'completed',
+        processedBy: adminUserId,
+        processedAt: new Date(),
+        notes: cleanReason,
+        description: `خصم إداري: ${cleanReason.slice(0, 120)}`,
+        ...(cleanKey ? { idempotencyKey: cleanKey } : {}),
+      };
+
+      try {
+        const created = await TeacherLedger.create(
+          [deductionDoc],
+          dbSession ? { session: dbSession } : undefined
+        );
+        return Array.isArray(created) ? created[0] : created;
+      } catch (error) {
+        if (error?.code === 11000 && cleanKey) {
+          return attachSession(TeacherLedger.findOne({ idempotencyKey: cleanKey }), dbSession);
+        }
+        throw error;
+      }
+    })
+  );
+}
+
 module.exports = {
   MIN_PAYOUT_EGP,
   MIN_PAYOUT_USD,
@@ -683,5 +807,6 @@ module.exports = {
   ensureSessionEarning,
   requestTeacherPayout,
   processTeacherPayout,
+  recordTeacherDeduction,
   listTeacherTransactions,
 };

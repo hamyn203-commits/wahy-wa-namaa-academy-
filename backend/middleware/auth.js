@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
@@ -77,7 +78,9 @@ const generateRefreshToken = (user) => {
   return jwt.sign(
     {
       id: user._id || user.id,
+      role: user.role,
       v: Number(user.refreshTokenVersion || 0),
+      jti: crypto.randomUUID(),
     },
     refreshSecret(),
     { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d', algorithm: 'HS256' }
@@ -91,7 +94,7 @@ async function loadLiveSessionState(userId) {
     const query = User.findById(userId);
     let user = null;
     if (query && typeof query.select === 'function') {
-      const selected = query.select('role isActive +refreshTokenVersion +sessionsRevokedAt');
+      const selected = query.select('role isActive +refreshTokenVersion +sessionsRevokedAt +lockUntil');
       user = typeof selected?.lean === 'function' ? await selected.lean() : await selected;
     } else {
       user = await query;
@@ -113,6 +116,9 @@ function evaluateRevocation(decoded, liveUser, mode) {
   if (liveUser.isActive === false) {
     return { status: 403, body: { error: 'Account is deactivated. Please contact support.', code: 'ACCOUNT_DEACTIVATED' } };
   }
+  if (liveUser.lockUntil && new Date(liveUser.lockUntil).getTime() > Date.now()) {
+    return { status: 423, body: { error: 'Account is temporarily locked', code: 'ACCOUNT_LOCKED' } };
+  }
   if (liveUser.role && decoded.role && liveUser.role !== decoded.role) {
     return { status: 401, body: { error: 'Session role invalidated', code: 'SESSION_REVOKED' } };
   }
@@ -128,6 +134,34 @@ function evaluateRevocation(decoded, liveUser, mode) {
     }
   }
   return null;
+}
+
+async function verifyAccessTokenString(token) {
+  const decoded = jwt.verify(String(token || ''), accessSecret(), { algorithms: ['HS256'] });
+  const { mode, user: liveUser } = await loadLiveSessionState(decoded?.id);
+  const rejection = evaluateRevocation(decoded, liveUser, mode);
+  if (rejection) {
+    const err = new Error(rejection.body.error || 'Session revoked');
+    err.status = rejection.status;
+    err.code = rejection.body.code;
+    throw err;
+  }
+  return { decoded, liveUser };
+}
+
+async function verifyLiveSessionPrincipal(userId, expectedRole, tokenIat) {
+  if (!userId) return true;
+  const { mode, user: liveUser } = await loadLiveSessionState(userId);
+  if (mode === 'db' && !liveUser) return false;
+  if (!liveUser) return true;
+  if (liveUser.isActive === false) return false;
+  if (liveUser.lockUntil && new Date(liveUser.lockUntil).getTime() > Date.now()) return false;
+  if (expectedRole && liveUser.role && liveUser.role !== expectedRole) return false;
+  if (liveUser.sessionsRevokedAt && tokenIat) {
+    const revokedMs = new Date(liveUser.sessionsRevokedAt).getTime();
+    if (Number.isFinite(revokedMs) && tokenIat * 1000 < revokedMs - 1000) return false;
+  }
+  return true;
 }
 
 const verifyAccessToken = async (req, res, next) => {
@@ -221,6 +255,9 @@ function readCookie(req, name) {
 }
 
 function readRefreshCookie(req) {
+  if (process.env.NODE_ENV === 'production') {
+    return readCookie(req, '__Secure-wn_refresh') || null;
+  }
   return readCookie(req, '__Secure-wn_refresh') || readCookie(req, 'wn_refresh') || null;
 }
 
@@ -281,6 +318,8 @@ module.exports = {
   generateAccessToken,
   generateRefreshToken,
   verifyAccessToken,
+  verifyAccessTokenString,
+  verifyLiveSessionPrincipal,
   verifyRefreshToken,
   readRefreshTokenIfValid,
   readAccessTokenIfValid,

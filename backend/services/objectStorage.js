@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { validateMagicBytes } = require('../utils/magicBytes');
 
 let s3Client = null;
 
@@ -143,12 +144,14 @@ function publicProxyUrl(reference) {
   return reference;
 }
 
-async function createUploadUrl({ key, contentType, expiresIn = 600 }) {
+async function createUploadUrl({ key, contentType, size, expiresIn = 600 }) {
   if (getDriver() !== 's3') throw new Error('Presigned S3 uploads are not enabled');
+  const numericSize = Number(size);
   const command = new PutObjectCommand({
     Bucket: process.env.S3_BUCKET,
     Key: key,
     ContentType: contentType || 'application/octet-stream',
+    ...(Number.isFinite(numericSize) && numericSize > 0 ? { ContentLength: Math.floor(numericSize) } : {}),
   });
   return getSignedUrl(getS3Client(), command, { expiresIn });
 }
@@ -328,6 +331,64 @@ async function deleteObject(reference) {
   throw new Error('External object storage is not configured for deletion');
 }
 
+async function verifyUploadedObjectMagicBytes(reference, expectedContentType, maxBytes = 0) {
+  const driver = getDriver();
+  if (driver !== 'vercel-blob' && driver !== 's3') {
+    return { ok: true, skipped: true };
+  }
+  const normalizedExpected = String(expectedContentType || '').split(';', 1)[0].trim().toLowerCase();
+  try {
+    if (maxBytes > 0) {
+      const meta = await inspectPrivateMedia(reference);
+      if (!meta || (Number(meta.sizeBytes) > maxBytes)) {
+        await deleteObject(reference).catch(() => {});
+        return { ok: false, code: 'FILE_TOO_LARGE', error: 'Uploaded file exceeds the maximum allowed size' };
+      }
+    }
+    const result = await getPrivateObject(reference, { headers: { Range: 'bytes=0-63' } });
+    if (!result || !result.stream) {
+      return { ok: false, code: 'UPLOAD_OBJECT_NOT_FOUND', error: 'Uploaded file was not found in storage' };
+    }
+    const chunks = [];
+    let collected = 0;
+    if (typeof result.stream.getReader === 'function') {
+      const reader = result.stream.getReader();
+      while (collected < 64) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const buf = Buffer.from(value);
+        chunks.push(buf);
+        collected += buf.length;
+      }
+      await reader.cancel().catch(() => {});
+    } else {
+      for await (const part of result.stream) {
+        const buf = Buffer.isBuffer(part) ? part : Buffer.from(part);
+        chunks.push(buf);
+        collected += buf.length;
+        if (collected >= 64) {
+          if (typeof result.stream.destroy === 'function') result.stream.destroy();
+          break;
+        }
+      }
+    }
+    const header = Buffer.concat(chunks).subarray(0, 64);
+    const magic = validateMagicBytes(header, normalizedExpected);
+    if (!magic.valid) {
+      await deleteObject(reference).catch(() => {});
+      return {
+        ok: false,
+        code: 'INVALID_FILE_MAGIC_BYTES',
+        error: 'Uploaded file content does not match declared file type',
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.warn('Direct upload magic-byte verification failed:', error.message);
+    return { ok: false, code: 'UPLOAD_VERIFICATION_FAILED', error: 'Unable to verify uploaded file signature' };
+  }
+}
+
 async function deleteOwnedObject(reference, purpose, owner) {
   if (!isOwnedObjectReference(reference, purpose, owner)) {
     throw new Error('Object reference does not belong to this owner and purpose');
@@ -353,6 +414,7 @@ module.exports = {
   createTemporaryReadUrl,
   inspectPrivateMedia,
   probeTemporaryMediaUrl,
+  verifyUploadedObjectMagicBytes,
   deleteObject,
   deleteOwnedObject,
 };

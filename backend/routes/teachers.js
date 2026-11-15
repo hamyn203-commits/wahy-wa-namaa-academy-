@@ -9,11 +9,13 @@ const Teacher = require('../models/Teacher');
 const TeacherProfileChangeRequest = require('../models/TeacherProfileChangeRequest');
 const User = require('../models/User');
 const Session = require('../models/Session');
-const { protect, authorize, getAccessSecret } = require('../middleware/auth');
+const { protect, authorize, getAccessSecret, verifyAccessTokenString, verifyLiveSessionPrincipal } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
 const crypto = require('crypto');
 const { boundedMediaRange } = require('../utils/mediaByteRange');
 const { resolveOwnedTeacherAssets } = require('../utils/teacherAssetLifecycle');
+const { deleteStoredReference } = require('../utils/storageLifecycle');
+const { consumeVerificationTokenJti } = require('./verification');
 const { sendEmail } = require('../services/notificationDispatcher');
 const { notifyAdmins, notifyUser } = require('../utils/notify');
 const AdminAuditLog = require('../models/AdminAuditLog');
@@ -75,6 +77,24 @@ const externalStorage =
   process.env.FILE_STORAGE_DRIVER === 'external' ||
   ['vercel-blob', 's3'].includes(objectStorage.getDriver());
 
+const SAFE_ADMIN_ASSET_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/ogg',
+]);
+
+function clampSafeAdminMime(rawMime, fallback = 'application/octet-stream') {
+  const clean = String(rawMime || '').split(';')[0].trim().toLowerCase();
+  return SAFE_ADMIN_ASSET_MIMES.has(clean) ? clean : fallback;
+}
+
 async function streamAdminTeacherAsset(reference, res, { fallbackContentType = 'application/octet-stream' } = {}) {
   reference = objectStorage.unwrapPublicProxyReference(reference);
   if (!reference || reference === 'not-provided' || reference === '/default-teacher.png') {
@@ -83,6 +103,8 @@ async function streamAdminTeacherAsset(reference, res, { fallbackContentType = '
 
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  res.setHeader('Content-Disposition', 'attachment');
 
   if (/^https?:\/\//i.test(reference)) {
     // External object-storage references stay private and are streamed through
@@ -93,7 +115,7 @@ async function streamAdminTeacherAsset(reference, res, { fallbackContentType = '
 
     if (result) {
       if (result.statusCode === 304) return res.status(304).end();
-      res.setHeader('Content-Type', result.blob?.contentType || fallbackContentType);
+      res.setHeader('Content-Type', clampSafeAdminMime(result.blob?.contentType, fallbackContentType));
       if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 
       if (result.stream?.pipe) return result.stream.pipe(res);
@@ -238,11 +260,7 @@ function validateDirectUpload(value, purpose, owner) {
   const ref = directReference(value);
   if (!ref || !owner) return false;
 
-  if (objectStorage.getDriver() === 'vercel-blob' && !objectStorage.isVercelBlobReference(ref)) {
-    return false;
-  }
-
-  return objectStorage.referenceMatches(ref, purpose, owner);
+  return objectStorage.isOwnedObjectReference(ref, purpose, owner);
 }
 
 function validateDirectUploadList(values, purpose, owner) {
@@ -303,14 +321,16 @@ async function optionalTeacherRegistrationAuth(req, res, next) {
   const header = String(req.headers.authorization || '');
   if (!header.startsWith('Bearer ')) return next();
   try {
-    const identity = jwt.verify(header.slice(7), getAccessSecret(), { algorithms: ['HS256'] });
+    const { decoded: identity } = await verifyAccessTokenString(header.slice(7));
     if (identity.role !== 'teacher') return res.status(403).json({ error: 'Only teacher accounts can submit a teacher application' });
-    const account = await User.findById(identity.id).select('role isActive');
-    if (!account || account.role !== 'teacher' || account.isActive !== true) return res.status(403).json({ error: 'Teacher account not active' });
+    if (isDBConnected()) {
+      const account = await User.findById(identity.id).select('role isActive');
+      if (!account || account.role !== 'teacher' || account.isActive !== true) return res.status(403).json({ error: 'Teacher account not active' });
+    }
     req.user = identity;
     return next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid session. Please sign in again.' });
+  } catch (err) {
+    return res.status(err?.status || 401).json({ error: 'Invalid session. Please sign in again.' });
   }
 }
 
@@ -346,6 +366,7 @@ router.post(
     { name: 'audioRecordings', maxCount: 5 },
   ]),
   async (req, res) => {
+    let newlyCreatedUserId = null;
     try {
       const {
         personalInfo, academicInfo, quranInfo, languages, availability,
@@ -376,11 +397,13 @@ router.post(
       const parsedPersonalForVerification = personalInfo ? JSON.parse(personalInfo) : {};
 
       if (!userId) {
-        const teacherVerificationToken = verificationToken || phoneVerificationToken;
+        const teacherVerificationToken = verificationToken;
         if (!teacherVerificationToken) {
           return res.status(400).json({ error: 'Email verification is required' });
         }
 
+        let verifiedJti = null;
+        let verifiedExp = null;
         try {
           const verification = jwt.verify(
             teacherVerificationToken,
@@ -393,18 +416,23 @@ router.post(
               return res.status(400).json({ error: 'Email verification does not match this application' });
             }
             uploadOwner = verification.email;
-          } else if (
-            phoneVerificationToken &&
-            verification.purpose === 'teacher-phone-verification' &&
-            verification.phone === parsedPersonalForVerification.phone
-          ) {
-            // Transitional support for verification tokens issued before the email-OTP rollout.
-            uploadOwner = verification.phone;
+            verifiedJti = verification.jti || null;
+            verifiedExp = verification.exp || null;
           } else {
             return res.status(400).json({ error: 'Verification does not match this application' });
           }
         } catch {
           return res.status(400).json({ error: 'Email verification is invalid or expired' });
+        }
+
+        if (verifiedJti) {
+          const consumedOk = await consumeVerificationTokenJti(verifiedJti, verifiedExp);
+          if (!consumedOk) {
+            return res.status(409).json({
+              error: 'Verification token has already been used. Please request a fresh verification code.',
+              code: 'VERIFICATION_TOKEN_ALREADY_USED',
+            });
+          }
         }
 
         if (!normalizedEmail || !password) {
@@ -563,6 +591,7 @@ router.post(
           });
 
           userId = user._id;
+          newlyCreatedUserId = user._id;
         }
       }
 
@@ -694,6 +723,10 @@ router.post(
       };
 
       if (!coreMediaAreDistinct(media)) {
+        if (newlyCreatedUserId && isDBConnected()) {
+          await User.findByIdAndDelete(newlyCreatedUserId).catch(() => {});
+          newlyCreatedUserId = null;
+        }
         return res.status(400).json({
           error: 'Introduction, recitation, and teaching-method videos must be different files',
           code: 'TEACHER_CORE_MEDIA_MUST_BE_DISTINCT',
@@ -783,6 +816,9 @@ router.post(
       teacher
     });
   } catch (error) {
+    if (newlyCreatedUserId && isDBConnected()) {
+      await User.findByIdAndDelete(newlyCreatedUserId).catch(() => {});
+    }
     res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
@@ -796,7 +832,8 @@ router.post('/application-status', async (req, res) => {
 
     const payload = jwt.verify(
       token,
-      getAccessSecret()
+      getAccessSecret(),
+      { algorithms: ['HS256'] }
     );
 
     if (
@@ -805,6 +842,19 @@ router.post('/application-status', async (req, res) => {
       !payload.teacherId
     ) {
       return res.status(400).json({ error: 'Invalid application status token' });
+    }
+
+    if (isDBConnected()) {
+      const account = await User.findById(payload.userId).select('isActive role +sessionsRevokedAt').lean();
+      if (!account || account.isActive === false || account.role !== 'teacher') {
+        return res.status(403).json({ error: 'Account is inactive or unavailable' });
+      }
+      if (account.sessionsRevokedAt && payload.iat) {
+        const revokedMs = new Date(account.sessionsRevokedAt).getTime();
+        if (Number.isFinite(revokedMs) && payload.iat * 1000 < revokedMs - 1000) {
+          return res.status(401).json({ error: 'Application status token revoked' });
+        }
+      }
     }
 
     if (isMockMode && !isDBConnected()) {
@@ -1001,6 +1051,7 @@ router.get('/admin/:id/profile-change/media-playback/:kind', protect, authorize(
       kind: req.params.kind,
       index: 0,
       scope: 'proposed',
+      issuedBy: req.user?.id,
     });
 
     await logAdminAction({
@@ -1082,8 +1133,12 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
     const userDoc = await User.findById(teacher.user);
     if (!userDoc) return res.status(404).json({ error: 'Teacher account not found' });
 
+    const previousMediaSnapshot = { ...(teacher.media?.toObject?.() || teacher.media || {}) };
+    const proposedMedia = request.proposed?.media || {};
+    const ownerForCleanup = String(teacher.user?._id || teacher.user || request.user || '');
+
     if (action === 'approve') {
-      const mergedMedia = mergeTeacherMedia(teacher.media?.toObject?.() || teacher.media || {}, request.proposed?.media || {});
+      const mergedMedia = mergeTeacherMedia(previousMediaSnapshot, proposedMedia);
       if (!coreMediaAreDistinct(mergedMedia)) {
         return res.status(409).json({
           error: 'لا يمكن نشر التعديل لأن فيديوهات التعريف والتلاوة وطريقة التدريس يجب أن تكون ملفات مختلفة',
@@ -1094,8 +1149,22 @@ router.put('/admin/:id/profile-change/review', protect, authorize('admin'), asyn
       applyTeacherProfileChange(teacher, userDoc, request.proposed || {});
       await Promise.all([teacher.save(), userDoc.save()]);
       request.status = 'approved';
+
+      for (const mediaKey of ['profilePhoto', 'introductionVideo', 'recitationVideo', 'teachingMethodVideo']) {
+        const oldRef = previousMediaSnapshot[mediaKey];
+        const newRef = teacher.media?.[mediaKey];
+        if (oldRef && oldRef !== newRef && oldRef !== '/default-teacher.png' && ownerForCleanup) {
+          await deleteStoredReference(oldRef, { purpose: 'teacher-public', owner: ownerForCleanup }).catch(() => {});
+        }
+      }
     } else {
       request.status = 'rejected';
+      for (const mediaKey of ['profilePhoto', 'introductionVideo', 'recitationVideo', 'teachingMethodVideo']) {
+        const rejectedRef = proposedMedia[mediaKey];
+        if (rejectedRef && rejectedRef !== previousMediaSnapshot[mediaKey] && rejectedRef !== '/default-teacher.png' && ownerForCleanup) {
+          await deleteStoredReference(rejectedRef, { purpose: 'teacher-public', owner: ownerForCleanup }).catch(() => {});
+        }
+      }
     }
 
     request.adminNote = note;
@@ -1290,7 +1359,7 @@ const TEACHER_MEDIA_KINDS = new Set([
 ]);
 const TEACHER_MEDIA_TICKET_PURPOSE = 'teacher-admin-media-range';
 
-function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'original') {
+function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'original', issuedBy = undefined) {
   const indexNumber = Number(index ?? 0);
   const referenceDigest = crypto.createHash('sha256').update(String(reference)).digest('hex');
   const ticket = jwt.sign({
@@ -1300,7 +1369,8 @@ function createAdminMediaRangeUrl(teacherId, kind, index, reference, scope = 'or
     index: indexNumber,
     scope,
     referenceDigest,
-  }, getAccessSecret(), { expiresIn: '30m' });
+    ...(issuedBy ? { issuedBy: String(issuedBy) } : {}),
+  }, getAccessSecret(), { expiresIn: '30m', algorithm: 'HS256' });
   // The frontend rewrites /api to the backend. Keep video requests on the
   // academy's own origin: Helmet's same-origin CORP otherwise blocks media
   // loaded from the separate API domain in the browser.
@@ -1316,7 +1386,7 @@ class TeacherPlaybackError extends Error {
   }
 }
 
-async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index = 0, scope = 'original' }) {
+async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index = 0, scope = 'original', issuedBy = undefined }) {
   const metadata = await objectStorage.inspectPrivateMedia(reference);
   const size = Number(metadata?.sizeBytes);
   if (!Number.isSafeInteger(size) || size <= 0) {
@@ -1345,7 +1415,7 @@ async function createVerifiedTeacherPlayback(reference, { teacherId, kind, index
       else result?.stream?.destroy?.();
     }
     return {
-      url: createAdminMediaRangeUrl(teacherId, kind, index, reference, scope),
+      url: createAdminMediaRangeUrl(teacherId, kind, index, reference, scope, issuedBy),
       streamingMode: 'authenticated-range',
       contentType: metadata.contentType,
       sizeBytes: size,
@@ -1383,6 +1453,10 @@ router.get('/admin-media-range/:id/:kind/:index', async (req, res) => {
     const payload = jwt.verify(ticket, getAccessSecret(), {
       algorithms: ['HS256'],
     });
+    if (payload.issuedBy) {
+      const principalOk = await verifyLiveSessionPrincipal(payload.issuedBy, 'admin', payload.iat);
+      if (!principalOk) return res.status(401).end();
+    }
     const index = Number(req.params.index);
     if (
       payload.purpose !== TEACHER_MEDIA_TICKET_PURPOSE ||
@@ -1510,6 +1584,7 @@ router.get('/admin/:id/media-playback/:kind{/:index}', protect, authorize('admin
       kind: req.params.kind,
       index: req.params.index,
       scope: 'original',
+      issuedBy: req.user?.id,
     });
 
     await logAdminAction({
@@ -1576,8 +1651,10 @@ router.get('/admin/pending', protect, authorize('admin'), async (req, res) => {
   }
   try {
     const teachers = await Teacher.find({ status: { $in: ['pending', 'under-review'] } })
+      .select('-documents -storageOwner')
       .populate('user', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(200);
 
     res.json(teachers);
   } catch (error) {
@@ -1846,6 +1923,9 @@ router.get('/admin/:id/document/:kind{/:index}', protect, authorize('admin'), as
     }).catch(() => {});
 
     res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.setHeader('Content-Disposition', 'attachment');
 
     if (/^https?:\/\//i.test(stored)) {
       const result = await objectStorage.getPrivateObject(stored, {
@@ -1854,8 +1934,7 @@ router.get('/admin/:id/document/:kind{/:index}', protect, authorize('admin'), as
       if (!result) return res.status(404).json({ error: 'Document not found' });
       if (result.statusCode === 304) return res.status(304).end();
 
-      res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Type', clampSafeAdminMime(result.blob?.contentType, 'application/octet-stream'));
       if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 
       if (result.stream?.pipe) return result.stream.pipe(res);

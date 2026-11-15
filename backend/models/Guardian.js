@@ -163,6 +163,9 @@ GuardianSchema.methods.addChild = function(studentId, relationship, permissions 
 
 GuardianSchema.methods.removeChild = function(studentId) {
   this.children = this.children.filter(c => c.student.toString() !== studentId);
+  if (Array.isArray(this.reports)) {
+    this.reports = this.reports.filter(r => String(r.childId?._id || r.childId || r.student || '') !== String(studentId));
+  }
   return this.save();
 };
 
@@ -223,8 +226,9 @@ GuardianSchema.methods.generateReport = function(childId, type = 'weekly') {
 };
 
 GuardianSchema.methods.hasPermission = function(studentId, permission) {
+  if (this.isActive === false) return false;
   const child = this.children.find(c => c.student.toString() === studentId);
-  return child && child.permissions[permission];
+  return Boolean(child && child.permissions[permission]);
 };
 
 const Guardian = mongoose.model('Guardian', GuardianSchema);

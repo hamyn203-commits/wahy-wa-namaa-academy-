@@ -151,9 +151,10 @@ router.get('/', protect, attachTeacherProfile, async (req, res) => {
 router.get('/my-attempts/list', protect, authorize('student'), async (req, res) => {
   try {
     const attempts = await QuizAttempt.find({ student: req.user.id })
-      .populate({ path: 'quiz', select: 'title type', populate: { path: 'course', select: 'title' } })
-      .sort({ submittedAt: -1 });
-    res.json(attempts);
+      .populate({ path: 'quiz', select: 'title type settings availability', populate: { path: 'course', select: 'title' } })
+      .sort({ submittedAt: -1 })
+      .limit(100);
+    res.json(attempts.map(hideAttemptQuizAnswers));
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -167,12 +168,13 @@ router.get('/my-attempts', protect, authorize('student'), async (req, res) => {
     const attempts = await QuizAttempt.find({ student: req.user.id })
       .populate({
         path: 'quiz',
-        select: 'title type',
+        select: 'title type settings availability',
         populate: { path: 'course', select: 'title' }
       })
-      .sort({ submittedAt: -1 });
+      .sort({ submittedAt: -1 })
+      .limit(100);
 
-    res.json(attempts);
+    res.json(attempts.map(hideAttemptQuizAnswers));
   } catch (error) {
     console.error('Get my attempts error:', error);
     res.status(500).json({ error: 'Failed to fetch attempts' });

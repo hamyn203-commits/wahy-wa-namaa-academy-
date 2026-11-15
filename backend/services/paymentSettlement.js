@@ -20,6 +20,23 @@ async function createEnrollmentForSettledPayment(payment, session) {
   }).session(session);
 
   if (existing) {
+    if (existing.status === 'cancelled') {
+      existing.status = 'active';
+      existing.payment = {
+        amount: majorAmount(payment.amountMinor),
+        currency: payment.currency,
+        status: 'completed',
+        transactionId: payment.providerTransactionId,
+        paidAt: payment.settledAt || new Date(),
+      };
+      await existing.save({ session });
+      await Course.updateOne(
+        { _id: payment.course },
+        { $inc: { 'stats.enrolled': 1 } },
+        { session }
+      );
+      return { enrollment: existing, created: true };
+    }
     return { enrollment: existing, created: false };
   }
 
@@ -65,11 +82,17 @@ async function applyPaymobTransaction({
   transactionId,
   session,
 }) {
-  if (classification === 'pending' || classification === 'ignored') {
+  const effectiveClassification = (
+    classification === 'cancelled' && payment.status === 'succeeded'
+  )
+    ? 'refunded'
+    : classification;
+
+  if (effectiveClassification === 'pending' || effectiveClassification === 'ignored') {
     return { payment, enrollment: null, enrollmentCreated: false, changed: false };
   }
 
-  if (classification === 'succeeded') {
+  if (effectiveClassification === 'succeeded') {
     if (payment.status !== 'succeeded') {
       if (payment.status === 'created') {
         assertPaymentTransition('created', 'pending');
@@ -92,7 +115,7 @@ async function applyPaymobTransaction({
     };
   }
 
-  if (classification === 'failed') {
+  if (effectiveClassification === 'failed') {
     if (payment.status === 'failed') {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
@@ -105,7 +128,7 @@ async function applyPaymobTransaction({
     return { payment, enrollment: null, enrollmentCreated: false, changed: true };
   }
 
-  if (classification === 'cancelled') {
+  if (effectiveClassification === 'cancelled') {
     if (payment.status === 'cancelled') {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
@@ -121,7 +144,7 @@ async function applyPaymobTransaction({
     return { payment, enrollment: null, enrollmentCreated: false, changed: true };
   }
 
-  if (classification === 'refunded') {
+  if (effectiveClassification === 'refunded') {
     if (payment.status === 'refunded') {
       return { payment, enrollment: null, enrollmentCreated: false, changed: false };
     }
@@ -157,10 +180,10 @@ async function applyPaymobTransaction({
       && (mongoose.connection.readyState === 1 || Certificate.updateMany !== mongoose.Model.updateMany)
     ) {
       await Certificate.updateMany(
-        { user: payment.student, course: payment.course },
+        { student: payment.student, course: payment.course, status: 'active' },
         {
           $set: {
-            isValid: false,
+            status: 'revoked',
             revokedAt: new Date(),
             revocationReason: 'Payment refunded',
           },
@@ -225,8 +248,14 @@ async function processPaymobWebhook({
 
       event.payment = payment._id;
 
+      const isRefundEvent = classification === 'refunded'
+        || (classification === 'cancelled' && payment.status === 'succeeded');
+      const amountMatches = isRefundEvent
+        ? (Number.isFinite(Number(amountMinor)) && Number(amountMinor) > 0 && Number(amountMinor) <= Number(payment.amountMinor))
+        : Number(amountMinor) === Number(payment.amountMinor);
+
       if (
-        Number(amountMinor) !== Number(payment.amountMinor)
+        !amountMatches
         || String(currency || '').toUpperCase() !== String(payment.currency || '').toUpperCase()
         || (
           payment.providerOrderId

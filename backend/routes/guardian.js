@@ -1,4 +1,5 @@
 const { safeErrorMessage } = require('../utils/safeError');
+const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
@@ -55,7 +56,14 @@ async function verifyPhoneInvitationCodeRequirement(guardianUser, normalizedPhon
   const needsCode = duplicateCount > 1 || guardianUser?.phoneVerified !== true;
   if (!needsCode) return { ok: true };
   const submittedCode = String(rawLinkCode || '').trim().toUpperCase();
-  if (!submittedCode || !invitation?.linkCode || submittedCode !== String(invitation.linkCode).toUpperCase()) {
+  const expectedCode = invitation?.linkCode ? String(invitation.linkCode).toUpperCase() : '';
+  const codesMatch = Boolean(
+    submittedCode
+    && expectedCode
+    && submittedCode.length === expectedCode.length
+    && crypto.timingSafeEqual(Buffer.from(submittedCode, 'utf8'), Buffer.from(expectedCode, 'utf8'))
+  );
+  if (!codesMatch) {
     return {
       ok: false,
       code: 'GUARDIAN_CODE_REQUIRED',
@@ -167,6 +175,10 @@ router.get('/children', protect, authorize('guardian'), async (req, res) => {
         path: 'children.student',
         select: 'name email phone avatar circle currentLevel preferredTrack'
       });
+
+    if (guardian && guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
 
     // If guardian document doesn't exist yet, look up in User.children
     if (!guardian) {
@@ -369,6 +381,9 @@ router.get('/family-overview', protect, authorize('guardian'), async (req, res) 
     }
 
     const guardian = await getGuardianProfile(req.user.id, { populateChildren: true });
+    if (guardian && guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
     const entries = (guardian?.children || []).filter((entry) => entry.student?._id);
     if (!entries.length) {
       return res.json({
@@ -426,7 +441,10 @@ router.get('/family-overview', protect, authorize('guardian'), async (req, res) 
       const studentId = String(student._id);
       const permissions = findChildAccess(guardian, studentId)?.permissions || {};
 
-      const childSessions = futureSessions.filter((session) => childMatchesSession(student, session));
+      const canViewAttendance = Boolean(permissions.viewAttendance);
+      const childSessions = canViewAttendance
+        ? futureSessions.filter((session) => childMatchesSession(student, session))
+        : [];
       const childTasks = tasks.filter((task) => String(task.student) === studentId);
       const pendingHomework = permissions.viewProgress
         ? childTasks.filter((task) => task.status === 'pending').length
@@ -489,7 +507,7 @@ router.get('/family-overview', protect, authorize('guardian'), async (req, res) 
           teacherName: nextTeacherName,
           circleName: next.circle?.name || null,
         } : null,
-        upcomingSessions: childSessions.length,
+        upcomingSessions: canViewAttendance ? childSessions.length : null,
         pendingHomework,
         submittedHomework,
         overdueHomework: permissions.viewProgress ? overdueHomework : null,
@@ -502,7 +520,7 @@ router.get('/family-overview', protect, authorize('guardian'), async (req, res) 
       success: true,
       summary: {
         totalChildren: cards.length,
-        upcomingSessions: cards.reduce((sum, child) => sum + child.upcomingSessions, 0),
+        upcomingSessions: cards.reduce((sum, child) => sum + (child.upcomingSessions || 0), 0),
         pendingHomework: cards.reduce((sum, child) => sum + (child.pendingHomework || 0), 0),
         needsAttention: cards.reduce((sum, child) => sum + child.attentionCount, 0),
       },
@@ -638,7 +656,7 @@ router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
  * @desc    Confirm or reject a phone-matched child invitation
  * @access  Private (Guardian)
  */
-router.post('/invitations/:id/respond', protect, authorize('guardian'), async (req, res) => {
+router.post('/invitations/:id/respond', protect, authorize('guardian'), linkChildLimiter, async (req, res) => {
   try {
     const guardianUser = await User.findById(req.user.id).select('phone phoneVerified +phoneNormalized');
     const normalizedPhone = guardianUser?.phoneNormalized || normalizePhone(guardianUser?.phone);
@@ -777,10 +795,45 @@ router.post('/link-child', protect, authorize('guardian'), linkChildLimiter, asy
     }
 
     const student = await User.findOneAndUpdate(
-      { role: 'student', guardianLinkCode: normalizedCode },
+      {
+        role: 'student',
+        guardianLinkCode: normalizedCode,
+        $nor: [
+          { age: { $gt: 0, $lt: 18 } },
+          { enrollmentSection: 'children' },
+        ],
+      },
       { $unset: { guardianLinkCode: 1 } },
       { new: false },
-    ).select('+guardianLinkCode guardian name');
+    ).select('+guardianLinkCode guardian name age enrollmentSection');
+
+    if (!student) {
+      const minorCandidate = await User.findOne({
+        role: 'student',
+        guardianLinkCode: normalizedCode,
+      }).select('_id age enrollmentSection');
+      if (
+        minorCandidate
+        && ((Number(minorCandidate.age) > 0 && Number(minorCandidate.age) < 18) || minorCandidate.enrollmentSection === 'children')
+      ) {
+        return res.status(403).json({
+          error: 'ربط حسابات الطلاب القُصَّر يتطلب دعوة موجهة لرقم هاتف ولي الأمر المسجل',
+          code: 'MINOR_INVITATION_REQUIRED',
+        });
+      }
+      return res.status(404).json({ error: 'كود الربط غير صحيح أو تم استخدامه من قبل' });
+    }
+
+    if (
+      (Number(student.age) > 0 && Number(student.age) < 18)
+      || student.enrollmentSection === 'children'
+    ) {
+      await User.updateOne({ _id: student._id }, { $set: { guardianLinkCode: normalizedCode } }).catch(() => {});
+      return res.status(403).json({
+        error: 'ربط حسابات الطلاب القُصَّر يتطلب دعوة موجهة لرقم هاتف ولي الأمر المسجل',
+        code: 'MINOR_INVITATION_REQUIRED',
+      });
+    }
 
     if (!student) {
       return res.status(404).json({ error: 'كود الربط غير صحيح أو تم استخدامه من قبل' });
@@ -910,6 +963,9 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
     }
 
     const guardian = await getGuardianProfile(req.user.id);
+    if (guardian && guardian.isActive === false) {
+      return res.status(403).json({ error: 'حساب متابعة ولي الأمر غير مفعل' });
+    }
     let childIds = (guardian?.children || []).map((entry) => entry.student);
 
     const requestedStudentId = String(req.query.studentId || '').trim();

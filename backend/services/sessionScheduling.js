@@ -263,6 +263,45 @@ function generateTeacherSlotStarts(teacher, {
   return results.sort((a, b) => a.startsAt - b.startsAt);
 }
 
+function circleLocalDateKey(circleId, scheduledAt, timeZone) {
+  const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  if (!circleId || Number.isNaN(date.getTime())) return null;
+  const parts = zonedParts(date, safeTimeZone(timeZone));
+  return `${String(circleId)}:${localDateString(parts)}`;
+}
+
+function circleScheduleDecision(circle, scheduledAt, durationMinutes = 60) {
+  const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  if (Number.isNaN(date.getTime())) {
+    return { allowed: false, configured: false, code: 'INVALID_SESSION_TIME' };
+  }
+  const schedule = Array.isArray(circle?.schedule) ? circle.schedule : [];
+  const timeZone = safeTimeZone(circle?.timezone);
+  if (!schedule.length) {
+    return { allowed: true, configured: false, timeZone };
+  }
+  const parts = zonedParts(date, timeZone);
+  const start = (parts.hour * 60) + parts.minute;
+  const end = start + Math.max(15, Number(durationMinutes || 60));
+
+  const matchedSlot = schedule.find((row) => {
+    if (String(row?.day || '').trim().toLowerCase() !== parts.weekday) return false;
+    const slotStart = timeToMinutes(row.startTime);
+    const slotEnd = timeToMinutes(row.endTime);
+    if (slotStart == null || slotEnd == null) return false;
+    // Allow starting within the configured circle slot window (with 15m grace tolerance)
+    return start >= (slotStart - 15) && end <= (slotEnd + 15);
+  });
+
+  return {
+    allowed: Boolean(matchedSlot),
+    configured: true,
+    timeZone,
+    code: matchedSlot ? null : 'CIRCLE_SCHEDULE_MISMATCH',
+    matchedSlot: matchedSlot || null,
+  };
+}
+
 module.exports = {
   DEFAULT_TIMEZONE,
   safeTimeZone,
@@ -270,6 +309,8 @@ module.exports = {
   localDateTimeToUtc,
   parseRequestedDateTime,
   teacherAvailabilityDecision,
+  circleLocalDateKey,
+  circleScheduleDecision,
   overlaps,
   generateTeacherSlotStarts,
 };

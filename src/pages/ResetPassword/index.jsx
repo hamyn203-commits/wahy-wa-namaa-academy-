@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, KeyRound, LockKeyhole, Sparkles } from 'lucide-react';
 import BrandLogo from '../../components/BrandLogo';
@@ -13,7 +13,20 @@ export default function ResetPassword() {
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') || '';
+  const [token] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const hashToken = hashParams.get('token');
+      if (hashToken) return hashToken;
+    }
+    return searchParams.get('token') || '';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window.location.search.includes('token=') || window.location.hash.includes('token='))) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   const [form, setForm] = useState({ password: '', confirmPassword: '' });
   const [status, setStatus] = useState(token ? 'form' : 'invalid');

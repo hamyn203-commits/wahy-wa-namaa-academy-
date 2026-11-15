@@ -62,18 +62,45 @@ const ensureAdminHandler = async (req, res) => {
       return res.status(201).json({ message: 'Development admin created', email: mockUser.email });
     }
 
-    const existingAdmin = await User.findOne({ role: 'admin' }).select('_id email');
+    const existingAdmin = await User.findOne({ role: 'admin', isActive: { $ne: false } }).select('_id email');
     if (existingAdmin) {
       return res.status(409).json({ error: 'An administrator already exists. Bootstrap is closed.' });
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('+refreshTokenVersion +googleSubject');
     if (existingUser) {
       existingUser.name = name;
       existingUser.password = password;
       existingUser.role = 'admin';
       existingUser.isActive = true;
+      existingUser.refreshTokenVersion = Number(existingUser.refreshTokenVersion || 0) + 1;
+      existingUser.sessionsRevokedAt = new Date();
+      existingUser.consumedRefreshJtis = [];
+      existingUser.googleSubject = undefined;
+      existingUser.guardian = null;
+      existingUser.children = [];
+      existingUser.guardianLinkCode = undefined;
+      existingUser.whatsappPhone = '';
+      existingUser.guardianContact = { name: '', phone: '', relationship: '' };
+      existingUser.failedLoginAttempts = 0;
+      existingUser.lockUntil = null;
       await existingUser.save();
+
+      if (isDBConnected()) {
+        const Guardian = require('../models/Guardian');
+        const GuardianInvitation = require('../models/GuardianInvitation');
+        await Promise.all([
+          Guardian.updateMany?.(
+            { 'children.student': existingUser._id },
+            { $pull: { children: { student: existingUser._id }, reports: { student: existingUser._id } } }
+          ),
+          GuardianInvitation.updateMany?.(
+            { student: existingUser._id },
+            { $set: { status: 'cancelled' } }
+          ),
+        ]).catch(() => {});
+      }
+
       return res.status(200).json({ message: 'Administrator account promoted', email: existingUser.email });
     }
 

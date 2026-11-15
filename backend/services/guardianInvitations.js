@@ -154,7 +154,7 @@ async function createGuardianInvitation({
 }
 
 async function linkGuardianToStudent({ guardianUserId, studentId, relationship = 'guardian' }) {
-  const student = await User.findOne({ _id: studentId, role: 'student' }).select('_id name guardian');
+  const student = await User.findOne({ _id: studentId, role: 'student' }).select('_id name age guardian privacyConsent');
   if (!student) {
     const error = new Error('Student not found');
     error.code = 'STUDENT_NOT_FOUND';
@@ -180,8 +180,18 @@ async function linkGuardianToStudent({ guardianUserId, studentId, relationship =
     });
   }
 
+  let studentModified = false;
   if (!student.guardian) {
     student.guardian = guardianUserId;
+    studentModified = true;
+  }
+  const studentAge = Number(student.age || 0);
+  if (studentAge > 0 && studentAge < 18 && student.privacyConsent?.parentalConsentVerified !== true) {
+    student.set('privacyConsent.parentalConsentVerified', true);
+    student.set('privacyConsent.parentalConsentAt', new Date());
+    studentModified = true;
+  }
+  if (studentModified) {
     await student.save();
   }
 

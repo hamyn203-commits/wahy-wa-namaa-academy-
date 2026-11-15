@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { API_BASE_URL } from '../config';
 import api from '../lib/api';
+import { clearTranslateCache } from '../lib/translateApi';
 import {
   getAccessToken,
   setAccessToken,
@@ -8,6 +9,20 @@ import {
   refreshAccessToken,
   clearLegacyAuthStorage,
 } from '../lib/authSession';
+
+const AUTH_CHANNEL_NAME = 'wn_auth_sync';
+
+function broadcastAuthLogout() {
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+      channel.postMessage({ type: 'LOGOUT', at: Date.now() });
+      channel.close();
+    }
+  } catch {
+    // Ignore unsupported BroadcastChannel environments.
+  }
+}
 
 const AuthContext = createContext(null);
 
@@ -21,6 +36,13 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false);
     clearAccessToken();
     clearLegacyAuthStorage();
+    clearTranslateCache();
+    try {
+      localStorage.removeItem('teacher_registration_draft');
+      sessionStorage.removeItem('teacher_application_status_token');
+    } catch {
+      // Ignore storage access failures.
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -33,7 +55,30 @@ export function AuthProvider({ children }) {
       // Clear client state even when the network is unavailable.
     } finally {
       clearSessionState();
+      broadcastAuthLogout();
     }
+  }, [clearSessionState]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'function') return undefined;
+    let channel;
+    try {
+      channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+      channel.onmessage = (event) => {
+        if (event?.data?.type === 'LOGOUT') {
+          clearSessionState();
+        }
+      };
+    } catch {
+      return undefined;
+    }
+    return () => {
+      try {
+        channel?.close();
+      } catch {
+        // Ignore close errors.
+      }
+    };
   }, [clearSessionState]);
 
   useEffect(() => {
@@ -200,6 +245,7 @@ export function AuthProvider({ children }) {
     try {
       await api.post('/api/auth/change-password', { currentPassword, newPassword }, { auth: true });
       clearSessionState();
+      broadcastAuthLogout();
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };

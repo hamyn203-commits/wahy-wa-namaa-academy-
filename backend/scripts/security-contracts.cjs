@@ -718,7 +718,7 @@ requireContains(
 requireContains(
   'backend/services/paymentSettlement.js',
   'successful provider settlement must create course enrollment through the settlement service',
-  /classification\s*===\s*['"]succeeded['"][\s\S]{0,900}createEnrollmentForSettledPayment/
+  /(?:effectiveClassification|classification)\s*===\s*['"]succeeded['"][\s\S]{0,900}createEnrollmentForSettledPayment/
 );
 requireAbsent(
   'backend/routes/payments.js',
@@ -1163,7 +1163,7 @@ requireContains(
 requireContains(
   'backend/routes/teachers.js',
   'teacher application status endpoint must bind the token to teacher and user identifiers',
-  /router\.post\(['"]\/application-status['"][\s\S]{0,1200}_id:\s*payload\.teacherId[\s\S]{0,300}user:\s*payload\.userId/
+  /router\.post\(['"]\/application-status['"][\s\S]{0,2000}_id:\s*payload\.teacherId[\s\S]{0,300}user:\s*payload\.userId/
 );
 requireContains(
   'src/pages/AdminDashboard/index.jsx',
@@ -1289,7 +1289,7 @@ requireContains(
 requireContains(
   'backend/app.js',
   'Express 5 request sanitizer must override req.query via Object.defineProperty and strip $ operators',
-  /if\s*\(key\.startsWith\(['"]\$['"]\)\)\s*continue[\s\S]{0,600}Object\.defineProperty\(req,\s*['"]query['"]/
+  /key\.startsWith\(['"]\$['"]\)[\s\S]{0,900}Object\.defineProperty\(req,\s*['"]query['"]/
 );
 requireContains(
   'backend/routes/guardians.js',
@@ -1300,6 +1300,38 @@ requireContains(
   'backend/routes/notifications.js',
   'teacher notification broadcasts must verify active teacher-student relationship',
   /TEACHER_STUDENT_SCOPE_VIOLATION/
+);
+
+// Round 3 Deep Cybersecurity Audit Closure Contracts:
+requireAbsent(
+  'backend/routes/uploads.js',
+  'paid course-media references must never be served through unauthenticated /api/uploads/public',
+  /isPublicObjectReference[\s\S]{0,200}course-media/
+);
+requireContains(
+  'backend/services/manualPaymentSettlement.js',
+  'manual subscription review must verify Payment.amountMinor matches StudentSubscription.totalAmountMinor',
+  /PAYMENT_AMOUNT_MISMATCH/
+);
+requireContains(
+  'backend/services/paymentSettlement.js',
+  'course payment refund must revoke Certificate by student field and status="revoked"',
+  /Certificate\.updateMany\(\s*\{\s*student:\s*payment\.student,\s*course:\s*payment\.course[\s\S]{0,160}status:\s*['"]revoked['"]/
+);
+requireAbsent(
+  'src/pages/AdminPayments/index.jsx',
+  'AdminPayments must not open same-origin blob: URLs via window.open',
+  /window\.open\(\s*url/
+);
+requireAbsent(
+  'src/pages/AdminDashboard/TeacherAssetViewer.jsx',
+  'TeacherAssetViewer must not render same-origin blob: PDFs inside an iframe',
+  /<iframe[^>]+src=\{preview\.url\}/
+);
+requireContains(
+  'vercel.json',
+  'production frontend headers must enforce strict Content-Security-Policy without unsafe-inline script-src',
+  /"Content-Security-Policy"[\s\S]{0,600}script-src 'self'/
 );
 
 if (failures.length) {

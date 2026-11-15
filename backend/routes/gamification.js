@@ -293,6 +293,13 @@ router.post('/check-badges', protect, async (req, res) => {
       await userBadge.updateProgress(currentValue);
 
       if (userBadge.isUnlocked && !userBadge.notificationSent) {
+        const claimedBadge = await UserBadge.findOneAndUpdate(
+          { _id: userBadge._id, isUnlocked: true, notificationSent: { $ne: true } },
+          { $set: { notificationSent: true } },
+          { new: true }
+        );
+        if (!claimedBadge) continue;
+
         const achievement = new Achievement({
           user: req.user.id,
           type: 'badge-unlocked',
@@ -303,11 +310,7 @@ router.post('/check-badges', protect, async (req, res) => {
         });
         await achievement.save();
 
-        badge.unlockedBy += 1;
-        await badge.save();
-
-        userBadge.notificationSent = true;
-        await userBadge.save();
+        await Badge.updateOne({ _id: badge._id }, { $inc: { unlockedBy: 1 } });
 
         newBadges.push({
           badge,

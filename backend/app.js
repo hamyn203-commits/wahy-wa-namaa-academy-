@@ -44,18 +44,12 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'same-site' },
 }));
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX || 150),
-  // Authenticated background synchronization has a separate per-account budget;
-  // unauthenticated calls must never bypass the general IP rate limiter.
-  skip: (req) => (
-    req.method === 'GET'
-    && /^Bearer\s+\S+/.test(String(req.headers?.authorization || ''))
-    && /^\/(?:support\/(?:inbox|me\/unread|[^/]+\/messages)|notifications(?:\/unread-count)?)\/?$/.test(req.path)
-  ),
+  max: Number(process.env.RATE_LIMIT_MAX || 220),
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -144,6 +138,12 @@ app.use('/api/auth/refresh', requireTrustedOrigin);
 app.use('/api/auth/logout', requireTrustedOrigin);
 app.use('/api/auth/logout-all', requireTrustedOrigin);
 app.use('/api/auth/change-password', requireTrustedOrigin);
+app.use('/api/auth/forgot-password', requireTrustedOrigin);
+app.use('/api/auth/reset-password', requireTrustedOrigin);
+app.use('/api/auth/onboarding', requireTrustedOrigin);
+app.use('/api/auth/profile', requireTrustedOrigin);
+app.use('/api/auth/learning-track', requireTrustedOrigin);
+app.use('/api/auth/privacy/delete-request', requireTrustedOrigin);
 
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -175,7 +175,8 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
 app.use(express.json({
   limit: '512kb',
   verify: (req, _res, buf) => {
-    if (String(req.originalUrl || req.url || '').startsWith('/api/payments/paymob/webhook')) {
+    const reqUrl = String(req.originalUrl || req.url || '');
+    if (reqUrl.startsWith('/api/payments/paymob/webhook') || Boolean(req.headers?.['x-vercel-signature'])) {
       req.rawBody = Buffer.from(buf);
     }
   },
@@ -236,7 +237,9 @@ function sanitizeObject(obj, parentKey = '', depth = 0) {
 }
 
 app.use((req, _res, next) => {
-  const isSignedWebhook = String(req.originalUrl || req.url || '').startsWith('/api/payments/paymob/webhook');
+  const reqUrl = String(req.originalUrl || req.url || '');
+  const isSignedWebhook = reqUrl.startsWith('/api/payments/paymob/webhook')
+    || (reqUrl.startsWith('/api/uploads/blob') && Boolean(req.headers?.['x-vercel-signature']));
   if (req.body && !isSignedWebhook) req.body = sanitizeObject(req.body);
   if (req.query) {
     const cleanQuery = sanitizeObject(req.query);

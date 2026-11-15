@@ -21,27 +21,39 @@ const { send24HourReminder, send30MinuteReminder, resolveAbsoluteRoomUrl } = req
 async function resolveGuardianOrStudentPhone(studentUser) {
   if (!studentUser) return null;
 
-  // 1. Check if student has a linked guardian in User.guardian
+  // 1. Check active Guardian collection with receiveNotifications enabled
+  const guardianQuery = {
+    isActive: { $ne: false },
+    children: {
+      $elemMatch: {
+        student: studentUser._id,
+        'permissions.receiveNotifications': { $ne: false },
+      },
+    },
+  };
   if (studentUser.guardian) {
-    const guardianUser = await User.findById(studentUser.guardian).select('phone whatsappPhone');
-    if (guardianUser?.whatsappPhone || guardianUser?.phone) {
-      return guardianUser.whatsappPhone || guardianUser.phone;
+    const preferredGuardianDoc = await Guardian.findOne({
+      ...guardianQuery,
+      user: studentUser.guardian,
+    }).populate('user', 'phone whatsappPhone isActive');
+    if (preferredGuardianDoc?.user && preferredGuardianDoc.user.isActive !== false) {
+      const phone = preferredGuardianDoc.user.whatsappPhone
+        || preferredGuardianDoc.user.phone
+        || preferredGuardianDoc.notificationPreferences?.sms?.phoneNumber;
+      if (phone) return phone;
     }
   }
 
-  // 2. Check Guardian collection where children.student matches
-  const guardianDoc = await Guardian.findOne({
-    isActive: true,
-    'children.student': studentUser._id,
-  }).populate('user', 'phone whatsappPhone');
-  if (guardianDoc?.user) {
+  const guardianDoc = await Guardian.findOne(guardianQuery)
+    .populate('user', 'phone whatsappPhone isActive');
+  if (guardianDoc?.user && guardianDoc.user.isActive !== false) {
     const phone = guardianDoc.user.whatsappPhone
       || guardianDoc.user.phone
       || guardianDoc.notificationPreferences?.sms?.phoneNumber;
     if (phone) return phone;
   }
 
-  // 3. Fallback to student's own phone / whatsappPhone
+  // 2. Fallback to student's own phone / whatsappPhone
   return studentUser.whatsappPhone || studentUser.phone || null;
 }
 

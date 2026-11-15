@@ -24,6 +24,7 @@ async function createToken({ roomName, identity, participantName, canPublish, is
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
     name: isObserver ? 'مراقب ولي الأمر' : participantName,
+    ttl: '2h',
   });
 
   at.addGrant({

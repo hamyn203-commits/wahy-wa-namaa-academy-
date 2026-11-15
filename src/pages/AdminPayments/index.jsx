@@ -20,6 +20,18 @@ export default function AdminPayments() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
+  const [proofModal, setProofModal] = useState(null);
+
+  const closeProofModal = useCallback(() => {
+    setProofModal((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (proofModal?.url) URL.revokeObjectURL(proofModal.url);
+  }, [proofModal]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,8 +89,23 @@ export default function AdminPayments() {
         method: 'GET',
       });
       const blob = await response.blob();
+      const mime = String(blob.type || '').toLowerCase();
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      if (['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+        setProofModal((previous) => {
+          if (previous?.url) URL.revokeObjectURL(previous.url);
+          return { url, paymentId: payment.id, studentName: payment.student?.name || 'طالب' };
+        });
+        return;
+      }
+      const ext = mime === 'application/pdf' ? '.pdf' : '';
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `payment-proof-${payment.id}${ext}`;
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) {
       toast.error(error.message || 'تعذر فتح الإثبات');
@@ -216,6 +243,25 @@ export default function AdminPayments() {
               >
                 تأكيد الرفض
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {proofModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">معاينة إيصال الدفع — {proofModal.studentName}</h3>
+              <button type="button" onClick={closeProofModal} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                <XCircle size={18} />
+              </button>
+            </div>
+            <div className="p-4 max-h-[75vh] overflow-auto flex justify-center bg-slate-50">
+              <img src={proofModal.url} alt="إثبات الدفع" className="max-h-[65vh] w-auto rounded-lg border border-slate-200 object-contain" />
+            </div>
+            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+              <a href={proofModal.url} download={`payment-proof-${proofModal.paymentId}`} className="wn-btn wn-btn--secondary">تنزيل الإيصال</a>
+              <button type="button" onClick={closeProofModal} className="wn-btn wn-btn--primary">إغلاق</button>
             </div>
           </div>
         </div>

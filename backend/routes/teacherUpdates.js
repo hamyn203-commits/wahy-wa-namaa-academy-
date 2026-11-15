@@ -6,7 +6,7 @@ const router = express.Router();
 const Teacher = require('../models/Teacher');
 const TeacherUpdate = require('../models/TeacherUpdate');
 const Session = require('../models/Session');
-const { protect, authorize, getAccessSecret } = require('../middleware/auth');
+const { protect, authorize, getAccessSecret, verifyLiveSessionPrincipal } = require('../middleware/auth');
 const storage = require('../services/objectStorage');
 const { notifyUser } = require('../utils/notify');
 
@@ -88,8 +88,11 @@ async function streamReference(reference, res) {
   if (!result) return res.status(404).end();
   if (result.statusCode === 304) return res.status(304).end();
 
-  res.setHeader('Content-Type', result.blob?.contentType || 'video/mp4');
+  const SAFE_VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+  const rawVideoMime = String(result.blob?.contentType || 'video/mp4').split(';', 1)[0].trim().toLowerCase();
+  res.setHeader('Content-Type', SAFE_VIDEO_TYPES.has(rawVideoMime) ? rawVideoMime : 'application/octet-stream');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; media-src 'self'; sandbox");
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.setHeader('Accept-Ranges', 'none');
@@ -125,6 +128,12 @@ router.get('/:id/videos/:index/stream', async (req, res) => {
       || Number(payload.index) !== Number(req.params.index)
     ) {
       return res.status(403).json({ error: 'Invalid media token' });
+    }
+    if (payload.viewerId) {
+      const principalOk = await verifyLiveSessionPrincipal(payload.viewerId, payload.viewerRole, payload.iat);
+      if (!principalOk) {
+        return res.status(401).json({ error: 'Session revoked or account inactive' });
+      }
     }
 
     const update = await TeacherUpdate.findById(req.params.id).lean();
@@ -180,8 +189,20 @@ router.post('/teacher', authorize('teacher'), async (req, res) => {
     const normalizedVideos = [];
     for (const item of videos) {
       const reference = String(item?.reference || item?.url || '').trim();
-      if (!storage.referenceMatches(reference, VIDEO_PURPOSE, req.user.id)) {
+      const driver = storage.getDriver();
+      if (
+        !storage.referenceMatches(reference, VIDEO_PURPOSE, req.user.id)
+        || ((driver === 'vercel-blob' || driver === 's3') && !storage.isOwnedObjectReference(reference, VIDEO_PURPOSE, req.user.id))
+      ) {
         return res.status(400).json({ error: 'مرجع فيديو غير صالح أو لا يخص هذا المعلم' });
+      }
+      const magicVerify = await storage.verifyUploadedObjectMagicBytes(
+        reference,
+        item?.contentType || 'video/mp4',
+        100 * 1024 * 1024
+      );
+      if (!magicVerify.ok) {
+        return res.status(400).json({ error: magicVerify.error, code: magicVerify.code });
       }
 
       normalizedVideos.push({

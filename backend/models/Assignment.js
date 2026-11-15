@@ -54,6 +54,10 @@ const AssignmentSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  allowLateSubmission: {
+    type: Boolean,
+    default: true
+  },
   points: {
     type: Number,
     default: 100
@@ -192,7 +196,7 @@ const AssignmentSubmissionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-AssignmentSubmissionSchema.index({ assignment: 1, student: 1 });
+AssignmentSubmissionSchema.index({ assignment: 1, student: 1 }, { unique: true });
 AssignmentSubmissionSchema.index({ status: 1 });
 AssignmentSubmissionSchema.index({ submittedAt: 1 });
 

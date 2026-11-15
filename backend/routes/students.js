@@ -7,11 +7,12 @@ const Teacher = require('../models/Teacher');
 const Session = require('../models/Session');
 const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
+const { logAdminAction } = require('../services/adminAudit');
 
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(id));
 
-router.get('/', protect, authorize('admin', 'supervisor'), async (req, res) => {
+router.get('/', protect, authorize('admin'), async (req, res) => {
   try {
     if (!isDBConnected()) {
       return res.json([]);
@@ -35,15 +36,16 @@ router.get('/:id', protect, async (req, res) => {
     if (!student) return res.status(404).json({ message: 'Student not found' });
     
     const studentUserId = student.user ? String(student.user) : null;
-    let allowed = req.user.role === 'admin' || req.user.role === 'supervisor';
+    let allowed = req.user.role === 'admin';
 
     if (req.user.role === 'student') {
       allowed = studentUserId === String(req.user.id);
     } else if (req.user.role === 'guardian' && studentUserId) {
       const guardian = await Guardian.findOne({
         user: req.user.id,
+        isActive: { $ne: false },
         'children.student': studentUserId,
-      }).select('children');
+      }).select('children isActive');
 
       allowed = Boolean(
         guardian && guardian.hasPermission(studentUserId, 'viewProgress')
@@ -77,6 +79,13 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
   const student = new Student(payload);
   try {
     const newStudent = await student.save();
+    logAdminAction({
+      adminId: req.user.id,
+      action: 'student.create',
+      targetType: 'Student',
+      targetId: newStudent._id,
+      req,
+    }).catch(() => {});
     res.status(201).json(newStudent);
   } catch (err) {
     res.status(400).json({ error: safeErrorMessage(err, 400) });
@@ -114,6 +123,16 @@ router.patch('/:id', protect, async (req, res) => {
       { $set: updates },
       { new: true, runValidators: true }
     );
+    if (req.user.role === 'admin') {
+      logAdminAction({
+        adminId: req.user.id,
+        action: 'student.update',
+        targetType: 'Student',
+        targetId: student._id,
+        metadata: { fields: Object.keys(updates) },
+        req,
+      }).catch(() => {});
+    }
     res.json(student);
   } catch (err) {
     res.status(400).json({ error: safeErrorMessage(err, 400) });
@@ -127,6 +146,13 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     }
     const student = await Student.findByIdAndDelete(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
+    logAdminAction({
+      adminId: req.user.id,
+      action: 'student.delete',
+      targetType: 'Student',
+      targetId: student._id,
+      req,
+    }).catch(() => {});
     res.json({ message: 'Student deleted' });
   } catch (err) {
     res.status(500).json({ error: safeErrorMessage(err, 500) });

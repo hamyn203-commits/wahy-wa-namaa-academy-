@@ -43,10 +43,13 @@ self.addEventListener('fetch', (event) => {
       event.respondWith(
         fetch(event.request)
           .then((response) => {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put('/index.html', responseToCache);
-            });
+            const contentType = (response?.headers?.get('content-type') || '').toLowerCase();
+            if (response && response.ok && response.status === 200 && response.type === 'basic' && contentType.includes('text/html')) {
+              const responseToCache = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put('/index.html', responseToCache);
+              });
+            }
             return response;
           })
           .catch(() => caches.match('/index.html'))

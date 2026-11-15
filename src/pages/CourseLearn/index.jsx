@@ -152,7 +152,7 @@ export default function CourseLearn() {
         <main className="flex-1 overflow-y-auto">
           <div className="wn-learn-content">
             <section className="wn-learn-stage">
-              {currentLesson?.type === 'video' ? <VideoLesson lesson={currentLesson} locale={locale} /> : null}
+              {currentLesson?.type === 'video' ? <VideoLesson lesson={currentLesson} locale={locale} courseSlug={slug} /> : null}
               {currentLesson?.type === 'text' ? <TextLesson lesson={currentLesson} locale={locale} /> : null}
               {currentLesson?.type === 'quiz' ? <QuizLesson lesson={currentLesson} locale={locale} onComplete={markComplete} /> : null}
               {!currentLesson ? <div className="grid min-h-[240px] place-items-center text-sm text-[var(--wn-text-secondary)]">{isAr ? 'اختر درسًا من القائمة' : 'Choose a lesson from the list'}</div> : null}

@@ -205,8 +205,12 @@ NotificationSchema.methods.send = async function(channel) {
     await this.save();
     return true;
   } catch (error) {
-    console.error(`Send ${channel} error:`, error);
-    this.channels[channel].error = error.message;
+    const sanitizedError = String(error?.message || 'Delivery failed')
+      .replace(/https?:\/\/[^\s]+/gi, '[redacted-url]')
+      .replace(/(?:key|token|secret|password|bearer)[=:\s]+[^\s&]+/gi, '[redacted]')
+      .slice(0, 180);
+    console.error(`Send ${channel} error:`, sanitizedError);
+    this.channels[channel].error = sanitizedError;
     this.status = 'failed';
     await this.save();
     return false;

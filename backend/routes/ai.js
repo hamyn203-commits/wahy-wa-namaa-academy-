@@ -3,7 +3,22 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const multer = require('multer');
 const { protect, authorize } = require('../middleware/auth');
+const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const aiService = require('../services/aiService');
+
+const aiChatLimiter = createScopedRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  scope: 'ai-chat-hourly',
+  message: 'تم الوصول للحد المسموح من طلبات المساعد الذكي لهذه الساعة. حاول لاحقاً.',
+});
+
+const aiRecitationLimiter = createScopedRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 12,
+  scope: 'ai-recitation-hourly',
+  message: 'تم الوصول للحد المسموح من تحليلات التلاوة الصوتية لهذه الساعة. حاول لاحقاً.',
+});
 const objectStorage = require('../services/objectStorage');
 const RecitationReport = require('../models/RecitationReport');
 const Session = require('../models/Session');
@@ -82,7 +97,7 @@ async function readPrivateStreamToBuffer(stream, maxBytes = MAX_AUDIO_BYTES) {
   return Buffer.concat(chunks);
 }
 
-router.post('/quran-assistant', protect, async (req, res) => {
+router.post('/quran-assistant', protect, aiChatLimiter, async (req, res) => {
   try {
     const { question, locale = 'ar' } = req.body || {};
     const safeLoc = sanitizeLocale(locale);
@@ -104,7 +119,7 @@ router.post('/quran-assistant', protect, async (req, res) => {
   }
 });
 
-router.post('/teacher-assistant', protect, authorize('teacher', 'admin'), async (req, res) => {
+router.post('/teacher-assistant', protect, authorize('teacher', 'admin'), aiChatLimiter, async (req, res) => {
   try {
     const { prompt, locale = 'ar' } = req.body || {};
     const safeLoc = sanitizeLocale(locale);
@@ -125,7 +140,7 @@ router.post('/teacher-assistant', protect, authorize('teacher', 'admin'), async 
   }
 });
 
-router.post('/student-assistant', protect, authorize('student', 'admin'), async (req, res) => {
+router.post('/student-assistant', protect, authorize('student', 'admin'), aiChatLimiter, async (req, res) => {
   try {
     const { goal, level, locale = 'ar' } = req.body || {};
     const safeLoc = sanitizeLocale(locale);
@@ -152,7 +167,7 @@ router.post('/student-assistant', protect, authorize('student', 'admin'), async 
   }
 });
 
-router.post('/recitation-analyze', protect, authorize('student', 'teacher', 'admin'), (req, res, next) => {
+router.post('/recitation-analyze', protect, authorize('student', 'teacher', 'admin'), aiRecitationLimiter, (req, res, next) => {
   const contentTypeHeader = String(req.headers['content-type'] || '').toLowerCase();
   if (contentTypeHeader.includes('application/json')) {
     return next();

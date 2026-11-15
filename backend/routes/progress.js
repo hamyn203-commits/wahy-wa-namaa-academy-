@@ -72,8 +72,8 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       return res.status(400).json({ error: 'Score must be between 0 and 100' });
     }
 
-    const numericTimeSpent = Number(timeSpent || 0);
-    if (!Number.isFinite(numericTimeSpent) || numericTimeSpent < 0 || numericTimeSpent > 43200) {
+    const numericTimeSpent = Math.min(3600, Math.max(0, Number(timeSpent || 0)));
+    if (!Number.isFinite(Number(timeSpent || 0)) || Number(timeSpent || 0) < 0 || Number(timeSpent || 0) > 43200) {
       return res.status(400).json({ error: 'Invalid time spent' });
     }
 
@@ -87,34 +87,40 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
       return res.status(404).json({ error: 'Lesson does not belong to this course' });
     }
 
+    let effectiveScore = null;
     if (status === 'completed') {
       if (lesson.type === 'quiz' || lesson.content?.quiz) {
         if (!lesson.content?.quiz) {
           return res.status(400).json({ error: 'Quiz must be passed before completing this lesson' });
         }
         const { QuizAttempt } = require('../models/Quiz');
-        const passed = await QuizAttempt.exists({
+        const passedAttempt = await QuizAttempt.findOne({
           quiz: lesson.content.quiz,
           student: req.user.id,
           isPassed: true,
-        });
-        if (!passed) {
+        }).sort({ 'score.percentage': -1 }).select('score.percentage').lean();
+        if (!passedAttempt) {
           return res.status(400).json({ error: 'Quiz must be passed before completing this lesson', code: 'QUIZ_NOT_PASSED' });
         }
-      }
-      if (lesson.type === 'assignment' || lesson.content?.assignment) {
+        effectiveScore = Math.round(Number(passedAttempt.score?.percentage ?? 100));
+      } else if (lesson.type === 'assignment' || lesson.content?.assignment) {
         if (!lesson.content?.assignment) {
-          return res.status(400).json({ error: 'Assignment must be submitted before completing this lesson' });
+          return res.status(400).json({ error: 'Assignment must be graded and passed before completing this lesson' });
         }
         const { AssignmentSubmission } = require('../models/Assignment');
-        const submitted = await AssignmentSubmission.exists({
+        const gradedSubmission = await AssignmentSubmission.findOne({
           assignment: lesson.content.assignment,
           student: req.user.id,
-          status: { $in: ['submitted', 'graded', 'late'] },
-        });
-        if (!submitted) {
-          return res.status(400).json({ error: 'Assignment must be submitted before completing this lesson', code: 'ASSIGNMENT_REQUIRED' });
+          status: 'graded',
+        }).select('grade.percentage').lean();
+        if (!gradedSubmission) {
+          return res.status(400).json({ error: 'Assignment must be graded before completing this lesson', code: 'ASSIGNMENT_NOT_GRADED' });
         }
+        const pct = Number(gradedSubmission.grade?.percentage ?? 0);
+        if (!Number.isFinite(pct) || pct < 60) {
+          return res.status(400).json({ error: 'Assignment passing score has not been reached', code: 'ASSIGNMENT_NOT_PASSED' });
+        }
+        effectiveScore = Math.round(pct);
       }
     }
 
@@ -156,25 +162,49 @@ router.post('/lesson', protect, authorize('student'), async (req, res) => {
     const hadWeekStreakMilestone = Array.isArray(progress.milestones)
       && progress.milestones.some((m) => m.badge === 'week-streak');
 
-    await progress.updateLessonProgress(String(lessonId), status, numericScore, numericTimeSpent);
+    await progress.updateLessonProgress(String(lessonId), status, effectiveScore, numericTimeSpent);
 
+    const lessonMilestoneKey = `lesson:${lessonId}`;
     if (status === 'completed' && !wasAlreadyCompleted) {
-      await progress.addMilestone(
-        'lesson-completed',
-        { ar: 'أكملت درساً', en: 'Lesson Completed' },
-        { ar: 'أحسنت! لقد أكملت درساً بنجاح', en: 'Great job! You completed a lesson' },
-        10
+      const claimedLessonMilestone = await Progress.updateOne(
+        { _id: progress._id, 'milestones.badge': { $ne: lessonMilestoneKey } },
+        {
+          $push: {
+            milestones: {
+              type: 'lesson-completed',
+              title: { ar: 'أكملت درساً', en: 'Lesson Completed' },
+              description: { ar: 'أحسنت! لقد أكملت درساً بنجاح', en: 'Great job! You completed a lesson' },
+              achievedAt: new Date(),
+              points: 10,
+              badge: lessonMilestoneKey,
+            },
+          },
+        }
       );
+      if (claimedLessonMilestone?.modifiedCount > 0) {
+        progress = await Progress.findById(progress._id) || progress;
+      }
     }
 
     if (progress.streak.current === 7 && !hadWeekStreakMilestone) {
-      await progress.addMilestone(
-        'streak',
-        { ar: 'أسبوع متواصل!', en: 'Week Streak!' },
-        { ar: 'رائع! لقد درست لمدة 7 أيام متواصلة', en: 'Amazing! You studied for 7 days straight' },
-        50,
-        'week-streak'
+      const claimedStreakMilestone = await Progress.updateOne(
+        { _id: progress._id, 'milestones.badge': { $ne: 'week-streak' } },
+        {
+          $push: {
+            milestones: {
+              type: 'streak',
+              title: { ar: 'أسبوع متواصل!', en: 'Week Streak!' },
+              description: { ar: 'رائع! لقد درست لمدة 7 أيام متواصلة', en: 'Amazing! You studied for 7 days straight' },
+              achievedAt: new Date(),
+              points: 50,
+              badge: 'week-streak',
+            },
+          },
+        }
       );
+      if (claimedStreakMilestone?.modifiedCount > 0) {
+        progress = await Progress.findById(progress._id) || progress;
+      }
     }
 
     res.json(progress);

@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Message = require('../models/SupportMessage');
 const Notification = require('../models/Notification');
 const { publishRealtimeNotification } = require('../services/realtimeNotificationBus');
+const { inspectChatSafety } = require('../utils/chatSafety');
 const router = express.Router();
 
 router.use(protect, authorize('student', 'admin'));
@@ -90,6 +91,16 @@ router.post('/:studentId/messages', sendLimiter, async (req, res, next) => {
     const { text, clientId } = req.body;
     if (typeof text !== 'string' || !text.trim() || text.trim().length > 2000 || typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{8,80}$/.test(clientId)) {
       return res.status(400).json({ error: 'اكتب رسالة من 1 إلى 2000 حرف مع معرّف إرسال صالح' });
+    }
+    if (req.user.role === 'student') {
+      const safety = inspectChatSafety(text.trim());
+      if (!safety.isSafe) {
+        return res.status(400).json({
+          error: safety.warning,
+          code: 'CHAT_SAFETY_VIOLATION',
+          reason: safety.reason,
+        });
+      }
     }
     let message;
     try {

@@ -82,18 +82,24 @@ async function resolveLessonCompletionScore(lesson, studentId) {
     const submission = await AssignmentSubmission.findOne({
       assignment: assignmentId,
       student: studentId,
-      status: { $in: ['submitted', 'graded', 'late'] },
+      status: 'graded',
     }).lean();
     if (!submission) {
-      const err = new Error('Assignment not submitted');
+      const err = new Error('Assignment not graded');
       err.statusCode = 400;
-      err.publicMessage = 'Assignment must be submitted before completing this lesson';
-      err.code = 'ASSIGNMENT_REQUIRED';
+      err.publicMessage = 'Assignment must be graded and passed before completing this lesson';
+      err.code = 'ASSIGNMENT_NOT_GRADED';
       throw err;
     }
-    return submission.grade?.percentage != null
-      ? Math.round(Number(submission.grade.percentage))
-      : 100;
+    const pct = Number(submission.grade?.percentage ?? 0);
+    if (!Number.isFinite(pct) || pct < 60) {
+      const err = new Error('Assignment passing score not met');
+      err.statusCode = 400;
+      err.publicMessage = 'Assignment passing score has not been reached';
+      err.code = 'ASSIGNMENT_NOT_PASSED';
+      throw err;
+    }
+    return Math.round(pct);
   }
 
   return 100;
@@ -356,7 +362,7 @@ router.post('/:id/enroll', protect, authorize('student'), async (req, res) => {
       course: req.params.id
     });
 
-    if (existingEnrollment) {
+    if (existingEnrollment && existingEnrollment.status !== 'cancelled') {
       return res.status(400).json({ error: 'Already enrolled in this course' });
     }
 
@@ -365,6 +371,20 @@ router.post('/:id/enroll', protect, authorize('student'), async (req, res) => {
         error: 'Payment is required before enrollment',
         code: 'PAYMENT_REQUIRED'
       });
+    }
+
+    if (existingEnrollment && existingEnrollment.status === 'cancelled') {
+      existingEnrollment.status = 'active';
+      existingEnrollment.payment = {
+        amount: 0,
+        currency: course.currency,
+        status: 'completed',
+        paidAt: new Date()
+      };
+      await existingEnrollment.save();
+      course.stats.enrolled += 1;
+      await course.save();
+      return res.status(201).json(existingEnrollment);
     }
 
     const enrollment = new Enrollment({

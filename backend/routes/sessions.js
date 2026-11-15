@@ -21,6 +21,8 @@ const { getPlan } = require('../config/subscriptionPlans');
 const {
   parseRequestedDateTime,
   teacherAvailabilityDecision,
+  circleLocalDateKey,
+  circleScheduleDecision,
   overlaps,
   generateTeacherSlotStarts,
   safeTimeZone,
@@ -47,6 +49,27 @@ const sessionReportLimiter = createScopedRateLimiter({
 
 const MAX_TRIAL_SESSIONS_PER_STUDENT = 3;
 const TRIAL_CONSUMING_STATUSES = ['pending', 'accepted', 'completed'];
+const inProcessStudentBookingLocks = new Map();
+
+async function withInProcessStudentBookingLock(studentId, work) {
+  const key = String(studentId || '');
+  const previous = inProcessStudentBookingLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => current, () => current);
+  inProcessStudentBookingLocks.set(key, chained);
+  await previous.catch(() => {});
+  try {
+    return await work();
+  } finally {
+    release();
+    if (inProcessStudentBookingLocks.get(key) === chained) {
+      inProcessStudentBookingLocks.delete(key);
+    }
+  }
+}
 
 async function validateBookingSlot({ teacher, scheduledAt, timezone, duration = 60 }) {
   const resolved = parseRequestedDateTime(scheduledAt, timezone);
@@ -81,7 +104,7 @@ async function validateBookingSlot({ teacher, scheduledAt, timezone, duration = 
 
   const activeSessions = await Session.find({
     teacher: teacher._id,
-    status: { $in: ['pending', 'accepted'] },
+    status: { $in: ['pending', 'accepted', 'completed'] },
   }).select('scheduledAt duration');
 
   const conflict = (activeSessions || []).find((session) => (
@@ -139,7 +162,7 @@ router.get('/available-slots/:teacherId', async (req, res) => {
 
     const activeSessions = await Session.find({
       teacher: teacher._id,
-      status: { $in: ['pending', 'accepted'] },
+      status: { $in: ['pending', 'accepted', 'completed'] },
     }).select('scheduledAt duration');
 
     const slots = generated
@@ -212,93 +235,116 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
       return res.status(409).json(teacherLockedResponse(teacherLock));
     }
 
-    const trialUsed = await Session.countDocuments({
-      student: req.user.id,
-      type: 'trial',
-      status: { $in: TRIAL_CONSUMING_STATUSES },
-    });
-    const trialRemaining = Math.max(0, MAX_TRIAL_SESSIONS_PER_STUDENT - trialUsed);
-
-    if (trialUsed >= MAX_TRIAL_SESSIONS_PER_STUDENT) {
-      return res.status(409).json({
-        error: 'لقد استخدمت الحد الأقصى من الحصص التجريبية. اشترك للاستمرار في رحلتك.',
-        code: 'TRIAL_LIMIT_REACHED',
-        trialAllowance: {
-          limit: MAX_TRIAL_SESSIONS_PER_STUDENT,
-          used: trialUsed,
-          remaining: 0,
-        },
-        nextActions: ['subscribe', 'continue-with-teacher'],
+    const outcome = await withInProcessStudentBookingLock(req.user.id, async () => {
+      const trialUsed = await Session.countDocuments({
+        student: req.user.id,
+        type: 'trial',
+        status: { $in: TRIAL_CONSUMING_STATUSES },
       });
+      const trialRemaining = Math.max(0, MAX_TRIAL_SESSIONS_PER_STUDENT - trialUsed);
+
+      if (trialUsed >= MAX_TRIAL_SESSIONS_PER_STUDENT) {
+        return {
+          status: 409,
+          body: {
+            error: 'لقد استخدمت الحد الأقصى من الحصص التجريبية. اشترك للاستمرار في رحلتك.',
+            code: 'TRIAL_LIMIT_REACHED',
+            trialAllowance: {
+              limit: MAX_TRIAL_SESSIONS_PER_STUDENT,
+              used: trialUsed,
+              remaining: 0,
+            },
+            nextActions: ['subscribe', 'continue-with-teacher'],
+          },
+        };
+      }
+
+      const completedTrial = await Session.findOne({
+        student: req.user.id,
+        teacher: teacherId,
+        type: 'trial',
+        status: 'completed',
+      });
+
+      if (completedTrial) {
+        return {
+          status: 409,
+          body: {
+            error: 'Trial already completed with this teacher',
+            code: 'TRIAL_ALREADY_COMPLETED_WITH_TEACHER',
+            existingSession: {
+              _id: completedTrial._id,
+              teacher: completedTrial.teacher,
+              status: completedTrial.status,
+              scheduledAt: completedTrial.scheduledAt,
+              type: completedTrial.type,
+            },
+            nextActions: ['continue-with-teacher', 'try-another-teacher'],
+          },
+        };
+      }
+
+      const existingTrial = await Session.findOne({
+        student: req.user.id,
+        teacher: teacherId,
+        type: 'trial',
+        status: { $in: ['pending', 'accepted'] },
+      });
+
+      if (existingTrial) {
+        return {
+          status: 409,
+          body: {
+            error: 'You already have an active trial session with this teacher',
+            code: 'TRIAL_ALREADY_EXISTS',
+            existingSession: {
+              _id: existingTrial._id,
+              teacher: existingTrial.teacher,
+              status: existingTrial.status,
+              scheduledAt: existingTrial.scheduledAt,
+              timezone: existingTrial.timezone,
+              type: existingTrial.type,
+            },
+          },
+        };
+      }
+
+      const booking = await validateBookingSlot({
+        teacher,
+        scheduledAt,
+        timezone,
+        duration: 60,
+      });
+      if (!booking.ok) {
+        return {
+          status: booking.status,
+          body: {
+            error: booking.error,
+            code: booking.code,
+            teacherTimezone: booking.teacherTimezone,
+          },
+        };
+      }
+
+      const createdSession = await Session.create({
+        student: req.user.id,
+        teacher: teacherId,
+        type: 'trial',
+        scheduledAt: booking.scheduledAt,
+        timezone: booking.timezone || timezone || 'Africa/Cairo',
+        agreedHourlyRate: Number(teacher.hourlyRate || 50),
+        notes: notes ? String(notes).slice(0, 1500) : notes,
+        status: 'pending',
+      });
+
+      return { status: 201, session: createdSession, trialUsed, trialRemaining };
+    });
+
+    if (outcome.status !== 201) {
+      return res.status(outcome.status).json(outcome.body);
     }
 
-    const completedTrial = await Session.findOne({
-      student: req.user.id,
-      teacher: teacherId,
-      type: 'trial',
-      status: 'completed',
-    });
-
-    if (completedTrial) {
-      return res.status(409).json({
-        error: 'Trial already completed with this teacher',
-        code: 'TRIAL_ALREADY_COMPLETED_WITH_TEACHER',
-        existingSession: {
-          _id: completedTrial._id,
-          teacher: completedTrial.teacher,
-          status: completedTrial.status,
-          scheduledAt: completedTrial.scheduledAt,
-          type: completedTrial.type,
-        },
-        nextActions: ['continue-with-teacher', 'try-another-teacher'],
-      });
-    }
-
-    const existingTrial = await Session.findOne({
-      student: req.user.id,
-      teacher: teacherId,
-      type: 'trial',
-      status: { $in: ['pending', 'accepted'] }
-    });
-
-    if (existingTrial) {
-      return res.status(409).json({
-        error: 'You already have an active trial session with this teacher',
-        code: 'TRIAL_ALREADY_EXISTS',
-        existingSession: {
-          _id: existingTrial._id,
-          teacher: existingTrial.teacher,
-          status: existingTrial.status,
-          scheduledAt: existingTrial.scheduledAt,
-          timezone: existingTrial.timezone,
-          type: existingTrial.type,
-        },
-      });
-    }
-
-    const booking = await validateBookingSlot({
-      teacher,
-      scheduledAt,
-      timezone,
-      duration: 60,
-    });
-    if (!booking.ok) {
-      return res.status(booking.status).json({
-        error: booking.error,
-        code: booking.code,
-        teacherTimezone: booking.teacherTimezone,
-      });
-    }
-
-    const session = await Session.create({
-      student: req.user.id,
-      teacher: teacherId,
-      type: 'trial',
-      scheduledAt: booking.scheduledAt,
-      timezone: booking.timezone || timezone || 'Africa/Cairo',
-      notes,
-      status: 'pending'
-    });
+    const { session, trialUsed, trialRemaining } = outcome;
 
     try {
       await notifyTeacherForSessionRequest(session, teacher.user);
@@ -389,15 +435,31 @@ router.post('/group-circle', protect, authorize('teacher', 'admin'), async (req,
       });
     }
 
+    const resolvedCircleTz = circle.timezone || booking.timezone || timezone || 'Africa/Cairo';
+    if (req.user.role === 'teacher' && Array.isArray(circle.schedule) && circle.schedule.length > 0) {
+      const scheduleCheck = circleScheduleDecision(circle, booking.scheduledAt, requestedDuration);
+      if (!scheduleCheck.allowed) {
+        return res.status(409).json({
+          error: 'موعد الحصة لا يتوافق مع أيام ومواعيد الحلقة المعتمدة من الإدارة',
+          code: 'CIRCLE_SCHEDULE_MISMATCH',
+        });
+      }
+    }
+
+    const scheduledSlotKey = circleLocalDateKey(circle._id, booking.scheduledAt, resolvedCircleTz);
+
     const duplicate = await Session.findOne({
       circle: circle._id,
-      scheduledAt: booking.scheduledAt,
-      status: { $in: ['pending', 'accepted'] },
+      $or: [
+        { scheduledAt: booking.scheduledAt },
+        ...(scheduledSlotKey ? [{ scheduledSlotKey }] : []),
+      ],
+      status: { $in: ['pending', 'accepted', 'completed'] },
     }).select('_id');
 
     if (duplicate) {
       return res.status(409).json({
-        error: 'يوجد بالفعل حصة لهذه الحلقة في نفس الموعد',
+        error: 'يوجد بالفعل حصة لهذه الحلقة في نفس اليوم أو الموعد',
         code: 'GROUP_SESSION_ALREADY_EXISTS',
         sessionId: String(duplicate._id),
       });
@@ -418,6 +480,8 @@ router.post('/group-circle', protect, authorize('teacher', 'admin'), async (req,
       type: 'group_circle',
       status: 'accepted',
       scheduledAt: booking.scheduledAt,
+      scheduledSlotKey: scheduledSlotKey || undefined,
+      agreedHourlyRate: Number(teacher.hourlyRate || 50),
       timezone: booking.timezone || timezone || circle.timezone || 'Africa/Cairo',
       duration: requestedDuration,
       notes: String(notes || '').trim().slice(0, 1500),
@@ -503,68 +567,90 @@ router.post('/regular', protect, async (req, res) => {
       return res.status(400).json({ error: 'يجب إجراء حصة تجريبية أو حصة سابقة مع هذا المعلم أولاً' });
     }
 
-    const activePrivateSub = await StudentSubscription.findOne({
-      student: req.user.id,
-      planKey: 'private',
-      status: { $in: ['active', 'placed'] },
-      sessionsRemaining: { $gt: 0 },
-    });
-    if (
-      !activePrivateSub
-      || !(Number(activePrivateSub.sessionsRemaining) > 0)
-      || (activePrivateSub.preferredTeacher && String(activePrivateSub.preferredTeacher) !== String(teacher._id))
-    ) {
-      return res.status(403).json({
-        error: 'يتطلب حجز الحصص الفردية اشتراكاً فردياً نشطاً برصيد حصص متاح مع هذا المعلم',
-        code: 'SUBSCRIPTION_REQUIRED',
+    const regularOutcome = await withInProcessStudentBookingLock(req.user.id, async () => {
+      const activePrivateSub = await StudentSubscription.findOne({
+        student: req.user.id,
+        planKey: 'private',
+        status: { $in: ['active', 'placed'] },
+        sessionsRemaining: { $gt: 0 },
       });
-    }
+      if (
+        !activePrivateSub
+        || !(Number(activePrivateSub.sessionsRemaining) > 0)
+        || (activePrivateSub.preferredTeacher && String(activePrivateSub.preferredTeacher) !== String(teacher._id))
+      ) {
+        return {
+          status: 403,
+          body: {
+            error: 'يتطلب حجز الحصص الفردية اشتراكاً فردياً نشطاً برصيد حصص متاح مع هذا المعلم',
+            code: 'SUBSCRIPTION_REQUIRED',
+          },
+        };
+      }
 
-    const openRegularCount = await Session.countDocuments({
-      student: req.user.id,
-      type: 'regular',
-      status: { $in: ['pending', 'accepted'] },
-    });
-    if (openRegularCount >= Number(activePrivateSub.sessionsRemaining)) {
-      return res.status(409).json({
-        error: 'لديك حصص مجدولة بالفعل بعدد الحصص المتبقية في اشتراكك الفردي',
-        code: 'SUBSCRIPTION_CREDITS_RESERVED',
+      const openRegularCount = await Session.countDocuments({
+        student: req.user.id,
+        type: 'regular',
+        status: { $in: ['pending', 'accepted'] },
       });
-    }
+      if (openRegularCount >= Number(activePrivateSub.sessionsRemaining)) {
+        return {
+          status: 409,
+          body: {
+            error: 'لديك حصص مجدولة بالفعل بعدد الحصص المتبقية في اشتراكك الفردي',
+            code: 'SUBSCRIPTION_CREDITS_RESERVED',
+          },
+        };
+      }
 
-    const existing = await Session.findOne({
-      student: req.user.id,
-      teacher: teacherId,
-      type: 'regular',
-      status: { $in: ['pending', 'accepted'] },
-    });
-    if (existing) {
-      return res.status(400).json({ error: 'لديك حصة منتظمة قيد الانتظار أو مقبولة مع هذا المعلم' });
-    }
-
-    const booking = await validateBookingSlot({
-      teacher,
-      scheduledAt,
-      timezone,
-      duration: 60,
-    });
-    if (!booking.ok) {
-      return res.status(booking.status).json({
-        error: booking.error,
-        code: booking.code,
-        teacherTimezone: booking.teacherTimezone,
+      const existing = await Session.findOne({
+        student: req.user.id,
+        teacher: teacherId,
+        type: 'regular',
+        status: { $in: ['pending', 'accepted'] },
       });
-    }
+      if (existing) {
+        return {
+          status: 400,
+          body: { error: 'لديك حصة منتظمة قيد الانتظار أو مقبولة مع هذا المعلم' },
+        };
+      }
 
-    const session = await Session.create({
-      student: req.user.id,
-      teacher: teacherId,
-      type: 'regular',
-      scheduledAt: booking.scheduledAt,
-      timezone: booking.timezone || timezone || 'Africa/Cairo',
-      notes: notes ? String(notes).slice(0, 1500) : notes,
-      status: 'pending',
+      const booking = await validateBookingSlot({
+        teacher,
+        scheduledAt,
+        timezone,
+        duration: 60,
+      });
+      if (!booking.ok) {
+        return {
+          status: booking.status,
+          body: {
+            error: booking.error,
+            code: booking.code,
+            teacherTimezone: booking.teacherTimezone,
+          },
+        };
+      }
+
+      const created = await Session.create({
+        student: req.user.id,
+        teacher: teacherId,
+        type: 'regular',
+        scheduledAt: booking.scheduledAt,
+        agreedHourlyRate: Number(teacher.hourlyRate || 50),
+        timezone: booking.timezone || timezone || 'Africa/Cairo',
+        notes: notes ? String(notes).slice(0, 1500) : notes,
+        status: 'pending',
+      });
+
+      return { status: 201, session: created };
     });
+
+    if (regularOutcome.status !== 201) {
+      return res.status(regularOutcome.status).json(regularOutcome.body);
+    }
+    const { session } = regularOutcome;
 
     try {
       await notifyTeacherForSessionRequest(session, teacher.user);
@@ -972,13 +1058,13 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       return res.status(404).json({ error: 'Session not found or unavailable for completion' });
     }
 
-    const HOURLY_RATE = Number(teacher.hourlyRate || 50);
+    const HOURLY_RATE = Number(session.agreedHourlyRate ?? teacher.hourlyRate ?? 50);
     const sessionDuration = Math.max(1, Number(session.duration || 60));
     const SESSION_RATE = calculateSessionEarning(HOURLY_RATE, sessionDuration);
     const scheduledAt = new Date(session.scheduledAt);
     const now = new Date();
 
-    if (session.status !== 'completed' && scheduledAt.getTime() > now.getTime()) {
+    if (scheduledAt.getTime() > now.getTime()) {
       return res.status(409).json({
         error: 'لا يمكن إنهاء الحصة قبل موعد بدايتها',
         code: 'SESSION_NOT_STARTED',
@@ -997,19 +1083,14 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
           unresolvedStudentIds: unresolved.map((entry) => String(entry.student?._id || entry.student)),
         });
       }
-    }
-
-    if (session.type === 'group_circle' && session.status !== 'completed') {
-      const unresolvedAttendance = (session.attendance || []).filter(
-        (entry) => ['pending', 'confirmed'].includes(entry.status)
-      );
-
-      if (unresolvedAttendance.length) {
-        return res.status(409).json({
-          error: 'يجب تسجيل الحضور النهائي لكل طلاب الحلقة قبل إنهاء الحصة',
-          code: 'GROUP_ATTENDANCE_INCOMPLETE',
-          unresolvedCount: unresolvedAttendance.length,
-        });
+      if (session.status !== 'completed') {
+        const attendedCount = (session.attendance || []).filter((entry) => entry.status === 'attended').length;
+        if (attendedCount === 0) {
+          return res.status(409).json({
+            error: 'لا يمكن للمعلم إتمام حصة جماعية بدون حضور فعلي لأي طالب',
+            code: 'SESSION_ATTENDANCE_NOT_ELIGIBLE',
+          });
+        }
       }
     }
 
@@ -1075,12 +1156,13 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
     }
 
     // Ledger is the canonical source of truth for all new teacher earnings.
+    const attendedGroupCount = (session.attendance || []).filter((entry) => entry.status === 'attended').length;
     await ensureSessionEarning({
       sessionId: session._id,
       teacherId: teacher._id,
       amount: session.earnings?.amount || SESSION_RATE,
       currency: 'EGP',
-      attendeesCount: session.student ? 1 : Math.max(1, session.attendance?.length || 0),
+      attendeesCount: session.student ? 1 : Math.max(1, attendedGroupCount),
       notes: session.type === 'trial'
         ? 'حصة تجريبية مكتملة'
         : session.type === 'group_circle'
@@ -1345,6 +1427,13 @@ router.patch('/:id/attendance', protect, authorize('teacher', 'admin'), async (r
         code: 'GROUP_ATTENDANCE_LOCKED',
       });
     }
+    if (session.scheduledAt && new Date(session.scheduledAt).getTime() > Date.now()) {
+      return res.status(409).json({
+        error: 'لا يمكن رصد الحضور النهائي قبل بدء موعد الحصة',
+        code: 'SESSION_NOT_STARTED',
+        scheduledAt: session.scheduledAt,
+      });
+    }
 
     if (req.user.role === 'teacher') {
       const teacher = await Teacher.findOne({ user: req.user.id }).select('_id');
@@ -1447,21 +1536,27 @@ async function resolveRsvpStudentForCaller(session, user, requestedStudentId) {
 
   if (user.role === 'guardian') {
     const Guardian = require('../models/Guardian');
-    const guardian = await Guardian.findOne({ user: user.id, isActive: true }).select('children.student').lean();
+    const { hasChildPermission } = require('../utils/guardianSafeguarding');
+    const guardian = await Guardian.findOne({ user: user.id, isActive: { $ne: false } }).select('children isActive').lean();
     if (!guardian) {
       return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
     }
-    const childIds = (guardian.children || []).map((c) => String(c.student)).filter(Boolean);
+    const permittedChildIds = (guardian.children || [])
+      .filter((c) => c?.student && hasChildPermission(guardian, c.student, 'viewAttendance'))
+      .map((c) => String(c.student));
     if (candidateId) {
-      if (!childIds.includes(String(candidateId))) {
+      if (!permittedChildIds.includes(String(candidateId))) {
         return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
       }
     } else {
-      for (const cid of childIds) {
+      for (const cid of permittedChildIds) {
         if (await sessionIncludesStudent(session, cid)) {
           candidateId = cid;
           break;
         }
+      }
+      if (!candidateId) {
+        return { studentId: null, errorStatus: 403, errorMessage: 'غير مصرح بتعديل حضور هذا الطالب' };
       }
     }
   }

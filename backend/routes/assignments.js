@@ -94,9 +94,21 @@ async function streamPrivateFile(res, req, reference) {
     if (!result) return res.status(404).json({ error: 'File not found' });
     if (result.statusCode === 304) return res.status(304).end();
 
-    res.setHeader('Content-Type', result.blob?.contentType || 'application/octet-stream');
+    const SAFE_PRIVATE_STREAM_TYPES = new Set([
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'audio/mpeg',
+      'audio/wav',
+      'video/mp4',
+      'video/webm',
+    ]);
+    const rawMime = String(result.blob?.contentType || '').split(';', 1)[0].trim().toLowerCase();
+    res.setHeader('Content-Type', SAFE_PRIVATE_STREAM_TYPES.has(rawMime) ? rawMime : 'application/octet-stream');
     res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Cache-Control', 'private, no-store');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 
@@ -369,6 +381,13 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
 
+    if (assignment.allowLateSubmission === false && assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
+      return res.status(400).json({
+        error: 'Assignment submission deadline has passed',
+        code: 'ASSIGNMENT_DEADLINE_PASSED',
+      });
+    }
+
     const existingSubmission = await AssignmentSubmission.findOne({
       assignment: req.params.id,
       student: req.user.id
@@ -392,19 +411,29 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
 
     if (directFile) {
       const reference = directFile.url || directFile.pathname;
+      const driver = objectStorage.getDriver();
       const validReference =
         Boolean(reference) &&
         objectStorage.referenceMatches(reference, 'assignment', req.user.id) &&
-        (objectStorage.getDriver() !== 'vercel-blob' || objectStorage.isVercelBlobReference(reference));
+        ((driver !== 'vercel-blob' && driver !== 's3') || objectStorage.isOwnedObjectReference(reference, 'assignment', req.user.id));
 
       if (!validReference) {
         return res.status(400).json({ error: 'Invalid assignment upload reference' });
       }
 
+      const magicVerify = await objectStorage.verifyUploadedObjectMagicBytes(
+        reference,
+        directFile.contentType,
+        Number(assignment.maxFileSize) || 50 * 1024 * 1024
+      );
+      if (!magicVerify.ok) {
+        return res.status(400).json({ error: magicVerify.error, code: magicVerify.code });
+      }
+
       submissionData.content.file = {
-        name: directFile.name || 'submission',
+        name: String(directFile.name || 'submission').slice(0, 180),
         url: reference,
-        type: directFile.contentType || 'application/octet-stream',
+        type: String(directFile.contentType || 'application/octet-stream').slice(0, 80),
         size: Number(directFile.size || 0)
       };
       submissionData.submissionType = 'file';
@@ -434,16 +463,34 @@ router.post('/:id/submit', protect, authorize('student'), upload.single('file'),
         size: req.file.size
       };
       submissionData.submissionType = 'file';
-    } else if (req.body.text) {
-      submissionData.content.text = String(req.body.text).slice(0, 20000);
-    } else if (req.body.url) {
+    } else if (typeof req.body.text === 'string' && req.body.text.trim()) {
+      submissionData.content.text = req.body.text.trim().slice(0, 20000);
+      submissionData.submissionType = 'text';
+    } else if (typeof req.body.url === 'string' && req.body.url.trim()) {
       try {
-        const parsed = new URL(String(req.body.url));
+        const parsed = new URL(req.body.url.trim());
         if (parsed.protocol !== 'https:') throw new Error('https required');
         submissionData.content.url = parsed.toString().slice(0, 1000);
+        submissionData.submissionType = 'url';
       } catch {
         return res.status(400).json({ error: 'Submission URL must be a valid HTTPS link' });
       }
+    } else {
+      return res.status(400).json({
+        error: 'Assignment submission must include text, a file, or an HTTPS URL',
+        code: 'SUBMISSION_CONTENT_REQUIRED',
+      });
+    }
+
+    if (
+      Array.isArray(assignment.submissionTypes)
+      && assignment.submissionTypes.length > 0
+      && !assignment.submissionTypes.includes(submissionData.submissionType)
+    ) {
+      return res.status(400).json({
+        error: 'This submission format is not permitted for this assignment',
+        code: 'SUBMISSION_TYPE_NOT_ALLOWED',
+      });
     }
 
     const submission = new AssignmentSubmission(submissionData);

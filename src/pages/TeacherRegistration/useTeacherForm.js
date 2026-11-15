@@ -5,7 +5,7 @@ import { INITIAL_FORM, DRAFT_KEY, STATUS_TOKEN_KEY } from './constants';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { uploadTeacherFiles } from '../../lib/teacherUploadQueue.mjs';
-import { getAccessToken } from '../../lib/authSession';
+import { getAccessToken, refreshAccessToken } from '../../lib/authSession';
 
 const emptyFiles = () => ({
   profilePhoto: null,
@@ -483,13 +483,21 @@ export function useTeacherForm() {
         uploadedFiles,
       };
 
+      let activeToken = authenticatedTeacher ? getAccessToken() : '';
+      if (authenticatedTeacher) {
+        try {
+          activeToken = await refreshAccessToken();
+        } catch {
+          activeToken = getAccessToken() || '';
+        }
+      }
       const saveController = new AbortController();
       saveTimer = setTimeout(() => { saveTimedOut = true; saveController.abort(); }, 45000);
       const r = await fetch(apiUrl('/api/teachers/register'), {
         signal: saveController.signal,
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...(authenticatedTeacher ? { Authorization: `Bearer ${getAccessToken()}` } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(authenticatedTeacher && activeToken ? { Authorization: `Bearer ${activeToken}` } : {}) },
         body: JSON.stringify(payload),
       });
       const data = await r.json().catch(() => ({}));

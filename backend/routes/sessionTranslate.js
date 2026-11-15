@@ -12,6 +12,7 @@ const { validateUploadMetadata } = require('../config/uploadPolicy');
 const { notifyUser } = require('../utils/notify');
 const { canAccessSession } = require('../utils/sessionChatAccess');
 const { inspectChatSafety } = require('../utils/chatSafety');
+const { sessionParticipantWindow } = require('../services/sessionAccess');
 
 const sessionChatLimiter = createScopedRateLimiter({
   windowMs: 15 * 60 * 1000,
@@ -191,6 +192,12 @@ router.post('/messages', protect, sessionChatLimiter, async (req, res) => {
       const targets = [...new Set([studentLang, teacherLang].filter((code) => SUPPORTED.includes(code)))];
       translationsMap = await translateBatch(cleanText, fromLang, targets);
     } else {
+      if (req.user.role !== 'admin' && !sessionParticipantWindow(session).within) {
+        return res.status(409).json({
+          error: 'الرسائل الصوتية متاحة فقط أثناء النافذة الزمنية للحصة المباشرة',
+          code: 'VOICE_NOTE_OUTSIDE_SESSION_WINDOW',
+        });
+      }
       if (!storageFile?.url || !storageFile?.name || !storageFile?.contentType || !storageFile?.size) {
         return res.status(400).json({ error: 'Voice note upload is required' });
       }
@@ -213,6 +220,15 @@ router.post('/messages', protect, sessionChatLimiter, async (req, res) => {
         contentType: storageFile.contentType,
         size: storageFile.size,
       });
+
+      const magicVerify = await objectStorage.verifyUploadedObjectMagicBytes(
+        storageFile.url,
+        storageFile.contentType,
+        10 * 1024 * 1024
+      );
+      if (!magicVerify.ok) {
+        return res.status(400).json({ error: magicVerify.error, code: magicVerify.code });
+      }
 
       const numericDuration = Number(durationSeconds || 0);
       if (!Number.isFinite(numericDuration) || numericDuration < 0 || numericDuration > 120) {
@@ -284,8 +300,11 @@ router.get('/messages/:messageId/audio', protect, async (req, res) => {
     if (!result) return res.status(404).end();
     if (result.statusCode === 304) return res.status(304).end();
 
-    res.setHeader('Content-Type', result.blob?.contentType || message.audio.contentType || 'application/octet-stream');
+    const SAFE_AUDIO_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a']);
+    const rawAudioMime = String(result.blob?.contentType || message.audio.contentType || '').split(';', 1)[0].trim().toLowerCase();
+    res.setHeader('Content-Type', SAFE_AUDIO_TYPES.has(rawAudioMime) ? rawAudioMime : 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; media-src 'self'; sandbox");
     res.setHeader('Cache-Control', 'private, max-age=300');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
 

@@ -5,14 +5,16 @@ const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const User = require('../models/User');
-const { protect, getAccessSecret } = require('../middleware/auth');
+const { protect, getAccessSecret, verifyAccessTokenString } = require('../middleware/auth');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const storage = require('../services/objectStorage');
 const { validateUploadMetadata } = require('../config/uploadPolicy');
+const { registerVerificationTokenUpload } = require('./verification');
 
 const blobUploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 40,
+  skip: (req) => Boolean(req.headers?.['x-vercel-signature']),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many upload token requests, please try again later.' },
@@ -35,17 +37,14 @@ async function verifyClientIdentity(payload = {}) {
   const secret = getAccessSecret();
 
   if (payload.accessToken) {
-    const user = jwt.verify(payload.accessToken, secret, { algorithms: ['HS256'] });
+    const { decoded: user } = await verifyAccessTokenString(payload.accessToken);
     if (mongoose.connection.readyState === 1) {
       const account = await User.findById(user.id).select('role email isActive').lean();
       if (!account || account.isActive !== true) {
         throw new Error('Account is inactive or unavailable');
       }
       if (account.role === 'teacher') {
-        const decision = await getTeacherAccessDecision({
-          userId: account._id,
-          email: account.email,
-        });
+        const decision = await getTeacherAccessDecision(account._id);
         if (!decision.allowed) {
           throw new Error('Teacher account is not approved for uploads');
         }
@@ -55,21 +54,16 @@ async function verifyClientIdentity(payload = {}) {
     return { role: user.role, owner: user.id };
   }
 
-  const teacherVerificationToken = payload.verificationToken || payload.phoneVerificationToken;
+  const teacherVerificationToken = payload.verificationToken;
   if (teacherVerificationToken) {
     const verification = jwt.verify(teacherVerificationToken, secret, { algorithms: ['HS256'] });
 
-    if (verification.purpose === 'teacher-email-verification' && verification.email) {
+    if (verification.purpose === 'teacher-email-verification' && verification.email && verification.jti) {
+      const allowedQuota = await registerVerificationTokenUpload(verification.jti, verification.exp);
+      if (!allowedQuota) {
+        throw new Error('Verification upload quota exceeded or token already consumed');
+      }
       return { role: 'teacher-registration', owner: verification.email };
-    }
-
-    // Transitional support for verification tokens issued shortly before the email-OTP rollout.
-    if (
-      payload.phoneVerificationToken &&
-      verification.purpose === 'teacher-phone-verification' &&
-      verification.phone
-    ) {
-      return { role: 'teacher-registration', owner: verification.phone };
     }
 
     throw new Error('Invalid teacher verification proof');
@@ -197,7 +191,7 @@ router.post('/presign', protect, async (req, res) => {
     `uploads/${purpose}/${storage.sanitizeSegment(req.user.id)}`,
     filename
   );
-  const uploadUrl = await storage.createUploadUrl({ key, contentType: metadata.contentType });
+  const uploadUrl = await storage.createUploadUrl({ key, contentType: metadata.contentType, size: metadata.size });
 
   return res.json({
     key,
@@ -220,8 +214,7 @@ router.get('/public', async (req, res) => {
 
     const publicPurpose =
       pathname.startsWith('uploads/teacher-public/') ||
-      pathname.startsWith('uploads/student-avatar/') ||
-      pathname.startsWith('uploads/course-media/');
+      pathname.startsWith('uploads/student-avatar/');
 
     if (!publicPurpose) {
       return res.status(403).json({ error: 'This file is not public media' });

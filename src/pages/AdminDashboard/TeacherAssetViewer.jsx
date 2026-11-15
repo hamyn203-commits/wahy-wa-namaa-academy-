@@ -48,9 +48,10 @@ export default function TeacherAssetViewer({ teacherId, asset, loader, onClose }
         if (!isBlob && !isTrustedUrl) {
           throw new Error('لم يصل رابط تشغيل صالح من الخادم.');
         }
+        const safeImageMime = isBlob && ['image/jpeg', 'image/png', 'image/webp'].includes(String(result.type || '').toLowerCase());
         const format = category === 'document'
-          ? (result.type.startsWith('image/') ? 'image' : result.type === 'application/pdf' ? 'pdf' : 'other')
-          : kind === 'profilePhoto' ? 'image' : kind === 'audioRecordings' ? 'audio' : 'video';
+          ? (safeImageMime ? 'image' : result.type === 'application/pdf' ? 'pdf' : 'other')
+          : kind === 'profilePhoto' ? (isBlob && !safeImageMime ? 'other' : 'image') : kind === 'audioRecordings' ? 'audio' : 'video';
         if (isBlob) ownedObjectUrl = URL.createObjectURL(result);
         setPreview({ status: 'ready', url: isBlob ? ownedObjectUrl : result.url, format, playbackError: false, temporary: !isBlob, streamingMode: isBlob ? 'local-blob' : result.streamingMode, contentType: isBlob ? result.type : result.contentType, sizeBytes: isBlob ? result.size : result.sizeBytes, streamingChecked: isBlob ? true : result.streamingChecked });
       })
@@ -99,7 +100,11 @@ export default function TeacherAssetViewer({ teacherId, asset, loader, onClose }
                 </video>
               ) : null}
               {preview.format === 'audio' ? <audio src={preview.url} controls preload="metadata" /> : null}
-              {preview.format === 'pdf' ? <iframe src={preview.url} title={asset.label} /> : null}
+              {preview.format === 'pdf' ? (
+                <p className="wn-admin-asset-viewer__message">
+                  ملف PDF جاهز للمراجعة الآمنة — يُرجى استخدام زر التنزيل بالأسفل لفتحه عبر عارض المستندات المعزول.
+                </p>
+              ) : null}
               {preview.format === 'other' ? (
                 <p className="wn-admin-asset-viewer__message">هذا النوع من الملفات غير مدعوم للمعاينة المباشرة. يمكن تنزيله للمراجعة.</p>
               ) : null}
