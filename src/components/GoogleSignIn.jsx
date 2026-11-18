@@ -183,7 +183,7 @@ export default function GoogleSignIn({ context = 'signin', role = 'student', enr
           {copy.verifying}
         </p>
       )}
-      {error && <p role="alert" className="text-[var(--wn-danger)] text-xs">{error}</p>}
+      {error && <p role="alert" className="text-[var(--wn-text-danger,var(--wn-danger))] text-xs">{error}</p>}
     </div>
   );
 }

@@ -413,7 +413,7 @@ function evaluatePasswordStrength(pw, copy) {
   if (pw.length < 8) score = 1;
 
   const levels = {
-    1: { label: copy.pwStrength[1], color: 'bg-[var(--wn-danger)]', textColor: 'text-[var(--wn-danger)]' },
+    1: { label: copy.pwStrength[1], color: 'bg-[var(--wn-danger)]', textColor: 'text-[var(--wn-text-danger,var(--wn-danger))]' },
     2: { label: copy.pwStrength[2], color: 'bg-[var(--wn-warning)]', textColor: 'text-[var(--wn-warning)]' },
     3: { label: copy.pwStrength[3], color: 'bg-[var(--wn-teal)]', textColor: 'text-[var(--wn-link)]' },
     4: { label: copy.pwStrength[4], color: 'bg-[var(--wn-emerald)]', textColor: 'text-[var(--wn-heading)]' },
@@ -1138,7 +1138,7 @@ export default function Register() {
                               setPhotoNotice('');
                               if (photoInputRef.current) photoInputRef.current.value = '';
                             }}
-                            className="min-h-[44px] px-2 text-xs font-semibold text-[var(--wn-text-secondary)] underline underline-offset-2 hover:text-[var(--wn-danger)]"
+                            className="min-h-[44px] px-2 text-xs font-semibold text-[var(--wn-text-secondary)] underline underline-offset-2 hover:text-[var(--wn-text-danger,var(--wn-danger))]"
                           >
                             {copy.removePhoto}
                           </button>
@@ -1186,7 +1186,7 @@ export default function Register() {
                   role="alert"
                   initial={{ opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-[var(--wn-danger-soft)] border border-[var(--wn-danger)]/40 text-[var(--wn-danger)] rounded-xl p-4 text-sm flex items-start gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-danger)]/40"
+                  className="bg-[var(--wn-danger-soft)] border border-[var(--wn-danger)]/40 text-[var(--wn-text-danger,var(--wn-danger))] rounded-xl p-4 text-sm flex items-start gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-danger)]/40"
                 >
                   <span className="font-bold shrink-0" aria-hidden="true">!</span>
                   <div className="space-y-2">

@@ -775,7 +775,7 @@ export default function LibraryPage() {
               </div>
             ) : videoError ? (
               <div role="alert" className="text-center py-14 bg-[var(--wn-surface)] rounded-2xl border border-[var(--wn-danger)]/40 px-4">
-                <p className="text-[var(--wn-danger)] font-bold mb-4">{videoError}</p>
+                <p className="text-[var(--wn-text-danger,var(--wn-danger))] font-bold mb-4">{videoError}</p>
                 <button
                   type="button"
                   onClick={() => fetchVideos(category)}

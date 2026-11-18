@@ -322,7 +322,7 @@ export default function Careers() {
               <h2 className="font-[var(--wn-font-display)] text-xl text-[var(--wn-heading)]">{copy.formTitle}</h2>
 
               {submitError && (
-                <div role="alert" className="rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-danger)]">
+                <div role="alert" className="rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-text-danger,var(--wn-danger))]">
                   {submitError}
                 </div>
               )}

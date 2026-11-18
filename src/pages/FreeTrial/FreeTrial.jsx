@@ -900,7 +900,7 @@ export default function FreeTrial() {
 
                     <div>
                       <label htmlFor="trial-student-name" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
-                        {text.studentNameLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.studentNameLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </label>
                       <div className="relative">
                         <User className="absolute start-3 top-3.5 text-[var(--wn-text-tertiary)] pointer-events-none" size={18} aria-hidden="true" />
@@ -916,13 +916,13 @@ export default function FreeTrial() {
                         />
                       </div>
                       {errors.studentName && (
-                        <p id="err-student-name" role="alert" className="text-xs text-[var(--wn-danger)] mt-1">{errors.studentName}</p>
+                        <p id="err-student-name" role="alert" className="text-xs text-[var(--wn-text-danger,var(--wn-danger))] mt-1">{errors.studentName}</p>
                       )}
                     </div>
 
                     <div>
                       <label htmlFor="trial-student-age" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
-                        {text.ageLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.ageLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </label>
                       <input
                         id="trial-student-age"
@@ -938,13 +938,13 @@ export default function FreeTrial() {
                         className={fieldCls(errors.age)}
                       />
                       {errors.age && (
-                        <p id="err-student-age" role="alert" className="text-xs text-[var(--wn-danger)] mt-1">{errors.age}</p>
+                        <p id="err-student-age" role="alert" className="text-xs text-[var(--wn-text-danger,var(--wn-danger))] mt-1">{errors.age}</p>
                       )}
                     </div>
 
                     <fieldset>
                       <legend className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-2">
-                        {text.genderLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.genderLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </legend>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
@@ -1035,7 +1035,7 @@ export default function FreeTrial() {
 
                     <div>
                       <label htmlFor="trial-guardian-name" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
-                        {text.guardianNameLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.guardianNameLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </label>
                       <div className="relative">
                         <Users className="absolute start-3 top-3.5 text-[var(--wn-text-tertiary)] pointer-events-none" size={18} aria-hidden="true" />
@@ -1051,13 +1051,13 @@ export default function FreeTrial() {
                         />
                       </div>
                       {errors.guardianName && (
-                        <p id="err-guardian-name" role="alert" className="text-xs text-[var(--wn-danger)] mt-1">{errors.guardianName}</p>
+                        <p id="err-guardian-name" role="alert" className="text-xs text-[var(--wn-text-danger,var(--wn-danger))] mt-1">{errors.guardianName}</p>
                       )}
                     </div>
 
                     <div>
                       <label htmlFor="trial-country-code" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
-                        {text.countryLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.countryLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </label>
                       <select
                         id="trial-country-code"
@@ -1075,7 +1075,7 @@ export default function FreeTrial() {
 
                     <div>
                       <label htmlFor="trial-whatsapp" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
-                        {text.whatsappLabel} <span className="text-[var(--wn-danger)]">*</span>
+                        {text.whatsappLabel} <span className="text-[var(--wn-text-danger,var(--wn-danger))]">*</span>
                       </label>
                       <div className="flex gap-2" dir="ltr">
                         <div className="min-h-[44px] rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-surface-sunken)] px-3 py-2.5 text-sm font-bold text-[var(--wn-text-primary)] flex items-center justify-center min-w-[70px]">
@@ -1101,7 +1101,7 @@ export default function FreeTrial() {
                         <span>{text.whatsappHint}</span>
                       </p>
                       {errors.whatsapp && (
-                        <p id="err-whatsapp" role="alert" className="text-xs text-[var(--wn-danger)] mt-1">{errors.whatsapp}</p>
+                        <p id="err-whatsapp" role="alert" className="text-xs text-[var(--wn-text-danger,var(--wn-danger))] mt-1">{errors.whatsapp}</p>
                       )}
                     </div>
 
@@ -1210,7 +1210,7 @@ export default function FreeTrial() {
                             className={fieldCls(errors.customDate)}
                           />
                           {errors.customDate && (
-                            <p id="err-custom-date" role="alert" className="text-xs text-[var(--wn-danger)] mt-1">{errors.customDate}</p>
+                            <p id="err-custom-date" role="alert" className="text-xs text-[var(--wn-text-danger,var(--wn-danger))] mt-1">{errors.customDate}</p>
                           )}
                         </div>
                       )}
@@ -1262,7 +1262,7 @@ export default function FreeTrial() {
                 )}
 
                 {errors.submit ? (
-                  <div role="alert" className="mt-6 rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-danger)]">
+                  <div role="alert" className="mt-6 rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-text-danger,var(--wn-danger))]">
                     {errors.submit}
                   </div>
                 ) : null}

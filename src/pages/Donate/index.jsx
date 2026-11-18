@@ -288,7 +288,7 @@ export default function Donate() {
           ) : (
             <form onSubmit={submit} className="wn-utility-card grid gap-4">
               {submitError && (
-                <div id="donate-error" role="alert" className="rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-danger)]">
+                <div id="donate-error" role="alert" className="rounded-xl border border-[var(--wn-danger)]/40 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-text-danger,var(--wn-danger))]">
                   {submitError}
                 </div>
               )}
