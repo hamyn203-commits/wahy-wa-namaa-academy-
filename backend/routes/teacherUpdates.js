@@ -9,6 +9,11 @@ const Session = require('../models/Session');
 const { protect, authorize, getAccessSecret, verifyLiveSessionPrincipal } = require('../middleware/auth');
 const storage = require('../services/objectStorage');
 const { notifyUser } = require('../utils/notify');
+const {
+  getTeacherStudentScope,
+  doesTeacherOwnStudent,
+  getStudentVisibleTeacherIds,
+} = require('../utils/teacherStudentScope');
 
 const VIDEO_PURPOSE = 'teacher-update-video';
 const MAX_VIDEOS_PER_UPDATE = 5;
@@ -23,23 +28,12 @@ async function getTeacherByUser(userId) {
 }
 
 async function activeStudentIdsForTeacher(teacherId) {
-  const sessions = await Session.find({
-    teacher: teacherId,
-    type: 'regular',
-    status: { $in: ['accepted', 'completed'] },
-    student: { $ne: null },
-  }).distinct('student');
-
-  return [...new Set(sessions.map((id) => String(id)))];
+  const scope = await getTeacherStudentScope(teacherId);
+  return [...scope.studentIds];
 }
 
 async function teacherHasStudent(teacherId, studentId) {
-  return Boolean(await Session.exists({
-    teacher: teacherId,
-    student: studentId,
-    type: 'regular',
-    status: { $in: ['accepted', 'completed'] },
-  }));
+  return doesTeacherOwnStudent(teacherId, studentId);
 }
 
 function presentUpdate(update, { includeAudienceStudents = true } = {}) {
@@ -296,11 +290,7 @@ router.delete('/teacher/:id', authorize('teacher'), async (req, res) => {
 
 router.get('/student', authorize('student'), async (req, res) => {
   try {
-    const teacherIds = await Session.find({
-      student: req.user.id,
-      type: 'regular',
-      status: { $in: ['accepted', 'completed'] },
-    }).distinct('teacher');
+    const teacherIds = await getStudentVisibleTeacherIds(req.user.id);
 
     if (!teacherIds.length) return res.json({ updates: [] });
 

@@ -13,6 +13,7 @@ const {
   findChildAccess,
   hasChildPermission,
   filterReportForPermissions,
+  requireActiveGuardianProfile,
 } = require('../utils/guardianSafeguarding');
 
 const ADMIN_CHILD_PERMISSIONS = Object.freeze({
@@ -96,7 +97,7 @@ router.post('/add-child', protect, authorize('guardian'), (_req, res) => {
 // @route   DELETE /api/guardians/remove-child/:studentId
 // @desc    Remove a child from guardian
 // @access  Private (Guardian)
-router.delete('/remove-child/:studentId', protect, authorize('guardian'), async (req, res) => {
+router.delete('/remove-child/:studentId', protect, authorize('guardian'), requireActiveGuardianProfile, async (req, res) => {
   try {
     const guardian = await Guardian.findOne({
       user: req.user.id,
@@ -131,6 +132,11 @@ router.delete('/remove-child/:studentId', protect, authorize('guardian'), async 
       await User.updateOne(
         { _id: req.params.studentId, guardian: req.user.id },
         { $unset: { guardian: 1 } }
+      );
+      // No active guardian remains: verified parental consent no longer holds.
+      await User.updateOne(
+        { _id: req.params.studentId },
+        { $set: { 'privacyConsent.parentalConsentVerified': false } }
       );
     }
 
@@ -375,7 +381,7 @@ router.get('/reports', protect, authorize('guardian'), async (req, res) => {
 // @route   PUT /api/guardians/settings
 // @desc    Update guardian settings
 // @access  Private (Guardian)
-router.put('/settings', protect, authorize('guardian'), async (req, res) => {
+router.put('/settings', protect, authorize('guardian'), requireActiveGuardianProfile, async (req, res) => {
   try {
     const { notificationPreferences, settings } = req.body || {};
 

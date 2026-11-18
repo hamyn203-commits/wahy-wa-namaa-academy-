@@ -9,9 +9,15 @@ import {
   ArrowLeft,
   ArrowRight,
   UserRoundCheck,
+  CirclePlay,
+  Volume2,
+  Users,
 } from 'lucide-react';
 import LocalizedLink from '../../../components/LocalizedLink';
-import { teacherPublicImage, teacherImageFallback } from '../../../lib/teacherMedia';
+import TeacherAvatar from '../../../components/shared/TeacherAvatar';
+import { prefetchTeacherBundle } from '../../../lib/teacherProfileCache';
+import { prefetchRoute } from '../../../lib/routePrefetch';
+import { teacherPublicVideo } from '../../../lib/teacherMedia';
 
 const specialtyLabels = {
   children: { ar: 'الأطفال', en: 'Children' },
@@ -19,38 +25,73 @@ const specialtyLabels = {
   women: { ar: 'السيدات', en: 'Women' },
   tajweed: { ar: 'التجويد', en: 'Tajweed' },
   ijaza: { ar: 'الإجازة', en: 'Ijazah' },
+  ijazah: { ar: 'الإجازة', en: 'Ijazah' },
+  hifz: { ar: 'الحفظ', en: 'Hifz' },
   'arabic-language': { ar: 'العربية', en: 'Arabic' },
 };
+
+function resolveTeacherGender(teacher) {
+  const raw = String(
+    teacher?.personalInfo?.gender
+    || teacher?.user?.gender
+    || teacher?.gender
+    || '',
+  ).toLowerCase();
+  if (raw === 'female' || raw === 'women') return 'female';
+  if (raw === 'male' || raw === 'men') return 'male';
+  const specs = teacher?.quranInfo?.specializations || [];
+  if (Array.isArray(specs) && specs.includes('women')) return 'female';
+  return 'unknown';
+}
 
 const TeacherCard = memo(function TeacherCard({ teacher, locale, isAr }) {
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const id = teacher?._id || teacher?.id;
-  const name = teacher?.user?.name || teacher?.personalInfo?.fullName || (isAr ? 'معلم قرآن' : 'Quran Teacher');
+  const name = teacher?.user?.name || teacher?.personalInfo?.fullName || (isAr ? 'معلم قرآن معتمد' : 'Approved Quran Scholar');
   const photo = teacher?.media?.profilePhoto;
   const rating = Number(teacher?.rating?.average || 0);
   const experience = teacher?.quranInfo?.teachingExperience;
   const specialties = (teacher?.quranInfo?.specializations || []).slice(0, 3);
+  const hasIntroVideo = Boolean(teacherPublicVideo(teacher?.media?.introductionVideo));
+  const hasAudioSample = Boolean(
+    teacher?.media?.recitationAudio && teacher.media.recitationAudio !== 'not-provided',
+  );
 
   return (
-    <article className="wn-faculty-card">
+    <article
+      className="wn-faculty-card"
+      onMouseEnter={() => id && prefetchTeacherBundle(id)}
+      onFocus={() => id && prefetchTeacherBundle(id)}
+    >
       <div className="wn-faculty-card__media">
-        {photo ? (
-          <img
-            src={teacherPublicImage(photo)}
-            alt={name}
-            loading="lazy"
-            decoding="async"
-            onError={teacherImageFallback}
-          />
-        ) : (
-          <div className="wn-faculty-card__placeholder" aria-hidden="true">
-            <GraduationCap size={40} strokeWidth={1.35} />
-          </div>
-        )}
+        <TeacherAvatar
+          src={photo}
+          name={name}
+          alt={name}
+          size="xl"
+          className="h-full w-full"
+        />
         <span className="wn-badge wn-badge--gold wn-faculty-card__badge">
           <UserRoundCheck size={13} />
           {isAr ? 'ملف معتمد' : 'Approved profile'}
         </span>
+
+        {(hasIntroVideo || hasAudioSample) && (
+          <div className="wn-faculty-card__media-pills">
+            {hasIntroVideo && (
+              <span>
+                <CirclePlay size={12} />
+                {isAr ? 'فيديو تعريفي' : 'Intro video'}
+              </span>
+            )}
+            {hasAudioSample && (
+              <span>
+                <Volume2 size={12} />
+                {isAr ? 'تلاوة صوتية' : 'Audio sample'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="wn-faculty-card__body">
@@ -82,8 +123,13 @@ const TeacherCard = memo(function TeacherCard({ teacher, locale, isAr }) {
         )}
 
         {id ? (
-          <LocalizedLink to={'/teachers/' + id} locale={locale} className="wn-faculty-card__link">
-            <span>{isAr ? 'عرض الملف التعليمي' : 'View teaching profile'}</span>
+          <LocalizedLink
+            to={'/teachers/' + id}
+            locale={locale}
+            onMouseEnter={() => prefetchTeacherBundle(id)}
+            className="wn-faculty-card__link"
+          >
+            <span>{isAr ? 'عرض الملف والحجز التجريبي' : 'View profile & book trial'}</span>
             <ArrowIcon size={15} />
           </LocalizedLink>
         ) : null}
@@ -98,17 +144,18 @@ export default function TeachersSection() {
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const [teachers, setTeachers] = useState([]);
   const [status, setStatus] = useState('loading');
+  const [divisionFilter, setDivisionFilter] = useState('all');
 
   useEffect(() => {
     let active = true;
 
     async function loadTeachers() {
       try {
-        const response = await fetch('/api/teachers?limit=3&sortBy=rating&sortOrder=desc');
+        const response = await fetch('/api/teachers?limit=6&sortBy=rating&sortOrder=desc');
         if (!response.ok) throw new Error('teachers-unavailable');
         const payload = await response.json();
         if (!active) return;
-        setTeachers(Array.isArray(payload?.teachers) ? payload.teachers.slice(0, 3) : []);
+        setTeachers(Array.isArray(payload?.teachers) ? payload.teachers.slice(0, 6) : []);
         setStatus('ready');
       } catch {
         if (!active) return;
@@ -121,30 +168,43 @@ export default function TeachersSection() {
     return () => { active = false; };
   }, []);
 
+  const filteredTeachers = useMemo(() => {
+    if (divisionFilter === 'all') return teachers.slice(0, 3);
+    return teachers
+      .filter((teacher) => resolveTeacherGender(teacher) === divisionFilter)
+      .slice(0, 3);
+  }, [teachers, divisionFilter]);
+
   const selectionPrinciples = useMemo(() => ([
     {
       icon: BookOpenCheck,
-      title: isAr ? 'إتقان علمي' : 'Scholarly mastery',
-      text: isAr ? 'نراجع الخلفية العلمية والتخصص قبل إتاحة الملف للطلاب.' : 'Academic background and teaching specialization are reviewed before a profile is listed.',
+      title: isAr ? 'إتقان علمي ومراجعة دقيقة' : 'Scholarly mastery',
+      text: isAr ? 'نراجع السند والخلفية العلمية ونموذج التلاوة قبل إتاحة أي ملف للطلاب.' : 'Academic credentials and recitation mastery are verified before listing.',
     },
     {
       icon: HeartHandshake,
-      title: isAr ? 'رفق وتربية' : 'Care and pedagogy',
-      text: isAr ? 'نبحث عن المعلم الذي يجمع بين الإتقان وحسن التعامل مع المتعلم.' : 'We value patient, respectful teaching alongside technical Quran expertise.',
+      title: isAr ? 'رفق وحسن تربية' : 'Care and pedagogy',
+      text: isAr ? 'نبحث عن المعلم والمعلمة القادرين على التحبيب والصبر بجانب الإتقان.' : 'We select patient, encouraging educators alongside technical Quran mastery.',
     },
     {
       icon: GraduationCap,
-      title: isAr ? 'تخصص يناسب الطالب' : 'The right fit',
-      text: isAr ? 'اختيار المعلم يكون حسب العمر والهدف والمستوى واللغة المتاحة.' : 'Teacher matching considers age, goal, current level, and available language.',
+      title: isAr ? 'تخصص يناسب الطالب' : 'Personalized matching',
+      text: isAr ? 'اختيار المعلم يتم حسب السن والهدف والمستوى والقسم المناسب للأسرة.' : 'Matching aligns with learner age, goals, current level, and family preference.',
     },
   ]), [isAr]);
+
+  const directoryLink = divisionFilter === 'female'
+    ? '/teachers?gender=female'
+    : divisionFilter === 'male'
+      ? '/teachers?gender=male'
+      : '/teachers';
 
   return (
     <section className="wn-home-section wn-home-section--white" id="faculty">
       <div className="page-container">
         <div className="wn-section-split-heading">
           <div>
-            <span className="wn-approved-eyebrow">{isAr ? 'معلمونا' : 'OUR TEACHERS'}</span>
+            <span className="wn-approved-eyebrow">{isAr ? 'معلمونا المعتمدون' : 'APPROVED SCHOLARS'}</span>
             <h2 className="wn-home-title">
               {isAr ? 'تعليم يقوم على الإتقان والرفق وحسن التوجيه' : 'Teaching built on mastery, care, and clear guidance'}
             </h2>
@@ -155,21 +215,73 @@ export default function TeachersSection() {
             </p>
           </div>
 
-          <LocalizedLink to="/teachers" locale={locale} className="wn-btn wn-btn--secondary">
+          <LocalizedLink
+            to={directoryLink}
+            locale={locale}
+            onMouseEnter={() => prefetchRoute('/teachers')}
+            className="wn-btn wn-btn--secondary"
+          >
             <span>{isAr ? 'استعرض جميع المعلمين' : 'Browse all teachers'}</span>
             <ArrowIcon size={16} className="wn-btn__arrow" />
           </LocalizedLink>
         </div>
 
+        {teachers.length > 0 && (
+          <div className="wn-faculty-filters" role="tablist" aria-label={isAr ? 'تصفية المعلمين حسب القسم' : 'Filter scholars by section'}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={divisionFilter === 'all'}
+              onClick={() => setDivisionFilter('all')}
+              className={`wn-faculty-filter-btn ${divisionFilter === 'all' ? 'is-active' : ''}`}
+            >
+              <Users size={15} />
+              <span>{isAr ? 'جميع الأقسام' : 'All Scholars'}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={divisionFilter === 'male'}
+              onClick={() => setDivisionFilter('male')}
+              className={`wn-faculty-filter-btn ${divisionFilter === 'male' ? 'is-active' : ''}`}
+            >
+              <GraduationCap size={15} />
+              <span>{isAr ? 'معلمو الرجال والأطفال' : 'Male Tutors'}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={divisionFilter === 'female'}
+              onClick={() => setDivisionFilter('female')}
+              className={`wn-faculty-filter-btn wn-faculty-filter-btn--women ${divisionFilter === 'female' ? 'is-active' : ''}`}
+            >
+              <HeartHandshake size={15} />
+              <span>{isAr ? 'معلمات قسم السيدات' : 'Female Tutors'}</span>
+            </button>
+          </div>
+        )}
+
         {status === 'loading' ? (
           <div className="wn-faculty-loading" aria-label={isAr ? 'جاري تحميل المعلمين' : 'Loading teachers'}>
             {[0, 1, 2].map((item) => <span key={item} />)}
           </div>
-        ) : teachers.length > 0 ? (
+        ) : filteredTeachers.length > 0 ? (
           <div className="wn-faculty-grid">
-            {teachers.map((teacher) => (
+            {filteredTeachers.map((teacher) => (
               <TeacherCard key={teacher._id || teacher.id} teacher={teacher} locale={locale} isAr={isAr} />
             ))}
+          </div>
+        ) : teachers.length > 0 ? (
+          <div className="wn-faculty-filtered-empty">
+            <p>
+              {isAr
+                ? 'يمكنك تصفح الدليل الكامل لاستعراض جميع المعلمين والمعلمات المتاحين في هذا القسم.'
+                : 'Browse the full scholar directory to explore all available tutors in this division.'}
+            </p>
+            <LocalizedLink to={directoryLink} locale={locale} className="wn-btn wn-btn--secondary wn-btn--sm">
+              <span>{isAr ? 'فتح دليل القسم' : 'Open division directory'}</span>
+              <ArrowIcon size={15} />
+            </LocalizedLink>
           </div>
         ) : (
           <div className="wn-faculty-principles">
@@ -186,8 +298,8 @@ export default function TeachersSection() {
         <div className="wn-faculty-note">
           <UserRoundCheck size={20} />
           <div>
-            <strong>{isAr ? 'خصوصية واحترام احتياجات المتعلم' : 'Privacy and learner fit come first'}</strong>
-            <span>{isAr ? 'يمكن اختيار معلم أو معلمة حسب تفضيل الأسرة وتوفر التخصص.' : 'Families can choose a male or female teacher based on preference and available specialization.'}</span>
+            <strong>{isAr ? 'خصوصية واحترام كامل لاحتياجات الأسرة' : 'Complete privacy and family fit'}</strong>
+            <span>{isAr ? 'يضم قسم السيدات معلمات مجازات فقط، بينما يخدم قسم الرجال والأطفال البنين والرجال حسب الفئة العمرية.' : 'Our dedicated women’s section features certified female tutors exclusively, alongside age-matched circles for men and boys.'}</span>
           </div>
         </div>
       </div>

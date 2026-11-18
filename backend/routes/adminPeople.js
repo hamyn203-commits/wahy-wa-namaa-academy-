@@ -611,6 +611,21 @@ router.post('/students', async (req, res) => {
     const resolvedSection = VALID_ENROLLMENT_SECTIONS.has(enrollmentSection)
       ? enrollmentSection
       : (resolvedGender === 'female' ? 'ladies' : 'men_children');
+    const resolvedAge = Math.min(100, Math.max(4, Number(age) || 12));
+
+    // Admin-created accounts obey the same gender-separation and section rules
+    // as self-registration (an adult male can never be filed under "ladies").
+    try {
+      assertGenderAndAgeCompatibility({
+        student: { gender: resolvedGender, age: resolvedAge },
+        section: resolvedSection,
+      });
+    } catch (safeguardErr) {
+      return res.status(safeguardErr.status || 400).json({
+        error: safeguardErr.publicMessage || 'بيانات القسم لا تتوافق مع جنس وعمر الطالب',
+        code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
+      });
+    }
 
     if (isMockMode && !isDBConnected()) {
       if (findMockUserByEmail(normalizedEmail)) {
@@ -625,7 +640,7 @@ router.post('/students', async (req, res) => {
         role: 'student',
         gender: resolvedGender,
         enrollmentSection: resolvedSection,
-        age: Math.min(100, Math.max(4, Number(age) || 12)),
+        age: resolvedAge,
         currentLevel: VALID_STUDENT_LEVELS.has(currentLevel) ? currentLevel : 'beginner',
         customLevel: String(customLevel || '').trim().slice(0, 120),
         preferredTrack: VALID_STUDENT_TRACKS.has(preferredTrack) ? preferredTrack : 'memorization',
@@ -667,6 +682,35 @@ router.post('/students', async (req, res) => {
       return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
     }
 
+    // A preferred tutor must exist, be approved, and be gender-compatible.
+    let verifiedPreferredTeacherId = null;
+    if (createSubscription && preferredTeacherId) {
+      if (!mongoose.Types.ObjectId.isValid(String(preferredTeacherId))) {
+        return res.status(400).json({ error: 'معرف المعلم المفضل غير صالح', code: 'INVALID_PREFERRED_TEACHER' });
+      }
+      const preferredTeacher = await Teacher.findOne({
+        _id: preferredTeacherId,
+        status: 'approved',
+        isVerified: true,
+      }).select('personalInfo.gender');
+      if (!preferredTeacher) {
+        return res.status(404).json({ error: 'المعلم المفضل غير موجود أو غير معتمد', code: 'PREFERRED_TEACHER_NOT_FOUND' });
+      }
+      try {
+        assertGenderAndAgeCompatibility({
+          student: { gender: resolvedGender, age: resolvedAge },
+          teacher: preferredTeacher,
+          section: resolvedSection,
+        });
+      } catch (safeguardErr) {
+        return res.status(safeguardErr.status || 400).json({
+          error: safeguardErr.publicMessage || 'المعلم المفضل لا يتوافق مع جنس وعمر الطالب',
+          code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
+        });
+      }
+      verifiedPreferredTeacherId = preferredTeacher._id;
+    }
+
     const student = await User.create({
       name: String(name).trim(),
       email: normalizedEmail,
@@ -676,7 +720,7 @@ router.post('/students', async (req, res) => {
       role: 'student',
       gender: resolvedGender,
       enrollmentSection: resolvedSection,
-      age: Math.min(100, Math.max(4, Number(age) || 12)),
+      age: resolvedAge,
       currentLevel: VALID_STUDENT_LEVELS.has(currentLevel) ? currentLevel : 'beginner',
       customLevel: String(customLevel || '').trim().slice(0, 120),
       preferredTrack: VALID_STUDENT_TRACKS.has(preferredTrack) ? preferredTrack : 'memorization',
@@ -709,9 +753,7 @@ router.post('/students', async (req, res) => {
           pricePerSessionMinor,
           totalAmountMinor: pricePerSessionMinor * validCount,
           status: 'awaiting_placement',
-          preferredTeacher: preferredTeacherId && mongoose.Types.ObjectId.isValid(preferredTeacherId)
-            ? preferredTeacherId
-            : null,
+          preferredTeacher: verifiedPreferredTeacherId,
           paidAt: new Date(),
           pricingSnapshot: {
             minStudents: plan.minStudents,
@@ -864,6 +906,23 @@ router.put('/students/:id', async (req, res) => {
             assertGenderAndAgeCompatibility({
               student,
               teacher: activeSession.teacher,
+              section: student.enrollmentSection,
+            });
+          }
+        }
+        // Open subscriptions locked to a preferred tutor must stay compatible
+        // too (e.g. a boy edited to adulthood while locked to a female tutor).
+        if (Boolean(mongoose.connection?.db) || StudentSubscription.find !== mongoose.Model.find) {
+          const lockedSubscriptions = await StudentSubscription.find({
+            student: student._id,
+            preferredTeacher: { $ne: null },
+            status: { $nin: ['cancelled', 'expired', 'exhausted'] },
+          }).populate('preferredTeacher', 'personalInfo.gender');
+          for (const lockedSub of lockedSubscriptions || []) {
+            if (!lockedSub?.preferredTeacher) continue;
+            assertGenderAndAgeCompatibility({
+              student,
+              teacher: lockedSub.preferredTeacher,
               section: student.enrollmentSection,
             });
           }

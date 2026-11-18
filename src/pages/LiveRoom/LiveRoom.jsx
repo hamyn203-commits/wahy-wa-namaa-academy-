@@ -541,6 +541,10 @@ export default function LiveRoom() {
     if (isHost && roomId) {
       await api.patch('/api/live/sessions/' + encodeURIComponent(roomId) + '/live', { isLive: false }, { auth: true }).catch(() => {});
     }
+    if (role === 'teacher' && sessionContext?.sessionId) {
+      navigate(localizedPath(`/teacher/dashboard?tab=sessions&evaluate=${encodeURIComponent(sessionContext.sessionId)}`, locale));
+      return;
+    }
     navigate(dashboardPathForRole(role, locale));
   };
 

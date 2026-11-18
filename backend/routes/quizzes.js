@@ -676,7 +676,7 @@ router.get('/:id/attempts', protect, attachTeacherProfile, authorize('teacher', 
     }
 
     const attempts = await QuizAttempt.find({ quiz: req.params.id })
-      .populate('student', 'name email')
+      .populate('student', req.user.role === 'admin' ? 'name email avatar' : 'name avatar')
       .sort({ submittedAt: -1 });
 
     res.json(attempts);

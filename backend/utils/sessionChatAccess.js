@@ -1,6 +1,5 @@
 const Teacher = require('../models/Teacher');
 const Guardian = require('../models/Guardian');
-const GroupCircle = require('../models/GroupCircle');
 
 function refId(value) {
   return String(value?._id || value?.id || value || '');
@@ -13,12 +12,8 @@ async function sessionHasStudent(session, studentId) {
   if (Array.isArray(session.attendance) && session.attendance.some((entry) => refId(entry?.student) === sid)) {
     return true;
   }
-  if (session.circle) {
-    const circleId = refId(session.circle);
-    if (circleId) {
-      return Boolean(await GroupCircle.exists({ _id: circleId, students: sid }));
-    }
-  }
+  // Group-circle lessons: `attendance` is the authoritative paid roster.
+  // Circle membership alone must never grant access to a lesson.
   return false;
 }
 

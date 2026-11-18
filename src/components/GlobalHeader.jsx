@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { localizedPath, DEFAULT_LOCALE } from '../lib/locale';
-import { Menu, X, ArrowLeft, ArrowRight, Search } from 'lucide-react';
+import { Menu, X, ArrowLeft, ArrowRight, Search, Compass } from 'lucide-react';
 import LanguageSwitcher from './LanguageSwitcher';
 import NotificationBell from './NotificationBell';
 import UserMenu from './UserMenu';
@@ -24,20 +24,48 @@ function PublicGlobalHeader() {
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
   const { isAuthenticated } = useAuth();
   const { locale: paramLocale } = useParams();
-  const activeLocale = paramLocale || DEFAULT_LOCALE;
+  const activeLocale = paramLocale || locale || DEFAULT_LOCALE;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
 
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMenuOpen]);
+
   const lp = (path) => localizedPath(path, activeLocale);
   const inOnboarding = isOnboardingPath(location.pathname);
+  const isHome = (
+    location.pathname === '/'
+    || location.pathname === lp('/')
+    || location.pathname === `/${activeLocale}/`
+  );
 
   const navLinks = [
     { path: lp('/'), label: isAr ? 'الرئيسية' : 'Home' },
-    { path: lp('/courses'), label: isAr ? 'البرامج والدورات' : 'Programs' },
+    { path: lp('/courses'), label: isAr ? 'البرامج' : 'Programs' },
     { path: lp('/teachers'), label: isAr ? 'معلمونا' : 'Teachers' },
+    { path: lp('/plans'), label: isAr ? 'الباقات' : 'Plans' },
     { path: lp('/about'), label: isAr ? 'عن الأكاديمية' : 'About' },
-    { path: lp('/blog'), label: isAr ? 'الموارد' : 'Resources' },
     { path: lp('/contact'), label: isAr ? 'تواصل معنا' : 'Contact' },
+  ];
+
+  const mobileNavLinks = [
+    ...navLinks,
+    { path: lp('/blog'), label: isAr ? 'الموارد' : 'Resources' },
+  ];
+
+  const homeAnchors = [
+    { href: '#programs', label: isAr ? 'المسارات القرآنية' : 'Tracks' },
+    { href: '#learning-tools', label: isAr ? 'معاينة المنصة' : 'Live Preview' },
+    { href: '#faculty', label: isAr ? 'المعلمون المعتمدون' : 'Faculty' },
+    { href: '#azhar-heritage', label: isAr ? 'السند الأزهري' : 'Azhari Sanad' },
+    { href: '#pricing-calculator', label: isAr ? 'حاسبة الباقات' : 'Calculator' },
+    { href: '#faq', label: isAr ? 'الأسئلة الشائعة' : 'FAQ' },
   ];
 
   const isActive = (path) => {
@@ -124,8 +152,8 @@ function PublicGlobalHeader() {
 
         {isMenuOpen && (
           <div className="wn-approved-mobile-menu">
-            <nav className="grid gap-1">
-              {navLinks.map((link) => (
+            <nav className="grid gap-1" aria-label={isAr ? 'قائمة الجوال' : 'Mobile navigation'}>
+              {mobileNavLinks.map((link) => (
                 <Link
                   key={link.path}
                   to={link.path}
@@ -137,6 +165,27 @@ function PublicGlobalHeader() {
                 </Link>
               ))}
             </nav>
+
+            {isHome && (
+              <div className="wn-mobile-quick-jumps">
+                <span className="wn-mobile-quick-jumps__label">
+                  <Compass size={14} />
+                  {isAr ? 'انتقال سريع داخل الصفحة' : 'Jump to section'}
+                </span>
+                <div className="wn-mobile-quick-jumps__chips">
+                  {homeAnchors.map((anchor) => (
+                    <a
+                      key={anchor.href}
+                      href={anchor.href}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="wn-mobile-quick-jumps__chip"
+                    >
+                      {anchor.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="wn-approved-mobile-menu__tools">
               <div className="flex items-center gap-2">
@@ -168,6 +217,24 @@ function PublicGlobalHeader() {
           </div>
         )}
       </div>
+
+      {isHome && (
+        <div className="wn-header-subnav">
+          <div className="page-container wn-header-subnav__inner">
+            <span className="wn-header-subnav__eyebrow">
+              <Compass size={13} />
+              {isAr ? 'أقسام الصفحة:' : 'On this page:'}
+            </span>
+            <nav className="wn-header-subnav__links" aria-label={isAr ? 'أقسام الصفحة الرئيسية' : 'Homepage sections'}>
+              {homeAnchors.map((anchor) => (
+                <a key={anchor.href} href={anchor.href} className="wn-header-subnav__link">
+                  {anchor.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

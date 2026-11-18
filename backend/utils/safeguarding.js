@@ -67,6 +67,16 @@ function assertGenderAndAgeCompatibility({
     }
   }
 
+  // Fail closed: gender separation cannot be evaluated against a teacher whose
+  // gender is unknown, so such a teacher can never be matched to a student.
+  if (student && teacher && !['male', 'female'].includes(teacherGender)) {
+    throw safeguardingError(
+      'TEACHER_GENDER_REQUIRED',
+      'لا يمكن إتمام الحجز لأن بيانات المعلم غير مكتملة، يرجى التواصل مع الإدارة',
+      409
+    );
+  }
+
   if (student && teacherGender) {
     if (teacherGender === 'female') {
       const allowedWithFemaleTeacher =
@@ -96,7 +106,7 @@ function assertGenderAndAgeCompatibility({
         'حلقات الفتيات والسيدات مخصصة للمعلمات فقط'
       );
     }
-    if (['boys', 'men'].includes(normalizedCircleGender) && teacherGender === 'female') {
+    if (['boys', 'men'].includes(normalizedCircleGender) && teacherGender !== 'male') {
       throw safeguardingError(
         'CIRCLE_TEACHER_GENDER_MISMATCH',
         'حلقات البنين والرجال مخصصة للمعلمين الرجال فقط'
@@ -156,6 +166,38 @@ function assertGenderAndAgeCompatibility({
   return true;
 }
 
+function isMinorStudent(student) {
+  const rawAge = student?.age !== undefined && student?.age !== null && student?.age !== ''
+    ? Number(student.age)
+    : null;
+  return Number.isFinite(rawAge) && rawAge > 0 && rawAge < 18;
+}
+
+/**
+ * Minors (< 18) may only enter private 1-on-1 live lessons with an adult
+ * teacher once an active guardian account is linked to them, so a guardian
+ * can observe the classroom. An unverified guardian phone string is not enough.
+ */
+async function minorHasActiveGuardian(student) {
+  if (!isMinorStudent(student)) return true;
+  const studentId = student?._id || student?.id;
+  if (!studentId) return false;
+  const Guardian = require('../models/Guardian');
+  const linked = await Guardian.exists({
+    isActive: { $ne: false },
+    'children.student': studentId,
+  });
+  return Boolean(linked);
+}
+
+const MINOR_GUARDIAN_REQUIRED_RESPONSE = Object.freeze({
+  code: 'MINOR_GUARDIAN_VERIFICATION_REQUIRED',
+  error: 'حفاظاً على سلامة الطلاب القُصّر، يجب أن يقبل ولي الأمر دعوة الربط بحسابه قبل حجز الحصص الفردية',
+});
+
 module.exports = {
   assertGenderAndAgeCompatibility,
+  isMinorStudent,
+  minorHasActiveGuardian,
+  MINOR_GUARDIAN_REQUIRED_RESPONSE,
 };

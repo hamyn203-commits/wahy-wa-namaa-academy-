@@ -11,7 +11,6 @@ const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const Guardian = require('../models/Guardian');
-const GroupCircle = require('../models/GroupCircle');
 const { send24HourReminder, send30MinuteReminder, resolveAbsoluteRoomUrl } = require('./whatsapp');
 
 /**
@@ -97,21 +96,9 @@ async function resolveSessionStudents(session) {
     }
   }
 
-  if (session.circle) {
-    const circleId = typeof session.circle === 'object' && session.circle._id
-      ? session.circle._id
-      : session.circle;
-    const circle = await GroupCircle.findById(circleId).select('students').lean().catch(() => null);
-    if (Array.isArray(circle?.students)) {
-      for (const s of circle.students) {
-        if (!s) continue;
-        const sid = String(s);
-        if (!skippedIds.has(sid)) {
-          candidateIds.add(sid);
-        }
-      }
-    }
-  }
+  // Group-circle reminders (which carry the room link) go only to the
+  // authoritative paid roster in `session.attendance`; circle membership alone
+  // (paused / zero-credit / later-placed students) is not a seat in this lesson.
 
   const missingIds = Array.from(candidateIds).filter((id) => !populatedById.has(id));
   if (missingIds.length > 0) {

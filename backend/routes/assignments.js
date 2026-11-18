@@ -599,7 +599,7 @@ router.get('/:id/submissions', protect, attachTeacherProfile, authorize('teacher
     }
 
     const submissions = await AssignmentSubmission.find({ assignment: req.params.id })
-      .populate('student', 'name email')
+      .populate('student', req.user.role === 'admin' ? 'name email avatar' : 'name avatar')
       .sort({ submittedAt: -1 });
 
     res.json(submissions.map(safeSubmission));

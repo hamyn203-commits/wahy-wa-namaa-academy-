@@ -14,6 +14,34 @@ const { registerVerificationTokenUpload } = require('./verification');
 
 const MAX_PUBLIC_MEDIA_RANGE_CHUNK = Math.floor(3.5 * 1024 * 1024);
 
+function escapeRegexLiteral(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildPublicMediaLookupCandidates(rawReference, reference, pathname) {
+  const unwrapped = storage.unwrapPublicProxyReference(reference || rawReference);
+  const encodedUnwrapped = unwrapped ? encodeURIComponent(unwrapped) : '';
+  const exactValues = Array.from(new Set([
+    rawReference,
+    reference,
+    unwrapped,
+    storage.publicProxyUrl(unwrapped),
+    encodedUnwrapped ? `/api/uploads/public?ref=${encodedUnwrapped}` : '',
+    pathname,
+    pathname ? `/${pathname}` : '',
+  ].filter(Boolean)));
+
+  const patternValues = [];
+  if (encodedUnwrapped) {
+    patternValues.push(new RegExp(`/api/uploads/public\\?ref=${escapeRegexLiteral(encodedUnwrapped)}(?:&|$)`));
+  }
+  if (pathname) {
+    patternValues.push(new RegExp(`/${escapeRegexLiteral(pathname)}$`));
+  }
+
+  return [...exactValues, ...patternValues];
+}
+
 const blobUploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 40,
@@ -131,6 +159,8 @@ router.post('/blob', blobUploadLimiter, async (req, res) => {
           allowedContentTypes: [metadata.contentType],
           maximumSizeInBytes: metadata.rule.maxBytes,
           addRandomSuffix: true,
+          // Short-lived client token (SDK default is one hour).
+          validUntil: Date.now() + 10 * 60 * 1000,
           tokenPayload: JSON.stringify({
             purpose: payload.purpose,
             owner: String(identity.owner),
@@ -140,6 +170,22 @@ router.post('/blob', blobUploadLimiter, async (req, res) => {
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         const meta = JSON.parse(tokenPayload || '{}');
+        // Academy uploads must be private. If a client forced a public object
+        // (or any unexpected store), remove it immediately so KYC documents,
+        // payment receipts and minors' audio are never world-readable.
+        if (blob?.url && !storage.isVercelBlobReference(blob.url)) {
+          console.error('Security: non-private blob upload rejected and deleted', {
+            pathname: blob.pathname,
+            purpose: meta.purpose,
+          });
+          try {
+            const { del } = await import('@vercel/blob');
+            await del(blob.url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+          } catch (deleteError) {
+            console.error('Security: failed to delete non-private blob', { reason: deleteError?.message });
+          }
+          return;
+        }
         console.log('Blob upload completed', {
           pathname: blob.pathname,
           purpose: meta.purpose,
@@ -204,8 +250,9 @@ router.post('/presign', protect, async (req, res) => {
 
 router.get('/public', async (req, res) => {
   try {
-    const reference = String(req.query.ref || '');
-    if (!reference) return res.status(400).json({ error: 'Missing file reference' });
+    const rawReference = String(req.query.ref || '').trim();
+    if (!rawReference) return res.status(400).json({ error: 'Missing file reference' });
+    const reference = storage.unwrapPublicProxyReference(rawReference) || rawReference;
 
     const pathname = storage.extractPathname(reference);
     if (!storage.isSafeObjectPath(pathname)) {
@@ -227,12 +274,8 @@ router.get('/public', async (req, res) => {
       return res.status(400).json({ error: 'Invalid media reference' });
     }
 
-    if (Boolean(mongoose.connection?.db)) {
-      const candidateRefs = Array.from(new Set([
-        reference,
-        storage.unwrapPublicProxyReference(reference),
-        storage.publicProxyUrl(reference),
-      ].filter(Boolean)));
+    if (Boolean(mongoose.connection?.db) || Teacher.exists !== mongoose.Model.exists || User.exists !== mongoose.Model.exists) {
+      const candidateRefs = buildPublicMediaLookupCandidates(rawReference, reference, pathname);
 
       if (pathname.startsWith('uploads/teacher-public/')) {
         const isPublishedTeacherMedia = await Teacher.exists({
@@ -243,8 +286,8 @@ router.get('/public', async (req, res) => {
             { 'media.introductionVideo': { $in: candidateRefs } },
             { 'media.recitationVideo': { $in: candidateRefs } },
             { 'media.teachingMethodVideo': { $in: candidateRefs } },
-            { 'media.additionalVideos.url': { $in: candidateRefs } },
-            { 'media.audioRecordings.url': { $in: candidateRefs } },
+            { 'media.additionalVideos': { $in: candidateRefs } },
+            { 'media.audioRecordings': { $in: candidateRefs } },
           ],
         });
         if (!isPublishedTeacherMedia) {
@@ -270,7 +313,7 @@ router.get('/public', async (req, res) => {
       }
       const start = Number(rangeMatch[1]);
       const requestedEnd = rangeMatch[2] ? Number(rangeMatch[2]) : (start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
-      if (!Number.isFinite(start) || !Number.isFinite(requestedEnd) || requestedEnd < start) {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || requestedEnd < start) {
         return res.status(416).end();
       }
       const clampedEnd = Math.min(requestedEnd, start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
@@ -293,7 +336,7 @@ router.get('/public', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
     const contentRange = result.headers?.get?.('content-range') || result.blob?.contentRange || null;
     if (result.statusCode === 206 && contentRange) {
@@ -308,12 +351,21 @@ router.get('/public', async (req, res) => {
     const reader = result.stream?.getReader?.();
     if (!reader) return res.status(500).end();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(Buffer.from(value));
+    const cancelOnClose = () => {
+      reader.cancel().catch(() => {});
+    };
+    req.on('close', cancelOnClose);
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || res.writableEnded || res.destroyed) break;
+        res.write(Buffer.from(value));
+      }
+    } finally {
+      req.off('close', cancelOnClose);
     }
-    return res.end();
+    return res.writableEnded ? undefined : res.end();
   } catch (error) {
     console.error('Public media stream failed:', error.message);
     return res.status(404).end();

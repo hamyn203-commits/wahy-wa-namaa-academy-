@@ -1,5 +1,30 @@
 const FALLBACK = '/default-teacher.png';
 
+function unwrapPublicRef(reference) {
+  let current = String(reference || '').trim();
+  for (let hop = 0; hop < 3; hop += 1) {
+    try {
+      const parsed = new URL(current, 'https://wahy.invalid');
+      if (parsed.pathname === '/api/uploads/public') {
+        const inner = parsed.searchParams.get('ref');
+        if (inner && inner.trim() && inner.trim() !== current) {
+          current = inner.trim();
+          continue;
+        }
+      }
+    } catch {
+      return current;
+    }
+    break;
+  }
+  return current;
+}
+
+export function isFallbackTeacherImage(value) {
+  const reference = String(value || '').trim();
+  return !reference || reference === 'not-provided' || reference === FALLBACK || reference.endsWith(FALLBACK);
+}
+
 /**
  * Public teacher media is always fetched from this site's origin.
  * This avoids CORP/same-origin blocking on cross-origin API image responses.
@@ -15,10 +40,14 @@ export function teacherPublicImage(value) {
     const url = new URL(reference, 'https://wahy.invalid');
     const pathname = url.pathname;
     if (pathname === '/api/uploads/public') {
-      const original = url.searchParams.get('ref');
-      return original
+      const original = unwrapPublicRef(reference);
+      return original && original !== reference
         ? `/api/uploads/public?ref=${encodeURIComponent(original)}`
         : FALLBACK;
+    }
+
+    if (pathname.startsWith('/uploads/teachers/public/') || pathname.startsWith('/uploads/teacher-public/')) {
+      return pathname;
     }
 
     // Old records might still contain the raw Vercel Blob URL.
@@ -26,9 +55,6 @@ export function teacherPublicImage(value) {
       && (pathname.startsWith('/uploads/teacher-public/') || pathname.startsWith('/uploads/course-media/'))) {
       return `/api/uploads/public?ref=${encodeURIComponent(reference)}`;
     }
-
-    if (reference.startsWith('/uploads/teachers/public/')) return reference;
-    if (reference.startsWith('/uploads/teacher-public/')) return reference;
 
     // Other relative app images and trusted avatar URLs retain their normal behavior.
     if (reference.startsWith('/') && !reference.startsWith('//')
@@ -54,10 +80,12 @@ export function teacherPublicVideo(value) {
   try {
     const url = new URL(reference, 'https://wahy.invalid');
     if (url.pathname === '/api/uploads/public') {
-      const original = url.searchParams.get('ref');
-      return original ? teacherPublicVideo(original) : '';
+      const original = unwrapPublicRef(reference);
+      return original && original !== reference ? teacherPublicVideo(original) : '';
     }
-    if (reference.startsWith('/uploads/teachers/public/') || reference.startsWith('/uploads/teacher-public/')) return reference;
+    if (url.pathname.startsWith('/uploads/teachers/public/') || url.pathname.startsWith('/uploads/teacher-public/')) {
+      return url.pathname;
+    }
     if (url.protocol === 'https:' && url.hostname.endsWith('.blob.vercel-storage.com')
       && url.pathname.startsWith('/uploads/teacher-public/')) {
       return `/api/uploads/public?ref=${encodeURIComponent(reference)}`;

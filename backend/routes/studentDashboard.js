@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Session = require('../models/Session');
 const Teacher = require('../models/Teacher');
+const GroupCircle = require('../models/GroupCircle');
 const TeacherTask = require('../models/TeacherTask');
 const StudentTutorPreference = require('../models/StudentTutorPreference');
 const User = require('../models/User');
@@ -79,8 +80,19 @@ router.get('/profile', protect, authorize('student'), async (req, res) => {
     }
 
     const [totalSessions, completedSessions, pendingHomework] = await Promise.all([
-      Session.countDocuments({ student: req.user.id }),
-      Session.countDocuments({ student: req.user.id, status: 'completed' }),
+      Session.countDocuments({
+        $or: [
+          { student: req.user.id },
+          { type: 'group_circle', 'attendance.student': req.user.id },
+        ],
+      }),
+      Session.countDocuments({
+        status: 'completed',
+        $or: [
+          { student: req.user.id },
+          { type: 'group_circle', attendance: { $elemMatch: { student: req.user.id, status: 'attended' } } },
+        ],
+      }),
       TeacherTask.countDocuments({ student: req.user.id, status: 'pending' }),
     ]);
 
@@ -259,8 +271,21 @@ router.get('/stats', protect, authorize('student'), async (req, res) => {
 
     const [pendingTrials, upcomingSessions, completedSessions, homeworkPending, homeworkSubmitted, trialUsed] = await Promise.all([
       Session.countDocuments({ student: req.user.id, type: 'trial', status: 'pending' }),
-      Session.countDocuments({ student: req.user.id, status: 'accepted', scheduledAt: { $gte: new Date() } }),
-      Session.countDocuments({ student: req.user.id, status: 'completed' }),
+      Session.countDocuments({
+        status: 'accepted',
+        scheduledAt: { $gte: new Date() },
+        $or: [
+          { student: req.user.id },
+          { type: 'group_circle', 'attendance.student': req.user.id },
+        ],
+      }),
+      Session.countDocuments({
+        status: 'completed',
+        $or: [
+          { student: req.user.id },
+          { type: 'group_circle', attendance: { $elemMatch: { student: req.user.id, status: 'attended' } } },
+        ],
+      }),
       TeacherTask.countDocuments({ student: req.user.id, status: 'pending' }),
       TeacherTask.countDocuments({ student: req.user.id, status: { $in: ['submitted', 'done'] } }),
       Session.countDocuments({
@@ -496,39 +521,66 @@ router.get('/teachers', protect, authorize('student'), async (req, res) => {
       return res.json({ teachers: [] });
     }
 
-    const sessions = await Session.find({
-      student: req.user.id,
-      status: { $in: ['accepted', 'completed'] },
-    })
-      .populate({
-        path: 'teacher',
-        select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
-        populate: { path: 'user', select: 'name avatar' },
+    const [sessions, circles] = await Promise.all([
+      Session.find({
+        status: { $in: ['accepted', 'completed'] },
+        $or: [
+          { student: req.user.id },
+          { type: 'group_circle', 'attendance.student': req.user.id },
+        ],
       })
-      .sort({ scheduledAt: -1 });
+        .populate({
+          path: 'teacher',
+          select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
+          populate: { path: 'user', select: 'name avatar' },
+        })
+        .sort({ scheduledAt: -1 }),
+      GroupCircle.find({
+        students: req.user.id,
+        status: { $in: ['active', 'full'] },
+      })
+        .populate({
+          path: 'teacher',
+          select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
+          populate: { path: 'user', select: 'name avatar' },
+        })
+        .select('teacher name')
+        .lean(),
+    ]);
 
     const map = {};
-    sessions.forEach((s) => {
-      if (!s.teacher) return;
-      const id = s.teacher._id.toString();
+    const ensureTeacherEntry = (teacherDoc, scheduledAt = null) => {
+      if (!teacherDoc?._id) return null;
+      const id = teacherDoc._id.toString();
       if (!map[id]) {
         map[id] = {
-          _id: s.teacher._id,
-          name: s.teacher.user?.name || s.teacher.personalInfo?.fullName,
-          avatar: s.teacher.user?.avatar || s.teacher.profilePhoto,
-          country: s.teacher.personalInfo?.country,
-          rating: Number(s.teacher.rating?.count || 0) > 0 ? Number(s.teacher.rating?.average || 0) : 0,
-          ratingCount: Number(s.teacher.rating?.count || 0),
+          _id: teacherDoc._id,
+          name: teacherDoc.user?.name || teacherDoc.personalInfo?.fullName,
+          avatar: teacherDoc.user?.avatar || teacherDoc.media?.profilePhoto,
+          media: teacherDoc.media ? { profilePhoto: teacherDoc.media.profilePhoto } : undefined,
+          country: teacherDoc.personalInfo?.country,
+          rating: Number(teacherDoc.rating?.count || 0) > 0 ? Number(teacherDoc.rating?.average || 0) : 0,
+          ratingCount: Number(teacherDoc.rating?.count || 0),
           sessionCount: 0,
-          lastSession: s.scheduledAt,
-          canBookRegular: s.status === 'completed',
+          lastSession: scheduledAt,
+          canBookRegular: false,
         };
       }
-      map[id].sessionCount++;
-      if (new Date(s.scheduledAt) > new Date(map[id].lastSession)) {
-        map[id].lastSession = s.scheduledAt;
+      return map[id];
+    };
+
+    sessions.forEach((s) => {
+      const entry = ensureTeacherEntry(s.teacher, s.scheduledAt);
+      if (!entry) return;
+      entry.sessionCount += 1;
+      if (s.scheduledAt && (!entry.lastSession || new Date(s.scheduledAt) > new Date(entry.lastSession))) {
+        entry.lastSession = s.scheduledAt;
       }
-      if (s.status === 'completed') map[id].canBookRegular = true;
+      if (s.status === 'completed') entry.canBookRegular = true;
+    });
+
+    (circles || []).forEach((circle) => {
+      ensureTeacherEntry(circle.teacher);
     });
 
     res.json({ teachers: Object.values(map) });
@@ -546,6 +598,9 @@ function sanitizeSessionForStudentArchive(doc, studentId) {
   const ownReport = Array.isArray(s.studentReports)
     ? s.studentReports.find((r) => String(r?.student?._id || r?.student) === String(studentId))
     : null;
+  const ownAttendance = Array.isArray(s.attendance)
+    ? s.attendance.find((entry) => String(entry?.student?._id || entry?.student) === String(studentId))
+    : null;
 
   return {
     _id: s._id,
@@ -554,6 +609,8 @@ function sanitizeSessionForStudentArchive(doc, studentId) {
     scheduledAt: s.scheduledAt,
     duration: s.duration,
     timezone: s.timezone,
+    circle: s.circle ? { _id: s.circle._id, name: s.circle.name } : undefined,
+    attendanceStatus: ownAttendance?.status || undefined,
     recordingUrl: safeRecordingUrl || undefined,
     report: s.report || undefined,
     teacherEvaluation: s.teacherEvaluation || undefined,
@@ -586,15 +643,26 @@ router.get('/evaluations', protect, authorize('student'), async (req, res) => {
     }
 
     const sessions = await Session.find({
-      student: req.user.id,
       status: 'completed',
-      'teacherEvaluation.attendance': { $exists: true },
+      $or: [
+        { student: req.user.id, 'teacherEvaluation.attendance': { $exists: true } },
+        {
+          type: 'group_circle',
+          'attendance.student': req.user.id,
+          $or: [
+            { 'teacherEvaluation.attendance': { $exists: true } },
+            { 'teacherEvaluation.surahRecited': { $exists: true, $ne: '' } },
+            { 'studentReports.student': req.user.id },
+          ],
+        },
+      ],
     })
       .populate({
         path: 'teacher',
         select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
         populate: { path: 'user', select: 'name avatar' },
       })
+      .populate('circle', 'name')
       .sort({ updatedAt: -1 });
 
     res.json({ evaluations: sessions.map((s) => sanitizeSessionForStudentArchive(s, req.user.id)) });
@@ -613,14 +681,18 @@ router.get('/recordings', protect, authorize('student'), async (req, res) => {
     }
 
     const sessions = await Session.find({
-      student: req.user.id,
       status: 'completed',
+      $or: [
+        { student: req.user.id },
+        { type: 'group_circle', 'attendance.student': req.user.id },
+      ],
     })
       .populate({
         path: 'teacher',
         select: 'personalInfo.fullName personalInfo.country personalInfo.gender media.profilePhoto rating user',
         populate: { path: 'user', select: 'name avatar' },
       })
+      .populate('circle', 'name')
       .sort({ scheduledAt: -1 })
       .limit(50);
 

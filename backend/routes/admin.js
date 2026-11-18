@@ -405,6 +405,16 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
         && oneOnOneStudentAttendance?.eligibleForCompensation === true
       );
 
+      // A 1-on-1 lesson the student excused early (credit preserved) never took
+      // place: closing it as "completed" would pay the teacher while the
+      // student keeps the credit. The admin must cancel it instead.
+      if (!wasAlreadyCompleted && hasEligibleRegularExcuse) {
+        return res.status(409).json({
+          error: 'اعتذر الطالب مبكراً عن هذه الحصة الفردية؛ لا يمكن إغلاقها كمكتملة. استخدم الإلغاء بدلاً من ذلك.',
+          code: 'SESSION_EXCUSED_IN_ADVANCE',
+        });
+      }
+
       if (!wasAlreadyCompleted) {
         session.status = 'completed';
         session.earnings = session.earnings || {};
@@ -1001,25 +1011,53 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       teacher.personalInfo.address = String(resolvedAddress || '').trim();
     }
     if (resolvedGender === 'male' || resolvedGender === 'female') {
-      if (teacher.personalInfo?.gender && resolvedGender !== teacher.personalInfo.gender) {
-        const existingCircles = await GroupCircle.find({
+      if (resolvedGender !== teacher.personalInfo?.gender) {
+        const canQueryModel = (Model) => Boolean(require('mongoose').connection?.db) || Model.find !== require('mongoose').Model.find;
+        const existingCircles = !canQueryModel(GroupCircle) ? [] : await GroupCircle.find({
           teacher: teacher._id,
           status: { $nin: ['completed', 'cancelled'] },
         }).select('gender subscriptionSection');
         const candidateTeacher = { personalInfo: { gender: resolvedGender } };
-        for (const circle of existingCircles) {
-          try {
+        try {
+          for (const circle of existingCircles) {
             assertGenderAndAgeCompatibility({
               teacher: candidateTeacher,
               circleGender: circle.gender,
               section: circle.subscriptionSection,
             });
-          } catch (safeguardErr) {
-            return res.status(409).json({
-              error: safeguardErr.publicMessage || 'لا يمكن تغيير جنس المعلم لوجود حلقات نشطة غير متوافقة',
-              code: safeguardErr.code || 'GENDER_SEPARATION_VIOLATION',
+          }
+          // Open 1-on-1 lessons and tutor-locked subscriptions must remain
+          // gender-compatible with the teacher's new gender as well.
+          const openOneToOne = !canQueryModel(Session) ? [] : await Session.find({
+            teacher: teacher._id,
+            type: { $in: ['trial', 'regular'] },
+            status: { $in: ['pending', 'accepted'] },
+          }).populate('student', 'gender age enrollmentSection');
+          for (const openSession of openOneToOne || []) {
+            if (!openSession?.student) continue;
+            assertGenderAndAgeCompatibility({
+              student: openSession.student,
+              teacher: candidateTeacher,
+              section: openSession.student.enrollmentSection || null,
             });
           }
+          const lockedSubscriptions = !canQueryModel(StudentSubscription) ? [] : await StudentSubscription.find({
+            preferredTeacher: teacher._id,
+            status: { $nin: ['cancelled', 'expired', 'exhausted'] },
+          }).populate('student', 'gender age enrollmentSection');
+          for (const lockedSub of lockedSubscriptions || []) {
+            if (!lockedSub?.student) continue;
+            assertGenderAndAgeCompatibility({
+              student: lockedSub.student,
+              teacher: candidateTeacher,
+              section: lockedSub.section || lockedSub.student.enrollmentSection || null,
+            });
+          }
+        } catch (safeguardErr) {
+          return res.status(409).json({
+            error: safeguardErr.publicMessage || 'لا يمكن تغيير جنس المعلم لوجود حلقات أو حصص أو اشتراكات نشطة غير متوافقة',
+            code: safeguardErr.code || 'GENDER_SEPARATION_VIOLATION',
+          });
         }
       }
       teacher.personalInfo.gender = resolvedGender;
@@ -1108,7 +1146,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
           await Session.updateMany(
             {
               teacher: teacher._id,
-              status: { $in: ['pending', 'confirmed'] },
+              status: { $in: ['pending', 'accepted'] },
               scheduledAt: { $gt: new Date() },
             },
             { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }

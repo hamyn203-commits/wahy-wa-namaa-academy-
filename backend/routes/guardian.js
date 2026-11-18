@@ -15,7 +15,7 @@ const GuardianInvitation = require('../models/GuardianInvitation');
 const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
 const { createScopedRateLimiter } = require('../middleware/userRateLimit');
-const { findChildAccess, hasChildPermission } = require('../utils/guardianSafeguarding');
+const { findChildAccess, hasChildPermission, requireActiveGuardianProfile } = require('../utils/guardianSafeguarding');
 const { normalizePhone, maskPhone } = require('../utils/phone');
 const { linkGuardianToStudent, expireStaleInvitations } = require('../services/guardianInvitations');
 const { notifyUser } = require('../utils/notify');
@@ -152,10 +152,7 @@ function childMatchesSession(child, session) {
   const childId = String(child._id);
   if (session.student && String(session.student) === childId) return true;
   if ((session.attendance || []).some((entry) => entry.student && String(entry.student) === childId)) return true;
-  if (child.circle && session.circle) {
-    const sessionCircleId = session.circle?._id || session.circle;
-    if (String(child.circle) === String(sessionCircleId)) return true;
-  }
+  // Group-circle lessons: the child must be on that lesson's paid roster.
   return false;
 }
 
@@ -581,7 +578,7 @@ router.get('/homework/:studentId', protect, authorize('guardian'), async (req, r
  * @desc    Pending child-link invitations matching this guardian phone
  * @access  Private (Guardian)
  */
-router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
+router.get('/invitations', protect, authorize('guardian'), requireActiveGuardianProfile, async (req, res) => {
   try {
     const guardianUser = await User.findById(req.user.id).select('name phone phoneVerified +phoneNormalized');
     if (!guardianUser) return res.status(404).json({ error: 'Guardian account not found' });
@@ -651,7 +648,7 @@ router.get('/invitations', protect, authorize('guardian'), async (req, res) => {
  * @desc    Confirm or reject a phone-matched child invitation
  * @access  Private (Guardian)
  */
-router.post('/invitations/:id/respond', protect, authorize('guardian'), linkChildLimiter, async (req, res) => {
+router.post('/invitations/:id/respond', protect, authorize('guardian'), requireActiveGuardianProfile, linkChildLimiter, async (req, res) => {
   try {
     const guardianUser = await User.findById(req.user.id).select('phone phoneVerified +phoneNormalized');
     const normalizedPhone = guardianUser?.phoneNormalized || normalizePhone(guardianUser?.phone);
@@ -736,7 +733,7 @@ router.post('/invitations/:id/respond', protect, authorize('guardian'), linkChil
  * @desc    ربط حساب طالب بحساب ولي الأمر بواسطة كود الطالب أو إيميله
  * @access  Private (Guardian, Admin)
  */
-router.post('/link-child', protect, authorize('guardian'), linkChildLimiter, async (req, res) => {
+router.post('/link-child', protect, authorize('guardian'), requireActiveGuardianProfile, linkChildLimiter, async (req, res) => {
   try {
     const { studentCode, relationship = 'guardian' } = req.body;
     const normalizedCode = String(studentCode || '').trim().toUpperCase();
@@ -992,9 +989,8 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
       })
     );
 
-    // Also find any circles where children are enrolled
+    // Group-circle lessons are matched only through the child's paid roster seat.
     const childrenUsers = await User.find({ _id: { $in: childIds } }).select('_id name circle');
-    const circleIds = childrenUsers.map(c => c.circle).filter(Boolean);
 
     const now = new Date();
     // Fetch upcoming sessions from 2 hours ago to future
@@ -1003,7 +999,6 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
     const upcoming = await Session.find({
       $or: [
         { student: { $in: childIds } },
-        { circle: { $in: circleIds } },
         { 'attendance.student': { $in: childIds } }
       ],
       scheduledAt: { $gte: threshold },

@@ -1,4 +1,6 @@
-import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
+import { teacherPublicImage } from '../../lib/teacherMedia';
+import { prefetchTeacherBundle } from '../../lib/teacherProfileCache';
+import TeacherAvatar from '../../components/shared/TeacherAvatar';
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -616,9 +618,23 @@ export default function Teachers() {
                     const totalStudents = teacher.stats?.totalStudents;
 
                     return (
-                      <Link key={teacher._id} to={lp('/teachers/' + teacher._id)} className="wn-teacher-card">
+                      <Link
+                        key={teacher._id}
+                        to={lp('/teachers/' + teacher._id)}
+                        state={{ prefetchedTeacher: teacher }}
+                        onMouseEnter={() => prefetchTeacherBundle(teacher._id)}
+                        onFocus={() => prefetchTeacherBundle(teacher._id)}
+                        className="wn-teacher-card"
+                      >
                         <div className="wn-teacher-card__media">
-                          <img src={teacherPublicImage(teacher.media?.profilePhoto)} alt={teacher.user?.name || active.title} onError={teacherImageFallback} loading="lazy" decoding="async" />
+                          <TeacherAvatar
+                            src={teacherPublicImage(teacher.media?.profilePhoto)}
+                            name={teacher.user?.name || active.title}
+                            alt={teacher.user?.name || active.title}
+                            loading="lazy"
+                            size="lg"
+                            className="h-full w-full"
+                          />
                           {teacher.isFeatured ? (
                             <span className="wn-teacher-featured">{active.featured}</span>
                           ) : (

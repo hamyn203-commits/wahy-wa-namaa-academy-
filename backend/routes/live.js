@@ -46,10 +46,8 @@ async function sessionIncludesStudent(session, studentId) {
   if (session.student && String(session.student) === id) return true;
   if (session.attendance?.some((entry) => entry.student && String(entry.student) === id)) return true;
 
-  if (session.circle) {
-    return Boolean(await GroupCircle.exists({ _id: session.circle, students: studentId }));
-  }
-
+  // Group-circle lessons: `attendance` is the authoritative paid roster.
+  // Circle membership alone (paused / zero-credit students) never grants a seat.
   return false;
 }
 
@@ -178,16 +176,33 @@ async function syncBookedSessionLiveLink(bookedSession, roomId) {
 }
 
 async function canManageRoom(roomId, user) {
-  let liveSession = await LiveSession.findOne({ roomId });
-  if (!liveSession && mongoose.Types.ObjectId.isValid(roomId)) {
-    liveSession = await LiveSession.findOne({ session: roomId });
-  }
+  const liveSession = await findLiveSessionByRoomOrSession(roomId);
   if (!liveSession) return { liveSession: null, access: null };
 
   const access = await getRoomAccess(liveSession, user);
   if (!access.allowed || !access.isHost) return { liveSession, access };
 
   return { liveSession, access };
+}
+
+// Booked sessions store their academy room link as `/live/session_<sessionId>`
+// (meetingService) while API callers may also pass the raw 24-hex session id.
+// Random provisioned rooms use `session_<32-hex>` and never collide with this.
+function bookedSessionIdFromRoomName(roomName) {
+  const value = String(roomName || '').trim();
+  if (mongoose.Types.ObjectId.isValid(value) && /^[a-f0-9]{24}$/i.test(value)) return value;
+  const match = value.match(/^session_([a-f0-9]{24})$/i);
+  return match ? match[1] : null;
+}
+
+async function findLiveSessionByRoomOrSession(roomName) {
+  const value = String(roomName || '').trim().slice(0, 128);
+  if (!value) return null;
+  let liveSession = await LiveSession.findOne({ roomId: value });
+  if (liveSession) return liveSession;
+  const bookedId = bookedSessionIdFromRoomName(value);
+  if (bookedId) liveSession = await LiveSession.findOne({ session: bookedId });
+  return liveSession || null;
 }
 
 router.get('/status', (_req, res) => {
@@ -225,30 +240,35 @@ router.post('/token', verifyAccessToken, async (req, res) => {
       return res.status(503).json({ message: 'LiveKit is not configured' });
     }
 
-    let liveSession = await LiveSession.findOne({ roomId: roomName });
-    if (!liveSession && mongoose.Types.ObjectId.isValid(roomName)) {
-      liveSession = await LiveSession.findOne({ session: roomName });
-    }
+    let liveSession = await findLiveSessionByRoomOrSession(roomName);
+    const bookedIdFromRoom = bookedSessionIdFromRoomName(roomName);
 
-    if (!liveSession && mongoose.Types.ObjectId.isValid(roomName)) {
-      const bookedSession = await Session.findById(roomName).select('_id student circle teacher attendance scheduledAt duration timezone status type');
+    if (!liveSession && bookedIdFromRoom) {
+      const bookedSession = await Session.findById(bookedIdFromRoom).select('_id student circle teacher attendance scheduledAt duration timezone status type');
       if (bookedSession && bookedSession.status === 'accepted') {
         const preflightAccess = await getRoomAccess({ session: bookedSession._id }, req.user);
         if (!preflightAccess.allowed) {
           return res.status(403).json({ message: 'You are not assigned to this live session' });
         }
         const roomId = `session_${crypto.randomBytes(16).toString('hex')}`;
-        liveSession = await LiveSession.create({
-          roomId,
-          session: bookedSession._id,
-          createdBy: req.user.id,
-          title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
-          description: 'غرفة الأكاديمية المباشرة الموحدة',
-          subject: 'quran',
-          isLive: false,
-          participants: 0,
-        });
-        await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
+        try {
+          liveSession = await LiveSession.create({
+            roomId,
+            session: bookedSession._id,
+            createdBy: req.user.id,
+            title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
+            description: 'غرفة الأكاديمية المباشرة الموحدة',
+            subject: 'quran',
+            isLive: false,
+            participants: 0,
+          });
+        } catch (createError) {
+          // Teacher and student may join at the same instant: the unique
+          // `session` index lets exactly one room win; everyone reuses it.
+          if (createError?.code !== 11000) throw createError;
+          liveSession = await LiveSession.findOne({ session: bookedSession._id });
+        }
+        if (liveSession) await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
       }
     }
 
@@ -323,10 +343,6 @@ function evaluateRoomAccessSync(liveSession, user, { sessionMap, circleStudentsM
     const idStr = String(sid);
     if (bookedSession.student && String(bookedSession.student) === idStr) return true;
     if (bookedSession.attendance?.some((entry) => entry.student && String(entry.student) === idStr)) return true;
-    if (bookedSession.circle) {
-      const circleSet = circleStudentsMap.get(String(bookedSession.circle));
-      if (circleSet && circleSet.has(idStr)) return true;
-    }
     return false;
   };
 
@@ -379,7 +395,7 @@ router.get('/sessions', verifyAccessToken, async (req, res) => {
         };
       } else if (req.user.role === 'guardian') {
         const permittedChildIds = (guardianDoc?.children || [])
-          .filter((c) => c?.student && (c?.permissions?.viewAttendance !== false || c?.permissions?.viewProgress !== false))
+          .filter((c) => c?.student && c?.permissions?.viewAttendance !== false)
           .map((c) => c.student);
         if (!permittedChildIds.length) return res.json([]);
         const circles = await GroupCircle.find({ students: { $in: permittedChildIds } }).select('_id').lean();
@@ -434,7 +450,7 @@ router.get('/sessions', verifyAccessToken, async (req, res) => {
 
     const teacherId = teacherDoc?._id ? String(teacherDoc._id) : null;
     const guardianChildIds = (guardianDoc?.children || [])
-      .filter((c) => c?.student && (c?.permissions?.viewAttendance !== false || c?.permissions?.viewProgress !== false))
+      .filter((c) => c?.student && c?.permissions?.viewAttendance !== false)
       .map((c) => String(c.student))
       .filter(Boolean);
 
@@ -531,10 +547,7 @@ router.post('/sessions', verifyAccessToken, requireRole('teacher', 'admin'), asy
 
 router.get('/sessions/:roomId', verifyAccessToken, async (req, res) => {
   try {
-    let liveSession = await LiveSession.findOne({ roomId: req.params.roomId });
-    if (!liveSession && mongoose.Types.ObjectId.isValid(req.params.roomId)) {
-      liveSession = await LiveSession.findOne({ session: req.params.roomId });
-    }
+    const liveSession = await findLiveSessionByRoomOrSession(req.params.roomId);
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
 
     const access = await getRoomAccess(liveSession, req.user);

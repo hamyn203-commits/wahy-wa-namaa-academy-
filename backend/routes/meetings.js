@@ -3,7 +3,6 @@ const express = require('express');
 const router = express.Router();
 const Session = require('../models/Session');
 const Teacher = require('../models/Teacher');
-const GroupCircle = require('../models/GroupCircle');
 const Guardian = require('../models/Guardian');
 const { protect, authorize } = require('../middleware/auth');
 const meetingService = require('../services/meetingService');
@@ -23,11 +22,7 @@ async function sessionIncludesStudent(session, studentId) {
     return true;
   }
 
-  if (session.circle) {
-    const circleId = session.circle?._id || session.circle;
-    return Boolean(await GroupCircle.exists({ _id: circleId, students: studentId }));
-  }
-
+  // Group-circle lessons: `attendance` is the authoritative paid roster.
   return false;
 }
 

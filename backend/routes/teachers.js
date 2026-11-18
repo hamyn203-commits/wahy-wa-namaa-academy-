@@ -39,6 +39,7 @@ const {
   findMockTeacherByUserId,
   findMockTeacherById,
   updateMockTeacher,
+  getMockTeachers,
   tasks: mockTasks,
   withdrawals: mockWithdrawals,
 } = require('../mockStore');
@@ -267,6 +268,12 @@ function validateDirectUpload(value, purpose, owner) {
 function validateDirectUploadList(values, purpose, owner) {
   return (values || []).every((value) => validateDirectUpload(value, purpose, owner));
 }
+
+const PUBLIC_TEACHER_SELECT =
+  'user personalInfo.fullName personalInfo.gender personalInfo.country personalInfo.city academicInfo quranInfo languages rating stats hourlyRate isVerified isFeatured media availabilityTimezone createdAt';
+
+const PUBLIC_TEACHER_LIST_SELECT =
+  'user personalInfo.fullName personalInfo.gender personalInfo.country personalInfo.city academicInfo.specialization academicInfo.qualification quranInfo languages rating stats hourlyRate isVerified isFeatured media.profilePhoto media.introductionVideo media.recitationVideo availabilityTimezone createdAt';
 
 function sanitizePublicTeacher(doc) {
   const teacher = typeof doc?.toObject === 'function' ? doc.toObject() : { ...doc };
@@ -964,6 +971,30 @@ router.post('/application-status', async (req, res) => {
   }
 });
 
+function hydrateMockPublicTeacher(raw) {
+  if (!raw) return null;
+  const userObj = typeof raw.user === 'object' && raw.user
+    ? raw.user
+    : findMockUserById(raw.user);
+  const hydrated = {
+    ...raw,
+    user: userObj
+      ? { _id: userObj._id, name: userObj.name, avatar: userObj.avatar, bio: userObj.bio }
+      : raw.user,
+  };
+  const teacher = sanitizePublicTeacher(hydrated);
+  teacher.media = {
+    profilePhoto: teacher.media?.profilePhoto || '',
+    introductionVideo: teacher.media?.introductionVideo || '',
+    recitationVideo: teacher.media?.recitationVideo || '',
+  };
+  return teacher;
+}
+
+function readNestedField(obj, dotPath) {
+  return String(dotPath || '').split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), obj);
+}
+
 router.get('/', async (req, res) => {
   try {
     const {
@@ -983,11 +1014,14 @@ router.get('/', async (req, res) => {
     } = req.query;
 
     const filter = { status: 'approved', isVerified: true };
+    let allowedCountries = null;
+    let specialties = null;
 
     if (market) {
       const { getMarketBySlug } = require('../config/markets');
       const m = getMarketBySlug(market);
       if (m?.countries?.length) {
+        allowedCountries = m.countries;
         filter['personalInfo.country'] = { $in: m.countries };
       }
     } else if (country) {
@@ -995,7 +1029,7 @@ router.get('/', async (req, res) => {
     }
     if (gender) filter['personalInfo.gender'] = gender;
     if (specialization) {
-      const specialties = String(specialization).split(',').map(value => value.trim()).filter(value => /^[a-z_]{2,30}$/.test(value)).slice(0, 10);
+      specialties = String(specialization).split(',').map(value => value.trim()).filter(value => /^[a-z_]{2,30}$/.test(value)).slice(0, 10);
       if (!specialties.length) return res.status(400).json({ error: 'Invalid specialization' });
       filter['quranInfo.specializations'] = { $in: specialties };
     }
@@ -1003,8 +1037,10 @@ router.get('/', async (req, res) => {
     if (minRating) filter['rating.average'] = { $gte: parseFloat(minRating) };
     if (minExperience) filter['quranInfo.teachingExperience'] = { $gte: parseInt(minExperience) };
 
-    if (search && String(search).trim()) {
-      const boundedSearch = String(search).trim().slice(0, 100);
+    const boundedSearch = search && String(search).trim()
+      ? String(search).trim().slice(0, 100)
+      : '';
+    if (boundedSearch) {
       const escaped = boundedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
       filter.$or = [
@@ -1030,20 +1066,75 @@ router.get('/', async (req, res) => {
       : 'rating.average';
     const sort = { [sortField]: sortOrder === 'asc' ? 1 : -1 };
 
+    if (
+      isMockMode
+      && !isDBConnected()
+      && Teacher.find === mongoose.Model.find
+      && Teacher.countDocuments === mongoose.Model.countDocuments
+    ) {
+      const searchRegex = boundedSearch
+        ? new RegExp(boundedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+        : null;
+      const filtered = getMockTeachers().filter((item) => {
+        if (item.status !== 'approved' || item.isVerified !== true) return false;
+        if (allowedCountries && !allowedCountries.includes(item.personalInfo?.country)) return false;
+        if (!allowedCountries && country && item.personalInfo?.country !== country) return false;
+        if (gender && item.personalInfo?.gender !== gender) return false;
+        if (specialties && !specialties.some((spec) => (item.quranInfo?.specializations || []).includes(spec))) return false;
+        if (language && !(item.languages || []).includes(language)) return false;
+        if (minRating && Number(item.rating?.average || 0) < parseFloat(minRating)) return false;
+        if (minExperience && Number(item.quranInfo?.teachingExperience || 0) < parseInt(minExperience, 10)) return false;
+        if (searchRegex) {
+          const haystacks = [
+            item.personalInfo?.fullName,
+            item.academicInfo?.specialization,
+            ...(item.quranInfo?.specializations || []),
+            ...(item.languages || []),
+          ];
+          if (!haystacks.some((val) => searchRegex.test(String(val || '')))) return false;
+        }
+        return true;
+      });
+      const dir = sortOrder === 'asc' ? 1 : -1;
+      filtered.sort((a, b) => {
+        const av = readNestedField(a, sortField);
+        const bv = readNestedField(b, sortField);
+        if (sortField === 'createdAt') return (new Date(av || 0).getTime() - new Date(bv || 0).getTime()) * dir;
+        return (Number(av || 0) - Number(bv || 0)) * dir;
+      });
+      const paged = filtered.slice(skip, skip + limitNum).map(hydrateMockPublicTeacher);
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      return res.json({
+        teachers: paged,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: filtered.length,
+          pages: Math.ceil(filtered.length / limitNum),
+        },
+      });
+    }
+
     const [teachers, total] = await Promise.all([
       Teacher.find(filter)
+        .select(PUBLIC_TEACHER_LIST_SELECT)
         .populate('user', 'name avatar bio')
         .sort(sort)
         .skip(skip)
-        .limit(limitNum),
+        .limit(limitNum)
+        .lean(),
       Teacher.countDocuments(filter)
     ]);
 
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({
       teachers: teachers.map(item => {
         const teacher = sanitizePublicTeacher(item);
-        // Discovery needs one thumbnail, not full video/audio payloads or private metadata.
-        teacher.media = { profilePhoto: teacher.media?.profilePhoto || '' };
+        teacher.media = {
+          profilePhoto: teacher.media?.profilePhoto || '',
+          introductionVideo: teacher.media?.introductionVideo || '',
+          recitationVideo: teacher.media?.recitationVideo || '',
+        };
         return teacher;
       }),
       pagination: {
@@ -1060,15 +1151,28 @@ router.get('/', async (req, res) => {
 
 router.get('/featured', async (req, res) => {
   try {
+    if (isMockMode && !isDBConnected() && Teacher.find === mongoose.Model.find) {
+      const featured = getMockTeachers()
+        .filter((item) => item.status === 'approved' && item.isVerified === true && Boolean(item.isFeatured))
+        .sort((a, b) => Number(b.rating?.average || 0) - Number(a.rating?.average || 0))
+        .slice(0, 6)
+        .map(hydrateMockPublicTeacher);
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      return res.json(featured);
+    }
+
     const teachers = await Teacher.find({ 
       status: 'approved', 
       isVerified: true, 
       isFeatured: true 
     })
+      .select(PUBLIC_TEACHER_LIST_SELECT)
       .populate('user', 'name avatar bio')
       .sort({ 'rating.average': -1 })
-      .limit(6);
+      .limit(6)
+      .lean();
 
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(teachers.map(sanitizePublicTeacher));
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -1847,7 +1951,7 @@ router.put('/admin/:id/review', protect, authorize('admin'), async (req, res) =>
         await SessionModel.updateMany(
           {
             teacher: teacher._id,
-            status: { $in: ['pending', 'confirmed'] },
+            status: { $in: ['pending', 'accepted'] },
             scheduledAt: { $gt: new Date() },
           },
           { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }
@@ -2072,16 +2176,34 @@ router.get('/admin/:id/document/:kind{/:index}', protect, authorize('admin'), as
 
 router.get('/:id', async (req, res) => {
   try {
+    const teacherId = String(req.params.id || '');
+    if (isMockMode && !isDBConnected() && Teacher.findOne === mongoose.Model.findOne) {
+      const mockTeacher = findMockTeacherById(teacherId);
+      if (!mockTeacher || mockTeacher.status !== 'approved' || mockTeacher.isVerified !== true) {
+        return res.status(404).json({ error: 'Teacher not found' });
+      }
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      return res.json(hydrateMockPublicTeacher(mockTeacher));
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
     const teacher = await Teacher.findOne({ 
-      _id: req.params.id, 
+      _id: teacherId, 
       status: 'approved', 
       isVerified: true 
-    }).populate('user', 'name avatar bio');
+    })
+      .select(PUBLIC_TEACHER_SELECT)
+      .populate('user', 'name avatar bio')
+      .lean();
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found' });
     }
 
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(sanitizePublicTeacher(teacher));
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });

@@ -12,6 +12,7 @@ const { notifyUser, notifyAdmins } = require('../utils/notify');
 const { logAdminAction } = require('../services/adminAudit');
 const { parseRequestedDateTime, teacherAvailabilityDecision, overlaps, safeTimeZone } = require('../services/sessionScheduling');
 const { sessionParticipantWindow } = require('../services/sessionAccess');
+const { requireActiveGuardianProfile } = require('../utils/guardianSafeguarding');
 const rateLimit = require('express-rate-limit');
 
 const publicTrialLimiter = rateLimit({
@@ -342,7 +343,7 @@ router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
 // @route   GET /api/trials/my
 // @desc    Trial requests submitted by / linked to the signed-in student or guardian
 // @access  Protected (student, guardian)
-router.get('/my', protect, authorize('student', 'guardian'), async (req, res) => {
+router.get('/my', protect, authorize('student', 'guardian'), requireActiveGuardianProfile, async (req, res) => {
   if (isMockMode && !isDBConnected()) {
     const mine = MOCK_TRIALS.filter((t) => String(t.studentUser || '') === String(req.user.id) || String(t.submittedBy || '') === String(req.user.id));
     return res.json({ success: true, trials: mine });
@@ -770,6 +771,17 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
       teacherProfileId = trial.assignedTeacher;
     }
 
+    // Only a scheduled (or re-assessed completed) trial may be assessed. A
+    // cancelled / no-show / never-scheduled request must never flip to
+    // "completed" or overwrite the learner's level.
+    if (!['scheduled', 'completed'].includes(trial.status)) {
+      return res.status(409).json({
+        error: 'لا يمكن تقييم طلب تجريبي غير مجدول أو ملغى أو مسجل كغياب',
+        code: 'TRIAL_NOT_ASSESSABLE',
+        status: trial.status,
+      });
+    }
+
     // Build assessment object
     trial.assessment = {
       evaluatedBy: teacherProfileId,
@@ -782,7 +794,8 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
 
     trial.status = 'completed';
 
-    // Mark associated Session as completed if exists and eligible
+    // The linked booked session must be completed through the session
+    // completion flow (teacher evaluation + earning ledger) before assessment.
     if (trial.scheduledSession) {
       const linkedSession = await Session.findById(trial.scheduledSession);
       if (linkedSession) {
@@ -801,8 +814,13 @@ router.put('/:id/assess', protect, authorize('teacher', 'admin'), async (req, re
             code: 'SESSION_ATTENDANCE_NOT_ELIGIBLE',
           });
         }
-        linkedSession.status = 'completed';
-        await linkedSession.save();
+        if (linkedSession.status !== 'completed') {
+          return res.status(409).json({
+            error: 'أنهِ الحصة التجريبية أولاً من لوحة الحصص (إنهاء + تقرير) ثم سجّل التقييم',
+            code: 'SESSION_NOT_COMPLETED',
+            sessionStatus: linkedSession.status,
+          });
+        }
       }
     }
 

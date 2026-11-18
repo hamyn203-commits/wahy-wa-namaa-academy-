@@ -1,0 +1,1107 @@
+/* ==========================================================================
+   Wahy Wa Namaa — Homepage Interactive & Editorial Enhancements
+   Strictly token-driven (brand.css): zero raw hex, zero rgba(), zero px radii.
+   ========================================================================== */
+
+/* Smooth anchor offset for sticky header + quick-jump subnav */
+.wn-approved-home > section[id] {
+  scroll-margin-top: 7.5rem;
+}
+
+/* ── 1. GlobalHeader Quick-Jump Subnav & Single-Line Polish ─────────────── */
+.wn-approved-header .wn-approved-header__nav {
+  gap: clamp(0.65rem, 1.1vw, 1.2rem);
+}
+
+.wn-approved-header .wn-approved-header__actions {
+  flex-shrink: 0;
+}
+
+.wn-approved-header .wn-approved-header__link,
+.wn-approved-header .wn-approved-header__login,
+.wn-approved-header .wn-approved-header__cta,
+.wn-approved-header button {
+  white-space: nowrap;
+}
+
+.wn-header-subnav {
+  display: none;
+  border-top: 1px solid color-mix(in srgb, var(--wn-border) 75%, transparent);
+  background: color-mix(in srgb, var(--wn-surface-canvas) 92%, var(--wn-mint-soft) 8%);
+}
+
+@media (min-width: 1024px) {
+  .wn-header-subnav {
+    display: block;
+  }
+}
+
+.wn-header-subnav__inner {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-4);
+}
+
+.wn-header-subnav__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-space-2);
+  color: var(--wn-text-gold);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-header-subnav__links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wn-space-2);
+}
+
+.wn-header-subnav__link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.7rem;
+  border-radius: var(--wn-radius-pill);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-header-subnav__link:hover {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-mobile-quick-jumps {
+  margin-top: var(--wn-space-3);
+  padding-top: var(--wn-space-3);
+  border-top: 1px dashed var(--wn-border);
+  display: grid;
+  gap: var(--wn-space-2);
+}
+
+.wn-mobile-quick-jumps__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-space-2);
+  padding-inline: var(--wn-space-2);
+  color: var(--wn-text-gold);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-mobile-quick-jumps__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wn-mobile-quick-jumps__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--wn-control-sm);
+  padding-inline: 0.8rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  color: var(--wn-text-primary);
+  font-size: var(--wn-text-xs);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ── 2. Hero Quick Division Switcher & Interactive Lens ─────────────────── */
+.wn-hero-assurance {
+  margin-top: var(--wn-space-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 1.2rem;
+}
+
+.wn-hero-assurance > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+}
+
+.wn-hero-assurance > span > svg {
+  color: var(--wn-emerald);
+  flex-shrink: 0;
+}
+
+.wn-hero-divisions {
+  margin-top: var(--wn-space-5);
+  padding-top: var(--wn-space-4);
+  border-top: 1px solid color-mix(in srgb, var(--wn-gold) 24%, var(--wn-border));
+  display: grid;
+  gap: var(--wn-space-3);
+}
+
+.wn-hero-divisions__label {
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+}
+
+.wn-hero-divisions__grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .wn-hero-divisions__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wn-hero-division-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.6rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--wn-radius-md);
+  border: 1px solid var(--wn-border-strong);
+  background: color-mix(in srgb, var(--wn-surface) 90%, transparent);
+  text-decoration: none;
+  transition:
+    transform var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    box-shadow var(--wn-dur) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-hero-division-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--wn-emerald);
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-hero-division-card--women:hover {
+  border-color: var(--wn-women-border);
+  background: var(--wn-women-soft);
+}
+
+.wn-hero-division-card__icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--wn-radius-sm);
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-hero-division-card--women .wn-hero-division-card__icon {
+  background: var(--wn-women-soft);
+  color: var(--wn-women-accent);
+  border: 1px solid color-mix(in srgb, var(--wn-women-border) 45%, transparent);
+}
+
+.wn-hero-division-card__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.wn-hero-division-card__body strong {
+  color: var(--wn-heading);
+  font-size: var(--wn-text-sm);
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.wn-hero-division-card__body small {
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-2xs);
+  line-height: 1.35;
+}
+
+.wn-hero-division-card__arrow {
+  flex-shrink: 0;
+  color: var(--wn-text-tertiary);
+  transition: transform var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-hero-division-card:hover .wn-hero-division-card__arrow {
+  color: var(--wn-emerald);
+  transform: translateX(-2px);
+}
+
+:root:not([dir='rtl']) .wn-hero-division-card:hover .wn-hero-division-card__arrow {
+  transform: translateX(2px);
+}
+
+.wn-approved-hero .wn-hero-live-card--interactive {
+  z-index: 5;
+  cursor: pointer;
+  text-align: start;
+  transition:
+    transform var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    box-shadow var(--wn-dur) var(--wn-ease);
+}
+
+.wn-approved-hero .wn-hero-live-card--path.wn-hero-live-card--interactive {
+  top: 2rem;
+  bottom: auto;
+  inset-inline-end: 1rem;
+  inset-inline-start: auto;
+}
+
+.wn-approved-hero .wn-hero-live-card--interactive.is-focused {
+  border-color: var(--wn-gold);
+  box-shadow: var(--wn-shadow-gold);
+}
+
+.wn-hero-lens-bar {
+  position: absolute;
+  inset-inline: 1rem;
+  bottom: 0.75rem;
+  z-index: 4;
+  pointer-events: none;
+  display: none;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 38%, transparent);
+  background: color-mix(in srgb, var(--wn-emerald-deep) 90%, transparent);
+  backdrop-filter: blur(10px);
+  color: var(--wn-text-inverse);
+}
+
+@media (min-width: 768px) {
+  .wn-hero-lens-bar {
+    display: flex;
+  }
+}
+
+.wn-hero-lens-bar__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold);
+}
+
+.wn-hero-lens-bar strong {
+  display: block;
+  color: var(--wn-gold);
+  font-size: var(--wn-text-2xs);
+  font-weight: 750;
+}
+
+.wn-hero-lens-bar span {
+  display: block;
+  color: color-mix(in srgb, var(--wn-white) 88%, transparent);
+  font-size: var(--wn-text-xs);
+}
+
+/* ── 3. Programs & Why Wahy Editorial Refinements ───────────────────────── */
+.wn-program-card-tag {
+  position: absolute;
+  top: 0.85rem;
+  inset-inline-end: 0.85rem;
+  padding: 0.22rem 0.65rem;
+  border-radius: var(--wn-radius-pill);
+  background: color-mix(in srgb, var(--wn-surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 34%, var(--wn-border));
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-program-card-footer {
+  margin-top: auto;
+  padding-top: var(--wn-space-3);
+}
+
+.wn-program-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--wn-emerald);
+  font-size: var(--wn-text-xs);
+  font-weight: 750;
+  text-decoration: none;
+  transition: gap var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-program-card-cta:hover {
+  gap: 0.65rem;
+  color: var(--wn-emerald-dark);
+}
+
+.wn-why-card-editorial__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-3);
+  margin-bottom: var(--wn-space-3);
+}
+
+.wn-why-card-editorial__num {
+  font-family: var(--wn-font-display);
+  font-size: var(--wn-text-lg);
+  font-weight: 700;
+  color: color-mix(in srgb, var(--wn-text-gold) 65%, transparent);
+}
+
+/* ── 4. Immersive Ecosystem Interactive Triggers ────────────────────────── */
+.wn-immersive-feature--btn {
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-immersive-feature--btn.is-active {
+  border-color: color-mix(in srgb, var(--wn-gold) 50%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 10%, transparent);
+}
+
+.wn-float-card.is-highlighted {
+  border-color: var(--wn-gold);
+  box-shadow: var(--wn-shadow-gold);
+  transform: scale(1.03);
+}
+
+.wn-stage-focus-note {
+  position: absolute;
+  inset-inline: 1.5rem;
+  bottom: 3.1rem;
+  z-index: 4;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 36%, transparent);
+  background: color-mix(in srgb, var(--wn-emerald-deep) 86%, transparent);
+  color: var(--wn-gold-soft);
+  font-size: var(--wn-text-2xs);
+  font-weight: 650;
+  text-align: center;
+}
+
+/* ── 5. Interactive Platform Showcase (Bento Sandbox) ───────────────────── */
+.wn-studio-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: var(--wn-control-sm);
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-white) 16%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 7%, transparent);
+  color: color-mix(in srgb, var(--wn-white) 84%, transparent);
+  font-size: var(--wn-text-2xs);
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-studio-mode-btn:hover {
+  background: color-mix(in srgb, var(--wn-white) 14%, transparent);
+}
+
+.wn-studio-mode-btn.is-active {
+  background: var(--wn-gold);
+  border-color: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+  font-weight: 750;
+}
+
+.wn-product-wave.is-energized > i {
+  background: var(--wn-gold);
+}
+
+.wn-studio-feedback {
+  margin-top: var(--wn-space-3);
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--wn-radius-md);
+  background: color-mix(in srgb, var(--wn-white) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 26%, transparent);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.wn-studio-feedback strong {
+  color: var(--wn-white);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+}
+
+.wn-studio-feedback__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.wn-studio-feedback__tags > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--wn-radius-pill);
+  background: color-mix(in srgb, var(--wn-emerald) 45%, transparent);
+  color: var(--wn-mint);
+  font-size: var(--wn-text-2xs);
+  font-weight: 600;
+}
+
+.wn-hifz-map--interactive {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.wn-hifz-map__group {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+}
+
+.wn-hifz-map__group:last-child {
+  flex: 0 0 auto;
+}
+
+.wn-hifz-map__group > i {
+  flex: 1;
+  height: 2px;
+  margin-inline: 0.25rem;
+  background: var(--wn-border-strong);
+}
+
+.wn-hifz-node {
+  width: 2.35rem;
+  height: 2.35rem;
+  flex-shrink: 0;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border-strong);
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    transform var(--wn-dur-fast) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-hifz-node.is-done {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-emerald);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-hifz-node.is-current {
+  background: var(--wn-gold-soft);
+  border-color: var(--wn-gold);
+  color: var(--wn-gold-dark);
+}
+
+.wn-hifz-node.is-selected {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-white);
+  transform: scale(1.08);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-hifz-detail {
+  margin-block: var(--wn-space-3);
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--wn-radius-md);
+  border: 1px solid var(--wn-border-mint);
+  background: var(--wn-surface-mint);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.wn-hifz-detail strong {
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-xs);
+  font-weight: 750;
+}
+
+.wn-hifz-detail p {
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-2xs);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.wn-classroom-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: var(--wn-space-3);
+}
+
+.wn-classroom-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-classroom-tab.is-active {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-white);
+}
+
+.wn-family-report--structured {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.wn-family-report__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--wn-radius-sm);
+  background: var(--wn-surface-soft);
+  border: 1px solid var(--wn-border);
+}
+
+.wn-family-report__row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.wn-family-report__row small {
+  display: block;
+  color: var(--wn-text-gold);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-family-report__row p {
+  margin: 0;
+  color: var(--wn-text-primary);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+}
+
+/* ── 6. Student Journey Interactive Outcomes ────────────────────────────── */
+.wn-journey-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--wn-dur) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    box-shadow var(--wn-dur) var(--wn-ease);
+}
+
+.wn-journey-card--interactive.is-selected {
+  border-color: var(--wn-emerald);
+  box-shadow: var(--wn-shadow-md);
+  transform: translateY(-3px);
+}
+
+.wn-journey-card__outcome {
+  margin-top: auto;
+  padding-top: var(--wn-space-3);
+  border-top: 1px dashed var(--wn-border);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-journey-card__outcome svg {
+  flex-shrink: 0;
+  color: var(--wn-emerald);
+}
+
+/* ── 7. Approved Scholars Filters & Media Pills ─────────────────────────── */
+.wn-faculty-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: var(--wn-space-5);
+}
+
+.wn-faculty-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: var(--wn-control-sm);
+  padding: 0.4rem 0.95rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border-strong);
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-faculty-filter-btn.is-active {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-white);
+}
+
+.wn-faculty-filter-btn--women.is-active {
+  background: var(--wn-women-soft);
+  border-color: var(--wn-women-border);
+  color: var(--wn-women-accent);
+}
+
+.wn-faculty-card__media-pills {
+  position: absolute;
+  inset-inline-start: 0.85rem;
+  bottom: 0.85rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.wn-faculty-card__media-pills > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: var(--wn-radius-pill);
+  background: color-mix(in srgb, var(--wn-emerald-deep) 84%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--wn-white);
+  font-size: var(--wn-text-2xs);
+  font-weight: 650;
+}
+
+.wn-faculty-filtered-empty {
+  padding: var(--wn-space-6);
+  border-radius: var(--wn-radius-lg);
+  border: 1px dashed var(--wn-border-strong);
+  background: var(--wn-surface-soft);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-4);
+}
+
+.wn-faculty-filtered-empty p {
+  margin: 0;
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-sm);
+}
+
+/* ── 8. Harmonized Al-Azhar Heritage Section ────────────────────────────── */
+.wn-azhar-heritage {
+  position: relative;
+  overflow: hidden;
+  padding-block: var(--wn-section-y);
+  background: linear-gradient(155deg, var(--wn-emerald-deep) 0%, var(--wn-emerald-dark) 100%);
+  color: var(--wn-text-inverse);
+}
+
+.wn-azhar-heritage__glow {
+  position: absolute;
+  inset-inline-end: -8rem;
+  top: -8rem;
+  width: 28rem;
+  height: 28rem;
+  border-radius: var(--wn-radius-pill);
+  background: radial-gradient(circle, color-mix(in srgb, var(--wn-gold) 22%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.wn-azhar-heritage__header {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: var(--wn-space-4);
+  align-items: end;
+  margin-bottom: var(--wn-space-7);
+}
+
+@media (min-width: 1024px) {
+  .wn-azhar-heritage__header {
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: var(--wn-space-7);
+  }
+}
+
+.wn-azhar-heritage__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: var(--wn-space-3);
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 42%, transparent);
+  background: color-mix(in srgb, var(--wn-gold) 14%, transparent);
+  color: var(--wn-gold);
+  font-size: var(--wn-text-2xs);
+  font-weight: 750;
+  letter-spacing: 0.1em;
+}
+
+[dir='rtl'] .wn-azhar-heritage__eyebrow {
+  letter-spacing: 0;
+}
+
+.wn-azhar-heritage__header h2 {
+  font-family: var(--wn-font-display);
+  font-size: var(--wn-text-3xl);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--wn-white);
+}
+
+.wn-azhar-heritage__lead {
+  color: color-mix(in srgb, var(--wn-white) 82%, transparent);
+  font-size: var(--wn-text-base);
+  line-height: 1.85;
+  margin: 0;
+}
+
+.wn-azhar-heritage__grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: var(--wn-space-5);
+}
+
+@media (min-width: 768px) {
+  .wn-azhar-heritage__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.wn-azhar-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--wn-space-6);
+  border-radius: var(--wn-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 26%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 6%, transparent);
+  backdrop-filter: blur(8px);
+  transition:
+    transform var(--wn-dur) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-azhar-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--wn-gold) 55%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 10%, transparent);
+}
+
+.wn-azhar-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-3);
+  margin-bottom: var(--wn-space-4);
+}
+
+.wn-azhar-card__icon {
+  width: 2.85rem;
+  height: 2.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 38%, transparent);
+  background: color-mix(in srgb, var(--wn-gold) 16%, transparent);
+  color: var(--wn-gold);
+}
+
+.wn-azhar-card__pill {
+  padding: 0.22rem 0.65rem;
+  border-radius: var(--wn-radius-pill);
+  background: color-mix(in srgb, var(--wn-white) 10%, transparent);
+  color: var(--wn-gold-soft);
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+}
+
+.wn-azhar-card h3 {
+  font-family: var(--wn-font-display);
+  font-size: var(--wn-text-lg);
+  font-weight: 700;
+  color: var(--wn-white);
+  margin-bottom: var(--wn-space-2);
+}
+
+.wn-azhar-card p {
+  color: color-mix(in srgb, var(--wn-white) 80%, transparent);
+  font-size: var(--wn-text-sm);
+  line-height: 1.8;
+  margin: 0;
+}
+
+.wn-azhar-heritage__bar {
+  margin-top: var(--wn-space-6);
+  padding: 1.1rem 1.35rem;
+  border-radius: var(--wn-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--wn-white) 16%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 6%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-4);
+}
+
+.wn-azhar-heritage__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.35rem;
+}
+
+.wn-azhar-heritage__checks > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: color-mix(in srgb, var(--wn-white) 90%, transparent);
+  font-size: var(--wn-text-xs);
+  font-weight: 600;
+}
+
+.wn-azhar-heritage__checks > span > svg {
+  color: var(--wn-gold);
+  flex-shrink: 0;
+}
+
+.wn-azhar-heritage__market-note {
+  margin-top: var(--wn-space-5);
+  padding: var(--wn-space-4) var(--wn-space-5);
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, var(--wn-teal) 45%, transparent);
+  background: color-mix(in srgb, var(--wn-teal) 14%, transparent);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wn-space-3);
+  color: var(--wn-mint);
+  font-size: var(--wn-text-xs);
+}
+
+.wn-azhar-heritage__market-note svg {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: var(--wn-gold);
+}
+
+/* ── 9. Audiences, Pricing Pacing, Smooth FAQ & CTA Pills ───────────────── */
+.wn-audience-card--women:hover {
+  border-color: var(--wn-women-border);
+}
+
+.wn-calc-pacing-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--wn-radius-sm);
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+}
+
+.wn-faq-controls {
+  display: grid;
+  gap: var(--wn-space-3);
+  margin-bottom: var(--wn-space-4);
+}
+
+.wn-faq-search {
+  position: relative;
+}
+
+.wn-faq-search__icon {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 1rem;
+  transform: translateY(-50%);
+  color: var(--wn-text-tertiary);
+  pointer-events: none;
+}
+
+.wn-home-faq .input-field.wn-faq-search__input {
+  padding-block: 0.75rem;
+  padding-inline-start: 2.9rem;
+  padding-inline-end: 2.6rem;
+}
+
+.wn-faq-search__clear {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 0.65rem;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--wn-radius-pill);
+  border: 0;
+  background: transparent;
+  color: var(--wn-text-tertiary);
+  cursor: pointer;
+}
+
+.wn-faq-search__clear:hover {
+  background: var(--wn-surface-sunken);
+  color: var(--wn-text-primary);
+}
+
+.wn-faq-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wn-faq-topic-chip {
+  min-height: 2.15rem;
+  padding: 0.25rem 0.85rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border-strong);
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-faq-topic-chip.is-active {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-white);
+}
+
+.wn-faq-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--wn-dur) var(--wn-ease);
+}
+
+.wn-faq-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+
+.wn-faq-collapse__inner {
+  overflow: hidden;
+}
+
+.wn-final-cta__divisions {
+  margin-top: var(--wn-space-4);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.wn-final-cta__division-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: var(--wn-control-sm);
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 36%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 8%, transparent);
+  color: var(--wn-white);
+  font-size: var(--wn-text-xs);
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-final-cta__division-pill:hover {
+  background: color-mix(in srgb, var(--wn-white) 16%, transparent);
+  border-color: var(--wn-gold);
+}
+
+/* ── 10. Dark-Mode Parity ───────────────────────────────────────────────── */
+[data-theme='dark'] .wn-header-subnav {
+  background: color-mix(in srgb, var(--wn-surface) 92%, transparent);
+  border-top-color: var(--wn-border);
+}
+
+[data-theme='dark'] .wn-hero-division-card,
+[data-theme='dark'] .wn-mobile-quick-jumps__chip,
+[data-theme='dark'] .wn-classroom-tab:not(.is-active),
+[data-theme='dark'] .wn-hifz-node:not(.is-selected):not(.is-done):not(.is-current),
+[data-theme='dark'] .wn-faculty-filter-btn:not(.is-active),
+[data-theme='dark'] .wn-faq-topic-chip:not(.is-active),
+[data-theme='dark'] .wn-family-report__row,
+[data-theme='dark'] .wn-faculty-filtered-empty {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme='dark'] .wn-program-card-tag {
+  background: color-mix(in srgb, var(--wn-surface) 90%, transparent);
+  color: var(--wn-text-gold);
+}
+
+[data-theme='dark'] .wn-hifz-detail,
+[data-theme='dark'] .wn-calc-pacing-hint {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-text-primary);
+}
+
+[data-theme='dark'] .wn-hifz-detail strong,
+[data-theme='dark'] .wn-journey-card__outcome,
+[data-theme='dark'] .wn-program-card-cta {
+  color: var(--wn-teal);
+}

@@ -1,0 +1,146 @@
+.wn-tp-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--wn-gold) 12%, transparent), transparent 28rem),
+    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--wn-teal) 10%, transparent), transparent 24rem),
+    var(--wn-ivory);
+  color: var(--wn-text-primary);
+  padding-bottom: clamp(5rem, 8vw, 6rem);
+}
+
+.wn-tp-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--wn-radius-xl);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 28%, transparent);
+  background:
+    radial-gradient(circle at 86% 12%, color-mix(in srgb, var(--wn-gold) 18%, transparent), transparent 24rem),
+    linear-gradient(125deg, var(--wn-emerald-deep) 0%, var(--wn-emerald-dark) 52%, var(--wn-emerald) 100%);
+  color: var(--wn-text-inverse);
+  box-shadow: var(--wn-shadow-lg);
+}
+
+.wn-tp-hero__avatar {
+  border-radius: var(--wn-radius-lg);
+  border: 2px solid color-mix(in srgb, var(--wn-gold) 45%, transparent);
+  box-shadow: var(--wn-shadow-md);
+}
+
+.wn-tp-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 35%, transparent);
+  background: color-mix(in srgb, white 10%, transparent);
+  color: var(--wn-gold-soft);
+  padding: 0.35rem 0.85rem;
+}
+
+.wn-tp-title {
+  font-family: var(--wn-font-display);
+  font-size: clamp(1.65rem, 3.2vw, 2.5rem);
+  line-height: 1.25;
+  color: var(--wn-white);
+}
+
+.wn-tp-stat-pill {
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, white 14%, transparent);
+  background: color-mix(in srgb, white 8%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.wn-tp-card {
+  border-radius: var(--wn-radius-lg);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-tp-card--booking {
+  border-color: color-mix(in srgb, var(--wn-gold) 32%, transparent);
+  background: linear-gradient(180deg, var(--wn-surface) 0%, var(--wn-surface-soft) 100%);
+  box-shadow: var(--wn-shadow-md);
+}
+
+.wn-tp-filter-pill {
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  color: var(--wn-text-secondary);
+  min-height: var(--wn-control-md);
+  transition: background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease), border-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-tp-filter-pill:hover {
+  border-color: var(--wn-emerald);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-tp-filter-pill.is-active {
+  border-color: var(--wn-emerald-deep);
+  background: var(--wn-emerald-deep);
+  color: var(--wn-white);
+}
+
+.wn-tp-media-facade {
+  border-radius: var(--wn-radius-md);
+  border: 1px solid var(--wn-border-mint);
+  background:
+    radial-gradient(circle at 80% 15%, color-mix(in srgb, var(--wn-gold) 15%, transparent), transparent 60%),
+    linear-gradient(135deg, var(--wn-emerald-deep), var(--wn-emerald-dark));
+  color: var(--wn-white);
+  transition: transform var(--wn-dur-fast) var(--wn-ease), box-shadow var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-tp-media-facade:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--wn-shadow-md);
+}
+
+.wn-tp-slot-chip {
+  border-radius: var(--wn-radius-sm);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  color: var(--wn-text-primary);
+  min-height: var(--wn-control-md);
+  transition: border-color var(--wn-dur-fast) var(--wn-ease), background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-tp-slot-chip:hover {
+  border-color: var(--wn-emerald);
+  background: var(--wn-emerald-soft);
+}
+
+.wn-tp-slot-chip.is-selected {
+  border-color: var(--wn-emerald-deep);
+  background: var(--wn-emerald-deep);
+  color: var(--wn-white);
+}
+
+.wn-tp-mobile-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: var(--wn-z-header);
+  border-top: 1px solid var(--wn-border);
+  background: color-mix(in srgb, var(--wn-surface) 94%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--wn-shadow-lg);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+[data-theme='dark'] .wn-tp-shell {
+  background: var(--wn-bg);
+}
+
+[data-theme='dark'] .wn-tp-card,
+[data-theme='dark'] .wn-tp-card--booking {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme='dark'] .wn-tp-mobile-bar {
+  background: color-mix(in srgb, var(--wn-surface) 95%, transparent);
+}

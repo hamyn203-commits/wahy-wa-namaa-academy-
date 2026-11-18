@@ -6,10 +6,12 @@ const Session = require('../models/Session');
 const HomeworkSubmission = require('../models/HomeworkSubmission');
 const TeacherTask = require('../models/TeacherTask');
 const Teacher = require('../models/Teacher');
+const User = require('../models/User');
 const objectStorage = require('../services/objectStorage');
 const { deleteStoredReference } = require('../utils/storageLifecycle');
 const { protect, authorize } = require('../middleware/auth');
 const { logAdminAction } = require('../services/adminAudit');
+const { notifyUser } = require('../utils/notify');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -23,6 +25,7 @@ const externalStorage =
   process.env.FILE_STORAGE_DRIVER === 'external' ||
   ['vercel-blob', 's3'].includes(objectStorage.getDriver());
 const HOMEWORK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'homework');
+const TEACHER_FEEDBACK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'teacher-feedback-audio');
 
 const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -55,13 +58,42 @@ const upload = multer({
   }
 });
 
+const feedbackAudioDiskStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = TEACHER_FEEDBACK_UPLOAD_ROOT;
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const cleanExt = path.extname(String(file.originalname || '')).toLowerCase().replace(/[^.a-z0-9]/g, '');
+    cb(null, uniqueSuffix + cleanExt);
+  }
+});
+
+const feedbackAudioUpload = multer({
+  storage: externalStorage ? multer.memoryStorage() : feedbackAudioDiskStorage,
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedExts = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'aac', 'mp4']);
+    const ext = path.extname(String(file.originalname || '')).toLowerCase().replace('.', '');
+    const normalizedMime = normalizeContentType(file.mimetype);
+    const isAllowedMime = PURPOSES['teacher-feedback-audio'].types.includes(normalizedMime);
+    if (allowedExts.has(ext) && isAllowedMime) {
+      cb(null, true);
+    } else {
+      cb(new Error('Unsupported audio feedback file type'));
+    }
+  }
+});
+
 function parseSessionHomeworkId(homeworkId) {
   const match = String(homeworkId).match(/^([a-f0-9]{24})-(\d+)$/);
   if (!match) return null;
   return { sessionId: match[1], index: Number(match[2]) };
 }
 
-async function streamPrivateFile(res, req, reference) {
+async function streamPrivateFile(res, req, reference, { allowedSubdir = 'homework' } = {}) {
   if (!reference) return res.status(404).json({ error: 'File not found' });
 
   if (/^https?:\/\//i.test(reference)) {
@@ -106,7 +138,7 @@ async function streamPrivateFile(res, req, reference) {
   }
 
   const absolute = path.resolve(reference);
-  const allowedRoot = path.resolve(process.cwd(), 'uploads', 'homework');
+  const allowedRoot = path.resolve(process.cwd(), 'uploads', allowedSubdir);
   if (!absolute.startsWith(allowedRoot + path.sep)) {
     return res.status(404).json({ error: 'File not found' });
   }
@@ -123,14 +155,50 @@ async function teacherProfileIdForUser(userId) {
   return teacher?._id || null;
 }
 
+async function notifyTeacherForHomeworkSubmission({ teacherId, studentId, taskId, title }) {
+  try {
+    const [teacherDoc, studentUser] = await Promise.all([
+      Teacher.findById(teacherId).select('user').lean(),
+      User.findById(studentId).select('name').lean(),
+    ]);
+    if (!teacherDoc?.user) return;
+    const studentName = studentUser?.name || 'طالب';
+    await notifyUser(teacherDoc.user, {
+      type: 'homework-submitted',
+      title: { ar: 'تسليم واجب صوتي جديد', en: 'New homework submission' },
+      message: {
+        ar: `أرسل ${studentName} تلاوة الواجب: ${title}`,
+        en: `${studentName} submitted homework: ${title}`,
+      },
+      data: {
+        actionUrl: '/teacher/dashboard?tab=homework',
+        metadata: {
+          ...(taskId ? { taskId: String(taskId) } : {}),
+          studentId: String(studentId),
+        },
+      },
+      priority: 'high',
+    });
+  } catch {
+    // Non-blocking notification failure must not fail homework submission.
+  }
+}
+
 router.get('/student', protect, authorize('student'), async (req, res) => {
   try {
-    const isDBConnected = () => mongoose.connection.readyState === 1;
     const isValidObjectId = (id) => id && mongoose.Types.ObjectId.isValid(id);
 
     if (!isDBConnected() || !isValidObjectId(req.user.id)) {
       return res.json({ homework: [] });
     }
+
+    const tasks = await TeacherTask.find({ student: req.user.id })
+      .populate('circle', 'name')
+      .sort({ createdAt: -1 });
+
+    const sessionsWithTasks = new Set(
+      tasks.filter((task) => task.session).map((task) => String(task.session))
+    );
 
     const sessions = await Session.find({
       student: req.user.id,
@@ -142,6 +210,7 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
     const homework = [];
 
     sessions.forEach((session) => {
+      if (sessionsWithTasks.has(String(session._id))) return;
       if (session.teacherEvaluation?.assignedHomework) {
         session.teacherEvaluation.assignedHomework.forEach((hw, index) => {
           const id = `${session._id}-${index}`;
@@ -175,17 +244,19 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
       });
     }
 
-    const tasks = await TeacherTask.find({ student: req.user.id }).sort({ createdAt: -1 });
     tasks.forEach((t) => {
       homework.push({
         _id: t._id,
         sessionId: t.session,
+        circleName: t.circle?.name || '',
         title: t.title,
         description: t.description,
         dueDate: t.dueDate,
         status: t.status,
         type: t.type,
         teacherFeedback: t.teacherFeedback || '',
+        hasTeacherFeedbackAudio: Boolean(t.hasTeacherFeedbackAudio),
+        teacherFeedbackDuration: Number(t.teacherFeedbackDuration || 0),
         reviewedAt: t.reviewedAt,
         isTask: true,
       });
@@ -258,6 +329,106 @@ router.get('/tasks/:id/file', protect, async (req, res) => {
   } catch (error) {
     console.error('Task file download failed:', error.message);
     return res.status(500).json({ error: 'Failed to load file' });
+  }
+});
+
+router.get('/tasks/:id/feedback-audio', protect, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ error: 'Invalid task id' });
+    }
+    const task = await TeacherTask.findById(req.params.id).select('student teacher +teacherFeedbackAudio');
+    if (!task || !task.teacherFeedbackAudio) {
+      return res.status(404).json({ error: 'Teacher audio feedback not found' });
+    }
+
+    let allowed = req.user.role === 'admin' || String(task.student) === String(req.user.id);
+    if (!allowed && req.user.role === 'teacher') {
+      const teacherId = await teacherProfileIdForUser(req.user.id);
+      allowed = Boolean(teacherId && String(task.teacher) === String(teacherId));
+    }
+
+    if (!allowed) {
+      return res.status(403).json({ error: 'Not authorized to access this feedback audio' });
+    }
+
+    if (req.user.role === 'admin') {
+      await logAdminAction({
+        req,
+        action: 'teacher.homework-feedback-audio.viewed',
+        entityType: 'student',
+        entityId: task.student,
+        reason: String(req.query.reason || 'student-360-review'),
+        metadata: { taskId: String(task._id), teacherId: String(task.teacher || '') },
+      });
+    }
+
+    return streamPrivateFile(res, req, task.teacherFeedbackAudio, { allowedSubdir: 'teacher-feedback-audio' });
+  } catch (error) {
+    console.error('Teacher feedback audio download failed:', error.message);
+    return res.status(500).json({ error: 'Failed to load feedback audio' });
+  }
+});
+
+router.post('/tasks/:id/feedback-audio', protect, authorize('teacher'), feedbackAudioUpload.single('audio'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ error: 'Invalid task id' });
+    }
+    if (externalStorage && req.file) {
+      return res.status(400).json({
+        error: 'Direct object-storage upload is required',
+        code: 'DIRECT_UPLOAD_REQUIRED',
+      });
+    }
+    if (!req.file || !req.file.path || !fs.existsSync(req.file.path)) {
+      return res.status(400).json({ error: 'Please upload an audio feedback file' });
+    }
+
+    const teacherId = await teacherProfileIdForUser(req.user.id);
+    if (!teacherId) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      return res.status(404).json({ error: 'Teacher profile not found' });
+    }
+
+    const task = await TeacherTask.findOne({ _id: req.params.id, teacher: teacherId }).select('+teacherFeedbackAudio');
+    if (!task) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const normalizedMime = normalizeContentType(req.file.mimetype);
+    const fd = fs.openSync(req.file.path, 'r');
+    const header = Buffer.alloc(64);
+    const bytesRead = fs.readSync(fd, header, 0, 64, 0);
+    fs.closeSync(fd);
+    const magicCheck = validateMagicBytes(header.subarray(0, bytesRead), normalizedMime);
+    if (!magicCheck.valid) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      return res.status(400).json({ error: 'Invalid audio file signature', code: 'INVALID_FILE_MAGIC_BYTES' });
+    }
+
+    if (task.teacherFeedbackAudio) {
+      await deleteStoredReference({
+        reference: task.teacherFeedbackAudio,
+        purpose: 'teacher-feedback-audio',
+        owner: req.user.id,
+        localRoot: TEACHER_FEEDBACK_UPLOAD_ROOT,
+      }).catch(() => {});
+    }
+
+    task.teacherFeedbackAudio = req.file.path;
+    task.hasTeacherFeedbackAudio = true;
+    task.teacherFeedbackDuration = Math.min(300, Math.max(0, Math.round(Number(req.body?.durationSeconds) || 0)));
+    await task.save();
+
+    return res.json({
+      success: true,
+      hasTeacherFeedbackAudio: true,
+      teacherFeedbackDuration: task.teacherFeedbackDuration,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 
@@ -450,6 +621,13 @@ router.post('/:homeworkId/submit', protect, authorize('student'), upload.single(
         task.submissionFile = submittedFile.path;
         await task.save();
 
+        await notifyTeacherForHomeworkSubmission({
+          teacherId: task.teacher,
+          studentId: req.user.id,
+          taskId: task._id,
+          title: task.title,
+        });
+
         return res.json({ success: true, message: 'تم تسليم الواجب', task });
       }
     }
@@ -477,6 +655,12 @@ router.post('/:homeworkId/submit', protect, authorize('student'), upload.single(
 
       session.teacherEvaluation.assignedHomework[parsed.index].status = 'submitted';
       await session.save();
+
+      await notifyTeacherForHomeworkSubmission({
+        teacherId: session.teacher,
+        studentId: req.user.id,
+        title: session.teacherEvaluation.assignedHomework[parsed.index].description || 'واجب الحصة',
+      });
 
       return res.json({
         success: true,

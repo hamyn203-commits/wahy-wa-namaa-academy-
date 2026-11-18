@@ -110,12 +110,18 @@ export default function PlansPage() {
   const [searchParams] = useSearchParams();
   const renewalId = searchParams.get('renew') || '';
   const targetStudentId = searchParams.get('student') || '';
+  const requestedPlanId = searchParams.get('plan') || '';
   const isAr = locale === 'ar';
   const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
-  const [audience, setAudience] = useState('general');
+  const [audience, setAudience] = useState(() => (
+    searchParams.get('section') === 'women' || searchParams.get('section') === 'ladies' ? 'women' : 'general'
+  ));
   const enrolledSection = user?.role === 'student' && ['men_children', 'ladies'].includes(user?.enrollmentSection)
     ? user.enrollmentSection : null;
-  const [sessionCount, setSessionCount] = useState(8);
+  const [sessionCount, setSessionCount] = useState(() => {
+    const requestedSessions = Number(searchParams.get('sessions'));
+    return [4, 8, 12, 24].includes(requestedSessions) ? requestedSessions : 8;
+  });
   const [catalog, setCatalog] = useState(null);
   const [selection, setSelection] = useState(null);
   const [selectingPlan, setSelectingPlan] = useState('');
@@ -431,7 +437,15 @@ export default function PlansPage() {
 
             <div className="wn-plans-grid">
               {visiblePlans.map((plan) => (
-                <article key={plan.id} className={'wn-plan-card is-' + plan.tone + (plan.featured ? ' is-featured' : '')}>
+                <article
+                  key={plan.id}
+                  id={'plan-' + plan.id}
+                  className={
+                    'wn-plan-card is-' + plan.tone
+                    + (plan.featured ? ' is-featured' : '')
+                    + (requestedPlanId === plan.id ? ' ring-2 ring-[var(--wn-emerald)]' : '')
+                  }
+                >
                   <div className="wn-plan-card__media">
                     <img src={plan.image} alt={isAr ? plan.nameAr : plan.nameEn} loading="lazy" decoding="async" />
                     <span className="wn-plan-card__badge">{isAr ? plan.badgeAr : plan.badgeEn}</span>

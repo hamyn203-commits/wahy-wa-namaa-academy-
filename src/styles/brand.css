@@ -67,6 +67,9 @@
   --wn-danger-soft: #fdecea;
   --wn-success: var(--wn-emerald);
   --wn-warning: #b54708;
+  --wn-women-accent: #8f3d56;
+  --wn-women-border: #c77d92;
+  --wn-women-soft: #fdf2f5;
 
   /* ── Typography ───────────────────────────────────────────────── */
   /* Only families actually loaded in index.html (Tajawal, Cairo, Amiri). */
@@ -77,6 +80,15 @@
   --wn-font-quran: 'Amiri', serif;
   --wn-font-ui: var(--wn-font-ui-ar);
   --wn-font-display: var(--wn-font-display-ar);
+  --wn-text-2xs: 0.72rem;
+  --wn-text-xs: 0.78rem;
+  --wn-text-sm: 0.875rem;
+  --wn-text-base: 0.95rem;
+  --wn-text-md: 1.05rem;
+  --wn-text-lg: 1.2rem;
+  --wn-text-xl: 1.45rem;
+  --wn-text-2xl: clamp(1.65rem, 2.8vw, 2.25rem);
+  --wn-text-3xl: clamp(2rem, 3.8vw, 3rem);
 
   /* ── Radius ───────────────────────────────────────────────────── */
   --wn-radius-xs: 6px;
@@ -212,6 +224,9 @@
   --wn-emerald-soft: #173a2e;
   --wn-gold-soft: #2b2617;
   --wn-mint-soft: #163028;
+  --wn-women-accent: #f2b5c6;
+  --wn-women-border: #8c4a5f;
+  --wn-women-soft: #2a1820;
   --wn-ivory: #0b1612;
   --wn-ivory-deep: #0e1c17;
   --wn-shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.5);

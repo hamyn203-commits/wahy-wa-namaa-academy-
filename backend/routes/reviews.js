@@ -7,6 +7,9 @@ const Session = require('../models/Session');
 const { protect, authorize } = require('../middleware/auth');
 const { logAdminAction } = require('../services/adminAudit');
 const { inspectChatSafety } = require('../utils/chatSafety');
+const { isMockMode } = require('../config/runtime');
+const { isDBConnected } = require('../config/database');
+const { findMockTeacherById } = require('../mockStore');
 
 const ALLOWED_REVIEW_CATEGORIES = ['teaching', 'patience', 'communication', 'punctuality'];
 
@@ -127,11 +130,38 @@ router.get('/student', protect, authorize('student'), async (req, res) => {
 
 router.get('/teacher/:teacherId', async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(String(req.params.teacherId || ''))) {
-      return res.status(400).json({ error: 'Invalid teacher ID' });
-    }
+    const teacherId = String(req.params.teacherId || '');
     const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const isKnownMockTeacher = isMockMode && !isDBConnected() && Boolean(findMockTeacherById(teacherId));
+
+    if (!mongoose.Types.ObjectId.isValid(teacherId) && !isKnownMockTeacher) {
+      return res.status(400).json({ error: 'Invalid teacher ID' });
+    }
+
+    if (isMockMode && !isDBConnected() && Review.find === mongoose.Model.find && Review.countDocuments === mongoose.Model.countDocuments) {
+      const sampleReviews = teacherId === 'mock-teacher-1'
+        ? [
+            {
+              _id: 'mock-review-1',
+              rating: 5,
+              comment: 'منهج متقن في التلاوة وتصحيح المخارج مع متابعة مستمرة.',
+              student: { name: 'عمر خ.', avatar: '' },
+              createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+            },
+          ]
+        : [];
+      return res.json({
+        reviews: sampleReviews,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: sampleReviews.length,
+          pages: sampleReviews.length ? 1 : 0,
+        },
+      });
+    }
+
     const skip = (pageNum - 1) * limitNum;
 
     const [reviews, total] = await Promise.all([

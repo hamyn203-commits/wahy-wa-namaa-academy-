@@ -24,6 +24,9 @@ import Skeleton from '../../components/shared/Skeleton';
 import { StudentInspirationStrip, getDailyQuranicDua } from '../../components/dashboard/QuranJourneyWidgets';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 import { teacherLockFromSubscriptions } from '../../lib/studentTeacherLock';
+import PostTrialRecommendationCard from './PostTrialRecommendationCard';
+import QuranProgressSummary from '../../components/dashboard/QuranProgressSummary';
+import { StudentVoiceFeedbackPlayer } from '../../components/homework/VoiceFeedbackControls';
 
 const emptyReview = { rating: 5, comment: '', wouldContinue: true };
 const emptyBook = { date: '', time: '', notes: '' };
@@ -267,11 +270,14 @@ export default function StudentDashboard() {
     slots: [],
   });
   const [chatSession, setChatSession] = useState(null);
+  const [unreadChatSessionIds, setUnreadChatSessionIds] = useState(() => new Set());
   const consumedChatSessionRef = useRef(null);
   const [booking, setBooking] = useState(false);
   const [studentExcuseModal, setStudentExcuseModal] = useState(null);
   const [studentExcuseReason, setStudentExcuseReason] = useState('');
   const [submittingRsvp, setSubmittingRsvp] = useState(false);
+  const [actionSessionId, setActionSessionId] = useState('');
+  const [cancelPendingModal, setCancelPendingModal] = useState(null);
 
   // In-Browser Voice Recording Studio
   const [recordModalHw, setRecordModalHw] = useState(null);
@@ -408,6 +414,17 @@ export default function StudentDashboard() {
     }
   }, [ready]);
 
+  const openSessionChat = useCallback((session) => {
+    if (!session) return;
+    setChatSession(session);
+    setUnreadChatSessionIds((current) => {
+      if (!current.has(String(session._id))) return current;
+      const next = new Set(current);
+      next.delete(String(session._id));
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!ready) return undefined;
 
@@ -436,7 +453,8 @@ export default function StudentDashboard() {
     if (!ready) return undefined;
 
     const onRealtimeNotification = (event) => {
-      const type = event?.detail?.type;
+      const detail = event?.detail;
+      const type = detail?.type;
       if ([
         'session-accepted',
         'session-rejected',
@@ -445,6 +463,32 @@ export default function StudentDashboard() {
         'session-chat-message',
       ].includes(type)) {
         syncSessions();
+      }
+      if (type === 'session-completed') {
+        api.get('/api/students/dashboard/evaluations', { auth: true })
+          .then((result) => setEvaluations(result.evaluations || []))
+          .catch(() => {});
+        api.get('/api/students/dashboard/stats', { auth: true })
+          .then((result) => setStats(result || {}))
+          .catch(() => {});
+      }
+      if (['homework-assigned', 'homework-reviewed'].includes(type)) {
+        api.get('/api/homework/student', { auth: true })
+          .then((result) => setHomework(result.homework || []))
+          .catch(() => {});
+        api.get('/api/students/dashboard/stats', { auth: true })
+          .then((result) => setStats(result || {}))
+          .catch(() => {});
+      }
+      if (type === 'session-chat-message') {
+        const incomingSessionId = detail?.data?.session;
+        if (incomingSessionId && String(chatSession?._id || '') !== String(incomingSessionId)) {
+          setUnreadChatSessionIds((current) => {
+            const next = new Set(current);
+            next.add(String(incomingSessionId));
+            return next;
+          });
+        }
       }
       if (type === 'teacher-update') {
         api.get('/api/teacher-updates/student', { auth: true })
@@ -464,7 +508,7 @@ export default function StudentDashboard() {
 
     window.addEventListener('wn:realtime-notification', onRealtimeNotification);
     return () => window.removeEventListener('wn:realtime-notification', onRealtimeNotification);
-  }, [ready, syncSessions, refreshSubscriptions]);
+  }, [ready, syncSessions, refreshSubscriptions, chatSession?._id]);
 
   useEffect(() => {
     const requestedTab = searchParams.get('tab');
@@ -479,9 +523,9 @@ export default function StudentDashboard() {
     const found = [...trials, ...sessions].find((item) => String(item._id) === String(requestedSessionId));
     if (found) {
       consumedChatSessionRef.current = String(requestedSessionId);
-      setChatSession(found);
+      openSessionChat(found);
     }
-  }, [searchParams, trials, sessions]);
+  }, [searchParams, trials, sessions, openSessionChat]);
 
   useEffect(() => {
     if (!ready) return;
@@ -682,6 +726,37 @@ export default function StudentDashboard() {
       toast.error(err.message || (locale === 'ar' ? 'تعذر تحديث حالة الحضور' : 'Failed to update RSVP'));
     } finally {
       setSubmittingRsvp(false);
+    }
+  };
+
+  const acceptRescheduledSession = async (session) => {
+    if (!session?._id || actionSessionId) return;
+    setActionSessionId(session._id);
+    try {
+      const res = await api.post(`/api/sessions/${session._id}/accept-reschedule`, {}, { auth: true });
+      toast.success(
+        res.message || (locale === 'ar' ? 'تم تأكيد الموعد الجديد للحصة بنجاح' : 'New session time confirmed')
+      );
+      await syncSessions();
+    } catch (err) {
+      toast.error(err.message || (locale === 'ar' ? 'تعذر تأكيد الموعد الجديد' : 'Could not confirm rescheduled time'));
+    } finally {
+      setActionSessionId('');
+    }
+  };
+
+  const confirmCancelPendingRequest = async () => {
+    if (!cancelPendingModal?._id || actionSessionId) return;
+    setActionSessionId(cancelPendingModal._id);
+    try {
+      const res = await api.post(`/api/sessions/${cancelPendingModal._id}/cancel-request`, {}, { auth: true });
+      toast.success(res.message || (locale === 'ar' ? 'تم إلغاء الطلب بنجاح' : 'Request cancelled'));
+      setCancelPendingModal(null);
+      await load();
+    } catch (err) {
+      toast.error(err.message || (locale === 'ar' ? 'تعذر إلغاء الطلب' : 'Could not cancel request'));
+    } finally {
+      setActionSessionId('');
     }
   };
 
@@ -1341,38 +1416,45 @@ export default function StudentDashboard() {
           )}
 
           {subscriptionsLoaded && postTrialSession && !currentSubscription && (
-            <section className="wn-student-next-step">
-              <div>
-                <span className="wn-student-next-step__eyebrow">{locale === 'ar' ? 'خطوتك التالية' : 'Next step'}</span>
-                <h3>{locale === 'ar' ? 'أكملت الحصة التجريبية بنجاح' : 'Your trial session is complete'}</h3>
-                <p>
-                  {locale === 'ar'
-                    ? `اشترك للاستمرار مع ${postTrialSession.teacher?.user?.name || postTrialSession.teacher?.personalInfo?.fullName || 'المعلم'}. لديك 3 حصص تجريبية إجمالاً، والمتبقي الآن ${trialRemaining}.`
-                    : `Subscribe to continue with this tutor. You have 3 trial sessions in total, with ${trialRemaining} remaining.`}
-                </p>
-                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">
-                  <Clock size={14} />
-                  {locale === 'ar'
-                    ? `التجريبيات: ${trialAllowance.used || 0} مستخدمة من ${trialAllowance.limit || 3} · ${trialRemaining} متبقية`
-                    : `Trials: ${trialAllowance.used || 0} used of ${trialAllowance.limit || 3} · ${trialRemaining} remaining`}
+            <div className="space-y-4">
+              <section className="wn-student-next-step">
+                <div>
+                  <span className="wn-student-next-step__eyebrow">{locale === 'ar' ? 'خطوتك التالية' : 'Next step'}</span>
+                  <h3>{locale === 'ar' ? 'أكملت الحصة التجريبية بنجاح' : 'Your trial session is complete'}</h3>
+                  <p>
+                    {locale === 'ar'
+                      ? `اشترك للاستمرار مع ${postTrialSession.teacher?.user?.name || postTrialSession.teacher?.personalInfo?.fullName || 'المعلم'}. لديك 3 حصص تجريبية إجمالاً، والمتبقي الآن ${trialRemaining}.`
+                      : `Subscribe to continue with this tutor. You have 3 trial sessions in total, with ${trialRemaining} remaining.`}
+                  </p>
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">
+                    <Clock size={14} />
+                    {locale === 'ar'
+                      ? `التجريبيات: ${trialAllowance.used || 0} مستخدمة من ${trialAllowance.limit || 3} · ${trialRemaining} متبقية`
+                      : `Trials: ${trialAllowance.used || 0} used of ${trialAllowance.limit || 3} · ${trialRemaining} remaining`}
+                  </div>
                 </div>
-              </div>
-              <div className="wn-student-next-step__actions">
-                <button type="button" onClick={() => navigate(lp('/plans'))} className="wn-student-primary-action">
-                  <CreditCard size={17} />
-                  {locale === 'ar' ? 'اشتراك' : 'Subscribe'}
-                </button>
-                {trialRemaining > 0 ? (
-                  <button type="button" onClick={() => setTab('discover')} className="wn-student-secondary-action">
-                    {locale === 'ar' ? 'استخدم تجريبية أخرى' : 'Use another trial'}
+                <div className="wn-student-next-step__actions">
+                  <button type="button" onClick={() => navigate(lp('/plans'))} className="wn-student-primary-action">
+                    <CreditCard size={17} />
+                    {locale === 'ar' ? 'اشتراك' : 'Subscribe'}
                   </button>
-                ) : (
-                  <span className="text-xs font-semibold text-slate-500">
-                    {locale === 'ar' ? 'استخدمت الحصص التجريبية الثلاث' : 'All three trials have been used'}
-                  </span>
-                )}
-              </div>
-            </section>
+                  {trialRemaining > 0 ? (
+                    <button type="button" onClick={() => setTab('discover')} className="wn-student-secondary-action">
+                      {locale === 'ar' ? 'استخدم تجريبية أخرى' : 'Use another trial'}
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-500">
+                      {locale === 'ar' ? 'استخدمت الحصص التجريبية الثلاث' : 'All three trials have been used'}
+                    </span>
+                  )}
+                </div>
+              </section>
+              <PostTrialRecommendationCard
+                session={postTrialSession}
+                locale={locale}
+                onSubscribe={() => navigate(lp('/plans'))}
+              />
+            </div>
           )}
 
           </>}
@@ -1523,33 +1605,70 @@ export default function StudentDashboard() {
                       ) : null}
                     </div>
 
-                    {nextActiveSession ? (
-                      <div className="wn-student-session-panel__body">
-                        <div className="wn-student-session-panel__date">
-                          <strong>{nextSessionDate?.toLocaleDateString(dateLocale, { day: '2-digit' })}</strong>
-                          <span>{nextSessionDate?.toLocaleDateString(dateLocale, { month: 'short' })}</span>
+                    {nextActiveSession ? (() => {
+                      const nextJoinWindow = nextActiveSession.lifecycle
+                        ? { phase: nextActiveSession.lifecycle.joinPhase, within: nextActiveSession.lifecycle.joinOpen }
+                        : sessionJoinWindow(nextActiveSession);
+                      const canJoinNext = Boolean(nextActiveSession.lifecycle?.joinOpen ?? nextJoinWindow?.within);
+                      const currentUid = String(user?._id || user?.id || '');
+                      const nextAttendance = (nextActiveSession.attendance || []).find(
+                        (entry) => String(entry.student?._id || entry.student || '') === currentUid
+                      );
+                      const isGroupNext = nextActiveSession.type === 'group_circle';
+                      return (
+                        <div className="wn-student-session-panel__body">
+                          <div className="wn-student-session-panel__date">
+                            <strong>{nextSessionDate?.toLocaleDateString(dateLocale, { day: '2-digit' })}</strong>
+                            <span>{nextSessionDate?.toLocaleDateString(dateLocale, { month: 'short' })}</span>
+                          </div>
+                          <div className="wn-student-session-panel__details">
+                            <span className="wn-student-session-type">
+                              {nextActiveSession.type === 'trial'
+                                ? (locale === 'ar' ? 'حصة تجريبية' : 'Trial session')
+                                : isGroupNext
+                                  ? (locale === 'ar' ? 'حلقة جماعية' : 'Group circle')
+                                  : (locale === 'ar' ? 'حصة منتظمة' : 'Regular session')}
+                            </span>
+                            <h4>{isGroupNext ? (nextActiveSession.circle?.name || nextSessionTeacherName) : nextSessionTeacherName}</h4>
+                            <p>
+                              <Clock size={15} />
+                              {nextSessionDate?.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextActiveSession)}
+                            </p>
+                          </div>
+                          {canJoinNext ? (
+                            <Link
+                              to={localizedPath(getSessionLiveRoomPath(nextActiveSession), locale)}
+                              className="wn-student-join-action"
+                            >
+                              <Video size={17} />
+                              {locale === 'ar' ? 'دخول الحصة' : 'Join session'}
+                            </Link>
+                          ) : (
+                            <div className="flex flex-col items-end gap-1.5">
+                              <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                                {nextJoinWindow?.phase === 'early'
+                                  ? (locale === 'ar' ? 'يفتح الدخول قبل الموعد بـ 30 دقيقة' : 'Join opens 30m before')
+                                  : (locale === 'ar' ? 'انتهى وقت الدخول' : 'Join window ended')}
+                              </span>
+                              {nextAttendance?.status === 'confirmed' ? (
+                                <span className="text-xs font-bold text-emerald-700">
+                                  {locale === 'ar' ? '✓ تم تأكيد حضورك' : '✓ Confirmed'}
+                                </span>
+                              ) : nextAttendance?.status !== 'excused' && nextJoinWindow?.phase === 'early' ? (
+                                <button
+                                  type="button"
+                                  disabled={submittingRsvp}
+                                  onClick={() => handleStudentRsvp(nextActiveSession._id, 'confirmed')}
+                                  className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                                >
+                                  {locale === 'ar' ? 'تأكيد الحضور' : 'Confirm attendance'}
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
-                        <div className="wn-student-session-panel__details">
-                          <span className="wn-student-session-type">
-                            {nextActiveSession.type === 'trial'
-                              ? (locale === 'ar' ? 'حصة تجريبية' : 'Trial session')
-                              : (locale === 'ar' ? 'حصة منتظمة' : 'Regular session')}
-                          </span>
-                          <h4>{nextSessionTeacherName}</h4>
-                          <p>
-                            <Clock size={15} />
-                            {nextSessionDate?.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                        <Link
-                          to={localizedPath(getSessionLiveRoomPath(nextActiveSession), locale)}
-                          className="wn-student-join-action"
-                        >
-                          <Video size={17} />
-                          {locale === 'ar' ? 'دخول الحصة' : 'Join session'}
-                        </Link>
-                      </div>
-                    ) : (
+                      );
+                    })() : (
                       <div className="wn-student-empty-session">
                         <BookOpen size={28} />
                         <div>
@@ -1927,7 +2046,19 @@ export default function StudentDashboard() {
                     )}
                   </div>
                 ) : trials.map((s) => (
-                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')} currentUserId={user?._id || user?.id} />
+                  <SessionCard
+                    key={s._id}
+                    session={s}
+                    onReview={openReview}
+                    hasReviewed={hasReviewed(s._id)}
+                    onChat={openSessionChat}
+                    onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
+                    onAcceptReschedule={acceptRescheduledSession}
+                    onCancelPending={setCancelPendingModal}
+                    busySessionId={actionSessionId}
+                    hasUnreadChat={unreadChatSessionIds.has(String(s._id))}
+                    currentUserId={user?._id || user?.id}
+                  />
                 ))}
               </div>
             )}
@@ -1938,7 +2069,19 @@ export default function StudentDashboard() {
                 {sessions.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Tidak ada sesi reguler — Selesaikan kelas uji coba terlebih dahulu, lalu pesan dari menu akun' : locale === 'ar' ? (currentSubscription ? (currentSubscription.status === 'active' ? 'لا توجد حصص مجدولة حتى الآن. ستظهر هنا بعد جدولة الإدارة أو المعلم.' : subscriptionStatusCopy?.ar) : 'لا حصص منتظمة — أكمل تجريبية ثم احجز من «حسابي»') : (currentSubscription ? (currentSubscription.status === 'active' ? 'No lessons scheduled yet. They will appear after your tutor or administration schedules them.' : subscriptionStatusCopy?.en) : 'No regular sessions — complete a trial first, then book from your account tab')}</p>
                 ) : sessions.map((s) => (
-                  <SessionCard key={s._id} session={s} onReview={openReview} hasReviewed={hasReviewed(s._id)} onChat={setChatSession} onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')} currentUserId={user?._id || user?.id} />
+                  <SessionCard
+                    key={s._id}
+                    session={s}
+                    onReview={openReview}
+                    hasReviewed={hasReviewed(s._id)}
+                    onChat={openSessionChat}
+                    onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
+                    onAcceptReschedule={acceptRescheduledSession}
+                    onCancelPending={setCancelPendingModal}
+                    busySessionId={actionSessionId}
+                    hasUnreadChat={unreadChatSessionIds.has(String(s._id))}
+                    currentUserId={user?._id || user?.id}
+                  />
                 ))}
               </div>
             )}
@@ -1953,11 +2096,14 @@ export default function StudentDashboard() {
                   return (
                     <div key={hw._id} className="border rounded-lg p-4 flex flex-wrap justify-between items-start gap-3">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <FileText size={16} className="text-emerald-600" />
                           <h3 className="font-bold">{hw.title}</h3>
                           {hw.type && (
                             <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">{taskTypeLabel(hw.type)}</span>
+                          )}
+                          {hw.circleName && (
+                            <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-semibold">{hw.circleName}</span>
                           )}
                         </div>
                         {hw.description && <p className="text-sm text-gray-600 mt-1">{hw.description}</p>}
@@ -1965,6 +2111,13 @@ export default function StudentDashboard() {
                           <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                             <strong>{locale === 'ar' ? 'ملاحظة المعلم:' : 'Tutor feedback:'}</strong> {hw.teacherFeedback}
                           </div>
+                        )}
+                        {hw.hasTeacherFeedbackAudio && (
+                          <StudentVoiceFeedbackPlayer
+                            taskId={hw._id}
+                            duration={hw.teacherFeedbackDuration}
+                            locale={locale}
+                          />
                         )}
                         {hw.dueDate && (
                           <p className="text-xs text-gray-400 mt-1">
@@ -2234,6 +2387,9 @@ export default function StudentDashboard() {
             {tab === 'evaluations' && (
               <div className="space-y-4">
                 <p className="text-sm text-slate-600">{locale === 'id' ? 'Evaluasi dari guru setelah setiap kelas selesai' : locale === 'ar' ? 'تقييمات معلمك بعد كل حصة مكتملة' : 'Tutor evaluations after each completed session'}</p>
+                {evaluations.length > 0 && (
+                  <QuranProgressSummary evaluations={evaluations} locale={locale} variant="student" />
+                )}
                 {evaluations.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Belum ada evaluasi — akan muncul setelah kelas selesai' : locale === 'ar' ? 'لا تقييمات بعد — ستظهر بعد إكمال حصة' : 'No evaluations yet — they will appear after completing a session'}</p>
                 ) : evaluations.map((s) => {
@@ -2250,7 +2406,14 @@ export default function StudentDashboard() {
                     <div key={s._id} className="border rounded-xl p-5">
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <h3 className="font-bold">{s.teacher?.user?.name || 'المعلم'}</h3>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-bold">{s.teacher?.user?.name || 'المعلم'}</h3>
+                            {(s.type === 'group_circle' || s.circle?.name) && (
+                              <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
+                                {s.circle?.name || (locale === 'ar' ? 'حلقة جماعية' : 'Group circle')}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-500">
                             {formatSessionDateTime(
                               s,
@@ -2601,11 +2764,56 @@ export default function StudentDashboard() {
           </div>
         </Modal>
       )}
+      {cancelPendingModal && (
+        <Modal
+          title={locale === 'ar' ? 'تأكيد إلغاء طلب الحصة' : 'Confirm Cancel Request'}
+          onClose={() => { if (!actionSessionId) setCancelPendingModal(null); }}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              {locale === 'ar'
+                ? 'هل تريد إلغاء هذا الطلب المعلّق؟ يمكنك الحجز في وقت آخر متى شئت.'
+                : 'Are you sure you want to cancel this pending session request?'}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={Boolean(actionSessionId)}
+                onClick={() => setCancelPendingModal(null)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600"
+              >
+                {locale === 'ar' ? 'تراجع' : 'Keep request'}
+              </button>
+              <button
+                type="button"
+                disabled={actionSessionId === cancelPendingModal._id}
+                onClick={confirmCancelPendingRequest}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+              >
+                {actionSessionId === cancelPendingModal._id
+                  ? (locale === 'ar' ? 'جاري الإلغاء...' : 'Cancelling...')
+                  : (locale === 'ar' ? 'تأكيد إلغاء الطلب' : 'Cancel request')}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </DashboardLayout>
   );
 }
 
-function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUserId }) {
+function SessionCard({
+  session,
+  onReview,
+  hasReviewed,
+  onChat,
+  onRsvp,
+  onAcceptReschedule,
+  onCancelPending,
+  busySessionId = '',
+  hasUnreadChat = false,
+  currentUserId,
+}) {
   const studentAttendanceEntry = (session.attendance || []).find(
     (entry) => String(entry.student?._id || entry.student || '') === String(currentUserId || '')
   );
@@ -2614,6 +2822,8 @@ function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUs
   const teacherName = session.teacher?.user?.name || session.teacher?.personalInfo?.fullName || (locale === 'id' ? 'Guru' : locale === 'ar' ? 'المعلم' : 'Tutor');
   const isTrial = session.type === 'trial';
   const isGroup = session.type === 'group_circle';
+  const isBusy = busySessionId === session._id;
+  const dateLocale = locale === 'id' ? 'id-ID' : locale === 'ar' ? 'ar-EG' : 'en-US';
   const durationMinutes = Number(session.duration || 60);
   const durationLabel = locale === 'ar'
     ? (durationMinutes === 120 ? 'ساعتان' : durationMinutes === 90 ? 'ساعة ونصف' : durationMinutes === 60 ? 'ساعة' : durationMinutes + ' دقيقة')
@@ -2644,7 +2854,7 @@ function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUs
           </span>
         </div>
         <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
-          <Clock size={14} /> {formatSessionDateTime(session, locale === 'id' ? 'id-ID' : locale === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })} — {durationLabel} · {sessionTimeZone(session)}
+          <Clock size={14} /> {formatSessionDateTime(session, dateLocale, { dateStyle: 'medium', timeStyle: 'short' })} — {durationLabel} · {sessionTimeZone(session)}
         </p>
         <span className={`text-xs px-2 py-0.5 rounded mt-1 inline-block ${
           session.status === 'accepted' ? 'bg-green-100 text-green-700'
@@ -2654,8 +2864,57 @@ function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUs
         }`}>
           {statusText}
         </span>
-        {session.status === 'pending' && (
-          <p className="text-xs text-amber-600 mt-1">{locale === 'id' ? 'Menunggu persetujuan guru' : locale === 'ar' ? 'بانتظار موافقة المعلم' : 'Awaiting teacher approval'}</p>
+        {session.status === 'pending' && session.rescheduledFrom && (
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2 max-w-md">
+            <p className="font-bold">
+              {locale === 'ar'
+                ? 'اقترح المعلم هذا الموعد الجديد لحصتك'
+                : 'Your tutor proposed this new time'}
+            </p>
+            <p className="text-amber-800">
+              {locale === 'ar' ? 'الموعد السابق:' : 'Previous time:'}{' '}
+              {new Date(session.rescheduledFrom).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' })}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onAcceptReschedule && (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onAcceptReschedule(session)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50"
+                >
+                  {isBusy
+                    ? (locale === 'ar' ? 'جاري التأكيد...' : 'Confirming...')
+                    : (locale === 'ar' ? 'قبول الموعد الجديد' : 'Accept new time')}
+                </button>
+              )}
+              {onCancelPending && (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => onCancelPending(session)}
+                  className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 font-semibold disabled:opacity-50"
+                >
+                  {locale === 'ar' ? 'إلغاء الطلب' : 'Cancel request'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {session.status === 'pending' && !session.rescheduledFrom && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-amber-600">{locale === 'id' ? 'Menunggu persetujuan guru' : locale === 'ar' ? 'بانتظار موافقة المعلم' : 'Awaiting teacher approval'}</p>
+            {onCancelPending && (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => onCancelPending(session)}
+                className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-50"
+              >
+                {locale === 'ar' ? 'إلغاء الطلب' : 'Cancel request'}
+              </button>
+            )}
+          </div>
         )}
         {acceptedEarly && (
           <p className="text-xs text-slate-500 mt-1">
@@ -2728,9 +2987,12 @@ function SessionCard({ session, onReview, hasReviewed, onChat, onRsvp, currentUs
           <button
             type="button"
             onClick={() => onChat?.(session)}
-            className="px-4 py-2 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50"
+            className="relative px-4 py-2 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50 inline-flex items-center gap-1.5"
           >
             {locale === 'id' ? 'Chat' : locale === 'ar' ? 'محادثة' : 'Chat'}
+            {hasUnreadChat ? (
+              <span className="inline-block h-2 w-2 rounded-full bg-rose-500" aria-label={locale === 'ar' ? 'رسالة غير مقروءة' : 'Unread message'} />
+            ) : null}
           </button>
         )}
         {session.status === 'completed' && !hasReviewed && (

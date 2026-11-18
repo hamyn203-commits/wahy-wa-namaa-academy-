@@ -20,6 +20,11 @@ function containsPhoneNumber(text = '') {
   if (/(?:\+|00)\s*(?:\d[\s\-._/]*){7,15}(?=[^\d]|$)/.test(normalized)) return true;
   const stripped = normalized.replace(/[\s\-._/()+,]/g, '');
   if (/\d{7,}/.test(stripped)) return true;
+  // Any punctuation/symbol between digits (010*1234*5678, 010:1234:5678, 010|1234|5678)
+  // must not hide a phone number. Nine or more digits covers every mobile format
+  // while avoiding false positives on verse citations such as 2:255-260.
+  const compactDigits = normalized.replace(/[^\p{L}\p{N}]+/gu, '');
+  if (/\d{9,}/.test(compactDigits)) return true;
   const words = normalized.split(/\s+/);
   let consecutiveDigits = 0;
   for (const w of words) {

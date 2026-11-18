@@ -53,10 +53,16 @@ router.get('/:id', protect, async (req, res) => {
     } else if (req.user.role === 'teacher') {
       const teacher = await Teacher.findOne({ user: req.user.id }).select('_id');
       if (teacher && studentUserId) {
+        // A single past trial must not grant perpetual access: the teacher must
+        // currently teach the student (regular / circle roster) or have an
+        // upcoming accepted trial with them.
         allowed = Boolean(await Session.exists({
           teacher: teacher._id,
-          student: studentUserId,
-          status: { $in: ['accepted', 'completed'] }
+          $or: [
+            { type: 'regular', student: studentUserId, status: { $in: ['accepted', 'completed'] } },
+            { type: 'group_circle', 'attendance.student': studentUserId, status: { $in: ['accepted', 'completed'] } },
+            { type: 'trial', student: studentUserId, status: 'accepted' },
+          ],
         }));
       }
     }
@@ -80,10 +86,9 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
     const newStudent = await student.save();
     logAdminAction({
-      adminId: req.user.id,
       action: 'student.create',
-      targetType: 'Student',
-      targetId: newStudent._id,
+      entityType: 'student_profile',
+      entityId: String(newStudent._id),
       req,
     }).catch(() => {});
     res.status(201).json(newStudent);
@@ -125,10 +130,9 @@ router.patch('/:id', protect, async (req, res) => {
     );
     if (req.user.role === 'admin') {
       logAdminAction({
-        adminId: req.user.id,
         action: 'student.update',
-        targetType: 'Student',
-        targetId: student._id,
+        entityType: 'student_profile',
+        entityId: String(student._id),
         metadata: { fields: Object.keys(updates) },
         req,
       }).catch(() => {});
@@ -147,10 +151,9 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     const student = await Student.findByIdAndDelete(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
     logAdminAction({
-      adminId: req.user.id,
       action: 'student.delete',
-      targetType: 'Student',
-      targetId: student._id,
+      entityType: 'student_profile',
+      entityId: String(student._id),
       req,
     }).catch(() => {});
     res.json({ message: 'Student deleted' });

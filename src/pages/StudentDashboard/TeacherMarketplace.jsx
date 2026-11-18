@@ -5,6 +5,7 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
+  Eye,
   GraduationCap,
   Heart,
   Play,
@@ -16,6 +17,10 @@ import {
   X,
 } from 'lucide-react';
 import { localizedPath } from '../../lib/locale';
+import { teacherPublicImage, teacherPublicVideo } from '../../lib/teacherMedia';
+import { prefetchTeacherBundle } from '../../lib/teacherProfileCache';
+import TeacherAvatar from '../../components/shared/TeacherAvatar';
+import TeacherQuickPreviewModal from './TeacherQuickPreviewModal';
 import api from '../../lib/api';
 
 function specializationLabel(value, locale) {
@@ -61,6 +66,7 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
   const [matchMap, setMatchMap] = useState(new Map());
   const [showMatching, setShowMatching] = useState(false);
   const [savingMatching, setSavingMatching] = useState(false);
+  const [quickPreviewTeacher, setQuickPreviewTeacher] = useState(null);
   const [error, setError] = useState('');
 
   const loadPersonalization = async () => {
@@ -342,8 +348,8 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
             const specializations = Array.isArray(teacher.quranInfo?.specializations)
               ? teacher.quranInfo.specializations.slice(0, 4)
               : [];
-            const intro = teacher.media?.introductionVideo;
-            const recitation = teacher.media?.recitationVideo;
+            const intro = teacherPublicVideo(teacher.media?.introductionVideo);
+            const recitation = teacherPublicVideo(teacher.media?.recitationVideo);
             const activePreview = preview?.teacherId === teacher._id ? preview.mode : null;
             const previewUrl = activePreview === 'intro' ? intro : activePreview === 'recitation' ? recitation : null;
             const match = matchMap.get(id);
@@ -351,22 +357,30 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
             const isCompared = compare.includes(id);
 
             return (
-              <article key={teacher._id} className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm">
+              <article
+                key={teacher._id}
+                onMouseEnter={() => prefetchTeacherBundle(teacher._id)}
+                onFocus={() => prefetchTeacherBundle(teacher._id)}
+                className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm transition hover:border-emerald-200 hover:shadow-md"
+              >
                 <div className="flex gap-4">
                   <div className="relative shrink-0">
-                    <img
-                      src={teacher.media?.profilePhoto || teacher.user?.avatar || '/default-teacher.png'}
+                    <TeacherAvatar
+                      src={teacherPublicImage(teacher.media?.profilePhoto || teacher.user?.avatar)}
+                      name={name}
                       alt={name}
-                      className="h-24 w-24 rounded-2xl object-cover border border-slate-100"
+                      size="lg"
                       loading="lazy"
+                      className="h-24 w-24 rounded-2xl border border-slate-100"
                     />
                     <button
                       type="button"
                       onClick={() => toggleFavorite(id)}
-                      className={`absolute -top-2 -right-2 grid h-8 w-8 place-items-center rounded-full border shadow-sm ${
+                      className={`absolute -top-2 -end-2 grid h-9 w-9 place-items-center rounded-full border shadow-sm ${
                         isFavorite ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-white border-slate-200 text-slate-400'
                       }`}
                       title={isAr ? 'المفضلة' : 'Favorite'}
+                      aria-label={isAr ? 'إضافة للمفضلة' : 'Toggle favorite'}
                     >
                       <Heart size={15} fill={isFavorite ? 'currentColor' : 'none'} />
                     </button>
@@ -447,7 +461,7 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
                 )}
 
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                  <label className="inline-flex min-h-[36px] items-center gap-2 text-xs text-slate-500 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={isCompared}
@@ -455,19 +469,29 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
                     />
                     {isAr ? 'أضف للمقارنة' : 'Compare'}
                   </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setQuickPreviewTeacher(teacher)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:underline"
+                  >
+                    <Eye size={14} />
+                    <span>{isAr ? 'معاينة سريعة' : 'Quick preview'}</span>
+                  </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <Link
                     to={lp('/teachers/' + teacher._id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200 px-3 py-2.5 text-sm font-bold text-emerald-800 hover:bg-emerald-50"
+                    state={{ prefetchedTeacher: teacher }}
+                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50"
                   >
                     <BookOpen size={15} />
                     {isAr ? 'عرض الملف' : 'View profile'}
                   </Link>
                   <Link
                     to={lp('/book-trial/' + teacher._id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-bold text-white hover:bg-emerald-800"
+                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-800"
                   >
                     <GraduationCap size={15} />
                     {isAr ? 'احجز حصة تجريبية' : 'Book trial'}
@@ -477,6 +501,14 @@ export default function StudentTeacherMarketplace({ teachers = [], locale = 'ar'
             );
           })}
         </div>
+      )}
+
+      {quickPreviewTeacher && (
+        <TeacherQuickPreviewModal
+          teacher={quickPreviewTeacher}
+          locale={locale}
+          onClose={() => setQuickPreviewTeacher(null)}
+        />
       )}
     </div>
   );

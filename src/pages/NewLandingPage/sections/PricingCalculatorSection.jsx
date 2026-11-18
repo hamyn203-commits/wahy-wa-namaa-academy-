@@ -10,8 +10,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Crown,
+  CalendarRange,
 } from 'lucide-react';
 import LocalizedLink from '../../../components/LocalizedLink';
+import { prefetchRoute } from '../../../lib/routePrefetch';
 
 const CALCULATOR_PLANS = [
   {
@@ -140,6 +142,13 @@ const CALCULATOR_PLANS = [
 
 const SESSION_PACKS = [4, 8, 12, 24];
 
+const PACING_HINTS = {
+  4: { ar: 'حصة واحدة أسبوعياً لمدة شهر', en: '1 session/week (~1 month)' },
+  8: { ar: 'حصتان أسبوعياً • الإيقاع الأكثر توازناً', en: '2 sessions/week • Most balanced pace' },
+  12: { ar: '٣ حصص أسبوعياً للحفظ والتثبيت السريع', en: '3 sessions/week for accelerated Hifz' },
+  24: { ar: 'باقة مكثفة أو تغطية شهرين إلى ٣ أشهر', en: 'Intensive schedule or 2–3 month pack' },
+};
+
 export default function PricingCalculatorSection() {
   const { locale } = useI18n();
   const isAr = locale === 'ar';
@@ -151,6 +160,9 @@ export default function PricingCalculatorSection() {
 
   const activePlan = CALCULATOR_PLANS.find((plan) => plan.id === selectedPlanId) || CALCULATOR_PLANS[1];
   const totalAmount = activePlan.price * sessionCount;
+  const pacingNote = PACING_HINTS[sessionCount]?.[isAr ? 'ar' : 'en'] || '';
+
+  const checkoutTarget = `/plans?section=${encodeURIComponent(section)}&plan=${encodeURIComponent(activePlan.id)}&sessions=${sessionCount}#plan-${activePlan.id}`;
 
   return (
     <section className="wn-home-section wn-home-section--white" id="pricing-calculator">
@@ -167,8 +179,8 @@ export default function PricingCalculatorSection() {
           </h2>
           <p>
             {isAr
-              ? 'أسعار واضحة تبدأ من 10 جنيهات للحصة الواحدة. اختر القسم ونوع الحلقة وعدد الحصص لتظهر لك التكلفة الإجمالية فوراً.'
-              : 'Transparent pricing starting from 10 EGP per session. Select your section, circle type, and session pack to see your exact total.'}
+              ? 'أسعار واضحة تبدأ من 10 جنيهات للحصة الواحدة. اختر القسم ونوع الحلقة وعدد الحصص، وسننقل اختيارك مباشرة لصفحة الاشتراك.'
+              : 'Transparent pricing starting from 10 EGP per session. Configure your circle and carry your exact selection straight to plans.'}
           </p>
         </div>
 
@@ -273,6 +285,12 @@ export default function PricingCalculatorSection() {
                   );
                 })}
               </div>
+              {pacingNote && (
+                <div className="wn-calc-pacing-hint">
+                  <CalendarRange size={15} />
+                  <span>{pacingNote}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -333,11 +351,21 @@ export default function PricingCalculatorSection() {
             </ul>
 
             <div className="wn-calc-summary__actions">
-              <LocalizedLink to="/plans" locale={locale} className="wn-btn wn-btn--light wn-btn--lg wn-btn--block">
-                <span>{isAr ? 'انتقل لاختيار هذه الخطة' : 'Proceed with this plan'}</span>
+              <LocalizedLink
+                to={checkoutTarget}
+                locale={locale}
+                onMouseEnter={() => prefetchRoute('/plans')}
+                className="wn-btn wn-btn--light wn-btn--lg wn-btn--block"
+              >
+                <span>{isAr ? 'متابعة بهذه الباقة' : 'Continue with this plan'}</span>
                 <ArrowIcon size={17} className="wn-btn__arrow" />
               </LocalizedLink>
-              <LocalizedLink to="/free-trial" locale={locale} className="wn-btn wn-btn--outline-light wn-btn--sm wn-btn--block">
+              <LocalizedLink
+                to="/free-trial"
+                locale={locale}
+                onMouseEnter={() => prefetchRoute('/free-trial')}
+                className="wn-btn wn-btn--outline-light wn-btn--sm wn-btn--block"
+              >
                 <span>{isAr ? 'أو ابدأ بحصة تجريبية مجانية أولاً' : 'Or start with a free trial first'}</span>
               </LocalizedLink>
             </div>

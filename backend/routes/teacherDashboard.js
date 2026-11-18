@@ -6,6 +6,7 @@ const Session = require('../models/Session');
 const Teacher = require('../models/Teacher');
 const TeacherProfileChangeRequest = require('../models/TeacherProfileChangeRequest');
 const TeacherTask = require('../models/TeacherTask');
+const GroupCircle = require('../models/GroupCircle');
 const User = require('../models/User');
 const mongoose = require('mongoose');
 const TeacherLedger = require('../models/TeacherLedger');
@@ -18,9 +19,29 @@ const { notifyAdmins, notifyUser, notifyGuardiansForStudent } = require('../util
 const { deleteStoredReference } = require('../utils/storageLifecycle');
 const objectStorage = require('../services/objectStorage');
 const { sanitizeTeacherProfileChange, listChangedFields } = require('../services/teacherProfileChange');
+const { doesTeacherOwnStudent } = require('../utils/teacherStudentScope');
 
 const SESSION_RATE = 50;
 const HOMEWORK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'homework');
+const TEACHER_FEEDBACK_UPLOAD_ROOT = path.resolve(process.cwd(), 'uploads', 'teacher-feedback-audio');
+const ALLOWED_TASK_TYPES = new Set(['memorization', 'review-recent', 'review-far', 'audio', 'test']);
+
+function normalizeTaskType(rawType) {
+  const value = String(rawType || '').trim();
+  if (value === 'review') return 'review-recent';
+  return ALLOWED_TASK_TYPES.has(value) ? value : null;
+}
+
+function serializeTaskForResponse(task) {
+  const obj = typeof task?.toObject === 'function' ? task.toObject() : { ...(task || {}) };
+  const hasAudio = Boolean(obj.hasTeacherFeedbackAudio || obj.teacherFeedbackAudio);
+  delete obj.teacherFeedbackAudio;
+  return {
+    ...obj,
+    hasTeacherFeedbackAudio: hasAudio,
+    teacherFeedbackDuration: Number(obj.teacherFeedbackDuration || 0),
+  };
+}
 const { isMockMode } = require('../config/runtime');
 const { safeTimeZone } = require('../services/sessionScheduling');
 
@@ -204,14 +225,23 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
     const teacher = await Teacher.findOne({ user: req.user.id });
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
-    const [sessions, tasks] = await Promise.all([
+    const [sessions, circles, tasks] = await Promise.all([
       Session.find({
         teacher: teacher._id,
-        type: 'regular',
+        type: { $in: ['regular', 'group_circle'] },
         status: { $in: ['accepted', 'completed'] },
       })
-        .populate('student', 'name avatar')
+        .populate('student', 'name avatar currentLevel preferredTrack')
+        .populate('attendance.student', 'name avatar currentLevel preferredTrack')
+        .populate('circle', 'name status')
         .sort({ scheduledAt: -1 })
+        .lean(),
+      GroupCircle.find({
+        teacher: teacher._id,
+        status: { $in: ['active', 'full'] },
+      })
+        .populate('students', 'name avatar currentLevel preferredTrack')
+        .select('name status track level students')
         .lean(),
       TeacherTask.find({ teacher: teacher._id })
         .select('student status dueDate updatedAt')
@@ -221,13 +251,17 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
     const now = Date.now();
     const map = new Map();
 
-    for (const session of sessions) {
-      if (!session.student?._id) continue;
-      const id = String(session.student._id);
-
+    const ensureRecord = (studentDoc) => {
+      if (!studentDoc?._id) return null;
+      const id = String(studentDoc._id);
       if (!map.has(id)) {
         map.set(id, {
-          ...session.student,
+          _id: studentDoc._id,
+          name: studentDoc.name || 'طالب',
+          avatar: studentDoc.avatar || '',
+          currentLevel: studentDoc.currentLevel || 'beginner',
+          preferredTrack: studentDoc.preferredTrack || 'memorization',
+          circles: [],
           sessionCount: 0,
           completedSessions: 0,
           nextSession: null,
@@ -237,12 +271,30 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
           lastProgress: null,
         });
       }
+      return map.get(id);
+    };
 
-      const record = map.get(id);
+    const attachCircle = (record, circleDoc) => {
+      if (!record || !circleDoc?._id || !circleDoc?.name) return;
+      const cid = String(circleDoc._id);
+      if (!record.circles.some((item) => String(item._id) === cid)) {
+        record.circles.push({ _id: circleDoc._id, name: circleDoc.name });
+      }
+    };
+
+    for (const circle of circles || []) {
+      for (const studentDoc of circle.students || []) {
+        const record = ensureRecord(studentDoc);
+        attachCircle(record, circle);
+      }
+    }
+
+    const applySessionToRecord = (record, session, studentId, { isCompletedForStudent, isUpcomingForStudent }) => {
+      if (!record) return;
       record.sessionCount += 1;
-
       const at = new Date(session.scheduledAt).getTime();
-      if (session.status === 'completed') {
+
+      if (isCompletedForStudent) {
         record.completedSessions += 1;
         if (!record.lastSession || at > new Date(record.lastSession.scheduledAt).getTime()) {
           record.lastSession = {
@@ -252,30 +304,70 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
           };
         }
 
-        const latestReport = (session.studentReports || []).find(
-          (report) => report.student && String(report.student) === id,
+        const matchedReport = (session.studentReports || []).find(
+          (report) => report.student && String(report.student) === studentId,
         );
-        if (latestReport && (!record.lastProgress || at > new Date(record.lastProgress.scheduledAt).getTime())) {
-          record.lastProgress = {
-            scheduledAt: session.scheduledAt,
-            memorizationScore: latestReport.memorizationScore,
-            tajweedScore: latestReport.tajweedScore,
-            surahRecited: latestReport.surahRecited,
-            nextHomework: latestReport.nextHomework,
-            notes: latestReport.notes,
-          };
+        const ev = session.teacherEvaluation;
+        const progressCandidate = matchedReport
+          ? {
+              scheduledAt: session.scheduledAt,
+              memorizationScore: matchedReport.memorizationScore,
+              tajweedScore: matchedReport.tajweedScore,
+              surahRecited: matchedReport.surahRecited || ev?.surahRecited || '',
+              nextHomework: matchedReport.nextHomework || ev?.nextHomework || '',
+              notes: matchedReport.notes || ev?.overallNotes || '',
+            }
+          : ev && (ev.surahRecited || ev.memorization != null || ev.tajweed != null || ev.nextHomework)
+            ? {
+                scheduledAt: session.scheduledAt,
+                memorizationScore: ev.memorization != null ? ev.memorization * 2 : undefined,
+                tajweedScore: ev.tajweed != null ? ev.tajweed * 2 : undefined,
+                surahRecited: ev.surahRecited || '',
+                nextHomework: ev.nextHomework || '',
+                notes: ev.overallNotes || '',
+              }
+            : null;
+
+        if (progressCandidate && (!record.lastProgress || at > new Date(record.lastProgress.scheduledAt).getTime())) {
+          record.lastProgress = progressCandidate;
         }
       }
 
-      if (session.status === 'accepted' && at >= now) {
+      if (isUpcomingForStudent && at >= now) {
         if (!record.nextSession || at < new Date(record.nextSession.scheduledAt).getTime()) {
           record.nextSession = {
             _id: session._id,
             scheduledAt: session.scheduledAt,
             type: session.type,
+            ...(session.circle?.name ? { circleName: session.circle.name } : {}),
           };
         }
       }
+    };
+
+    for (const session of sessions) {
+      if (session.type === 'group_circle') {
+        for (const entry of session.attendance || []) {
+          const studentDoc = entry?.student;
+          if (!studentDoc?._id) continue;
+          const sid = String(studentDoc._id);
+          const record = ensureRecord(studentDoc);
+          attachCircle(record, session.circle);
+          applySessionToRecord(record, session, sid, {
+            isCompletedForStudent: session.status === 'completed' && entry.status === 'attended',
+            isUpcomingForStudent: session.status === 'accepted' && entry.status !== 'excused',
+          });
+        }
+        continue;
+      }
+
+      if (!session.student?._id) continue;
+      const sid = String(session.student._id);
+      const record = ensureRecord(session.student);
+      applySessionToRecord(record, session, sid, {
+        isCompletedForStudent: session.status === 'completed',
+        isUpcomingForStudent: session.status === 'accepted',
+      });
     }
 
     for (const task of tasks) {
@@ -299,59 +391,136 @@ router.get('/active-students', protect, authorize('teacher'), async (req, res) =
 
 router.get('/students/:studentId/summary', protect, authorize('teacher'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.studentId || ''))) {
+      return res.status(400).json({ error: 'معرّف الطالب غير صالح' });
+    }
+
     const teacher = await Teacher.findOne({ user: req.user.id }).select('_id');
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
-    const relationship = await Session.findOne({
-      teacher: teacher._id,
-      student: req.params.studentId,
-      status: { $in: ['accepted', 'completed'] },
-    })
-      .populate('student', 'name avatar')
-      .lean();
-
-    if (!relationship?.student) {
+    const studentId = String(req.params.studentId);
+    const ownsStudent = await doesTeacherOwnStudent(teacher._id, studentId);
+    if (!ownsStudent) {
       return res.status(403).json({ error: 'لا يمكنك فتح ملف طالب غير مرتبط بحصصك' });
     }
 
-    const [sessions, tasks] = await Promise.all([
+    const [studentDoc, circles, sessions, tasks] = await Promise.all([
+      User.findById(studentId).select('name avatar currentLevel preferredTrack').lean(),
+      GroupCircle.find({
+        teacher: teacher._id,
+        students: studentId,
+        status: { $in: ['active', 'full'] },
+      })
+        .select('_id name status track level')
+        .lean(),
       Session.find({
         teacher: teacher._id,
-        student: req.params.studentId,
         status: { $in: ['accepted', 'completed'] },
+        $or: [
+          { student: studentId },
+          { type: 'group_circle', 'attendance.student': studentId },
+        ],
       })
-        .select('type status scheduledAt duration teacherEvaluation studentReports')
+        .select('type status scheduledAt duration circle teacherEvaluation studentReports attendance')
+        .populate('circle', 'name')
         .sort({ scheduledAt: -1 })
         .limit(50)
         .lean(),
       TeacherTask.find({
         teacher: teacher._id,
-        student: req.params.studentId,
+        student: studentId,
       })
-        .select('type title description dueDate status teacherFeedback reviewedAt createdAt updatedAt')
+        .select('type title description dueDate status teacherFeedback hasTeacherFeedbackAudio teacherFeedbackDuration reviewedAt createdAt updatedAt')
         .sort({ createdAt: -1 })
         .limit(50)
         .lean(),
     ]);
 
-    const studentId = String(req.params.studentId);
-    const timeline = sessions.map((session) => ({
-      _id: session._id,
-      type: session.type,
-      status: session.status,
-      scheduledAt: session.scheduledAt,
-      duration: session.duration,
-      evaluation: session.teacherEvaluation || null,
-      progressReport: (session.studentReports || []).find(
+    if (!studentDoc) {
+      return res.status(404).json({ error: 'الطالب غير موجود' });
+    }
+
+    const surahsSet = new Set();
+    let lastRecitation = null;
+    let memSum = 0;
+    let memCount = 0;
+    let tajSum = 0;
+    let tajCount = 0;
+
+    const timeline = sessions.map((session) => {
+      const studentAttendance = Array.isArray(session.attendance)
+        ? session.attendance.find((entry) => entry?.student && String(entry.student) === studentId)
+        : null;
+      const progressReport = (session.studentReports || []).find(
         (report) => report.student && String(report.student) === studentId,
-      ) || null,
-    }));
+      ) || null;
+      const ev = session.teacherEvaluation || null;
+
+      if (session.status === 'completed') {
+        const surah = String(progressReport?.surahRecited || ev?.surahRecited || '').trim();
+        if (surah) surahsSet.add(surah);
+        if (!lastRecitation && (surah || progressReport?.nextHomework || ev?.nextHomework || progressReport?.notes || ev?.overallNotes)) {
+          lastRecitation = {
+            surahRecited: surah,
+            fromAyah: progressReport?.fromAyah ?? ev?.fromAyah ?? null,
+            toAyah: progressReport?.toAyah ?? ev?.toAyah ?? null,
+            nextHomework: progressReport?.nextHomework || ev?.nextHomework || '',
+            notes: progressReport?.notes || ev?.overallNotes || '',
+            scheduledAt: session.scheduledAt,
+          };
+        }
+        const mem5 = ev?.memorization != null
+          ? Number(ev.memorization)
+          : progressReport?.memorizationScore != null
+            ? Number(progressReport.memorizationScore) / 2
+            : null;
+        const taj5 = ev?.tajweed != null
+          ? Number(ev.tajweed)
+          : progressReport?.tajweedScore != null
+            ? Number(progressReport.tajweedScore) / 2
+            : null;
+        if (Number.isFinite(mem5)) {
+          memSum += mem5;
+          memCount += 1;
+        }
+        if (Number.isFinite(taj5)) {
+          tajSum += taj5;
+          tajCount += 1;
+        }
+      }
+
+      return {
+        _id: session._id,
+        type: session.type,
+        status: session.status,
+        scheduledAt: session.scheduledAt,
+        duration: session.duration,
+        circle: session.circle ? { _id: session.circle._id, name: session.circle.name } : undefined,
+        attendanceStatus: studentAttendance?.status || null,
+        evaluation: ev,
+        progressReport,
+      };
+    });
+
+    const completedSessionsCount = sessions.filter((session) => {
+      if (session.status !== 'completed') return false;
+      if (session.type !== 'group_circle') return true;
+      const entry = (session.attendance || []).find((item) => item?.student && String(item.student) === studentId);
+      return entry?.status === 'attended';
+    }).length;
 
     return res.json({
-      student: relationship.student,
+      student: studentDoc,
+      circles: circles || [],
+      quranSummary: {
+        recitedSurahs: [...surahsSet],
+        lastRecitation,
+        avgMemorizationOutOf5: memCount ? Math.round((memSum / memCount) * 10) / 10 : null,
+        avgTajweedOutOf5: tajCount ? Math.round((tajSum / tajCount) * 10) / 10 : null,
+      },
       summary: {
         totalSessions: sessions.length,
-        completedSessions: sessions.filter((session) => session.status === 'completed').length,
+        completedSessions: completedSessionsCount,
         upcomingSessions: sessions.filter((session) => (
           session.status === 'accepted' && new Date(session.scheduledAt) >= new Date()
         )).length,
@@ -359,7 +528,7 @@ router.get('/students/:studentId/summary', protect, authorize('teacher'), async 
         submittedHomework: tasks.filter((task) => task.status === 'submitted').length,
       },
       sessions: timeline,
-      tasks,
+      tasks: tasks.map(serializeTaskForResponse),
     });
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -373,8 +542,9 @@ router.get('/tasks', protect, authorize('teacher'), async (req, res) => {
 
     const tasks = await TeacherTask.find({ teacher: teacher._id })
       .populate('student', 'name avatar')
+      .populate('circle', 'name')
       .sort({ createdAt: -1 });
-    res.json({ tasks });
+    res.json({ tasks: tasks.map(serializeTaskForResponse) });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -385,72 +555,186 @@ router.post('/tasks', protect, authorize('teacher'), async (req, res) => {
     const teacher = await Teacher.findOne({ user: req.user.id });
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
-    const { studentId, sessionId, type, title, description, dueDate } = req.body;
-    if (!studentId || !type || !title) {
-      return res.status(400).json({ error: 'studentId, type, title مطلوبة' });
+    const { studentId, circleId, sessionId, type: rawType, title: rawTitle, description, dueDate } = req.body || {};
+    const type = normalizeTaskType(rawType);
+    const title = String(rawTitle || '').trim().slice(0, 200);
+    if ((!studentId && !circleId) || !type || !title) {
+      return res.status(400).json({ error: 'studentId أو circleId مع type و title مطلوبة' });
     }
 
-    const relationship = await Session.findOne({
-      teacher: teacher._id,
-      student: studentId,
-      status: { $in: ['accepted', 'completed'] },
-    }).select('_id');
-
-    if (!relationship) {
-      return res.status(403).json({ error: 'لا يمكن تعيين واجب لطالب غير مرتبط بهذا المعلم' });
+    const cleanDescription = String(description || '').trim().slice(0, 1500);
+    const parsedDueDate = dueDate ? new Date(dueDate) : undefined;
+    if (parsedDueDate && Number.isNaN(parsedDueDate.getTime())) {
+      return res.status(400).json({ error: 'تاريخ التسليم غير صحيح' });
     }
 
-    if (sessionId) {
-      const ownedSession = await Session.findOne({
-        _id: sessionId,
+    if (studentId) {
+      if (!mongoose.Types.ObjectId.isValid(String(studentId))) {
+        return res.status(400).json({ error: 'معرّف الطالب غير صالح' });
+      }
+      const ownsStudent = await doesTeacherOwnStudent(teacher._id, studentId);
+      if (!ownsStudent) {
+        return res.status(403).json({ error: 'لا يمكن تعيين واجب لطالب غير مرتبط بهذا المعلم' });
+      }
+
+      if (sessionId) {
+        if (!mongoose.Types.ObjectId.isValid(String(sessionId))) {
+          return res.status(400).json({ error: 'معرّف الحصة غير صالح' });
+        }
+        const ownedSession = await Session.findOne({
+          _id: sessionId,
+          teacher: teacher._id,
+          $or: [
+            { student: studentId },
+            { type: 'group_circle', 'attendance.student': studentId },
+          ],
+        }).select('_id');
+        if (!ownedSession) {
+          return res.status(403).json({ error: 'الحصة المحددة لا تخص هذا المعلم والطالب' });
+        }
+      }
+
+      const task = await TeacherTask.create({
         teacher: teacher._id,
         student: studentId,
-      }).select('_id');
-      if (!ownedSession) {
-        return res.status(403).json({ error: 'الحصة المحددة لا تخص هذا المعلم والطالب' });
+        session: sessionId || undefined,
+        type,
+        title,
+        description: cleanDescription,
+        dueDate: parsedDueDate,
+      });
+
+      const studentUser = await User.findById(studentId).select('name');
+      const studentName = studentUser?.name || 'الطالب';
+
+      await Promise.allSettled([
+        notifyUser(studentId, {
+          type: 'homework-assigned',
+          title: { ar: 'واجب جديد من معلمك', en: 'New homework from your tutor' },
+          message: { ar: title, en: title },
+          data: {
+            actionUrl: '/student/dashboard?tab=homework',
+            metadata: { taskId: String(task._id) },
+          },
+          priority: 'normal',
+        }),
+        notifyGuardiansForStudent(studentId, {
+          type: 'homework-assigned',
+          title: { ar: `واجب جديد لـ ${studentName}`, en: `New homework for ${studentName}` },
+          message: {
+            ar: `${title}${dueDate ? ' — راجع موعد التسليم من لوحة ولي الأمر.' : ''}`,
+            en: title,
+          },
+          data: {
+            actionUrl: '/guardian/dashboard',
+            metadata: { taskId: String(task._id), studentId: String(studentId) },
+          },
+          priority: 'normal',
+        }),
+      ]);
+
+      return res.status(201).json({ success: true, task: serializeTaskForResponse(task) });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(String(circleId))) {
+      return res.status(400).json({ error: 'معرّف الحلقة غير صالح' });
+    }
+    const circle = await GroupCircle.findOne({
+      _id: circleId,
+      teacher: teacher._id,
+      status: { $in: ['active', 'full'] },
+    }).select('_id name students').lean();
+
+    if (!circle) {
+      return res.status(403).json({ error: 'لا يمكنك إسناد واجب لحلقة غير مسندة إليك' });
+    }
+
+    let targetStudentIds = (circle.students || []).map(String).filter(Boolean);
+    if (sessionId) {
+      if (!mongoose.Types.ObjectId.isValid(String(sessionId))) {
+        return res.status(400).json({ error: 'معرّف الحصة غير صالح' });
+      }
+      const ownedGroupSession = await Session.findOne({
+        _id: sessionId,
+        teacher: teacher._id,
+        circle: circle._id,
+        type: 'group_circle',
+      }).select('status attendance').lean();
+      if (!ownedGroupSession) {
+        return res.status(403).json({ error: 'الحصة المحددة لا تخص هذه الحلقة' });
+      }
+      if (ownedGroupSession.status === 'completed') {
+        const attendedIds = (ownedGroupSession.attendance || [])
+          .filter((entry) => entry.student && entry.status === 'attended')
+          .map((entry) => String(entry.student));
+        if (attendedIds.length) {
+          targetStudentIds = attendedIds;
+        }
       }
     }
 
-    const task = await TeacherTask.create({
-      teacher: teacher._id,
-      student: studentId,
-      session: sessionId || undefined,
-      type,
-      title,
-      description: description || '',
-      dueDate: dueDate ? new Date(dueDate) : undefined,
+    targetStudentIds = [...new Set(targetStudentIds)];
+    if (!targetStudentIds.length) {
+      return res.status(400).json({ error: 'لا يوجد طلاب نشطون في هذه الحلقة لإسناد الواجب إليهم' });
+    }
+
+    const createdTasks = [];
+    for (const sid of targetStudentIds) {
+      const created = await TeacherTask.create({
+        teacher: teacher._id,
+        student: sid,
+        session: sessionId || undefined,
+        circle: circle._id,
+        type,
+        title,
+        description: cleanDescription,
+        dueDate: parsedDueDate,
+      });
+      createdTasks.push(created);
+    }
+
+    const studentUsers = await User.find({ _id: { $in: targetStudentIds } }).select('name').lean();
+    const studentNameById = new Map((studentUsers || []).map((u) => [String(u._id), u.name || 'الطالب']));
+
+    await Promise.allSettled(
+      createdTasks.flatMap((task) => {
+        const sid = String(task.student);
+        const studentName = studentNameById.get(sid) || 'الطالب';
+        return [
+          notifyUser(sid, {
+            type: 'homework-assigned',
+            title: { ar: `واجب جديد — ${circle.name}`, en: 'New homework from your tutor' },
+            message: { ar: title, en: title },
+            data: {
+              actionUrl: '/student/dashboard?tab=homework',
+              metadata: { taskId: String(task._id), circleId: String(circle._id) },
+            },
+            priority: 'normal',
+          }),
+          notifyGuardiansForStudent(sid, {
+            type: 'homework-assigned',
+            title: { ar: `واجب جديد لـ ${studentName}`, en: `New homework for ${studentName}` },
+            message: {
+              ar: `${title}${dueDate ? ' — راجع موعد التسليم من لوحة ولي الأمر.' : ''}`,
+              en: title,
+            },
+            data: {
+              actionUrl: '/guardian/dashboard',
+              metadata: { taskId: String(task._id), studentId: sid },
+            },
+            priority: 'normal',
+          }),
+        ];
+      })
+    );
+
+    const safeTasks = createdTasks.map(serializeTaskForResponse);
+    return res.status(201).json({
+      success: true,
+      count: safeTasks.length,
+      tasks: safeTasks,
+      task: safeTasks[0] || null,
     });
-
-    const studentUser = await User.findById(studentId).select('name');
-    const studentName = studentUser?.name || 'الطالب';
-
-    await Promise.allSettled([
-      notifyUser(studentId, {
-        type: 'homework-assigned',
-        title: { ar: 'واجب جديد من معلمك', en: 'New homework from your tutor' },
-        message: { ar: title, en: title },
-        data: {
-          actionUrl: '/student/dashboard?tab=homework',
-          metadata: { taskId: String(task._id) },
-        },
-        priority: 'normal',
-      }),
-      notifyGuardiansForStudent(studentId, {
-        type: 'homework-assigned',
-        title: { ar: `واجب جديد لـ ${studentName}`, en: `New homework for ${studentName}` },
-        message: {
-          ar: `${title}${dueDate ? ' — راجع موعد التسليم من لوحة ولي الأمر.' : ''}`,
-          en: title,
-        },
-        data: {
-          actionUrl: '/guardian/dashboard',
-          metadata: { taskId: String(task._id), studentId: String(studentId) },
-        },
-        priority: 'normal',
-      }),
-    ]);
-
-    res.status(201).json({ success: true, task });
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
@@ -458,13 +742,16 @@ router.post('/tasks', protect, authorize('teacher'), async (req, res) => {
 
 router.patch('/tasks/:id', protect, authorize('teacher'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(400).json({ error: 'معرّف الواجب غير صالح' });
+    }
     const teacher = await Teacher.findOne({ user: req.user.id });
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
     const task = await TeacherTask.findOne({
       _id: req.params.id,
       teacher: teacher._id,
-    });
+    }).select('+teacherFeedbackAudio');
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
     const action = req.body.action || (req.body.status === 'done' ? 'approve' : null);
@@ -505,6 +792,47 @@ router.patch('/tasks/:id', protect, authorize('teacher'), async (req, res) => {
       return res.status(400).json({ error: 'action يجب أن يكون approve أو request-revision' });
     }
 
+    const feedbackAudio = req.body?.feedbackAudio && typeof req.body.feedbackAudio === 'object'
+      ? req.body.feedbackAudio
+      : null;
+    if (feedbackAudio) {
+      const reference = String(feedbackAudio.url || feedbackAudio.pathname || '').trim();
+      const driver = objectStorage.getDriver();
+      const validRef = Boolean(reference)
+        && objectStorage.referenceMatches(reference, 'teacher-feedback-audio', req.user.id)
+        && ((driver !== 'vercel-blob' && driver !== 's3')
+          || objectStorage.isOwnedObjectReference(reference, 'teacher-feedback-audio', req.user.id));
+
+      if (!validRef) {
+        return res.status(400).json({
+          error: 'مرجع التعليق الصوتي غير صالح أو لا يخص هذا المعلم',
+          code: 'INVALID_TEACHER_FEEDBACK_AUDIO',
+        });
+      }
+
+      const magicVerify = await objectStorage.verifyUploadedObjectMagicBytes(
+        reference,
+        feedbackAudio.contentType || 'audio/webm',
+        10 * 1024 * 1024
+      );
+      if (!magicVerify.ok) {
+        return res.status(400).json({ error: magicVerify.error, code: magicVerify.code });
+      }
+
+      if (task.teacherFeedbackAudio && task.teacherFeedbackAudio !== reference) {
+        await deleteStoredReference({
+          reference: task.teacherFeedbackAudio,
+          purpose: 'teacher-feedback-audio',
+          owner: req.user.id,
+          localRoot: TEACHER_FEEDBACK_UPLOAD_ROOT,
+        }).catch(() => {});
+      }
+
+      task.teacherFeedbackAudio = reference;
+      task.hasTeacherFeedbackAudio = true;
+      task.teacherFeedbackDuration = Math.min(300, Math.max(0, Math.round(Number(feedbackAudio.durationSeconds) || 0)));
+    }
+
     await task.save();
 
     notifyUser(task.student, {
@@ -514,12 +842,14 @@ router.patch('/tasks/:id', protect, authorize('teacher'), async (req, res) => {
         en: action === 'approve' ? 'Homework approved' : 'Homework revision requested',
       },
       message: {
-        ar: task.teacherFeedback || (action === 'approve' ? 'أحسنت، تم اعتماد الواجب.' : 'راجع ملاحظات المعلم وأعد التسليم.'),
+        ar: task.teacherFeedback || (task.hasTeacherFeedbackAudio
+          ? (action === 'approve' ? 'تم اعتماد الواجب وأرفق المعلم تعليقاً صوتياً.' : 'راجع التعليق الصوتي من المعلم وأعد التسليم.')
+          : (action === 'approve' ? 'أحسنت، تم اعتماد الواجب.' : 'راجع ملاحظات المعلم وأعد التسليم.')),
         en: action === 'approve' ? 'Your homework was approved.' : 'Please review the tutor feedback and resubmit.',
       },
       data: {
         actionUrl: '/student/dashboard?tab=homework',
-        metadata: { taskId: String(task._id) },
+        metadata: { taskId: String(task._id), hasAudioFeedback: Boolean(task.hasTeacherFeedbackAudio) },
       },
       priority: 'normal',
     }).catch(() => {});
@@ -545,7 +875,7 @@ router.patch('/tasks/:id', protect, authorize('teacher'), async (req, res) => {
       })
     )).catch(() => {});
 
-    return res.json({ success: true, task });
+    return res.json({ success: true, task: serializeTaskForResponse(task) });
   } catch (error) {
     return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
@@ -669,7 +999,7 @@ router.get('/analytics', protect, authorize('teacher'), async (req, res) => {
       Session.find({ teacher: teacher._id })
         .sort({ scheduledAt: -1 })
         .limit(2000)
-        .select('student type status scheduledAt updatedAt duration')
+        .select('student attendance.student type status scheduledAt updatedAt duration')
         .lean(),
       TeacherTask.find({ teacher: teacher._id }).sort({ createdAt: -1 }).limit(1000).select('status').lean(),
       TeacherLedger.find({
@@ -707,15 +1037,17 @@ router.get('/analytics', protect, authorize('teacher'), async (req, res) => {
       session.type === 'trial' && session.status === 'completed' && session.student
     ));
     const trialStudentIds = new Set(completedTrials.map((session) => String(session.student)));
-    const continuingStudentIds = new Set(
-      allSessions
-        .filter((session) => (
-          session.type === 'regular'
-          && ['accepted', 'completed'].includes(session.status)
-          && session.student
-        ))
-        .map((session) => String(session.student)),
-    );
+    const continuingStudentIds = new Set();
+    for (const session of allSessions) {
+      if (!['accepted', 'completed'].includes(session.status)) continue;
+      if (session.type === 'regular' && session.student) {
+        continuingStudentIds.add(String(session.student));
+      } else if (session.type === 'group_circle') {
+        for (const entry of session.attendance || []) {
+          if (entry?.student) continuingStudentIds.add(String(entry.student));
+        }
+      }
+    }
     const convertedCount = [...trialStudentIds].filter((id) => continuingStudentIds.has(id)).length;
     const trialConversionRate = trialStudentIds.size
       ? Math.round((convertedCount / trialStudentIds.size) * 100)
@@ -966,10 +1298,23 @@ router.get('/reviews', protect, authorize('teacher'), async (req, res) => {
     if (!teacher) return res.status(404).json({ error: 'Teacher profile not found' });
 
     const Review = require('../models/Review');
-    const reviews = await Review.find({ teacher: teacher._id, isApproved: true })
+    const rawReviews = await Review.find({ teacher: teacher._id, isApproved: true })
       .populate('student', 'name avatar')
       .sort({ createdAt: -1 })
       .limit(20);
+
+    // Respect the student's anonymity choice: the reviewed teacher must never
+    // learn the identity or the exact session behind an anonymous review.
+    const reviews = rawReviews.map((review) => {
+      const obj = typeof review?.toObject === 'function' ? review.toObject() : { ...review };
+      if (obj.isAnonymous) {
+        delete obj.session;
+        obj.student = { name: 'طالب مجهول', avatar: '' };
+      } else if (obj.student && typeof obj.student === 'object') {
+        obj.student = { name: obj.student.name || '', avatar: obj.student.avatar || '' };
+      }
+      return obj;
+    });
 
     const totalReviews = Number(teacher.rating?.count || 0);
     res.json({

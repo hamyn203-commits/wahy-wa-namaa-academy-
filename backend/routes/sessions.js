@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const Teacher = require('../models/Teacher');
+const TeacherTask = require('../models/TeacherTask');
 const StudentSubscription = require('../models/StudentSubscription');
 const GroupCircle = require('../models/GroupCircle');
 const { protect, authorize } = require('../middleware/auth');
@@ -35,7 +36,11 @@ const {
 } = require('../utils/notify');
 
 const { isMockMode } = require('../config/runtime');
-const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const {
+  assertGenderAndAgeCompatibility,
+  minorHasActiveGuardian,
+  MINOR_GUARDIAN_REQUIRED_RESPONSE,
+} = require('../utils/safeguarding');
 const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const isDBConnected = () => mongoose.connection.readyState === 1;
 const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
@@ -49,6 +54,10 @@ const sessionReportLimiter = createScopedRateLimiter({
 
 const MAX_TRIAL_SESSIONS_PER_STUDENT = 3;
 const TRIAL_CONSUMING_STATUSES = ['pending', 'accepted', 'completed'];
+// Teacher-proposed reschedules must keep the student's early-excuse window
+// (>= 6h before start preserves the subscription credit).
+const MIN_RESCHEDULE_PROPOSAL_LEAD_MS = 12 * 60 * 60 * 1000;
+const MIN_RESCHEDULED_ACCEPT_LEAD_MS = 6 * 60 * 60 * 1000;
 const inProcessStudentBookingLocks = new Map();
 
 async function withInProcessStudentBookingLock(studentId, work) {
@@ -134,6 +143,37 @@ async function validateBookingSlot({ teacher, scheduledAt, timezone, duration = 
 
 router.get('/available-slots/:teacherId', async (req, res) => {
   try {
+    const days = Math.min(21, Math.max(1, Number(req.query.days || 14)));
+    const duration = 60;
+
+    if (
+      isMockMode
+      && !isDBConnected()
+      && Teacher.findOne === mongoose.Model.findOne
+      && Session.find === mongoose.Model.find
+    ) {
+      const { findMockTeacherById } = require('../mockStore');
+      const mockTeacher = findMockTeacherById(req.params.teacherId);
+      if (!mockTeacher || mockTeacher.status !== 'approved' || mockTeacher.isVerified !== true) {
+        return res.status(404).json({ error: 'Teacher not found or not available' });
+      }
+      const generatedMock = generateTeacherSlotStarts(mockTeacher, {
+        days,
+        intervalMinutes: 30,
+        durationMinutes: duration,
+      });
+      return res.json({
+        configured: Array.isArray(mockTeacher.availability) && mockTeacher.availability.length > 0,
+        teacherTimezone: safeTimeZone(mockTeacher.availabilityTimezone),
+        slots: generatedMock.map((slot) => ({
+          startsAt: slot.startsAt.toISOString(),
+          duration: slot.duration,
+          teacherLocalDate: slot.teacherLocalDate,
+          teacherLocalTime: slot.teacherLocalTime,
+        })),
+      });
+    }
+
     const teacher = await Teacher.findOne({
       _id: req.params.teacherId,
       status: 'approved',
@@ -144,8 +184,6 @@ router.get('/available-slots/:teacherId', async (req, res) => {
       return res.status(404).json({ error: 'Teacher not found or not available' });
     }
 
-    const days = Math.min(21, Math.max(1, Number(req.query.days || 14)));
-    const duration = 60;
     const generated = generateTeacherSlotStarts(teacher, {
       days,
       intervalMinutes: 30,
@@ -193,10 +231,10 @@ async function sessionIncludesStudent(session, studentId) {
   if (session.student && String(session.student) === id) return true;
   if (session.attendance?.some((entry) => entry.student && String(entry.student) === id)) return true;
 
-  if (session.circle) {
-    return Boolean(await GroupCircle.exists({ _id: session.circle, students: studentId }));
-  }
-
+  // Group-circle lessons: `attendance` is the authoritative paid roster that is
+  // filled at scheduling time and on paid placement. Circle membership alone
+  // (paused / zero-credit / later-placed students) must not grant RSVP,
+  // feedback, live-room or history access to a lesson.
   return false;
 }
 
@@ -229,6 +267,10 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
       teacher,
       section: student.enrollmentSection || null,
     });
+
+    if (!(await minorHasActiveGuardian(student))) {
+      return res.status(403).json(MINOR_GUARDIAN_REQUIRED_RESPONSE);
+    }
 
     const teacherLock = await findStudentTeacherLock(req.user.id);
     if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
@@ -553,6 +595,10 @@ router.post('/regular', protect, async (req, res) => {
       section: student.enrollmentSection || null,
     });
 
+    if (!(await minorHasActiveGuardian(student))) {
+      return res.status(403).json(MINOR_GUARDIAN_REQUIRED_RESPONSE);
+    }
+
     const teacherLock = await findStudentTeacherLock(req.user.id);
     if (!isTeacherAllowedForLock(teacherLock, teacher._id)) {
       return res.status(409).json(teacherLockedResponse(teacherLock));
@@ -681,11 +727,11 @@ router.get('/my-sessions', protect, async (req, res) => {
     const filter = {};
 
     if (req.user.role === 'student') {
-      const student = await User.findById(req.user.id).select('circle').lean();
+      // Group-circle lessons are visible only when the student is on that
+      // lesson's paid roster (`attendance`), never by circle membership alone.
       filter.$or = [
         { student: req.user.id },
         { 'attendance.student': req.user.id },
-        ...(student?.circle ? [{ circle: student.circle }] : []),
       ];
     } else if (req.user.role === 'teacher') {
       const teacher = await Teacher.findOne({ user: req.user.id });
@@ -897,6 +943,16 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
     }
 
     if (action === 'accept') {
+      // A teacher-proposed new time must leave the student the full early-excuse
+      // window (>= 6h, credit preserved). Otherwise a teacher could propose an
+      // imminent slot and immediately self-accept it, trapping the credit.
+      if (session.rescheduledFrom
+          && new Date(session.scheduledAt).getTime() - Date.now() < MIN_RESCHEDULED_ACCEPT_LEAD_MS) {
+        return res.status(409).json({
+          error: 'لا يمكن اعتماد موعد مُعاد جدولته يبدأ خلال أقل من 6 ساعات؛ اقترح موعداً أبعد',
+          code: 'RESCHEDULE_TOO_SOON',
+        });
+      }
       session.status = 'accepted';
       const provider = req.body.provider || process.env.DEFAULT_MEETING_PROVIDER || 'livekit';
       meetingService.attachToSession(session, provider);
@@ -915,6 +971,13 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
         return res.status(400).json({
           error: 'A valid future reschedule date is required',
           code: 'INVALID_RESCHEDULE_TIME',
+          timezone,
+        });
+      }
+      if (proposedDate.getTime() - Date.now() < MIN_RESCHEDULE_PROPOSAL_LEAD_MS) {
+        return res.status(400).json({
+          error: 'يجب أن يكون الموعد المقترح بعد 12 ساعة على الأقل ليتمكن الطالب من الاعتذار مع الاحتفاظ برصيده',
+          code: 'RESCHEDULE_TOO_SOON',
           timezone,
         });
       }
@@ -1132,12 +1195,46 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       }
     }
 
-    const subscriptionUsage = (session.type === 'regular' || session.type === 'group_circle')
-      ? await settleSubscriptionUsageForSession(session)
-      : null;
+    // Atomically claim the accepted -> completed transition (after the
+    // evaluation validated) so concurrent "complete" clicks cannot both run
+    // settlement side effects and dispatch duplicate completion notifications.
+    const atomicClaimEnabled = !wasAlreadyCompleted
+      && Boolean(mongoose.connection?.db)
+      && typeof Session.updateOne === 'function';
+    if (atomicClaimEnabled) {
+      const claim = await Session.updateOne(
+        { _id: session._id, status: 'accepted' },
+        { $set: { status: 'completed' } }
+      );
+      if (!claim?.modifiedCount) {
+        return res.status(409).json({
+          error: 'تمت معالجة إنهاء هذه الحصة بالفعل',
+          code: 'SESSION_COMPLETION_IN_PROGRESS',
+        });
+      }
+    }
+
+    let subscriptionUsage = null;
+    try {
+      subscriptionUsage = (session.type === 'regular' || session.type === 'group_circle')
+        ? await settleSubscriptionUsageForSession(session)
+        : null;
+      if (!wasAlreadyCompleted) {
+        await session.save();
+      }
+    } catch (completionError) {
+      if (atomicClaimEnabled) {
+        // Release the claim so the teacher can retry instead of leaving a
+        // "completed" lesson without its evaluation and earning.
+        await Session.updateOne(
+          { _id: session._id, status: 'completed' },
+          { $set: { status: 'accepted' } }
+        ).catch(() => {});
+      }
+      throw completionError;
+    }
 
     if (!wasAlreadyCompleted) {
-      await session.save();
       if (session.type === 'trial') {
         const validLevels = ['beginner', 'intermediate', 'advanced', 'ijazah'];
         const validTracks = ['memorization', 'tajweed_ijazah', 'kids_foundation'];
@@ -1165,6 +1262,54 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
             }
           );
         } catch { /* ignore if no TrialRequest */ }
+      }
+
+      const validHomeworks = Array.isArray(evaluation?.assignedHomework)
+        ? evaluation.assignedHomework.filter((hw) => String(hw?.description || '').trim())
+        : [];
+      if (session.student && validHomeworks.length && (Boolean(mongoose.connection?.db) || TeacherTask.create !== mongoose.Model.create)) {
+        const alreadyHasTasks = typeof TeacherTask.exists === 'function'
+          ? await TeacherTask.exists({ session: session._id })
+          : false;
+        if (!alreadyHasTasks) {
+          const typeTitles = {
+            memorization: 'حفظ جديد',
+            'review-recent': 'مراجعة قريبة',
+            'review-far': 'مراجعة بعيدة',
+            audio: 'تسجيل صوتي',
+            test: 'اختبار',
+          };
+          for (const hw of validHomeworks) {
+            const rawType = String(hw.type || '').trim();
+            const mappedType = rawType === 'review' ? 'review-recent' : rawType;
+            const taskType = ['memorization', 'review-recent', 'review-far', 'audio', 'test'].includes(mappedType)
+              ? mappedType
+              : 'memorization';
+            const parsedDue = hw.dueDate ? new Date(hw.dueDate) : undefined;
+            await TeacherTask.create({
+              teacher: teacher._id,
+              student: session.student,
+              session: session._id,
+              type: taskType,
+              title: typeTitles[taskType] || 'واجب الحصة',
+              description: String(hw.description).trim().slice(0, 1500),
+              dueDate: parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue : undefined,
+            });
+          }
+          await notifyUser(session.student, {
+            type: 'homework-assigned',
+            title: { ar: 'واجب جديد بعد الحصة', en: 'New post-session homework' },
+            message: {
+              ar: String(validHomeworks[0].description).trim().slice(0, 140),
+              en: String(validHomeworks[0].description).trim().slice(0, 140),
+            },
+            data: {
+              actionUrl: '/student/dashboard?tab=homework',
+              metadata: { sessionId: String(session._id) },
+            },
+            priority: 'normal',
+          }).catch(() => {});
+        }
       }
     }
 
@@ -1763,6 +1908,40 @@ router.post('/:id/rsvp', protect, async (req, res) => {
       await studentRecord.save();
     }
 
+    try {
+      const [teacherDoc, studentUser] = await Promise.all([
+        Teacher.findById(session.teacher).select('user').lean(),
+        User.findById(studentId).select('name').lean(),
+      ]);
+      if (teacherDoc?.user) {
+        const studentName = studentUser?.name || 'طالب';
+        await notifyUser(teacherDoc.user, {
+          type: 'session-reminder',
+          title: {
+            ar: status === 'confirmed' ? 'تأكيد حضور طالب' : 'اعتذار مسبق من طالب',
+            en: status === 'confirmed' ? 'Student confirmed attendance' : 'Student advance excuse',
+          },
+          message: {
+            ar: status === 'confirmed'
+              ? `أكد ${studentName} حضوره للحصة.`
+              : `اعتذر ${studentName} عن الحصة${cleanReason ? `: ${cleanReason}` : ''}.`,
+            en: status === 'confirmed'
+              ? `${studentName} confirmed attendance.`
+              : `${studentName} submitted an advance excuse.`,
+          },
+          data: {
+            session: session._id,
+            actionUrl: '/teacher/dashboard?tab=sessions',
+            metadata: { rsvpStatus: status, studentId: String(studentId), eligibleForCompensation },
+          },
+          priority: status === 'excused' ? 'high' : 'normal',
+          channels: { inApp: { enabled: true } },
+        });
+      }
+    } catch {
+      // Non-blocking notification failure must not break student RSVP.
+    }
+
     res.json({
       success: true,
       message: status === 'confirmed'
@@ -1896,6 +2075,132 @@ router.post('/:id/report', protect, authorize('teacher', 'admin'), sessionReport
     });
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/:id/accept-reschedule', protect, authorize('student'), async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
+    const session = await Session.findOne({ _id: req.params.id, student: req.user.id });
+    if (!session) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
+    if (session.status !== 'pending' || !session.rescheduledFrom) {
+      return res.status(409).json({
+        error: 'لا يمكن تأكيد هذه الحصة كموعد مُعاد جدولته',
+        code: 'RESCHEDULE_NOT_ACCEPTABLE',
+      });
+    }
+
+    if (new Date(session.scheduledAt).getTime() <= Date.now()) {
+      return res.status(400).json({
+        error: 'انتهى وقت الموعد المقترح',
+        code: 'RESCHEDULE_TIME_PASSED',
+      });
+    }
+
+    session.status = 'accepted';
+    if (!session.meetingLink) {
+      meetingService.attachToSession(session, process.env.DEFAULT_MEETING_PROVIDER || 'livekit');
+    }
+    await session.save();
+
+    try {
+      const [teacherDoc, studentUser] = await Promise.all([
+        Teacher.findById(session.teacher).select('user').lean(),
+        User.findById(req.user.id).select('name').lean(),
+      ]);
+      const studentName = studentUser?.name || 'الطالب';
+      const tz = safeTimeZone(session.timezone);
+      if (teacherDoc?.user) {
+        await notifyUser(teacherDoc.user, {
+          type: 'session-accepted',
+          title: { ar: 'وافق الطالب على الموعد الجديد', en: 'Student accepted proposed time' },
+          message: {
+            ar: `أكد ${studentName} الموعد المقترح (${new Date(session.scheduledAt).toLocaleString('ar-EG', { timeZone: tz })}).`,
+            en: `${studentName} accepted the proposed session time.`,
+          },
+          data: {
+            session: session._id,
+            actionUrl: '/teacher/dashboard?tab=sessions',
+          },
+          priority: 'high',
+        });
+      }
+      await notifyGuardiansForStudent(req.user.id, {
+        type: 'session-accepted',
+        title: { ar: 'تم تأكيد الموعد الجديد للحصة', en: 'Rescheduled session confirmed' },
+        message: {
+          ar: `تم تأكيد موعد الحصة الجديد بتاريخ ${new Date(session.scheduledAt).toLocaleString('ar-EG', { timeZone: tz })}.`,
+          en: 'The proposed session time was confirmed.',
+        },
+        data: { session: session._id, actionUrl: '/guardian/dashboard' },
+      });
+    } catch {
+      // Non-blocking notification failure.
+    }
+
+    return res.json({ success: true, session });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/:id/cancel-request', protect, authorize('student'), async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
+    const session = await Session.findOne({ _id: req.params.id, student: req.user.id });
+    if (!session) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+
+    if (session.status !== 'pending') {
+      return res.status(409).json({
+        error: 'يمكن إلغاء طلبات الحصص قيد الانتظار فقط',
+        code: 'SESSION_NOT_PENDING',
+      });
+    }
+
+    session.status = 'cancelled';
+    session.cancellationReason = String(req.body?.reason || 'ألغى الطالب الطلب قبل الاعتماد').trim().slice(0, 500);
+    await session.save();
+
+    try {
+      const [teacherDoc, studentUser] = await Promise.all([
+        Teacher.findById(session.teacher).select('user').lean(),
+        User.findById(req.user.id).select('name').lean(),
+      ]);
+      if (teacherDoc?.user) {
+        const studentName = studentUser?.name || 'الطالب';
+        await notifyUser(teacherDoc.user, {
+          type: 'session-cancelled',
+          title: { ar: 'ألغى الطالب طلب الحصة', en: 'Student cancelled session request' },
+          message: {
+            ar: `ألغى ${studentName} طلب الحصة المعلّق.`,
+            en: `${studentName} cancelled the pending session request.`,
+          },
+          data: {
+            session: session._id,
+            actionUrl: '/teacher/dashboard?tab=requests',
+          },
+          priority: 'normal',
+          channels: { inApp: { enabled: true } },
+        });
+      }
+    } catch {
+      // Non-blocking notification failure.
+    }
+
+    return res.json({ success: true, session });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

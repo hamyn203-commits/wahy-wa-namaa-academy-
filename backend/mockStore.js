@@ -278,11 +278,87 @@ if (process.env.NODE_ENV !== 'production') {
       sanad: 'سند متصل إلى النبي ﷺ',
       specializations: ['tajweed', 'ijaza', 'adults', 'children'],
     },
+    rating: { average: 4.9, count: 18 },
+    stats: { totalStudents: 48, completedSessions: 120 },
+    media: {
+      profilePhoto: '/default-teacher.png',
+      introductionVideo: '',
+      recitationVideo: '',
+    },
+    availabilityTimezone: 'Africa/Cairo',
+    availability: [
+      { day: 'sunday', slots: [{ startTime: '16:00', endTime: '20:00' }] },
+      { day: 'tuesday', slots: [{ startTime: '16:00', endTime: '20:00' }] },
+      { day: 'thursday', slots: [{ startTime: '17:00', endTime: '21:00' }] },
+    ],
     status: 'approved',
     isVerified: true,
     isFeatured: true,
     hourlyRate: 60,
     languages: ['arabic', 'english'],
+  });
+
+  const demoFemaleTeacherUser = addMockUser({
+    _id: 'mock-teacher-user-2',
+    id: 'mock-teacher-user-2',
+    name: 'المعلمة فاطمة الزهراء',
+    email: 'teacher2@wahy.com',
+    password: 'Teacher123456!',
+    phone: '+201011113333',
+    whatsappPhone: '+201011113333',
+    gender: 'female',
+    age: 30,
+    bio: 'معلمة تحفيظ وتأسيس أطفال ومجازة برواية حفص عن عاصم.',
+    role: 'teacher',
+    isActive: true,
+    emailVerified: true,
+  });
+
+  addMockTeacher({
+    _id: 'mock-teacher-2',
+    id: 'mock-teacher-2',
+    user: demoFemaleTeacherUser._id,
+    personalInfo: {
+      fullName: demoFemaleTeacherUser.name,
+      age: 30,
+      gender: 'female',
+      country: 'المملكة العربية السعودية',
+      city: 'المدينة المنورة',
+      phone: '+201011113333',
+      whatsapp: '+201011113333',
+    },
+    academicInfo: {
+      university: 'الجامعة الإسلامية',
+      faculty: 'الدراسات القرآنية',
+      graduationYear: 2017,
+      specialization: 'التجويد وتأسيس الأطفال',
+      qualification: 'بكالوريوس الدراسات الإسلامية',
+    },
+    quranInfo: {
+      memorizedParts: 30,
+      teachingExperience: 7,
+      numberOfIjazat: 2,
+      ijazaType: 'حفص عن عاصم',
+      specializations: ['children', 'tajweed', 'women', 'arabic'],
+    },
+    rating: { average: 4.8, count: 11 },
+    stats: { totalStudents: 35, completedSessions: 94 },
+    media: {
+      profilePhoto: '',
+      introductionVideo: '',
+      recitationVideo: '',
+    },
+    availabilityTimezone: 'Asia/Riyadh',
+    availability: [
+      { day: 'saturday', slots: [{ startTime: '15:00', endTime: '19:00' }] },
+      { day: 'monday', slots: [{ startTime: '16:00', endTime: '20:00' }] },
+      { day: 'wednesday', slots: [{ startTime: '16:00', endTime: '20:00' }] },
+    ],
+    status: 'approved',
+    isVerified: true,
+    isFeatured: true,
+    hourlyRate: 55,
+    languages: ['arabic'],
   });
 
   const demoStudent1 = addMockUser({

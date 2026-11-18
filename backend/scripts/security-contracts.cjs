@@ -124,7 +124,7 @@ requireContains(
 requireContains(
   'backend/services/objectStorage.js',
   'private Blob media URL must only allow the GET operation',
-  /presignUrl\(token, \{ pathname, operation: 'get', validUntil \}\)/
+  /presignUrl\(token, \{ pathname,(?:\s*access:\s*'private',)?\s*operation:\s*'get',\s*validUntil \}\)/
 );
 requireContains(
   'backend/routes/teachers.js',

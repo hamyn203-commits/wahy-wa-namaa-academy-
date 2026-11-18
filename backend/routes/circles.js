@@ -457,9 +457,14 @@ router.post('/:id/join', protect, authorize('student', 'guardian', 'admin'), asy
       });
     }
 
+    const circleTeacher = circle.teacher
+      ? await Teacher.findById(circle.teacher).select('personalInfo.gender')
+      : null;
     assertGenderAndAgeCompatibility({
       student: studentUser,
+      teacher: circleTeacher,
       circleGender: circle.gender,
+      section: circle.subscriptionSection || studentUser.enrollmentSection || null,
     });
 
     const updatedCircle = await GroupCircle.findOneAndUpdate(

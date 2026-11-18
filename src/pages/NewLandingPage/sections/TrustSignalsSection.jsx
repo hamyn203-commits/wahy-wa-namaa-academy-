@@ -9,6 +9,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import LocalizedLink from '../../../components/LocalizedLink';
+import { prefetchRoute } from '../../../lib/routePrefetch';
 
 export default function TrustSignalsSection() {
   const { locale } = useI18n();
@@ -124,7 +125,12 @@ export default function TrustSignalsSection() {
               </span>
             ))}
           </div>
-          <LocalizedLink to="/free-trial" locale={locale} className="wn-btn wn-btn--primary wn-btn--sm">
+          <LocalizedLink
+            to="/free-trial"
+            locale={locale}
+            onMouseEnter={() => prefetchRoute('/free-trial')}
+            className="wn-btn wn-btn--primary wn-btn--sm"
+          >
             <span>{isAr ? 'احجز حصتك التجريبية المجانية' : 'Book your free trial'}</span>
             <ArrowIcon size={15} className="wn-btn__arrow" />
           </LocalizedLink>

@@ -363,7 +363,7 @@ router.get('/course/:courseId/students', protect, attachTeacherProfile, authoriz
     }
 
     const progress = await Progress.find({ course: req.params.courseId })
-      .populate('student', 'name email')
+      .populate('student', req.user.role === 'admin' ? 'name email avatar' : 'name avatar')
       .sort({ 'overallProgress.percentage': -1 });
 
     res.json(progress);

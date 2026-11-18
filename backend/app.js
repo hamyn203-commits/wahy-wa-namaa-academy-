@@ -247,7 +247,11 @@ function sanitizeObject(obj, parentKey = '', depth = 0) {
 app.use((req, _res, next) => {
   const reqUrl = String(req.originalUrl || req.url || '');
   const isSignedWebhook = reqUrl.startsWith('/api/payments/paymob/webhook')
-    || (reqUrl.startsWith('/api/uploads/blob') && Boolean(req.headers?.['x-vercel-signature']));
+    || (
+      reqUrl.startsWith('/api/uploads/blob')
+      && Boolean(req.headers?.['x-vercel-signature'])
+      && req.body?.type === 'blob.upload-completed'
+    );
   if (req.body && !isSignedWebhook) req.body = sanitizeObject(req.body);
   if (req.query) {
     const cleanQuery = sanitizeObject(req.query);

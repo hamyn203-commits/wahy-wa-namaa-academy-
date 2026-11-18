@@ -194,6 +194,11 @@ TeacherLedger.findOne = (filter = {}) => query(
 );
 
 Guardian.findOne = (filter = {}) => query(String(filter.user) === ids.guardian ? guardian : null);
+// The 14-year-old QA student is linked to an active guardian account, which is
+// mandatory before a minor may book private 1-on-1 lessons.
+Guardian.exists = async (filter = {}) => (
+  String(filter['children.student'] || '') === ids.student ? { _id: ids.guardian } : null
+);
 Guardian.find = (filter = {}) => {
   const studentId = filter.children?.$elemMatch?.student;
   if (!studentId || String(studentId) === ids.student) {

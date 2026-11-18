@@ -580,4 +580,32 @@ assert.match(read('src/components/classroom/SyncedMushaf.jsx'), /dynamicPageVers
 assert.match(read('src/pages/Meeting/MeetingRoom.jsx'), /dashboardPathForRole/);
 assert.match(liveSessions, /deleteConfirmRoomId/);
 
+// Homepage interactive & routing contracts
+const heroSection = read('src/pages/NewLandingPage/sections/HeroSection.jsx');
+const programsSection = read('src/pages/NewLandingPage/sections/ProgramsSection.jsx');
+const showcaseSection = read('src/pages/NewLandingPage/sections/ProductShowcaseSection.jsx');
+const teachersSection = read('src/pages/NewLandingPage/sections/TeachersSection.jsx');
+const azharHeritageSection = read('src/pages/NewLandingPage/sections/AlAzharHeritageSection.jsx');
+const calculatorSection = read('src/pages/NewLandingPage/sections/PricingCalculatorSection.jsx');
+const coursesPage = read('src/pages/Courses/index.jsx');
+
+assert.match(heroSection, /ابدأ رحلتك الآن/);
+assert.match(heroSection, /\/start\?section=men/);
+assert.match(heroSection, /\/start\?section=women/);
+assert.match(programsSection, /\/courses\?track=quran/);
+assert.match(programsSection, /\/courses\?track=tajweed/);
+assert.match(programsSection, /\/courses\?track=ijazah/);
+assert.match(coursesPage, /searchParams\.get\(['"]track['"]\)/);
+assert.match(showcaseSection, /studioMode/);
+assert.match(showcaseSection, /activeMilestone/);
+assert.match(showcaseSection, /classroomRole/);
+assert.match(teachersSection, /TeacherAvatar/);
+assert.match(teachersSection, /prefetchTeacherBundle/);
+assert.doesNotMatch(azharHeritageSection, /--athar-/);
+assert.match(calculatorSection, /\/plans\?section=/);
+assert.match(plansPage, /searchParams\.get\(['"]section['"]\)/);
+assert.match(plansPage, /searchParams\.get\(['"]sessions['"]\)/);
+assert.match(plansPage, /searchParams\.get\(['"]plan['"]\)/);
+
+
 

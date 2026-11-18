@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from 'rea
 import { API_BASE_URL } from '../config';
 import api from '../lib/api';
 import { clearTranslateCache } from '../lib/translateApi';
+import { clearStudentTeacherLockCache } from './useStudentTeacherLock';
 import {
   getAccessToken,
   setAccessToken,
@@ -37,6 +38,7 @@ export function AuthProvider({ children }) {
     clearAccessToken();
     clearLegacyAuthStorage();
     clearTranslateCache();
+    clearStudentTeacherLockCache();
     try {
       localStorage.removeItem('teacher_registration_draft');
       sessionStorage.removeItem('teacher_registration_draft');

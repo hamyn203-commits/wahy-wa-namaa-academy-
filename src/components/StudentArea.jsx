@@ -1,10 +1,13 @@
+import { useEffect } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useI18n } from '../i18n';
 import { dashboardPathForRole } from '../lib/navigation';
 import { PublicChromeContext } from '../lib/publicChrome';
 import { useStudentTeacherLock } from '../hooks/useStudentTeacherLock';
+import { prefetchTeacherBundle } from '../lib/teacherProfileCache';
 import DashboardLayout from './dashboard/DashboardLayout';
+import Skeleton from './shared/Skeleton';
 
 // Signed-in students live inside their dashboard: public marketing pages are
 // replaced by the dashboard, and pages they still need (plans, payment, tutor
@@ -37,6 +40,32 @@ export function StudentPublicRedirect({ tab, children }) {
   return children;
 }
 
+function StudentShellLoadingSkeleton({ isStudent, title, user, onLogout }) {
+  const skeletonBody = (
+    <div className="page-container py-8 space-y-5" role="status" aria-live="polite">
+      <span className="sr-only">جاري التحميل...</span>
+      <Skeleton className="h-44 w-full rounded-2xl" />
+      <div className="grid gap-4 md:grid-cols-3">
+        <Skeleton className="h-28 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
+      </div>
+    </div>
+  );
+
+  if (isStudent) {
+    return (
+      <PublicChromeContext.Provider value>
+        <DashboardLayout title={title} user={user} onLogout={onLogout}>
+          <div className="wn-student-shell-page">{skeletonBody}</div>
+        </DashboardLayout>
+      </PublicChromeContext.Provider>
+    );
+  }
+
+  return <main className="min-h-[60vh]">{skeletonBody}</main>;
+}
+
 /**
  * lockPolicy:
  *  - undefined: always render in the dashboard shell
@@ -51,9 +80,26 @@ export function StudentShell({ lockPolicy, children }) {
   const needsLock = isStudent && Boolean(lockPolicy);
   const { loading: lockLoading, lock } = useStudentTeacherLock(needsLock);
 
-  if (isLoading) return null;
+  // Warm the teacher bundle immediately instead of waiting for auth/lock round-trips.
+  useEffect(() => {
+    if (lockPolicy === 'own-teacher' && params.id) {
+      prefetchTeacherBundle(params.id);
+    }
+  }, [lockPolicy, params.id]);
+
+  const title = locale === 'ar' ? 'لوحة الطالب' : locale === 'id' ? 'Dasbor Siswa' : 'Student Dashboard';
+
+  if (isLoading || (needsLock && lockLoading)) {
+    return (
+      <StudentShellLoadingSkeleton
+        isStudent={isStudent}
+        title={title}
+        user={user}
+        onLogout={logout}
+      />
+    );
+  }
   if (!isStudent) return children;
-  if (needsLock && lockLoading) return null;
 
   if (lock) {
     const ownTeacher = lockPolicy === 'own-teacher' && String(params.id || '') === lock.teacherId;
@@ -63,7 +109,6 @@ export function StudentShell({ lockPolicy, children }) {
     }
   }
 
-  const title = locale === 'ar' ? 'لوحة الطالب' : locale === 'id' ? 'Dasbor Siswa' : 'Student Dashboard';
   return (
     <PublicChromeContext.Provider value>
       <DashboardLayout title={title} user={user} onLogout={logout}>
@@ -72,4 +117,3 @@ export function StudentShell({ lockPolicy, children }) {
     </PublicChromeContext.Provider>
   );
 }
-

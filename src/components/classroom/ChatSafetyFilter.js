@@ -65,6 +65,14 @@ export function containsPhoneNumber(text = '') {
     return true;
   }
 
+  // 4b. التحايل بأي رمز أو علامة ترقيم بين الأرقام (010*1234*5678 أو 010:1234:5678 أو 010|1234|5678)
+  // نحذف كل ما ليس حرفاً أو رقماً؛ 9 أرقام فأكثر متتالية تغطي كل أرقام الجوال
+  // مع تجنّب الإيجابيات الكاذبة لمراجع الآيات مثل 2:255-260.
+  const compactDigits = normalized.replace(/[^\p{L}\p{N}]+/gu, '');
+  if (/\d{9,}/.test(compactDigits)) {
+    return true;
+  }
+
   // 5. فحص وجود أرقام كثيفة منفصلة (لمنع كتابة 0 1 0 5 4 ...)
   const digitMatches = normalized.match(/\d/g);
   if (digitMatches && digitMatches.length >= 7) {

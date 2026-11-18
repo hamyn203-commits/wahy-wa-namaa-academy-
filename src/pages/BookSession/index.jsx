@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
+import TeacherAvatar from '../../components/shared/TeacherAvatar';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
-import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
+import { teacherPublicImage } from '../../lib/teacherMedia';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useToast } from '../../context/ToastProvider';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
@@ -25,13 +26,14 @@ const DEVICE_TIMEZONE = (() => {
 export default function BookSession() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { locale } = useI18n();
   const isAr = locale === 'ar';
   const toast = useToast();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [teacher, setTeacher] = useState(null);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => String(searchParams.get('date') || '').slice(0, 10));
+  const [selectedTime, setSelectedTime] = useState(() => String(searchParams.get('time') || ''));
   const [timezone, setTimezone] = useState(DEVICE_TIMEZONE);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
@@ -245,7 +247,14 @@ export default function BookSession() {
               </div>
 
               <div className="wn-booking-teacher mt-4">
-                <img src={photo} alt={name} onError={teacherImageFallback} loading="eager" decoding="async" />
+                <TeacherAvatar
+                  src={photo}
+                  name={name}
+                  alt={name}
+                  size="md"
+                  loading="eager"
+                  className="h-20 w-20 rounded-2xl shrink-0"
+                />
                 <div>
                   <h1>{isAr ? 'اختر موعدًا مناسبًا' : 'Choose a suitable time'}</h1>
                   <p>{isAr ? 'مع ' + name : 'With ' + name}</p>

@@ -51,8 +51,32 @@ function filterReportForPermissions(report, permissions = {}) {
   return { ...raw, data };
 }
 
+/**
+ * Express middleware: a guardian whose profile was deactivated by the academy
+ * (`Guardian.isActive === false`) must not claim or unlink children, answer
+ * invitations, change settings, or read linked trial meeting details.
+ * Accounts without a Guardian profile yet (first link) are allowed through.
+ */
+async function requireActiveGuardianProfile(req, res, next) {
+  if (req.user?.role !== 'guardian') return next();
+  try {
+    const Guardian = require('../models/Guardian');
+    const profile = await Guardian.findOne({ user: req.user.id }).select('isActive').lean();
+    if (profile && profile.isActive === false) {
+      return res.status(403).json({
+        code: 'GUARDIAN_DEACTIVATED',
+        error: 'حساب ولي الأمر موقوف من الإدارة. يرجى التواصل مع الدعم.',
+      });
+    }
+    return next();
+  } catch {
+    return res.status(503).json({ error: 'تعذر التحقق من حالة حساب ولي الأمر حالياً' });
+  }
+}
+
 module.exports = {
   findChildAccess,
   hasChildPermission,
   filterReportForPermissions,
+  requireActiveGuardianProfile,
 };

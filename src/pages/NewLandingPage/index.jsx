@@ -22,12 +22,21 @@ import CTASection from './sections/CTASection';
 
 export default function NewLandingPage() {
   const { locale, t } = useI18n();
-  const { createWebPageSchema } = useSEO();
+  const { createWebPageSchema, createOrganizationSchema } = useSEO();
   const isAr = locale === 'ar';
 
   const cleanSlogan = String(t.common.slogan || '').replace(/[.۔]+$/, '');
   const pageTitle = LOCALE_BRAND[locale]?.homeTitle || `${t.common.appNameFull || t.common.appName} | ${cleanSlogan}`;
   const pageDesc = t.common.seoDescription || t.hero?.subtitle || '';
+
+  const homeSchemas = [
+    createWebPageSchema({
+      name: pageTitle,
+      description: pageDesc,
+      url: '/',
+    }),
+    ...(typeof createOrganizationSchema === 'function' ? [createOrganizationSchema()] : []),
+  ].filter(Boolean);
 
   return (
     <>
@@ -40,11 +49,7 @@ export default function NewLandingPage() {
           description: pageDesc,
           url: '/',
           type: 'website',
-          schema: createWebPageSchema({
-            name: pageTitle,
-            description: pageDesc,
-            url: '/',
-          }),
+          schema: homeSchemas,
         }}
       />
       <GlobalHeader />
@@ -53,11 +58,11 @@ export default function NewLandingPage() {
         <HeroSection />
         <ProgramsSection />
         <WhyWahyNamaaSection />
+        <AlAzharHeritageSection />
         <ImmersiveLearningSection />
         <ProductShowcaseSection />
         <StudentJourneySection />
         <TeachersSection />
-        <AlAzharHeritageSection />
         <TargetAudiencesSection />
         <PricingCalculatorSection />
         <TrustSignalsSection />

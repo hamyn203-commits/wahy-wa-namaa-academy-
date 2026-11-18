@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Calendar, Users, Star, Wallet, ClipboardList,
@@ -20,6 +20,14 @@ import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../..
 import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import GroupSessionCompleteModal from './GroupSessionCompleteModal';
+import { RejectSessionModal, ConfirmDeleteUpdateModal } from './TeacherActionModals';
+import QuranProgressSummary from '../../components/dashboard/QuranProgressSummary';
+import {
+  TeacherVoiceFeedbackRecorder,
+  prepareTeacherFeedbackAudio,
+  uploadTeacherFeedbackMultipart,
+} from '../../components/homework/VoiceFeedbackControls';
 
 const SESSION_RATE = 50;
 const WEEK_DAYS = [
@@ -62,17 +70,32 @@ export default function TeacherDashboard() {
   const [activeStudents, setActiveStudents] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const meetingProvider = 'jitsi';
+  const meetingProvider = 'livekit';
   const [chatSession, setChatSession] = useState(null);
+  const [unreadChatSessionIds, setUnreadChatSessionIds] = useState(() => new Set());
+  const consumedChatSessionRef = useRef('');
+  const consumedEvaluateRef = useRef('');
   const [rescheduleModal, setRescheduleModal] = useState(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
 
   const [evalModal, setEvalModal] = useState(null);
   const [evaluation, setEvaluation] = useState(emptyEval);
   const [homeworkList, setHomeworkList] = useState([]);
+  const [groupCompleteModal, setGroupCompleteModal] = useState(null);
 
   const [taskModal, setTaskModal] = useState(false);
+  const [taskTargetMode, setTaskTargetMode] = useState('student');
+  const [taskCircleId, setTaskCircleId] = useState('');
   const [newTask, setNewTask] = useState({ studentId: '', type: 'memorization', title: '', description: '', dueDate: '' });
+  const [taskFeedbackAudio, setTaskFeedbackAudio] = useState({});
+  const [reviewingTaskId, setReviewingTaskId] = useState('');
+  const [aiTargetMode, setAiTargetMode] = useState('student');
+  const [aiTargetId, setAiTargetId] = useState('');
+  const [assigningAiId, setAssigningAiId] = useState('');
+  const [deleteUpdateModal, setDeleteUpdateModal] = useState(null);
+  const [deletingUpdate, setDeletingUpdate] = useState(false);
   const [finance, setFinance] = useState({
     balances: {
       EGP: { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 },
@@ -290,6 +313,55 @@ export default function TeacherDashboard() {
     }
   }, [ready]);
 
+  const syncTasksAndStudents = useCallback(async () => {
+    if (!ready) return;
+    try {
+      const [tasksRes, studentsRes] = await Promise.allSettled([
+        api.get('/api/teachers/dashboard/tasks', { auth: true }),
+        api.get('/api/teachers/dashboard/active-students', { auth: true }),
+      ]);
+      if (tasksRes.status === 'fulfilled' && tasksRes.value) {
+        setTasks(tasksRes.value.tasks || []);
+      }
+      if (studentsRes.status === 'fulfilled' && studentsRes.value) {
+        setActiveStudents(studentsRes.value.students || []);
+      }
+    } catch {
+      // Ignore transient refresh failure.
+    }
+  }, [ready]);
+
+  const openSessionChat = useCallback((session) => {
+    if (!session) return;
+    setChatSession(session);
+    setUnreadChatSessionIds((current) => {
+      if (!current.has(String(session._id))) return current;
+      const next = new Set(current);
+      next.delete(String(session._id));
+      return next;
+    });
+  }, []);
+
+  const openEval = useCallback((session) => {
+    setEvalModal(session);
+    setEvaluation(emptyEval);
+    if (session?.type === 'trial' && session?._id) {
+      api.get(`/api/trials/by-session/${session._id}`, { auth: true })
+        .then((res) => {
+          if (res?.trial) {
+            setEvaluation((prev) => ({
+              ...prev,
+              recommendedLevel: res.trial.currentLevel || 'beginner',
+              recommendedTrack: res.trial.preferredTrack || 'memorization',
+              trialRequestId: res.trial._id || '',
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+    setHomeworkList([]);
+  }, []);
+
   useEffect(() => {
     if (!ready) return undefined;
 
@@ -316,15 +388,31 @@ export default function TeacherDashboard() {
     if (!ready) return undefined;
 
     const onRealtimeNotification = (event) => {
-      const type = event?.detail?.type;
-      if (['session-request', 'session-chat-message'].includes(type)) {
+      const detail = event?.detail;
+      const type = detail?.type;
+      if (['session-request', 'session-accepted', 'session-cancelled', 'session-reminder'].includes(type)) {
         syncSessions();
+      }
+      if (type === 'session-chat-message') {
+        syncSessions();
+        const incomingSessionId = detail?.data?.session;
+        if (incomingSessionId && String(chatSession?._id || '') !== String(incomingSessionId)) {
+          setUnreadChatSessionIds((current) => {
+            const next = new Set(current);
+            next.add(String(incomingSessionId));
+            return next;
+          });
+        }
+      }
+      if (type === 'homework-submitted') {
+        syncTasksAndStudents();
+        toast.info('وصل تسليم واجب صوتي جديد من أحد طلابك');
       }
     };
 
     window.addEventListener('wn:realtime-notification', onRealtimeNotification);
     return () => window.removeEventListener('wn:realtime-notification', onRealtimeNotification);
-  }, [ready, syncSessions]);
+  }, [ready, syncSessions, syncTasksAndStudents, chatSession?._id, toast]);
 
   useEffect(() => {
     const requestedTab = searchParams.get('tab');
@@ -337,12 +425,29 @@ export default function TeacherDashboard() {
     if (requestedTab === 'trials') setTab('requests');
     if (requestedTab === 'evaluate') setTab('sessions');
 
+    const allKnown = [...trials, ...pendingRegular, ...sessions, ...completedSessions];
     const requestedSessionId = searchParams.get('session');
-    if (!requestedSessionId) return;
-    const found = [...trials, ...pendingRegular, ...sessions, ...completedSessions]
-      .find((item) => String(item._id) === String(requestedSessionId));
-    if (found) setChatSession(found);
-  }, [searchParams, trials, pendingRegular, sessions, completedSessions]);
+    if (requestedSessionId && consumedChatSessionRef.current !== String(requestedSessionId)) {
+      const found = allKnown.find((item) => String(item._id) === String(requestedSessionId));
+      if (found) {
+        consumedChatSessionRef.current = String(requestedSessionId);
+        openSessionChat(found);
+      }
+    }
+
+    const requestedEvaluateId = searchParams.get('evaluate');
+    if (requestedEvaluateId && consumedEvaluateRef.current !== String(requestedEvaluateId)) {
+      const foundEval = allKnown.find((item) => String(item._id) === String(requestedEvaluateId));
+      if (foundEval && foundEval.status === 'accepted') {
+        consumedEvaluateRef.current = String(requestedEvaluateId);
+        if (foundEval.type === 'group_circle') {
+          setGroupCompleteModal(foundEval);
+        } else {
+          openEval(foundEval);
+        }
+      }
+    }
+  }, [searchParams, trials, pendingRegular, sessions, completedSessions, openSessionChat, openEval]);
 
   useEffect(() => {
     if (!ready) return;
@@ -391,15 +496,10 @@ export default function TeacherDashboard() {
 
   const respondTrial = async (id, action, extra = {}) => {
     try {
-      let reason = extra.reason;
-      if (action === 'reject' && reason == null) {
-        reason = window.prompt('سبب الاعتذار عن الحصة (اختياري):', '') ?? '';
-      }
-
       await api.put(`/api/sessions/${id}/respond`, {
         action,
         provider: action === 'accept' ? meetingProvider : undefined,
-        reason,
+        reason: extra.reason,
         rescheduledDate: extra.rescheduledDate,
         rescheduleTimezone: extra.rescheduleTimezone,
       }, { auth: true });
@@ -412,9 +512,20 @@ export default function TeacherDashboard() {
       toast.success(labels[action] || 'تم تحديث الطلب');
       setRescheduleModal(null);
       setRescheduleDate('');
+      setRejectModal(null);
       load();
     } catch (error) {
       toast.error(error.message || 'حدث خطأ');
+    }
+  };
+
+  const confirmRejectSession = async (reason) => {
+    if (!rejectModal?._id || rejectSubmitting) return;
+    setRejectSubmitting(true);
+    try {
+      await respondTrial(rejectModal._id, 'reject', { reason });
+    } finally {
+      setRejectSubmitting(false);
     }
   };
 
@@ -429,26 +540,6 @@ export default function TeacherDashboard() {
       rescheduledDate: rescheduleDate,
       rescheduleTimezone: sessionTimeZone(rescheduleModal, teacher?.availabilityTimezone || 'Africa/Cairo'),
     });
-  };
-
-  const openEval = (session) => {
-    setEvalModal(session);
-    setEvaluation(emptyEval);
-    if (session?.type === 'trial' && session?._id) {
-      api.get(`/api/trials/by-session/${session._id}`, { auth: true })
-        .then((res) => {
-          if (res?.trial) {
-            setEvaluation((prev) => ({
-              ...prev,
-              recommendedLevel: res.trial.currentLevel || 'beginner',
-              recommendedTrack: res.trial.preferredTrack || 'memorization',
-              trialRequestId: res.trial._id || '',
-            }));
-          }
-        })
-        .catch(() => {});
-    }
-    setHomeworkList([]);
   };
 
   const addHomework = () => {
@@ -537,7 +628,7 @@ export default function TeacherDashboard() {
     }
   };
 
-  const completeGroupSession = async (session) => {
+  const completeGroupSession = (session) => {
     if (!session?._id) return;
 
     const unresolved = (session.attendance || []).filter(
@@ -548,37 +639,61 @@ export default function TeacherDashboard() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `تأكيد إنهاء ${session.circle?.name || 'الحصة الجماعية'}؟ سيتم احتساب حصة واحدة لكل طالب مستحق حسب الحضور والاعتذارات.`
-    );
-    if (!confirmed) return;
-
-    try {
-      const result = await api.put(`/api/sessions/${session._id}/complete`, {
-        evaluation: {
-          overallNotes: 'تم إغلاق الحصة الجماعية من لوحة المعلم',
-        },
-      }, { auth: true });
-
-      const earnedAmount = Number(result?.session?.earnings?.amount || 0);
-      toast.success(
-        `تم إنهاء الحصة الجماعية واحتساب أرصدة الطلاب (+${earnedAmount} ج.م للمعلم)`
-      );
-      load();
-    } catch (error) {
-      toast.error(error.message || 'فشل إكمال الحصة الجماعية');
-    }
+    setGroupCompleteModal(session);
   };
 
   const assignTask = async () => {
-    if (!newTask.studentId || !newTask.title) return toast.error('اختر الطالب واكتب عنوان الواجب');
+    if (!newTask.title?.trim()) return toast.error('اكتب عنوان الواجب');
+    if (taskTargetMode === 'student' && !newTask.studentId) return toast.error('اختر الطالب');
+    if (taskTargetMode === 'circle' && !taskCircleId) return toast.error('اختر الحلقة الجماعية');
+
     try {
-      await api.post('/api/teachers/dashboard/tasks', newTask, { auth: true });
-      toast.success('تم إسناد الواجب');
+      const payload = {
+        type: newTask.type,
+        title: newTask.title.trim(),
+        description: newTask.description?.trim() || '',
+        dueDate: newTask.dueDate || undefined,
+        ...(taskTargetMode === 'circle'
+          ? { circleId: taskCircleId }
+          : { studentId: newTask.studentId }),
+      };
+      const res = await api.post('/api/teachers/dashboard/tasks', payload, { auth: true });
+      toast.success(
+        taskTargetMode === 'circle'
+          ? `تم إسناد الواجب لجميع طلاب الحلقة (${res.count || 0})`
+          : 'تم إسناد الواجب وإشعار الطالب'
+      );
       setTaskModal(false);
       setNewTask({ studentId: '', type: 'memorization', title: '', description: '', dueDate: '' });
+      setTaskCircleId('');
       load();
-    } catch { toast.error('فشل إسناد الواجب'); }
+    } catch (error) {
+      toast.error(error.message || 'فشل إسناد الواجب');
+    }
+  };
+
+  const assignAiTask = async (assignment) => {
+    if (!aiTargetId) {
+      return toast.error(aiTargetMode === 'circle' ? 'اختر الحلقة أولاً' : 'اختر الطالب أولاً');
+    }
+    setAssigningAiId(assignment.id || assignment.title);
+    try {
+      const payload = {
+        type: 'memorization',
+        title: String(assignment.title || 'واجب قرآني').slice(0, 180),
+        description: String(assignment.description || '').slice(0, 1500),
+        ...(aiTargetMode === 'circle'
+          ? { circleId: aiTargetId }
+          : { studentId: aiTargetId }),
+      };
+      await api.post('/api/teachers/dashboard/tasks', payload, { auth: true });
+      toast.success('تم إسناد الواجب المقترح بنجاح');
+      syncTasksAndStudents();
+    } catch (error) {
+      toast.error(error.message || 'تعذر إسناد الواجب');
+    } finally {
+      setAssigningAiId('');
+    }
   };
 
   const requestWithdraw = async (e) => {
@@ -624,11 +739,27 @@ export default function TeacherDashboard() {
   };
 
   const reviewTask = async (task, action) => {
+    setReviewingTaskId(task._id);
     try {
+      const audioDraft = taskFeedbackAudio[task._id];
+      const prepared = audioDraft?.blob ? await prepareTeacherFeedbackAudio(audioDraft) : null;
+
       await api.patch(`/api/teachers/dashboard/tasks/${task._id}`, {
         action,
         teacherFeedback: taskReview[task._id] || '',
+        ...(prepared?.mode === 'direct' ? { feedbackAudio: prepared.feedbackAudio } : {}),
       }, { auth: true });
+
+      if (prepared?.mode === 'multipart') {
+        await uploadTeacherFeedbackMultipart(task._id, prepared);
+      }
+
+      if (audioDraft?.url) URL.revokeObjectURL(audioDraft.url);
+      setTaskFeedbackAudio((current) => {
+        const next = { ...current };
+        delete next[task._id];
+        return next;
+      });
       toast.success(action === 'approve' ? 'تم اعتماد الواجب وإشعار الطالب' : 'تم طلب إعادة الواجب وإشعار الطالب');
       setTaskReview((current) => ({ ...current, [task._id]: '' }));
       if (homeworkAudio.url) URL.revokeObjectURL(homeworkAudio.url);
@@ -636,6 +767,8 @@ export default function TeacherDashboard() {
       load();
     } catch (error) {
       toast.error(error.message || 'تعذر مراجعة الواجب');
+    } finally {
+      setReviewingTaskId('');
     }
   };
 
@@ -709,6 +842,24 @@ export default function TeacherDashboard() {
     }));
   };
 
+  const toggleUpdateCircleStudents = (circle) => {
+    const ids = (circle?.students || []).map((st) => String(st?._id || st)).filter(Boolean);
+    if (!ids.length) return;
+    setUpdateForm((current) => {
+      const allIncluded = ids.every((id) => current.studentIds.includes(id));
+      if (allIncluded) {
+        return {
+          ...current,
+          studentIds: current.studentIds.filter((id) => !ids.includes(id)),
+        };
+      }
+      return {
+        ...current,
+        studentIds: [...new Set([...current.studentIds, ...ids])],
+      };
+    });
+  };
+
   const publishTeacherUpdate = async (event) => {
     event.preventDefault();
 
@@ -759,14 +910,18 @@ export default function TeacherDashboard() {
     }
   };
 
-  const deleteTeacherUpdate = async (updateId) => {
-    if (!window.confirm('حذف هذه الرسالة وفيديوهاتها؟')) return;
+  const confirmDeleteTeacherUpdate = async () => {
+    if (!deleteUpdateModal?._id || deletingUpdate) return;
+    setDeletingUpdate(true);
     try {
-      await api.delete(`/api/teacher-updates/teacher/${updateId}`, { auth: true });
-      setTeacherUpdates((current) => current.filter((item) => item._id !== updateId));
+      await api.delete(`/api/teacher-updates/teacher/${deleteUpdateModal._id}`, { auth: true });
+      setTeacherUpdates((current) => current.filter((item) => item._id !== deleteUpdateModal._id));
       toast.success('تم حذف الرسالة');
+      setDeleteUpdateModal(null);
     } catch (error) {
       toast.error(error.message || 'تعذر حذف الرسالة');
+    } finally {
+      setDeletingUpdate(false);
     }
   };
 
@@ -971,8 +1126,11 @@ export default function TeacherDashboard() {
                   <p>{formatSessionDateTime(nextSession, 'ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
                   <p>{formatSessionDateTime(nextSession, 'ar-EG', { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextSession, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
                   <div className="wn-teacher-welcome__next-actions">
-                    <button type="button" onClick={() => setChatSession(nextSession)}>
+                    <button type="button" onClick={() => openSessionChat(nextSession)} className="relative">
                       <MessageSquare size={15} /> محادثة
+                      {unreadChatSessionIds.has(String(nextSession._id)) ? (
+                        <span className="inline-block h-2 w-2 rounded-full bg-rose-500" aria-label="رسالة جديدة" />
+                      ) : null}
                     </button>
                     {nextSession.type === 'group_circle' ? (
                       <button type="button" onClick={() => setTab('sessions')}>
@@ -1046,7 +1204,12 @@ export default function TeacherDashboard() {
                               <span>{session.type === 'trial' ? 'حصة تجريبية' : session.type === 'group_circle' ? 'حصة جماعية' : 'حصة فردية'}</span>
                             </div>
                             <div className="wn-teacher-agenda__actions">
-                              <button type="button" onClick={() => setChatSession(session)} aria-label="محادثة"><MessageSquare size={16} /></button>
+                              <button type="button" onClick={() => openSessionChat(session)} aria-label="محادثة" className="relative">
+                                <MessageSquare size={16} />
+                                {unreadChatSessionIds.has(String(session._id)) ? (
+                                  <span className="absolute -top-1 -end-1 h-2.5 w-2.5 rounded-full bg-rose-500" />
+                                ) : null}
+                              </button>
                               <button type="button" onClick={() => enterAcademyRoom(session)} className="is-primary">
                                 <Video size={16} /> دخول
                               </button>
@@ -1638,15 +1801,25 @@ export default function TeacherDashboard() {
                             <span className={'wn-teacher-request-kind ' + (session.requestKind === 'trial' ? 'is-trial' : 'is-regular')}>
                               {session.requestKind === 'trial' ? 'حصة تجريبية' : 'حصة منتظمة'}
                             </span>
+                            {session.rescheduledFrom ? (
+                              <span className="ms-1.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
+                                بانتظار تأكيد الطالب للموعد المقترح
+                              </span>
+                            ) : null}
                             <h4>{session.student?.name || 'طالب'}</h4>
                             <p><Clock size={14} /> {formatSessionDateTime(session, 'ar-EG', { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
                             {session.notes ? <small>{session.notes}</small> : null}
                           </div>
                           <div className="wn-teacher-request-card__actions">
-                            <button type="button" onClick={() => setChatSession(session)} className="is-chat"><MessageSquare size={16} /> محادثة</button>
+                            <button type="button" onClick={() => openSessionChat(session)} className="is-chat relative">
+                              <MessageSquare size={16} /> محادثة
+                              {unreadChatSessionIds.has(String(session._id)) ? (
+                                <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                              ) : null}
+                            </button>
                             <button type="button" onClick={() => respondTrial(session._id, 'accept')} className="is-accept"><CheckCircle2 size={16} /> قبول</button>
                             <button type="button" onClick={() => { setRescheduleModal(session); setRescheduleDate(''); }} className="is-reschedule"><Clock size={16} /> موعد آخر</button>
-                            <button type="button" onClick={() => respondTrial(session._id, 'reject')} className="is-reject"><X size={16} /> اعتذار</button>
+                            <button type="button" onClick={() => setRejectModal(session)} className="is-reject"><X size={16} /> اعتذار</button>
                           </div>
                         </article>
                       ))}
@@ -1748,9 +1921,31 @@ export default function TeacherDashboard() {
                             <div className="wn-teacher-session-card__student">
                               <span>{session.type === 'trial' ? 'تجريبية' : session.type === 'group_circle' ? 'جماعية' : 'فردية'}</span>
                               <h4>{session.type === 'group_circle' ? (session.circle?.name || 'حلقة جماعية') : (session.student?.name || 'طالب')}</h4>
-                              {session.type !== 'group_circle' ? (
-                                <button type="button" onClick={() => openStudent(session.student)}>عرض ملف الطالب</button>
-                              ) : (
+                              {session.type !== 'group_circle' ? (() => {
+                                const studentEntry = (session.attendance || []).find(
+                                  (entry) => String(entry.student?._id || entry.student || '') === String(session.student?._id || session.student || '')
+                                );
+                                return (
+                                  <div className="space-y-1.5">
+                                    <button type="button" onClick={() => openStudent(session.student)}>عرض ملف الطالب</button>
+                                    {studentEntry?.status === 'confirmed' ? (
+                                      <span className="block w-fit rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                                        ✓ أكد الطالب الحضور
+                                      </span>
+                                    ) : null}
+                                    {studentEntry?.status === 'excused' ? (
+                                      <div className="space-y-0.5">
+                                        <span className="inline-block rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                                          اعتذر الطالب مسبقاً
+                                        </span>
+                                        {studentEntry.excuseReason ? (
+                                          <p className="text-xs text-slate-600">السبب: {studentEntry.excuseReason}</p>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })() : (
                                 <div className="mt-2 space-y-2">
                                   <small>{session.attendance?.length || 0} طالب · {session.duration || 60} دقيقة</small>
                                   {!hasStarted ? (
@@ -1822,7 +2017,12 @@ export default function TeacherDashboard() {
                               )}
                             </div>
                             <div className="wn-teacher-session-card__actions">
-                              <button type="button" onClick={() => setChatSession(session)}><MessageSquare size={16} /> محادثة</button>
+                              <button type="button" onClick={() => openSessionChat(session)} className="relative">
+                                <MessageSquare size={16} /> محادثة
+                                {unreadChatSessionIds.has(String(session._id)) ? (
+                                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                                ) : null}
+                              </button>
                               {canJoinRoom ? (
                                 <>
                                   <button type="button" onClick={() => enterAcademyRoom(session)} className="is-room"><Video size={16} /> غرفة الأكاديمية</button>
@@ -1887,8 +2087,11 @@ export default function TeacherDashboard() {
                                   {formatSessionDateTime(session, 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}
                                 </p>
                               </div>
-                              <button type="button" onClick={() => setChatSession(session)} className="wn-teacher-secondary-light">
+                              <button type="button" onClick={() => openSessionChat(session)} className="wn-teacher-secondary-light relative">
                                 <MessageSquare size={15} /> محادثة الحصة
+                                {unreadChatSessionIds.has(String(session._id)) ? (
+                                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                                ) : null}
                               </button>
                             </div>
 
@@ -1949,6 +2152,22 @@ export default function TeacherDashboard() {
                           <div>
                             <h4>{student.name}</h4>
                             <p>{student.completedSessions || 0} حصة مكتملة</p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {(student.circles || []).length > 0 ? (
+                                student.circles.map((circle) => (
+                                  <span
+                                    key={circle._id}
+                                    className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-800"
+                                  >
+                                    {circle.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                  حلقات فردية
+                                </span>
+                              )}
+                            </div>
                           </div>
                           {student.submittedHomework > 0 ? <b>{student.submittedHomework} واجب للتصحيح</b> : null}
                         </div>
@@ -2031,16 +2250,42 @@ export default function TeacherDashboard() {
                     </div>
 
                     {updateForm.audienceMode === 'selected' && (
-                      <div className="wn-teacher-update-students">
-                        {activeStudents.length === 0 ? <p>لا يوجد طلاب نشطون للاختيار.</p> : activeStudents.map((student) => (
-                          <label key={student._id} className={updateForm.studentIds.includes(student._id) ? 'is-selected' : ''}>
-                            <input type="checkbox"
-                              checked={updateForm.studentIds.includes(student._id)}
-                              onChange={() => toggleUpdateStudent(student._id)} />
-                            <span className="wn-teacher-avatar">{(student.name || 'ط').slice(0, 1)}</span>
-                            <span><strong>{student.name}</strong><small>{student.completedSessions || 0} حصة مكتملة</small></span>
-                          </label>
-                        ))}
+                      <div className="space-y-3">
+                        {myCircles.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
+                            <span className="text-xs font-bold text-emerald-900">تحديد حلقة كاملة:</span>
+                            {myCircles.map((circle) => {
+                              const circleIds = (circle.students || []).map((st) => String(st?._id || st)).filter(Boolean);
+                              const allSelected = circleIds.length > 0 && circleIds.every((id) => updateForm.studentIds.includes(id));
+                              return (
+                                <button
+                                  key={circle._id}
+                                  type="button"
+                                  disabled={!circleIds.length}
+                                  onClick={() => toggleUpdateCircleStudents(circle)}
+                                  className={`rounded-full border px-2.5 py-1 text-xs font-bold transition ${
+                                    allSelected
+                                      ? 'border-emerald-700 bg-emerald-700 text-white'
+                                      : 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100'
+                                  } disabled:opacity-40`}
+                                >
+                                  {circle.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="wn-teacher-update-students">
+                          {activeStudents.length === 0 ? <p>لا يوجد طلاب نشطون للاختيار.</p> : activeStudents.map((student) => (
+                            <label key={student._id} className={updateForm.studentIds.includes(student._id) ? 'is-selected' : ''}>
+                              <input type="checkbox"
+                                checked={updateForm.studentIds.includes(student._id)}
+                                onChange={() => toggleUpdateStudent(student._id)} />
+                              <span className="wn-teacher-avatar">{(student.name || 'ط').slice(0, 1)}</span>
+                              <span><strong>{student.name}</strong><small>{student.completedSessions || 0} حصة مكتملة</small></span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -2098,7 +2343,7 @@ export default function TeacherDashboard() {
                                 <h4>{update.title}</h4>
                                 <small>{new Date(update.publishedAt || update.createdAt).toLocaleString('ar-EG')}</small>
                               </div>
-                              <button type="button" onClick={() => deleteTeacherUpdate(update._id)} aria-label="حذف الرسالة">
+                              <button type="button" onClick={() => setDeleteUpdateModal(update)} aria-label="حذف الرسالة">
                                 <Trash2 size={16} />
                               </button>
                             </div>
@@ -2160,6 +2405,9 @@ export default function TeacherDashboard() {
                             <span>{taskTypeLabel(task.type)}</span>
                             <h4>{task.title}</h4>
                             <p>{task.student?.name || 'طالب'}</p>
+                            {task.circle?.name ? (
+                              <small className="block text-xs text-emerald-700 font-semibold">{task.circle.name}</small>
+                            ) : null}
                           </div>
                           <span className="wn-teacher-homework-status">
                             {task.status === 'done' ? 'معتمد' : task.status === 'submitted' ? 'جاهز للمراجعة' : 'بانتظار الطالب'}
@@ -2193,11 +2441,17 @@ export default function TeacherDashboard() {
                               onChange={(event) => setTaskReview((current) => ({ ...current, [task._id]: event.target.value }))}
                             />
 
+                            <TeacherVoiceFeedbackRecorder
+                              value={taskFeedbackAudio[task._id] || null}
+                              onChange={(val) => setTaskFeedbackAudio((current) => ({ ...current, [task._id]: val }))}
+                              disabled={reviewingTaskId === task._id}
+                            />
+
                             <div className="wn-teacher-homework-review__actions">
-                              <button type="button" onClick={() => reviewTask(task, 'approve')} className="is-approve">
-                                <CheckCircle2 size={16} /> اعتماد الواجب
+                              <button type="button" disabled={reviewingTaskId === task._id} onClick={() => reviewTask(task, 'approve')} className="is-approve disabled:opacity-50">
+                                <CheckCircle2 size={16} /> {reviewingTaskId === task._id ? 'جاري الحفظ...' : 'اعتماد الواجب'}
                               </button>
-                              <button type="button" onClick={() => reviewTask(task, 'request-revision')} className="is-revision">
+                              <button type="button" disabled={reviewingTaskId === task._id} onClick={() => reviewTask(task, 'request-revision')} className="is-revision disabled:opacity-50">
                                 <RotateCcw size={16} /> يحتاج إعادة
                               </button>
                             </div>
@@ -2208,6 +2462,11 @@ export default function TeacherDashboard() {
                           <div className="wn-teacher-homework-feedback">
                             <MessageSquare size={15} />
                             <div><strong>ملاحظتك</strong><p>{task.teacherFeedback}</p></div>
+                          </div>
+                        ) : null}
+                        {task.hasTeacherFeedbackAudio ? (
+                          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800">
+                            <Headphones size={13} /> مرفق توجيه صوتي للطالب
                           </div>
                         ) : null}
                       </article>
@@ -2277,10 +2536,25 @@ export default function TeacherDashboard() {
                 <span className="wn-teacher-avatar xlarge">{(studentSummary.student?.name || 'ط').slice(0, 1)}</span>
                 <div>
                   <h3>{studentSummary.student?.name}</h3>
-                  <p>{studentSummary.student?.email}</p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {teacherLearnerLevelLabel(studentSummary.student?.currentLevel)} · {teacherLearnerTrackLabel(studentSummary.student?.preferredTrack)}
+                  </p>
+                  {(studentSummary.circles || []).length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {studentSummary.circles.map((circle) => (
+                        <span
+                          key={circle._id}
+                          className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-800"
+                        >
+                          {circle.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <button type="button" onClick={() => {
                   setStudentModal(null);
+                  setTaskTargetMode('student');
                   setNewTask((current) => ({ ...current, studentId: studentSummary.student?._id || '' }));
                   setTaskModal(true);
                 }}>
@@ -2295,6 +2569,13 @@ export default function TeacherDashboard() {
                 <div><span>واجبات للتصحيح</span><strong>{studentSummary.summary?.submittedHomework || 0}</strong></div>
               </div>
 
+              <QuranProgressSummary
+                variant="teacher"
+                locale="ar"
+                quranSummary={studentSummary.quranSummary}
+                evaluations={studentSummary.sessions}
+              />
+
               <section className="wn-teacher-student-profile__section">
                 <div className="wn-teacher-section-heading">
                   <div><span>التاريخ التعليمي</span><h3>آخر الحصص والتقارير</h3></div>
@@ -2307,7 +2588,13 @@ export default function TeacherDashboard() {
                       <div key={session._id}>
                         <span className={'wn-teacher-timeline-dot ' + (session.status === 'completed' ? 'is-done' : '')} />
                         <div>
-                          <strong>{session.type === 'trial' ? 'حصة تجريبية' : 'حصة منتظمة'}</strong>
+                          <strong>
+                            {session.type === 'trial'
+                              ? 'حصة تجريبية'
+                              : session.type === 'group_circle'
+                                ? (session.circle?.name ? `حلقة جماعية — ${session.circle.name}` : 'حلقة جماعية')
+                                : 'حصة منتظمة'}
+                          </strong>
                           <small>{formatSessionDateTime(session, 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
                           {(session.evaluation || session.progressReport) ? (
                             <div className="wn-teacher-timeline-report">
@@ -2531,46 +2818,129 @@ export default function TeacherDashboard() {
         </Modal>
       )}
 
-      {taskModal && (
-        <Modal title="إسناد واجب جديد" onClose={() => setTaskModal(false)}>
-          <div className="space-y-3">
-            <select className="input-field w-full" value={newTask.studentId}
-              onChange={(e) => setNewTask((p) => ({ ...p, studentId: e.target.value }))}>
-              <option value="">اختر الطالب</option>
-              {activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-            </select>
-            <select className="input-field w-full" value={newTask.type}
-              onChange={(e) => setNewTask((p) => ({ ...p, type: e.target.value }))}>
-              {TASK_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-            <input className="input-field w-full" placeholder="عنوان الواجب" value={newTask.title}
-              onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))} />
-            <textarea className="input-field w-full" placeholder="التفاصيل" rows={2} value={newTask.description}
-              onChange={(e) => setNewTask((p) => ({ ...p, description: e.target.value }))} />
-            <input type="date" className="input-field w-full" value={newTask.dueDate}
-              onChange={(e) => setNewTask((p) => ({ ...p, dueDate: e.target.value }))} />
-            <button onClick={assignTask} className="btn-primary w-full">إسناد</button>
-          </div>
-        </Modal>
-      )}
-
-      {aiModal && (
-        <Modal title="مساعد المعلم — AI V4" onClose={() => setAiModal(false)}>
-          <div className="space-y-3">
-            <input className="input-field w-full" placeholder="موضوع الواجبات (مثلاً: الغنة)"
-              value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} />
-            <button type="button" onClick={generateAiHomework} disabled={aiLoading} className="btn-primary w-full flex items-center justify-center gap-2">
-              <Sparkles size={16} /> {aiLoading ? 'جاري التوليد...' : 'توليد 5 واجبات'}
-            </button>
-            {aiResult?.assignments?.map((a) => (
-              <div key={a.id} className="border rounded-lg p-3 text-sm">
-                <p className="font-bold">{a.title}</p>
-                {a.description && <p className="text-gray-600 mt-1">{a.description}</p>}
+      {taskModal && (() => {
+        const assignableCircles = myCircles.filter((c) => ['active', 'full'].includes(c.status));
+        return (
+          <Modal title="إسناد واجب جديد" onClose={() => setTaskModal(false)}>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => { setTaskTargetMode('student'); setTaskCircleId(''); }}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${taskTargetMode === 'student' ? 'bg-white text-emerald-900 shadow-sm' : 'text-slate-600'}`}
+                >
+                  طالب محدد
+                </button>
+                <button
+                  type="button"
+                  disabled={assignableCircles.length === 0}
+                  onClick={() => { setTaskTargetMode('circle'); setNewTask((p) => ({ ...p, studentId: '' })); }}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${taskTargetMode === 'circle' ? 'bg-white text-emerald-900 shadow-sm' : 'text-slate-600'} disabled:opacity-40`}
+                >
+                  حلقة جماعية كاملة
+                </button>
               </div>
-            ))}
-          </div>
-        </Modal>
-      )}
+              {taskTargetMode === 'circle' ? (
+                <select
+                  className="input-field w-full"
+                  value={taskCircleId}
+                  onChange={(e) => setTaskCircleId(e.target.value)}
+                >
+                  <option value="">اختر الحلقة الجماعية</option>
+                  {assignableCircles.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.name} ({c.currentCount || c.students?.length || 0} طالب)
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select className="input-field w-full" value={newTask.studentId}
+                  onChange={(e) => setNewTask((p) => ({ ...p, studentId: e.target.value }))}>
+                  <option value="">اختر الطالب</option>
+                  {activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                </select>
+              )}
+              <select className="input-field w-full" value={newTask.type}
+                onChange={(e) => setNewTask((p) => ({ ...p, type: e.target.value }))}>
+                {TASK_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+              <input className="input-field w-full" placeholder="عنوان الواجب" value={newTask.title}
+                onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))} />
+              <textarea className="input-field w-full" placeholder="التفاصيل" rows={2} value={newTask.description}
+                onChange={(e) => setNewTask((p) => ({ ...p, description: e.target.value }))} />
+              <input type="date" className="input-field w-full" value={newTask.dueDate}
+                onChange={(e) => setNewTask((p) => ({ ...p, dueDate: e.target.value }))} />
+              <button type="button" onClick={assignTask} className="btn-primary w-full">إسناد</button>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {aiModal && (() => {
+        const assignableCircles = myCircles.filter((c) => ['active', 'full'].includes(c.status));
+        return (
+          <Modal title="مساعد المعلم — AI V4" onClose={() => setAiModal(false)}>
+            <div className="space-y-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 space-y-2">
+                <span className="block text-xs font-bold text-emerald-900">إسناد سريع بعد التوليد (اختياري)</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setAiTargetMode('student'); setAiTargetId(''); }}
+                    className={`rounded-lg border py-1.5 text-xs font-bold ${aiTargetMode === 'student' ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
+                  >
+                    طالب
+                  </button>
+                  <button
+                    type="button"
+                    disabled={assignableCircles.length === 0}
+                    onClick={() => { setAiTargetMode('circle'); setAiTargetId(''); }}
+                    className={`rounded-lg border py-1.5 text-xs font-bold ${aiTargetMode === 'circle' ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700'} disabled:opacity-40`}
+                  >
+                    حلقة جماعية
+                  </button>
+                </div>
+                <select
+                  className="input-field w-full text-sm"
+                  value={aiTargetId}
+                  onChange={(e) => setAiTargetId(e.target.value)}
+                >
+                  <option value="">{aiTargetMode === 'circle' ? 'اختر الحلقة المستهدفة' : 'اختر الطالب المستهدف'}</option>
+                  {aiTargetMode === 'circle'
+                    ? assignableCircles.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)
+                    : activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                </select>
+              </div>
+              <input className="input-field w-full" placeholder="موضوع الواجبات (مثلاً: الغنة)"
+                value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} />
+              <button type="button" onClick={generateAiHomework} disabled={aiLoading} className="btn-primary w-full flex items-center justify-center gap-2">
+                <Sparkles size={16} /> {aiLoading ? 'جاري التوليد...' : 'توليد 5 واجبات'}
+              </button>
+              {aiResult?.assignments?.map((a) => {
+                const itemKey = a.id || a.title;
+                const assigning = assigningAiId === itemKey;
+                return (
+                  <div key={itemKey} className="border rounded-lg p-3 text-sm space-y-2">
+                    <div>
+                      <p className="font-bold">{a.title}</p>
+                      {a.description && <p className="text-gray-600 mt-1">{a.description}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={assigning}
+                      onClick={() => assignAiTask(a)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      <Plus size={13} />
+                      {assigning ? 'جاري الإسناد...' : 'إسناد هذا الواجب'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </Modal>
+        );
+      })()}
       {circleSessionModal && (
         <Modal title={`جدولة حصة — ${circleSessionModal.name}`} onClose={() => setCircleSessionModal(null)}>
           <div className="space-y-3">
@@ -2615,6 +2985,24 @@ export default function TeacherDashboard() {
           </div>
         </Modal>
       )}
+
+      <GroupSessionCompleteModal
+        session={groupCompleteModal}
+        onClose={() => setGroupCompleteModal(null)}
+        onCompleted={load}
+      />
+      <RejectSessionModal
+        session={rejectModal}
+        onClose={() => setRejectModal(null)}
+        onConfirm={confirmRejectSession}
+        submitting={rejectSubmitting}
+      />
+      <ConfirmDeleteUpdateModal
+        update={deleteUpdateModal}
+        onClose={() => setDeleteUpdateModal(null)}
+        onConfirm={confirmDeleteTeacherUpdate}
+        submitting={deletingUpdate}
+      />
     </DashboardLayout>
   );
 }
@@ -2740,6 +3128,25 @@ function financeStatusLabel(status) {
     rejected: 'مرفوض',
   };
   return labels[status] || status;
+}
+
+function teacherLearnerLevelLabel(level) {
+  const labels = {
+    beginner: 'مبتدئ',
+    intermediate: 'متوسط',
+    advanced: 'متقدم',
+    ijazah: 'إجازة',
+  };
+  return labels[level] || 'غير محدد';
+}
+
+function teacherLearnerTrackLabel(track) {
+  const labels = {
+    memorization: 'الحفظ والمراجعة',
+    tajweed_ijazah: 'التجويد والإجازة',
+    kids_foundation: 'تأسيس الأطفال',
+  };
+  return labels[track] || 'لم يُحدد المسار';
 }
 
 function taskTypeLabel(t) {

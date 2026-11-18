@@ -58,16 +58,23 @@ function createObjectKey(prefix, originalName) {
 }
 
 function unwrapPublicProxyReference(reference) {
-  const value = String(reference || '').trim();
+  let value = String(reference || '').trim();
   if (!value) return '';
 
-  try {
-    const parsed = new URL(value, 'https://wahy.invalid');
-    if (parsed.pathname.endsWith('/api/uploads/public')) {
-      return parsed.searchParams.get('ref') || value;
+  for (let hop = 0; hop < 3; hop += 1) {
+    try {
+      const parsed = new URL(value, 'https://wahy.invalid');
+      if (parsed.pathname.endsWith('/api/uploads/public')) {
+        const inner = parsed.searchParams.get('ref');
+        if (inner && inner.trim() && inner.trim() !== value) {
+          value = inner.trim();
+          continue;
+        }
+      }
+    } catch {
+      // Keep the original reference for downstream validation.
     }
-  } catch {
-    // Keep the original reference for downstream validation.
+    break;
   }
 
   return value;
@@ -129,17 +136,18 @@ function isVercelBlobReference(reference) {
   try {
     const parsed = new URL(unwrapped);
     const host = parsed.hostname.toLowerCase();
-    if (
-      parsed.protocol !== 'https:' ||
-      !host.endsWith('.blob.vercel-storage.com') ||
-      host === 'blob.vercel-storage.com'
-    ) {
+    // Academy uploads are always written with access: 'private'. Public-store
+    // hosts (`<id>.public.blob…`) or bare/unexpected hosts are never ours.
+    const match = host.match(/^([a-z0-9]+)\.private\.blob\.vercel-storage\.com$/);
+    if (parsed.protocol !== 'https:' || !match) {
       return false;
     }
+    const tokenConfigured = Boolean(String(process.env.BLOB_READ_WRITE_TOKEN || '').trim());
     const storeId = getConfiguredBlobStoreId();
-    if (storeId && !host.startsWith(`${storeId}.`)) {
-      return false;
-    }
+    // Fail closed: when a Blob token is configured but its store cannot be
+    // derived, never accept arbitrary third-party stores as owned references.
+    if (tokenConfigured && !storeId) return false;
+    if (storeId && match[1] !== storeId) return false;
     return true;
   } catch {
     return false;
@@ -230,8 +238,10 @@ async function createTemporaryReadUrl(reference, { expiresIn = 20 * 60 } = {}) {
     if (!isSafeObjectPath(pathname)) return null;
     const validUntil = Date.now() + seconds * 1000;
     const token = await issueSignedToken({ pathname, operations: ['get'], validUntil });
-    const result = await presignUrl(token, { pathname, operation: 'get', validUntil });
-    if (!result?.presignedUrl?.startsWith('https://')) throw new Error('Unable to sign private asset URL');
+    const result = await presignUrl(token, { pathname, access: 'private', operation: 'get', validUntil });
+    if (!result?.presignedUrl?.startsWith('https://') || !isVercelBlobReference(result.presignedUrl)) {
+      throw new Error('Unable to sign private asset URL');
+    }
     return { url: result.presignedUrl, expiresAt: validUntil };
   }
 
