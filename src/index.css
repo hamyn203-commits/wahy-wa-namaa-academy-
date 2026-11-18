@@ -40,7 +40,7 @@ body {
 
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-emerald);
+  box-shadow: var(--wn-focus-ring);
 }
 
 img, svg, video {
@@ -75,7 +75,7 @@ img, svg, video {
   @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold;
   border-color: var(--wn-border-mint);
   background: var(--wn-mint-soft);
-  color: var(--wn-emerald-dark);
+  color: var(--wn-section-label-text);
 }
 
 /* ── Loading ──────────────────────────────────────────────────────── */
@@ -88,7 +88,7 @@ img, svg, video {
 .spinner {
   @apply w-8 h-8 border-4 rounded-full animate-spin;
   border-color: var(--wn-mint);
-  border-top-color: var(--wn-emerald);
+  border-top-color: var(--wn-text-accent);
 }
 
 .spinner-lg { @apply w-12 h-12; }
@@ -105,7 +105,7 @@ img, svg, video {
 }
 .input-field::placeholder { color: var(--wn-text-tertiary); }
 .input-field:focus {
-  border-color: var(--wn-emerald);
+  border-color: var(--wn-focus);
   box-shadow: var(--wn-focus-ring);
 }
 
