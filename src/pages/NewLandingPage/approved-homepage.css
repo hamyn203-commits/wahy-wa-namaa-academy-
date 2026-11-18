@@ -452,8 +452,8 @@
 .wn-approved-program-card__link {
   margin-top: auto;
   align-self: flex-end;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -711,8 +711,8 @@
 }
 
 .wn-approved-footer__social {
-  width: 2.55rem;
-  height: 2.55rem;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -731,6 +731,7 @@
   display: inline-flex;
   align-items: center;
   gap: .45rem;
+  min-height: var(--wn-control-md);
   color: color-mix(in srgb, var(--wn-white) 72%, transparent);
   font-size: .86rem;
 }
@@ -955,7 +956,7 @@
 
 .wn-faculty-card__link {
   margin-top: 1.15rem;
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1293,6 +1294,7 @@
 .wn-audience-card__link {
   margin-top: auto;
   padding-top: 1rem;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
@@ -1810,7 +1812,7 @@
   width: 8.4rem;
   height: 10rem;
   bottom: -6.3rem;
-  right: -1.5rem;
+  inset-inline-end: -1.5rem;
   border: 1px solid rgba(15,107,79,.16);
   border-radius: 6rem 6rem 0 0;
   transform: rotate(-7deg);
@@ -2663,7 +2665,7 @@
 
   .wn-float-card--progress {
     top: 22%;
-    inset-inline-end: -1.5rem;
+    inset-inline-end: 0;
   }
 
   .wn-float-card--family {
@@ -3058,7 +3060,7 @@ html {
 }
 
 .wn-product-tile--classroom .wn-product-tile__copy p {
-  color: rgba(255,255,255,.60);
+  color: color-mix(in srgb, var(--wn-white) 86%, transparent);
 }
 
 .wn-hifz-map {
@@ -3138,7 +3140,7 @@ html {
 
 .wn-product-classroom__teacher small {
   margin-top: .2rem;
-  color: rgba(255,255,255,.58);
+  color: color-mix(in srgb, var(--wn-white) 86%, transparent);
   font-size: .68rem;
 }
 
@@ -3159,7 +3161,7 @@ html {
   padding: .6rem;
   text-align: center;
   background: rgba(7,53,40,.9);
-  color: rgba(255,255,255,.66);
+  color: color-mix(in srgb, var(--wn-white) 88%, transparent);
   font-size: .62rem;
 }
 
@@ -3924,6 +3926,12 @@ html {
   gap: 0.6rem;
 }
 
+@media (max-width: 419px) {
+  .wn-calc-packs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .wn-calc-pack-btn {
   display: flex;
   flex-direction: column;
@@ -4188,14 +4196,110 @@ html {
 [data-theme="dark"] .wn-approved-hero__title,
 [data-theme="dark"] .wn-approved-section-heading h2,
 [data-theme="dark"] .wn-approved-trust-bar__item strong,
+[data-theme="dark"] .wn-approved-trust-item strong,
 [data-theme="dark"] .wn-journey-cta strong,
 [data-theme="dark"] .wn-product-tile > h3,
+[data-theme="dark"] .wn-product-tile__copy h3,
 [data-theme="dark"] .wn-calc-label,
 [data-theme="dark"] .wn-calc-section-btn strong,
 [data-theme="dark"] .wn-calc-plan-option h4,
 [data-theme="dark"] .wn-calc-plan-option__price,
 [data-theme="dark"] .wn-calc-pack-btn strong,
 [data-theme="dark"] .wn-home-faq__button {
+  color: var(--wn-text-primary);
+}
+
+/* #C1-UI-009: Dark surface overrides for ProductShowcase, hero trust bar & light cards */
+[data-theme="dark"] .wn-approved-eyebrow--hero {
+  background: color-mix(in srgb, var(--wn-surface) 84%, transparent);
+  border-color: var(--wn-border-strong);
+}
+
+[data-theme="dark"] .wn-approved-hero__visual::before {
+  background: color-mix(in srgb, var(--wn-surface) 58%, transparent);
+  border-color: var(--wn-border-strong);
+}
+
+[data-theme="dark"] .wn-approved-hero__trust--wide {
+  background: color-mix(in srgb, var(--wn-surface) 88%, transparent);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-approved-trust-item:hover {
+  background: color-mix(in srgb, var(--wn-surface-soft) 92%, transparent);
+}
+
+[data-theme="dark"] .wn-approved-trust-bar {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-product-showcase__demo-label {
+  background: var(--wn-surface);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-product-tile--recitation {
+  background:
+    radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--wn-gold) 12%, transparent), transparent 34%),
+    linear-gradient(150deg, var(--wn-surface), var(--wn-surface-soft));
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-product-tile--journey {
+  background:
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--wn-teal) 14%, transparent), transparent 34%),
+    linear-gradient(145deg, var(--wn-surface), var(--wn-surface-mint));
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-product-tile--family {
+  background:
+    radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--wn-gold) 14%, transparent), transparent 36%),
+    linear-gradient(145deg, var(--wn-surface-soft), var(--wn-surface));
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-product-recitation {
+  background: color-mix(in srgb, var(--wn-surface-sunken) 92%, transparent);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-product-recitation__verse p {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-product-status {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-product-kicker {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-product-tile:not(.wn-product-tile--classroom) .wn-product-tile__copy p,
+[data-theme="dark"] .wn-product-tile > p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-journey-cta {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-audience-card__checks span {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-audience-card__link,
+[data-theme="dark"] .wn-faculty-card__link {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-faculty-note {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
   color: var(--wn-text-primary);
 }
 
@@ -4238,8 +4342,8 @@ html {
 /* Chat launcher — lifted clear of the mobile sticky bar (z 45) */
 .wn-chat-launcher {
   position: fixed;
-  left: 1.5rem;
-  right: auto;
+  inset-inline-end: 1.5rem;
+  inset-inline-start: auto;
   bottom: 1.5rem;
   z-index: 50;
   min-width: 48px;
@@ -4248,8 +4352,8 @@ html {
 
 .wn-chat-panel {
   position: fixed;
-  left: 1.5rem;
-  right: auto;
+  inset-inline-end: 1.5rem;
+  inset-inline-start: auto;
   bottom: 6rem;
   z-index: var(--wn-z-overlay);
   width: 24rem;
@@ -4260,14 +4364,18 @@ html {
 
 /* The sticky bar now lives up to 1023px, so the clearance must match it. */
 @media (max-width: 1023px) {
+  .wn-approved-footer {
+    padding-bottom: calc(var(--wn-mobile-bar-h, 72px) + 2rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .wn-chat-launcher {
-    left: 1rem;
+    inset-inline-end: 1rem;
+    inset-inline-start: auto;
     bottom: calc(var(--wn-mobile-bar-h, 72px) + 16px + env(safe-area-inset-bottom, 0px));
   }
 
   .wn-chat-panel {
-    left: 1rem;
-    right: 1rem;
+    inset-inline: 1rem;
     width: auto;
     max-width: none;
     bottom: calc(var(--wn-mobile-bar-h, 72px) + 72px + env(safe-area-inset-bottom, 0px));

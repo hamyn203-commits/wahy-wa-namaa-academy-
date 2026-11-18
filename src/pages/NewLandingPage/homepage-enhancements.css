@@ -106,7 +106,7 @@
 .wn-mobile-quick-jumps__chip {
   display: inline-flex;
   align-items: center;
-  min-height: var(--wn-control-sm);
+  min-height: var(--wn-control-md);
   padding-inline: 0.8rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border);
@@ -376,6 +376,13 @@
     transform var(--wn-dur-fast) var(--wn-ease);
 }
 
+.wn-immersive-feature strong {
+  display: block;
+  color: var(--wn-white);
+  font-size: var(--wn-text-base);
+  font-weight: 750;
+}
+
 .wn-immersive-feature--btn.is-active {
   border-color: color-mix(in srgb, var(--wn-gold) 50%, transparent);
   background: color-mix(in srgb, var(--wn-white) 10%, transparent);
@@ -408,8 +415,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  min-height: var(--wn-control-sm);
-  padding: 0.35rem 0.7rem;
+  min-height: var(--wn-control-md);
+  padding: 0.35rem 0.75rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid color-mix(in srgb, var(--wn-white) 16%, transparent);
   background: color-mix(in srgb, var(--wn-white) 7%, transparent);
@@ -497,8 +504,8 @@
 }
 
 .wn-hifz-node {
-  width: 2.35rem;
-  height: 2.35rem;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
   flex-shrink: 0;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border-strong);
@@ -568,8 +575,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.1rem;
-  padding: 0.25rem 0.7rem;
+  min-height: var(--wn-control-md);
+  padding: 0.25rem 0.75rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border);
   background: var(--wn-surface);
@@ -625,11 +632,33 @@
 
 /* ── 6. Student Journey Interactive Outcomes ────────────────────────────── */
 .wn-journey-card--interactive {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  text-align: start;
   cursor: pointer;
   transition:
     transform var(--wn-dur) var(--wn-ease),
     border-color var(--wn-dur-fast) var(--wn-ease),
     box-shadow var(--wn-dur) var(--wn-ease);
+}
+
+.wn-journey-card--interactive:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
+.wn-journey-card-title {
+  display: block;
+  margin-top: 1.15rem;
+  color: var(--wn-emerald-deep);
+  font-family: var(--wn-font-display);
+  font-size: var(--wn-text-lg);
+  font-weight: 700;
+}
+
+[data-theme='dark'] .wn-journey-card-title {
+  color: var(--wn-text-primary);
 }
 
 .wn-journey-card--interactive.is-selected {
@@ -667,7 +696,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: var(--wn-control-sm);
+  min-height: var(--wn-control-md);
   padding: 0.4rem 0.95rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border-strong);
@@ -977,10 +1006,10 @@
 .wn-faq-search__clear {
   position: absolute;
   top: 50%;
-  inset-inline-end: 0.65rem;
+  inset-inline-end: 0.35rem;
   transform: translateY(-50%);
-  width: 2rem;
-  height: 2rem;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1003,7 +1032,7 @@
 }
 
 .wn-faq-topic-chip {
-  min-height: 2.15rem;
+  min-height: var(--wn-control-md);
   padding: 0.25rem 0.85rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border-strong);
@@ -1050,7 +1079,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: var(--wn-control-sm);
+  min-height: var(--wn-control-md);
   padding: 0.35rem 0.9rem;
   border-radius: var(--wn-radius-pill);
   border: 1px solid color-mix(in srgb, var(--wn-gold) 36%, transparent);

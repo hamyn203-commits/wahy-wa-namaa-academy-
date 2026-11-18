@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useI18n } from '../../../i18n';
+import { useMarket } from '../../../context/MarketProvider';
 import {
   BookOpen,
   GraduationCap,
@@ -17,63 +18,52 @@ import {
 } from 'lucide-react';
 import LocalizedLink from '../../../components/LocalizedLink';
 import { prefetchRoute } from '../../../lib/routePrefetch';
+import { HERO_COPY, pickLocale } from '../landingI18n';
+
+const TRUST_ICONS = [GraduationCap, BookOpen, MonitorSmartphone, Users];
 
 export default function HeroSection() {
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
-  const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const { locale, isRTL } = useI18n();
+  const { displayPrice } = useMarket();
+  const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const [activeLens, setActiveLens] = useState('recitation');
+  const copy = pickLocale(HERO_COPY, locale, isRTL);
+  const startingPrice = displayPrice(10, 'EGP');
+  const ctaPrimaryLabel = locale === 'ar' ? 'ابدأ رحلتك الآن' : copy.ctaStart;
 
-  const trustItems = [
-    {
-      icon: GraduationCap,
-      title: isAr ? 'معلمون مؤهلون' : 'Qualified Teachers',
-      text: isAr ? 'تعليم متقن وتوجيه تربوي' : 'Skilled, caring instruction',
-    },
-    {
-      icon: BookOpen,
-      title: isAr ? 'مناهج متدرجة' : 'Structured Programs',
-      text: isAr ? 'من التأسيس إلى الإتقان' : 'From foundation to mastery',
-    },
-    {
-      icon: MonitorSmartphone,
-      title: isAr ? 'تعلم مرن' : 'Flexible Learning',
-      text: isAr ? 'من أي مكان وفي وقت مناسب' : 'Learn from anywhere',
-    },
-    {
-      icon: Users,
-      title: isAr ? 'لجميع الأعمار' : 'For All Ages',
-      text: isAr ? 'أطفال وناشئة وبالغون' : 'Kids, youth and adults',
-    },
-  ];
+  const trustItems = copy.trust.map((item, idx) => ({
+    icon: TRUST_ICONS[idx] || GraduationCap,
+    title: item.title,
+    text: item.text,
+  }));
 
   const divisionRoutes = [
     {
       id: 'men',
       to: '/start?section=men',
       icon: GraduationCap,
-      title: isAr ? 'قسم الرجال والأطفال' : 'Men & Children',
-      meta: isAr ? 'شيوخ مجازون • حلقات عمرية متدرجة' : 'Certified male scholars • Age-matched circles',
+      title: copy.menTitle,
+      meta: copy.menMeta,
       variant: 'men',
     },
     {
       id: 'women',
       to: '/start?section=women',
       icon: HeartHandshake,
-      title: isAr ? 'قسم السيدات والفتيات' : 'Women & Girls',
-      meta: isAr ? 'معلمات مجازات فقط • خصوصية تامة' : 'Certified female tutors • Complete privacy',
+      title: copy.womenTitle,
+      meta: copy.womenMeta,
       variant: 'women',
     },
   ];
 
   const heroLenses = {
     recitation: {
-      badge: isAr ? 'استوديو التلاوة الذكي' : 'Recitation Studio',
-      detail: isAr ? 'تصحيح مخارج الحروف وأحكام التجويد مع المعلم خطوة بخطوة' : 'Live articulation & Tajweed coaching with your tutor',
+      badge: copy.lensReciteBadge,
+      detail: copy.lensReciteDetail,
     },
     pathway: {
-      badge: isAr ? 'خريطة حفظ ومراجعة واضحة' : 'Structured Hifz Map',
-      detail: isAr ? 'ورد جديد + مراجعة قريبة وبعيدة لضمان رسوخ الحفظ' : 'Balanced new Hifz + structured revision cycles',
+      badge: copy.lensPathBadge,
+      detail: copy.lensPathDetail,
     },
   };
 
@@ -86,29 +76,16 @@ export default function HeroSection() {
       <div className="page-container wn-approved-hero__layout">
         <div className="wn-approved-hero__copy">
           <span className="wn-approved-eyebrow wn-approved-eyebrow--hero">
-            <Sparkles size={14} />
-            {isAr ? 'تعليم قرآني أصيل • تجربة رقمية حديثة' : 'AUTHENTIC QURAN LEARNING • MODERN EXPERIENCE'}
+            <Sparkles size={14} aria-hidden="true" />
+            {copy.eyebrow}
           </span>
 
           <h1 className="wn-approved-hero__title">
-            {isAr ? (
-              <>
-                <span>تعلَّم القرآن</span>
-                <strong>يحفظك وينمو بك</strong>
-              </>
-            ) : (
-              <>
-                <span>Learn the Quran.</span>
-                <strong>Let it shape your growth.</strong>
-              </>
-            )}
+            <span>{copy.titleTop}</span>
+            <strong>{copy.titleBottom}</strong>
           </h1>
 
-          <p className="wn-approved-hero__lead">
-            {isAr
-              ? 'تعليم أصيل بسند متصل، معلمون ومعلمات معتمدون، وتجربة حديثة ترافق الطفل والناشئ والكبير في رحلة هادئة من التلاوة والحفظ إلى الفهم والنماء.'
-              : 'Authentic Sanad-rooted Quran learning with approved male and female scholars in a calm, modern digital experience for children, youth, and adults.'}
-          </p>
+          <p className="wn-approved-hero__lead">{copy.lead}</p>
 
           <div className="wn-approved-hero__actions">
             <LocalizedLink
@@ -117,31 +94,29 @@ export default function HeroSection() {
               onMouseEnter={() => prefetchRoute('/start')}
               className="wn-btn wn-btn--primary wn-btn--lg"
             >
-              <span>{isAr ? 'ابدأ رحلتك الآن' : 'Start Your Journey'}</span>
-              <ArrowIcon size={18} className="wn-btn__arrow" />
+              <span>{ctaPrimaryLabel}</span>
+              <ArrowIcon size={18} className="wn-btn__arrow" aria-hidden="true" />
             </LocalizedLink>
 
             <a href="#learning-tools" className="wn-btn wn-btn--secondary wn-btn--lg">
-              <CirclePlay size={19} />
-              <span>{isAr ? 'جرّب معاينة المنصة' : 'Try interactive preview'}</span>
+              <CirclePlay size={19} aria-hidden="true" />
+              <span>{copy.ctaPreview}</span>
             </a>
           </div>
 
           <div className="wn-hero-assurance">
             <span>
-              <CheckCircle2 size={15} />
-              {isAr ? 'حصة تقييم مستوى مجانية قبل الاشتراك' : 'Free level-assessment session first'}
+              <CheckCircle2 size={15} aria-hidden="true" />
+              {copy.assuranceFree}
             </span>
             <span>
-              <ShieldCheck size={15} />
-              {isAr ? 'باقات مرنة تبدأ من 10 ج للحصة' : 'Flexible circles starting at 10 EGP'}
+              <ShieldCheck size={15} aria-hidden="true" />
+              {copy.assurancePrice.replace('{price}', startingPrice)}
             </span>
           </div>
 
-          <div className="wn-hero-divisions" aria-label={isAr ? 'اختيار سريع للقسم التعليمي' : 'Quick learning division entry'}>
-            <span className="wn-hero-divisions__label">
-              {isAr ? 'أو اختر قسمك مباشرة للبدء السريع:' : 'Or jump directly into your dedicated division:'}
-            </span>
+          <div className="wn-hero-divisions" aria-label={copy.divisionsAria}>
+            <span className="wn-hero-divisions__label">{copy.divisionsLabel}</span>
             <div className="wn-hero-divisions__grid">
               {divisionRoutes.map(({ id, to, icon: Icon, title, meta, variant }) => (
                 <LocalizedLink
@@ -158,7 +133,7 @@ export default function HeroSection() {
                     <strong>{title}</strong>
                     <small>{meta}</small>
                   </span>
-                  <ArrowIcon size={15} className="wn-hero-division-card__arrow" />
+                  <ArrowIcon size={15} className="wn-hero-division-card__arrow" aria-hidden="true" />
                 </LocalizedLink>
               ))}
             </div>
@@ -168,7 +143,7 @@ export default function HeroSection() {
         <div className="wn-approved-hero__visual">
           <img
             src="/images/hero-wahy-namaa.jpg"
-            alt={isAr ? 'مصحف كريم في أجواء تعليمية روحانية لأكاديمية وحي ونماء' : 'Quran learning atmosphere at Wahy Wa Namaa Academy'}
+            alt={copy.imageAlt}
             width="640"
             height="560"
             loading="eager"
@@ -179,9 +154,9 @@ export default function HeroSection() {
           <div className="wn-hero-orbit wn-hero-orbit--two" aria-hidden="true" />
 
           <aside className="wn-approved-verse-card">
-            <span className="wn-approved-verse-card__ornament">✦</span>
+            <span className="wn-approved-verse-card__ornament" aria-hidden="true">✦</span>
             <p className="font-quran">وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا</p>
-            <span>{isAr ? 'المزمل: ٤' : 'Al-Muzzammil 73:4'}</span>
+            <span>{copy.verseRef}</span>
           </aside>
 
           <button
@@ -190,9 +165,9 @@ export default function HeroSection() {
             aria-pressed={activeLens === 'recitation'}
             className={`wn-hero-live-card wn-hero-live-card--recitation wn-hero-live-card--interactive ${activeLens === 'recitation' ? 'is-focused' : ''}`}
           >
-            <span className="wn-hero-live-card__icon"><AudioLines size={16} /></span>
+            <span className="wn-hero-live-card__icon" aria-hidden="true"><AudioLines size={16} /></span>
             <div>
-              <strong>{isAr ? 'استوديو التلاوة' : 'Recitation Studio'}</strong>
+              <strong>{copy.recitationCardTitle}</strong>
               <div className="wn-mini-wave" aria-hidden="true" data-visual-mask>
                 <i /><i /><i /><i /><i /><i /><i />
               </div>
@@ -205,10 +180,10 @@ export default function HeroSection() {
             aria-pressed={activeLens === 'pathway'}
             className={`wn-hero-live-card wn-hero-live-card--path wn-hero-live-card--interactive ${activeLens === 'pathway' ? 'is-focused' : ''}`}
           >
-            <span className="wn-hero-live-card__icon"><Route size={16} /></span>
+            <span className="wn-hero-live-card__icon" aria-hidden="true"><Route size={16} /></span>
             <div>
-              <strong>{isAr ? 'مسار تعلم واضح' : 'Clear learning path'}</strong>
-              <small>{isAr ? 'تعلم • مراجعة • إتقان' : 'Learn • review • master'}</small>
+              <strong>{copy.pathCardTitle}</strong>
+              <small>{copy.pathCardSub}</small>
             </div>
           </button>
 
@@ -224,7 +199,7 @@ export default function HeroSection() {
         <div className="wn-approved-hero__trust wn-approved-hero__trust--wide">
           {trustItems.map(({ icon: Icon, title, text }) => (
             <div key={title} className="wn-approved-trust-item">
-              <span className="wn-approved-trust-item__icon"><Icon size={19} strokeWidth={1.8} /></span>
+              <span className="wn-approved-trust-item__icon" aria-hidden="true"><Icon size={19} strokeWidth={1.8} /></span>
               <span>
                 <strong>{title}</strong>
                 <small>{text}</small>

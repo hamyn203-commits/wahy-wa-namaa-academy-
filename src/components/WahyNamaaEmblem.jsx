@@ -10,6 +10,8 @@ export default function WahyNamaaEmblem({
   className = '',
   glow = false,
   variant = 'default',
+  decorative = false,
+  label = 'Wahy Wa Namaa Academy emblem',
 }) {
   const id = React.useId().replace(/:/g, '');
   const green = 'wnGreen' + id;
@@ -33,8 +35,9 @@ export default function WahyNamaaEmblem({
       xmlns="http://www.w3.org/2000/svg"
       className={'shrink-0 select-none ' + className}
       style={{ filter: glow ? 'drop-shadow(0 8px 18px rgba(15,107,79,.18))' : undefined }}
-      role="img"
-      aria-label="شعار أكاديمية وحي ونماء"
+      aria-hidden={decorative ? 'true' : undefined}
+      role={decorative ? undefined : 'img'}
+      aria-label={decorative ? undefined : label}
     >
       <defs>
         <linearGradient id={green} x1="18" y1="12" x2="102" y2="118" gradientUnits="userSpaceOnUse">

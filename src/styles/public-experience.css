@@ -641,8 +641,8 @@
 }
 
 .wn-course-card__link {
-  width: 2.35rem;
-  height: 2.35rem;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -778,7 +778,7 @@
 
 .wn-teacher-card__cta {
   margin-top: 1rem;
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1798,7 +1798,7 @@
 }
 
 .wn-library-hero::after {
-  content:'';position:absolute;width:25rem;height:31rem;top:-18rem;right:-7rem;
+  content:'';position:absolute;width:25rem;height:31rem;top:-18rem;inset-inline-end:-7rem;
   border:1px solid rgba(212,175,107,.17);border-radius:14rem 14rem 0 0;
 }
 
@@ -2199,13 +2199,26 @@
   --wn-motion-base: var(--wn-dur-base, 240ms) var(--wn-ease, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
+@media (max-width: 1023px) {
+  .wn-public-shell,
+  .wn-detail-shell,
+  .wn-program-shell,
+  .wn-ai-shell,
+  .wn-register-shell,
+  .wn-library-shell {
+    padding-bottom: calc(var(--wn-mobile-bar-h, 72px) + 2rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 [data-theme="dark"] .wn-public-shell,
 [data-theme="dark"] .wn-detail-shell,
 [data-theme="dark"] .wn-program-shell,
 [data-theme="dark"] .wn-ai-shell,
 [data-theme="dark"] .wn-library-shell,
 [data-theme="dark"] .wn-register-shell,
-[data-theme="dark"] .wn-trial-surface {
+[data-theme="dark"] .wn-trial-surface,
+[data-theme="dark"] .wn-teacher-register-shell,
+[data-theme="dark"] .wn-notfound {
   background:
     radial-gradient(circle at 8% 6%, rgba(212, 175, 107, 0.08), transparent 24rem),
     radial-gradient(circle at 92% 16%, rgba(86, 179, 166, 0.08), transparent 26rem),
@@ -2228,7 +2241,13 @@
 [data-theme="dark"] .wn-notification-item,
 [data-theme="dark"] .wn-ai-panel,
 [data-theme="dark"] .wn-ecosystem-card,
-[data-theme="dark"] .wn-market-card {
+[data-theme="dark"] .wn-market-card,
+[data-theme="dark"] .wn-program-card,
+[data-theme="dark"] .wn-teacher-register-card,
+[data-theme="dark"] .wn-notfound__card,
+[data-theme="dark"] .wn-career-card,
+[data-theme="dark"] .wn-certificate,
+[data-theme="dark"] .wn-public-empty {
   background: rgba(12, 38, 30, 0.92) !important;
   border-color: rgba(212, 175, 107, 0.22) !important;
   color: #edf5f1;
@@ -2248,8 +2267,102 @@
 [data-theme="dark"] .wn-faq-button,
 [data-theme="dark"] .wn-blog-card h3,
 [data-theme="dark"] .wn-notification-item h3,
-[data-theme="dark"] .wn-public-form-card__header h2 {
+[data-theme="dark"] .wn-public-form-card__header h2,
+[data-theme="dark"] .wn-program-hero h1,
+[data-theme="dark"] .wn-ai-heading h1,
+[data-theme="dark"] .wn-ecosystem-card h3,
+[data-theme="dark"] .wn-market-card h2,
+[data-theme="dark"] .wn-career-card h3,
+[data-theme="dark"] .wn-notfound__code,
+[data-theme="dark"] .wn-public-empty h3,
+[data-theme="dark"] .wn-certificate__name,
+[data-theme="dark"] .wn-rank-name {
   color: #f6f2e8 !important;
+}
+
+[data-theme="dark"] .wn-lesson-row,
+[data-theme="dark"] .wn-certificate__meta > div,
+[data-theme="dark"] .wn-ai-tabs,
+[data-theme="dark"] .wn-quick-gender-switch,
+[data-theme="dark"] .wn-media-block,
+[data-theme="dark"] .wn-auth-role,
+[data-theme="dark"] .wn-rank-row {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-lesson-row__title,
+[data-theme="dark"] .wn-detail-price,
+[data-theme="dark"] .wn-course-price,
+[data-theme="dark"] .wn-field label,
+[data-theme="dark"] .wn-certificate__meta strong,
+[data-theme="dark"] .wn-rank-score {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-certificate__course,
+[data-theme="dark"] .wn-course-card__link,
+[data-theme="dark"] .wn-public-empty svg,
+[data-theme="dark"] .wn-ecosystem-card > svg {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-ai-result {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-teacher-tab,
+[data-theme="dark"] .wn-quick-pill,
+[data-theme="dark"] .wn-ai-tab {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-teacher-tab:hover,
+[data-theme="dark"] .wn-quick-pill:hover,
+[data-theme="dark"] .wn-ai-tab:hover {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-teacher-tab.is-active,
+[data-theme="dark"] .wn-active-filter-chip,
+[data-theme="dark"] .wn-teacher-tags span,
+[data-theme="dark"] .wn-detail-tags span,
+[data-theme="dark"] .wn-lesson-row__tag {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-active-filter-chip:hover {
+  background: var(--wn-surface-mint);
+}
+
+[data-theme="dark"] .wn-quick-pill.is-active,
+[data-theme="dark"] .wn-ai-tab.is-active {
+  background: var(--wn-emerald);
+  color: var(--wn-white);
+}
+
+[data-theme="dark"] .wn-library-switch {
+  background: color-mix(in srgb, var(--wn-surface) 88%, transparent);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-library-switch button {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-library-switch button.is-active {
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+}
+
+[data-theme="dark"] .wn-mobile-preview__screen {
+  background: linear-gradient(180deg, var(--wn-surface-soft), var(--wn-surface));
+  color: var(--wn-text-primary);
 }
 
 [data-theme="dark"] .wn-field__control,

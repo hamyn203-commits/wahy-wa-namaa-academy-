@@ -5,6 +5,7 @@ import SEOHead from '../../components/SEOHead';
 import { useSEO } from '../../hooks/useSEO';
 import { LOCALE_BRAND } from '../../seo/brand';
 import HomepageMotionController from './HomepageMotionController';
+import { SKIP_TO_CONTENT, pickLocale } from './landingI18n';
 
 import HeroSection from './sections/HeroSection';
 import ProgramsSection from './sections/ProgramsSection';
@@ -21,9 +22,9 @@ import FAQHomeSection from './sections/FAQHomeSection';
 import CTASection from './sections/CTASection';
 
 export default function NewLandingPage() {
-  const { locale, t } = useI18n();
+  const { locale, isRTL, t } = useI18n();
   const { createWebPageSchema, createOrganizationSchema } = useSEO();
-  const isAr = locale === 'ar';
+  const skipLabel = t.common?.skipToContent || pickLocale(SKIP_TO_CONTENT, locale, isRTL);
 
   const cleanSlogan = String(t.common.slogan || '').replace(/[.۔]+$/, '');
   const pageTitle = LOCALE_BRAND[locale]?.homeTitle || `${t.common.appNameFull || t.common.appName} | ${cleanSlogan}`;
@@ -41,7 +42,7 @@ export default function NewLandingPage() {
   return (
     <>
       <a href="#main-content" className="wn-skip-link">
-        {isAr ? 'تخطي إلى المحتوى الرئيسي' : 'Skip to main content'}
+        {skipLabel}
       </a>
       <SEOHead
         page={{
