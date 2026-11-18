@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MonitorPlay,
   Play,
@@ -6,39 +6,37 @@ import {
   Download,
   Eye,
   Search,
-  CheckCircle,
   FileText,
   Sparkles,
   Printer,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { useToast } from '../../context/ToastProvider';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
 
-// تصنيفات الفيديوهات
 const VIDEO_CATS = [
-  { id: '', ar: 'الكل', en: 'All' },
-  { id: 'quran', ar: 'القرآن', en: 'Quran' },
-  { id: 'tajweed', ar: 'التجويد', en: 'Tajweed' },
-  { id: 'arabic', ar: 'العربية', en: 'Arabic' },
-  { id: 'seerah', ar: 'السيرة', en: 'Seerah' },
-  { id: 'kids', ar: 'أطفال', en: 'Kids' },
+  { id: '', ar: 'الكل', en: 'All', fr: 'Tout', de: 'Alle', tr: 'Tümü', ur: 'سب', idLabel: 'Semua', ms: 'Semua', ku: 'هەموو' },
+  { id: 'quran', ar: 'القرآن', en: 'Quran', fr: 'Coran', de: 'Koran', tr: 'Kur’an', ur: 'قرآن', idLabel: 'Al-Qur’an', ms: 'Al-Quran', ku: 'قورئان' },
+  { id: 'tajweed', ar: 'التجويد', en: 'Tajweed', fr: 'Tajwid', de: 'Tadschwid', tr: 'Tecvid', ur: 'تجوید', idLabel: 'Tajwid', ms: 'Tajwid', ku: 'تەجوید' },
+  { id: 'arabic', ar: 'العربية', en: 'Arabic', fr: 'Arabe', de: 'Arabisch', tr: 'Arapça', ur: 'عربی', idLabel: 'Arab', ms: 'Arab', ku: 'عەرەبی' },
+  { id: 'seerah', ar: 'السيرة', en: 'Seerah', fr: 'Sîra', de: 'Sira', tr: 'Siyer', ur: 'سیرت', idLabel: 'Sirah', ms: 'Sirah', ku: 'ژیننامە' },
+  { id: 'kids', ar: 'أطفال', en: 'Kids', fr: 'Enfants', de: 'Kinder', tr: 'Çocuklar', ur: 'بچے', idLabel: 'Anak', ms: 'Kanak-kanak', ku: 'منداڵان' },
 ];
 
-// تصنيفات المكتبة الرقمية (PDF)
 const BOOK_CATS = [
-  { id: 'all', ar: 'كافة الكتب والمتون', en: 'All Books & Texts' },
-  { id: 'matn', ar: 'متون التجويد والقراءات', en: 'Tajweed & Qiraat Texts' },
-  { id: 'mushaf', ar: 'مصاحف التجويد الملونة', en: 'Colored Tajweed Mushafs' },
-  { id: 'kids', ar: 'تأسيس الأطفال والبراعم', en: 'Kids Foundation Books' },
-  { id: 'tafseer', ar: 'شروح وتفاسير', en: 'Explanations & Tafseer' },
+  { id: 'all', ar: 'كافة الكتب والمتون', en: 'All Books & Texts', fr: 'Tous les livres', de: 'Alle Bücher & Texte', tr: 'Tüm Kitap ve Metinler', ur: 'تمام کتب اور متون', idLabel: 'Semua Buku & Matan', ms: 'Semua Buku & Teks', ku: 'هەموو کتێب و دەقەکان' },
+  { id: 'matn', ar: 'متون التجويد والقراءات', en: 'Tajweed & Qiraat Texts', fr: 'Textes de Tajwid', de: 'Tadschwid-Texte', tr: 'Tecvid Metinleri', ur: 'تجوید و قراءات کے متون', idLabel: 'Matan Tajwid', ms: 'Matan Tajwid', ku: 'دەقەکانی تەجوید' },
+  { id: 'mushaf', ar: 'مصاحف التجويد الملونة', en: 'Colored Tajweed Mushafs', fr: 'Mushafs de Tajwid', de: 'Farbige Tadschwid-Mushafs', tr: 'Renkli Tecvid Mushafları', ur: 'رنگین تجویدی مصاحف', idLabel: 'Mushaf Tajwid Berwarna', ms: 'Mushaf Tajwid Berwarna', ku: 'قورئانی تەجویدی ڕەنگاوڕەنگ' },
+  { id: 'kids', ar: 'تأسيس الأطفال والبراعم', en: 'Kids Foundation Books', fr: 'Livres Enfants', de: 'Kinder-Grundlagen', tr: 'Çocuk Temel Kitapları', ur: 'بچوں کی بنیادی کتب', idLabel: 'Buku Dasar Anak', ms: 'Buku Asas Kanak-Kanak', ku: 'کتێبەکانی بنەمای منداڵان' },
+  { id: 'tafseer', ar: 'شروح وتفاسير', en: 'Explanations & Tafseer', fr: 'Explications & Tafsir', de: 'Erklärungen & Tafsir', tr: 'Şerh ve Tefsirler', ur: 'شروحات و تفاسیر', idLabel: 'Syarah & Tafsir', ms: 'Syarahan & Tafsir', ku: 'شیکردنەوە و تەفسیر' },
 ];
 
-// مواد تعليمية ثابتة متاحة داخل مكتبة الأكاديمية
 const DIGITAL_BOOKS = [
   {
     id: 'tuhfat-al-atfal',
@@ -188,54 +186,300 @@ const DIGITAL_BOOKS = [
   }
 ];
 
+const LIBRARY_COPY = {
+  ar: {
+    seoTitle: 'المكتبة التعليمية القرآنية | وَحْيٌ وَنَمَاء',
+    seoDesc: 'مكتبة وَحْيٌ وَنَمَاء الرقمية: متون التجويد، مصاحف التجويد الملونة، وكتب تأسيس الأطفال مع إمكانية القراءة المسبقة والتحميل للطباعة.',
+    eyebrow: 'المكتبة التعليمية',
+    title: 'المكتبة الرقمية والمصاحف المقروءة',
+    subtitle: 'مواد تعليمية وكتب وفيديوهات تساعد الطالب على القراءة والمراجعة والتجويد من داخل المنصة.',
+    switcherLabel: 'أقسام المكتبة',
+    booksTab: 'المكتبة الرقمية والمتون (HTML / طباعة)',
+    videosTab: 'مكتبة الفيديوهات المسجلة',
+    searchPlaceholder: 'ابحث عن متن، مصحف، كتاب تأسيس...',
+    searchAria: 'البحث في الكتب والمتون',
+    featuredBadge: 'مادة تعليمية',
+    authorLabel: 'الناظم / المحقق: ',
+    pagesWord: 'صفحة',
+    downloadHint: 'نسخة HTML للطباعة',
+    previewBtn: 'قراءة مسبقة',
+    downloadBtn: 'تحميل HTML للطباعة',
+    downloadingToast: 'بدأ تنزيل الملف:',
+    noBooks: 'لا توجد نتائج مطابقة لبحثك',
+    noBooksHint: 'جرّب البحث باسم آخر أو إزالة التصنيف',
+    loadingVideos: 'جاري تحميل الفيديوهات...',
+    videoError: 'تعذر تحميل الفيديوهات الآن.',
+    retryBtn: 'إعادة المحاولة',
+    noVideos: 'لا فيديوهات في هذا التصنيف حالياً',
+    noVideosHint: 'جرّب تصنيفاً آخر أو عد لاحقاً',
+    viewsWord: 'مشاهدة',
+    printPreview: 'طباعة هذه المعاينة',
+    closeBtn: 'إغلاق',
+    downloadFullCopy: 'تحميل نسخة HTML للطباعة',
+  },
+  en: {
+    seoTitle: 'Digital Quranic Library & Texts | Wahy Wa Namaa',
+    seoDesc: 'Browse Tajweed texts, colored Mushafs, and kids foundation books with live preview and printable HTML download.',
+    eyebrow: 'LEARNING LIBRARY',
+    title: 'Digital Quranic & Tajweed Library',
+    subtitle: 'Learning materials, books, and recorded lessons to support reading, review, and Tajweed.',
+    switcherLabel: 'Library sections',
+    booksTab: 'Digital Books & Texts (Printable HTML)',
+    videosTab: 'Recorded Video Lessons',
+    searchPlaceholder: 'Search for a book, text, mushaf...',
+    searchAria: 'Search books and texts',
+    featuredBadge: 'Learning resource',
+    authorLabel: 'Author: ',
+    pagesWord: 'pages',
+    downloadHint: 'Printable HTML',
+    previewBtn: 'Preview',
+    downloadBtn: 'Download HTML',
+    downloadingToast: 'Downloading file:',
+    noBooks: 'No matching books found',
+    noBooksHint: 'Try another query or remove category filter',
+    loadingVideos: 'Loading videos...',
+    videoError: 'Could not load videos right now.',
+    retryBtn: 'Retry',
+    noVideos: 'No videos in this category yet',
+    noVideosHint: 'Try another category or check back later',
+    viewsWord: 'views',
+    printPreview: 'Print Preview',
+    closeBtn: 'Close',
+    downloadFullCopy: 'Download Printable HTML',
+  },
+  fr: {
+    seoTitle: 'Bibliothèque numérique | Académie Wahy Wa Namaa',
+    eyebrow: 'BIBLIOTHÈQUE PÉDAGOGIQUE',
+    title: 'Bibliothèque numérique & Mushafs',
+    subtitle: 'Supports, livres et leçons enregistrées pour la lecture et la révision du Tajwid.',
+    booksTab: 'Livres numériques (HTML imprimable)',
+    videosTab: 'Cours vidéo enregistrés',
+    searchPlaceholder: 'Rechercher un livre, texte, mushaf...',
+    searchAria: 'Rechercher dans la bibliothèque',
+    previewBtn: 'Aperçu',
+    downloadBtn: 'Télécharger HTML',
+    downloadingToast: 'Téléchargement :',
+    noBooks: 'Aucun livre trouvé',
+    loadingVideos: 'Chargement des vidéos...',
+    videoError: 'Impossible de charger les vidéos.',
+    retryBtn: 'Réessayer',
+    noVideos: 'Aucune vidéo dans cette catégorie',
+    printPreview: 'Imprimer l’aperçu',
+    closeBtn: 'Fermer',
+    downloadFullCopy: 'Télécharger en HTML imprimable',
+  },
+  de: {
+    seoTitle: 'Digitale Bibliothek | Wahy Wa Namaa Akademie',
+    eyebrow: 'LERNBIBLIOTHEK',
+    title: 'Digitale Koran- & Tadschwid-Bibliothek',
+    subtitle: 'Lernmaterialien, Bücher und aufgezeichnete Lektionen zum Lesen und Wiederholen.',
+    booksTab: 'Digitale Bücher (druckbares HTML)',
+    videosTab: 'Aufgezeichnete Videolektionen',
+    searchPlaceholder: 'Nach Buch, Text oder Mushaf suchen...',
+    searchAria: 'Bücher durchsuchen',
+    previewBtn: 'Vorschau',
+    downloadBtn: 'HTML herunterladen',
+    downloadingToast: 'Download gestartet:',
+    noBooks: 'Keine passenden Bücher gefunden',
+    loadingVideos: 'Videos werden geladen...',
+    videoError: 'Videos konnten nicht geladen werden.',
+    retryBtn: 'Erneut versuchen',
+    noVideos: 'Noch keine Videos in dieser Kategorie',
+    printPreview: 'Vorschau drucken',
+    closeBtn: 'Schließen',
+    downloadFullCopy: 'Druckbares HTML herunterladen',
+  },
+  tr: {
+    seoTitle: 'Dijital Kütüphane | Wahy Wa Namaa Akademisi',
+    eyebrow: 'EĞİTİM KÜTÜPHANESİ',
+    title: 'Dijital Kur’an ve Tecvid Kütüphanesi',
+    subtitle: 'Okuma, tekrar ve tecvid çalışmaları için kitaplar, metinler ve kayıtlı dersler.',
+    booksTab: 'Dijital Kitaplar (Yazdırılabilir HTML)',
+    videosTab: 'Kayıtlı Video Dersler',
+    searchPlaceholder: 'Kitap, metin veya mushaf ara...',
+    searchAria: 'Kitap ve metinlerde ara',
+    previewBtn: 'Önizle',
+    downloadBtn: 'HTML İndir',
+    downloadingToast: 'İndiriliyor:',
+    noBooks: 'Eşleşen kitap bulunamadı',
+    loadingVideos: 'Videolar yükleniyor...',
+    videoError: 'Videolar şu anda yüklenemedi.',
+    retryBtn: 'Tekrar Dene',
+    noVideos: 'Bu kategoride henüz video yok',
+    printPreview: 'Önizlemeyi Yazdır',
+    closeBtn: 'Kapat',
+    downloadFullCopy: 'Yazdırılabilir HTML İndir',
+  },
+  ur: {
+    seoTitle: 'ڈیجیٹل قرآنی لائبریری | وحی و نما اکیڈمی',
+    eyebrow: 'تعلیمی لائبریری',
+    title: 'ڈیجیٹل کتب اور تجویدی مصاحف',
+    subtitle: 'پڑھائی، دہرائی اور تجوید کی مشق کے لیے تعلیمی مواد، کتب اور ریکارڈ شدہ اسباق۔',
+    booksTab: 'ڈیجیٹل کتب (پرنٹ ایبل HTML)',
+    videosTab: 'ریکارڈ شدہ ویڈیو اسباق',
+    searchPlaceholder: 'کتاب، متن یا مصحف تلاش کریں...',
+    searchAria: 'کتب تلاش کریں',
+    previewBtn: 'پیش نظارہ',
+    downloadBtn: 'HTML ڈاؤن لوڈ کریں',
+    downloadingToast: 'ڈاؤن لوڈ شروع ہو گیا:',
+    noBooks: 'کوئی مماثل کتاب نہیں ملی',
+    loadingVideos: 'ویڈیوز لوڈ ہو رہی ہیں...',
+    videoError: 'اس وقت ویڈیوز لوڈ نہیں ہو سکیں۔',
+    retryBtn: 'دوبارہ کوشش کریں',
+    noVideos: 'اس زمرے میں فی الحال کوئی ویڈیو نہیں',
+    printPreview: 'پیش نظارہ پرنٹ کریں',
+    closeBtn: 'بند کریں',
+    downloadFullCopy: 'پرنٹ ایبل HTML ڈاؤن لوڈ کریں',
+  },
+  id: {
+    seoTitle: 'Perpustakaan Digital | Akademi Wahy Wa Namaa',
+    eyebrow: 'PERPUSTAKAAN BELAJAR',
+    title: 'Perpustakaan Digital Al-Qur’an & Tajwid',
+    subtitle: 'Materi pembelajaran, buku, dan rekaman kelas untuk membaca, murajaah, dan tajwid.',
+    booksTab: 'Buku Digital (HTML Cetak)',
+    videosTab: 'Rekaman Pelajaran Video',
+    searchPlaceholder: 'Cari buku, matan, atau mushaf...',
+    searchAria: 'Cari buku dan matan',
+    previewBtn: 'Pratinjau',
+    downloadBtn: 'Unduh HTML',
+    downloadingToast: 'Mengunduh berkas:',
+    noBooks: 'Buku yang cocok tidak ditemukan',
+    loadingVideos: 'Memuat video...',
+    videoError: 'Tidak dapat memuat video saat ini.',
+    retryBtn: 'Coba Lagi',
+    noVideos: 'Belum ada video di kategori ini',
+    printPreview: 'Cetak Pratinjau',
+    closeBtn: 'Tutup',
+    downloadFullCopy: 'Unduh HTML Siap Cetak',
+  },
+  ms: {
+    seoTitle: 'Perpustakaan Digital | Akademi Wahy Wa Namaa',
+    eyebrow: 'PERPUSTAKAAN PEMBELAJARAN',
+    title: 'Perpustakaan Digital Al-Quran & Tajwid',
+    subtitle: 'Bahan pembelajaran, buku, dan rakaman pelajaran untuk bacaan, ulang kaji, dan tajwid.',
+    booksTab: 'Buku Digital (HTML Boleh Cetak)',
+    videosTab: 'Rakaman Pelajaran Video',
+    searchPlaceholder: 'Cari buku, matan, atau mushaf...',
+    searchAria: 'Cari buku dan teks',
+    previewBtn: 'Pratonton',
+    downloadBtn: 'Muat Turun HTML',
+    downloadingToast: 'Memuat turun fail:',
+    noBooks: 'Tiada buku yang sepadan ditemui',
+    loadingVideos: 'Memuatkan video...',
+    videoError: 'Tidak dapat memuatkan video buat masa ini.',
+    retryBtn: 'Cuba Lagi',
+    noVideos: 'Tiada video dalam kategori ini buat masa ini',
+    printPreview: 'Cetak Pratonton',
+    closeBtn: 'Tutup',
+    downloadFullCopy: 'Muat Turun HTML Boleh Cetak',
+  },
+  ku: {
+    seoTitle: 'کتێبخانەی دیجیتاڵی قورئان | ئەکادیمیای وەحی و نەما',
+    eyebrow: 'کتێبخانەی فێرکاری',
+    title: 'کتێبخانەی دیجیتاڵی و موصحەفەکان',
+    subtitle: 'کەرەستەی فێرکاری، کتێب و وانە تۆمارکراوەکان بۆ خوێندنەوە، پێداچوونەوە و تەجوید.',
+    booksTab: 'کتێبە دیجیتاڵییەکان (HTML بۆ چاپ)',
+    videosTab: 'کتێبخانەی ڤیدیۆ تۆمارکراوەکان',
+    searchPlaceholder: 'گەڕان بۆ کتێب، دەق، موصحەف...',
+    searchAria: 'گەڕان لە کتێبەکان',
+    previewBtn: 'پێشبینین',
+    downloadBtn: 'داگرتنی HTML',
+    downloadingToast: 'داگرتن دەستی پێکرد:',
+    noBooks: 'هیچ ئەنجامێکی گونجاو نەدۆزرایەوە',
+    loadingVideos: 'ڤیدیۆکان باردەکرێن...',
+    videoError: 'بارکردنی ڤیدیۆکان ئێستا سەرکەوتوو نەبوو.',
+    retryBtn: 'دووبارە هەوڵبدەرەوە',
+    noVideos: 'هیچ ڤیدیۆیەک لەم بەشەدا نییە',
+    printPreview: 'چاپکردنی پێشبینین',
+    closeBtn: 'داخستن',
+    downloadFullCopy: 'داگرتنی وەشانی HTML بۆ چاپ',
+  },
+};
+
 export default function LibraryPage() {
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, isRTL, dir } = useI18n();
+  const toast = useToast();
+  const baseCopy = isRTL ? LIBRARY_COPY.ar : LIBRARY_COPY.en;
+  const copy = { ...baseCopy, ...(LIBRARY_COPY[locale] || {}) };
 
-  // Library mode: 'books' (default) or 'videos'
   const [mode, setMode] = useState('books');
-
-  // Books state
   const [selectedBookCat, setSelectedBookCat] = useState('all');
   const [bookSearch, setBookSearch] = useState('');
   const [previewBook, setPreviewBook] = useState(null);
-  const [downloadSuccess, setDownloadSuccess] = useState(null);
 
-  // Video state
   const [videos, setVideos] = useState([]);
   const [category, setCategory] = useState('');
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoError, setVideoError] = useState('');
+
+  const lastTriggerRef = useRef(null);
+  const closeModalBtnRef = useRef(null);
+
+  const fetchVideos = useCallback((cat) => {
+    setLoadingVideos(true);
+    setVideoError('');
+    const q = cat ? `?category=${encodeURIComponent(cat)}` : '';
+    api.get(`/api/videos${q}`)
+      .then((d) => setVideos(d.videos || []))
+      .catch((err) => {
+        setVideos([]);
+        setVideoError(err?.message || copy.videoError);
+      })
+      .finally(() => setLoadingVideos(false));
+  }, [copy.videoError]);
 
   useEffect(() => {
     if (mode === 'videos') {
-      setLoadingVideos(true);
-      const q = category ? `?category=${category}` : '';
-      api.get(`/api/videos${q}`)
-        .then((d) => setVideos(d.videos || []))
-        .catch(() => setVideos([]))
-        .finally(() => setLoadingVideos(false));
+      fetchVideos(category);
     }
-  }, [mode, category]);
+  }, [mode, category, fetchVideos]);
 
-  // Filter books
+  const closePreview = useCallback(() => {
+    setPreviewBook(null);
+    requestAnimationFrame(() => {
+      lastTriggerRef.current?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!previewBook) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeModalBtnRef.current?.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closePreview();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [previewBook, closePreview]);
+
+  const catLabel = (c) => c[locale === 'id' ? 'idLabel' : locale] || (isRTL ? c.ar : c.en);
+
   const filteredBooks = DIGITAL_BOOKS.filter((b) => {
     const matchesCat = selectedBookCat === 'all' || b.category === selectedBookCat;
+    const q = bookSearch.toLowerCase();
     const matchesSearch =
-      b.title.toLowerCase().includes(bookSearch.toLowerCase()) ||
-      b.titleEn.toLowerCase().includes(bookSearch.toLowerCase()) ||
-      b.author.toLowerCase().includes(bookSearch.toLowerCase()) ||
-      b.description.toLowerCase().includes(bookSearch.toLowerCase());
+      b.title.toLowerCase().includes(q) ||
+      b.titleEn.toLowerCase().includes(q) ||
+      b.author.toLowerCase().includes(q) ||
+      b.description.toLowerCase().includes(q);
     return matchesCat && matchesSearch;
   });
 
-  // Handle direct PDF Download
   const handleDownload = (book) => {
     const htmlContent = `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
+<html dir="${dir}" lang="${locale}">
 <head>
 <meta charset="UTF-8">
-<title>${book.title} | أكاديمية وَحْيٌ وَنَمَاء</title>
+<title>${isRTL ? book.title : book.titleEn} | Wahy Wa Namaa Academy</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');
   body { font-family: 'Amiri', serif; margin: 40px; background: #faf9f6; color: #1e293b; line-height: 1.8; }
@@ -251,10 +495,10 @@ export default function LibraryPage() {
 </head>
 <body>
   <div class="header">
-    <div class="logo">أكاديمية وَحْيٌ وَنَمَاء لتعليم القرآن الكريم والنمو الإنساني</div>
-    <div class="meta">مادة تعليمية من مكتبة وحي ونماء</div>
-    <div class="title">${book.title}</div>
-    <div class="meta">الناظم / المحقق: ${book.author} | عدد الصفحات: ${book.pages} صفحة</div>
+    <div class="logo">${isRTL ? 'أكاديمية وَحْيٌ وَنَمَاء لتعليم القرآن الكريم والنمو الإنساني' : 'Wahy Wa Namaa Academy'}</div>
+    <div class="meta">${copy.featuredBadge}</div>
+    <div class="title">${isRTL ? book.title : book.titleEn}</div>
+    <div class="meta">${copy.authorLabel}${book.author} | ${book.pages} ${copy.pagesWord}</div>
   </div>
 
   ${book.chapters.map((c) => `
@@ -265,7 +509,7 @@ export default function LibraryPage() {
   `).join('')}
 
   <div class="footer">
-    نسخة تعليمية تم إنشاؤها من مكتبة أكاديمية وَحْيٌ وَنَمَاء.
+    Wahy Wa Namaa Academy — Digital Library
   </div>
 </body>
 </html>`;
@@ -280,8 +524,7 @@ export default function LibraryPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    setDownloadSuccess(book.title);
-    setTimeout(() => setDownloadSuccess(null), 4000);
+    toast.success(`${copy.downloadingToast} ${isRTL ? book.title : book.titleEn}`);
   };
 
   const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -291,217 +534,210 @@ export default function LibraryPage() {
       <SEOHead
         page={{
           url: '/library',
-          title: isAr ? 'المكتبة التعليمية القرآنية | وَحْيٌ وَنَمَاء' : 'Digital Quranic Library & Texts | Wahy Wa Namaa',
-          description: isAr
-            ? 'مكتبة وَحْيٌ وَنَمَاء الرقمية: متون التجويد (تحفة الأطفال، الجزرية، الشاطبية)، مصاحف التجويد الملونة برواية حفص وورش، وكتب تأسيس الأطفال (نور البيان والقاعدة النورانية) مع إمكانية التحميل المباشر والقراءة.'
-            : 'Download approved Tajweed texts (Tuhfa, Jazariyyah, Shatibiyyah), colored Tajweed Mushafs, and kids foundation books with free PDF download and preview.'
+          title: copy.seoTitle,
+          description: copy.seoDesc,
         }}
       />
       <GlobalHeader />
 
-      <main className="wn-library-shell">
-        {/* ═══ Header Section ═══ */}
+      <main className="wn-library-shell" dir={dir}>
+        {/* Header Section */}
         <section className="wn-library-hero">
           <div className="page-container wn-library-hero__inner">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--azhar-gold-bright)]/20 border border-[var(--azhar-gold-bright)]/40 text-[var(--azhar-gold-bright)] text-xs md:text-sm font-bold">
-              <Sparkles size={16} />
-              <span>{isAr ? 'المكتبة التعليمية' : 'LEARNING LIBRARY'}</span>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--wn-gold)]/20 border border-[var(--wn-gold)]/40 text-[var(--wn-gold)] text-xs md:text-sm font-bold">
+              <Sparkles size={16} aria-hidden="true" />
+              <span>{copy.eyebrow}</span>
             </div>
 
             <h1 className="text-3xl md:text-5xl font-black">
-              {isAr ? 'المكتبة الرقمية والمصاحف المقروءة' : 'Digital Quranic & Tajweed Library'}
+              {copy.title}
             </h1>
-            <p className="text-emerald-100 text-sm md:text-base max-w-2xl mx-auto leading-relaxed">
-              {isAr
-                ? 'مواد تعليمية وكتب وفيديوهات تساعد الطالب على القراءة والمراجعة والتجويد من داخل المنصة.'
-                : 'Learning materials, books, and recorded lessons to support reading, review, and Tajweed.'}
+            <p className="text-[var(--wn-text-inverse)]/85 text-sm md:text-base max-w-2xl mx-auto leading-relaxed">
+              {copy.subtitle}
             </p>
 
             {/* Mode Switcher Tabs */}
             <div className="flex justify-center pt-6">
-              <div className="wn-library-switch">
+              <div className="wn-library-switch" role="tablist" aria-label={copy.switcherLabel}>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={mode === 'books'}
+                  aria-controls="library-books-panel"
                   onClick={() => setMode('books')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition ${
-                    mode === 'books'
-                      ? 'is-active' : ''
+                  className={`min-h-[44px] flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition ${
+                    mode === 'books' ? 'is-active' : ''
                   }`}
                 >
-                  <BookOpen size={18} />
-                  <span>{isAr ? 'المكتبة الرقمية والمصاحف (PDF)' : 'Digital Books & Mushafs (PDF)'}</span>
+                  <BookOpen size={18} aria-hidden="true" />
+                  <span>{copy.booksTab}</span>
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={mode === 'videos'}
+                  aria-controls="library-videos-panel"
                   onClick={() => setMode('videos')}
-                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition ${
-                    mode === 'videos'
-                      ? 'is-active' : ''
+                  className={`min-h-[44px] flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition ${
+                    mode === 'videos' ? 'is-active' : ''
                   }`}
                 >
-                  <MonitorPlay size={18} />
-                  <span>{isAr ? 'مكتبة الفيديوهات المسجلة' : 'Recorded Video Lessons'}</span>
+                  <MonitorPlay size={18} aria-hidden="true" />
+                  <span>{copy.videosTab}</span>
                 </button>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ═══ Download Toast Notification ═══ */}
-        {downloadSuccess && (
-          <div className="fixed bottom-6 right-6 z-50 bg-emerald-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex items-center gap-3 animate-bounce">
-            <CheckCircle size={22} className="text-emerald-400" />
-            <span className="text-sm font-bold">
-              {isAr ? `بدأ تحميل: ${downloadSuccess}` : `Downloading: ${downloadSuccess}`}
-            </span>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════════════
-            MODE 1: DIGITAL BOOKS & PDF LIBRARY
-        ══════════════════════════════════════════════════════════════════════════ */}
+        {/* MODE 1: DIGITAL BOOKS */}
         {mode === 'books' && (
-          <div className="max-w-6xl mx-auto px-4 mt-8 space-y-8">
-            {/* Search & Category Filter Bar */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5">
+          <div id="library-books-panel" role="tabpanel" className="max-w-6xl mx-auto px-4 mt-8 space-y-8">
+            <div className="bg-[var(--wn-surface)] rounded-2xl p-6 border border-[var(--wn-border)] shadow-sm space-y-5">
               <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                 <div className="relative w-full md:w-96">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none" size={18} aria-hidden="true" />
                   <input
-                    type="text"
+                    type="search"
                     value={bookSearch}
                     onChange={(e) => setBookSearch(e.target.value)}
-                    placeholder={isAr ? 'ابحث عن متن، مصحف، كتاب تأسيس...' : 'Search for a book, text, mushaf...'}
-                    className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-slate-50"
+                    aria-label={copy.searchAria}
+                    placeholder={copy.searchPlaceholder}
+                    className="w-full min-h-[44px] ps-10 pe-4 py-2.5 rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] placeholder:text-[var(--wn-text-tertiary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--wn-emerald)]"
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {BOOK_CATS.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setSelectedBookCat(c.id)}
-                      className={`px-4 py-2 rounded-xl text-xs md:text-sm font-semibold transition ${
-                        selectedBookCat === c.id
-                          ? 'bg-[var(--azhar-green-deep)] text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {isAr ? c.ar : c.en}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap gap-2 justify-center" role="group" aria-label={copy.switcherLabel}>
+                  {BOOK_CATS.map((c) => {
+                    const active = selectedBookCat === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setSelectedBookCat(c.id)}
+                        className={`min-h-[44px] px-4 py-2 rounded-xl text-xs md:text-sm font-semibold transition ${
+                          active
+                            ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] shadow-sm'
+                            : 'bg-[var(--wn-surface-sunken)] text-[var(--wn-text-primary)] hover:bg-[var(--wn-emerald-soft)] border border-[var(--wn-border)]'
+                        }`}
+                      >
+                        {catLabel(c)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
-            {/* Books Grid */}
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredBooks.map((book) => (
-                <div
+                <article
                   key={book.id}
-                  className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between"
+                  className="bg-[var(--wn-surface)] rounded-3xl border border-[var(--wn-border)] shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between"
                 >
                   <div>
-                    {/* Visual Cover Banner */}
                     <div className={`h-40 bg-gradient-to-br ${book.coverBg} text-white p-6 relative flex flex-col justify-between`}>
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-sm border border-white/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/20 backdrop-blur-sm border border-white/20">
                           {book.categoryName}
                         </span>
                         {book.featured && (
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[var(--azhar-gold-bright)] text-slate-900 shadow-sm flex items-center gap-1">
-                            <Sparkles size={12} /> {isAr ? 'مادة تعليمية' : 'Learning resource'}
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--wn-gold)] text-[var(--wn-emerald-deep)] shadow-sm flex items-center gap-1">
+                            <Sparkles size={12} aria-hidden="true" /> {copy.featuredBadge}
                           </span>
                         )}
                       </div>
 
                       <div>
-                        <h3 className="font-bold text-lg leading-tight line-clamp-2 text-white">
-                          {book.title}
-                        </h3>
+                        <h2 className="font-bold text-lg leading-tight line-clamp-2 text-white">
+                          {isRTL ? book.title : book.titleEn}
+                        </h2>
                       </div>
                     </div>
 
-                    {/* Book Metadata */}
                     <div className="p-6 space-y-4">
-                      <p className="text-xs text-slate-500 font-medium line-clamp-1">
-                        {isAr ? 'الناظم / المحقق: ' : 'Author: '}
-                        <strong className="text-slate-800">{book.author}</strong>
+                      <p className="text-xs text-[var(--wn-text-secondary)] font-medium line-clamp-1">
+                        {copy.authorLabel}
+                        <strong className="text-[var(--wn-text-primary)]">{book.author}</strong>
                       </p>
 
-                      <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">
+                      <p className="text-xs text-[var(--wn-text-secondary)] leading-relaxed line-clamp-3">
                         {book.description}
                       </p>
 
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-xs text-[var(--wn-text-secondary)] pt-2 border-t border-[var(--wn-border)]">
                         <span className="flex items-center gap-1">
-                          <FileText size={13} /> {book.pages} {isAr ? 'صفحة' : 'pages'}
+                          <FileText size={13} aria-hidden="true" /> {book.pages} {copy.pagesWord}
                         </span>
                         <span className="flex items-center gap-1">
-                          <Download size={13} /> {isAr ? 'تنزيل المادة' : 'Download material'}
+                          <Download size={13} aria-hidden="true" /> {copy.downloadHint}
                         </span>
-                        <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-[10px]">
+                        <span className="font-mono bg-[var(--wn-surface-sunken)] text-[var(--wn-text-primary)] px-2 py-0.5 rounded text-xs">
                           {book.size}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions (Preview & Download) */}
                   <div className="p-6 pt-0 grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setPreviewBook(book)}
-                      className="w-full py-2.5 px-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                      onClick={(e) => {
+                        lastTriggerRef.current = e.currentTarget;
+                        setPreviewBook(book);
+                      }}
+                      className="min-h-[44px] w-full py-2.5 px-3 rounded-xl border border-[var(--wn-border-strong)] text-[var(--wn-text-primary)] hover:bg-[var(--wn-surface-soft)] font-bold text-xs flex items-center justify-center gap-1.5 transition"
                     >
-                      <Eye size={15} />
-                      <span>{isAr ? 'قراءة مسبقة' : 'Preview'}</span>
+                      <Eye size={15} aria-hidden="true" />
+                      <span>{copy.previewBtn}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleDownload(book)}
-                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition"
+                      className="min-h-[44px] w-full py-2.5 px-3 rounded-xl bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
                     >
-                      <Download size={15} />
-                      <span>{isAr ? 'تحميل PDF' : 'Download PDF'}</span>
+                      <Download size={15} aria-hidden="true" />
+                      <span>{copy.downloadBtn}</span>
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
 
             {filteredBooks.length === 0 && (
-              <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
-                <BookOpen size={48} className="mx-auto text-slate-300 mb-3" />
-                <p className="font-bold text-slate-700">{isAr ? 'لا توجد نتائج مطابقة لبحثك' : 'No matching books found'}</p>
-                <p className="text-xs text-slate-400 mt-1">{isAr ? 'جرّب البحث باسم آخر أو إزالة التصنيف' : 'Try another query or remove category filter'}</p>
+              <div className="text-center py-20 bg-[var(--wn-surface)] rounded-3xl border border-dashed border-[var(--wn-border-strong)]">
+                <BookOpen size={48} className="mx-auto text-[var(--wn-text-tertiary)] mb-3" aria-hidden="true" />
+                <p className="font-bold text-[var(--wn-heading)]">{copy.noBooks}</p>
+                <p className="text-xs text-[var(--wn-text-secondary)] mt-1">{copy.noBooksHint}</p>
               </div>
             )}
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════════════
-            MODE 2: RECORDED VIDEO LESSONS
-        ══════════════════════════════════════════════════════════════════════════ */}
+        {/* MODE 2: RECORDED VIDEO LESSONS */}
         {mode === 'videos' && (
-          <div className="max-w-6xl mx-auto px-4 mt-8 space-y-8">
-            <div className="flex flex-wrap gap-2 justify-center">
-              {VIDEO_CATS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setCategory(c.id)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                    category === c.id
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-white border border-gray-200 text-gray-600 hover:border-emerald-300'
-                  }`}
-                >
-                  {isAr ? c.ar : c.en}
-                </button>
-              ))}
+          <div id="library-videos-panel" role="tabpanel" className="max-w-6xl mx-auto px-4 mt-8 space-y-8">
+            <div className="flex flex-wrap gap-2 justify-center" role="group" aria-label={copy.videosTab}>
+              {VIDEO_CATS.map((c) => {
+                const active = category === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setCategory(c.id)}
+                    className={`min-h-[44px] px-4 py-2 rounded-full text-sm font-medium transition ${
+                      active
+                        ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                        : 'bg-[var(--wn-surface)] border border-[var(--wn-border-strong)] text-[var(--wn-text-secondary)] hover:border-[var(--wn-emerald)] hover:text-[var(--wn-heading)]'
+                    }`}
+                  >
+                    {catLabel(c)}
+                  </button>
+                );
+              })}
             </div>
 
             {selectedVideo && (() => {
@@ -519,7 +755,7 @@ export default function LibraryPage() {
                 safeEmbedSrc = '';
               }
               return safeEmbedSrc ? (
-                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl bg-black max-w-4xl mx-auto">
+                <div className="aspect-video rounded-2xl overflow-hidden shadow-xl bg-[var(--wn-emerald-deep)] max-w-4xl mx-auto">
                   <iframe
                     title={selectedVideo.title}
                     src={safeEmbedSrc}
@@ -533,12 +769,27 @@ export default function LibraryPage() {
             })()}
 
             {loadingVideos ? (
-              <div className="flex justify-center py-16"><div className="spinner spinner-lg" /></div>
+              <div role="status" className="flex flex-col items-center justify-center py-16 gap-3">
+                <div className="spinner spinner-lg" aria-hidden="true" />
+                <span className="sr-only">{copy.loadingVideos}</span>
+              </div>
+            ) : videoError ? (
+              <div role="alert" className="text-center py-14 bg-[var(--wn-surface)] rounded-2xl border border-[var(--wn-danger)]/40 px-4">
+                <p className="text-[var(--wn-text-danger,var(--wn-danger))] font-bold mb-4">{videoError}</p>
+                <button
+                  type="button"
+                  onClick={() => fetchVideos(category)}
+                  className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] text-sm font-bold"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                  <span>{copy.retryBtn}</span>
+                </button>
+              </div>
             ) : videos.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-200">
-                <MonitorPlay className="mx-auto text-gray-300 mb-4" size={48} />
-                <p className="text-gray-600 font-medium">{isAr ? 'لا فيديوهات في هذا التصنيف حالياً' : 'No videos in this category yet'}</p>
-                <p className="text-sm text-gray-400 mt-2">{isAr ? 'جرّب تصنيفاً آخر أو عد لاحقاً' : 'Try another category or check back later'}</p>
+              <div className="text-center py-16 bg-[var(--wn-surface)] rounded-2xl border border-dashed border-[var(--wn-border-strong)]">
+                <MonitorPlay className="mx-auto text-[var(--wn-text-tertiary)] mb-4" size={48} aria-hidden="true" />
+                <p className="text-[var(--wn-heading)] font-medium">{copy.noVideos}</p>
+                <p className="text-sm text-[var(--wn-text-secondary)] mt-2">{copy.noVideosHint}</p>
               </div>
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -547,20 +798,20 @@ export default function LibraryPage() {
                     key={v._id}
                     type="button"
                     onClick={() => setSelectedVideo(v)}
-                    className="bg-white rounded-2xl shadow-md overflow-hidden text-right hover:shadow-lg transition"
+                    className="bg-[var(--wn-surface)] border border-[var(--wn-border)] rounded-2xl shadow-md overflow-hidden text-start hover:shadow-lg transition"
                   >
-                    <div className="aspect-video bg-emerald-100 flex items-center justify-center relative">
-                      <Play className="text-emerald-600" size={40} />
+                    <div className="aspect-video bg-[var(--wn-emerald-soft)] flex items-center justify-center relative">
+                      <Play className="text-[var(--wn-link)]" size={40} aria-hidden="true" />
                       {v.duration > 0 && (
-                        <span className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
+                        <span className="absolute bottom-2 end-2 bg-black/75 text-white text-xs px-2 py-0.5 rounded">
                           {fmt(v.duration)}
                         </span>
                       )}
                     </div>
                     <div className="p-4">
-                      <h3 className="font-bold mb-1">{isAr ? v.title : (v.titleEn || v.title)}</h3>
-                      <p className="text-xs text-gray-500 flex items-center gap-1">
-                        <BookOpen size={12} /> {v.category} · {v.views || 0} {isAr ? 'مشاهدة' : 'views'}
+                      <h3 className="font-bold text-[var(--wn-heading)] mb-1">{isRTL ? v.title : (v.titleEn || v.title)}</h3>
+                      <p className="text-xs text-[var(--wn-text-secondary)] flex items-center gap-1">
+                        <BookOpen size={12} aria-hidden="true" /> {v.category} · {v.views || 0} {copy.viewsWord}
                       </p>
                     </div>
                   </button>
@@ -570,42 +821,55 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {/* ═══ Book Preview Modal ═══ */}
+        {/* Accessible Book Preview Modal */}
         {previewBook && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden my-8 border border-slate-200">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="library-preview-title"
+            onClick={closePreview}
+            className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[var(--wn-surface)] w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden my-8 border border-[var(--wn-border)]"
+            >
               {/* Modal Header */}
-              <div className="bg-slate-900 text-white p-6 flex items-center justify-between">
+              <div className="bg-[var(--wn-emerald-deep)] text-[var(--wn-text-inverse)] p-6 flex items-center justify-between gap-4">
                 <div>
-                  <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">{previewBook.categoryName}</span>
-                  <h3 className="text-xl font-black text-white leading-tight">{previewBook.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1">{previewBook.author}</p>
+                  <span className="text-xs font-bold text-[var(--wn-gold)] uppercase tracking-wider">{previewBook.categoryName}</span>
+                  <h2 id="library-preview-title" className="text-xl font-black text-white leading-tight">
+                    {isRTL ? previewBook.title : previewBook.titleEn}
+                  </h2>
+                  <p className="text-xs text-white/80 mt-1">{previewBook.author}</p>
                 </div>
                 <button
+                  ref={closeModalBtnRef}
                   type="button"
-                  onClick={() => setPreviewBook(null)}
-                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition"
+                  onClick={closePreview}
+                  aria-label={copy.closeBtn}
+                  className="min-h-[44px] min-w-[44px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition shrink-0"
                 >
-                  <X size={20} />
+                  <X size={20} aria-hidden="true" />
                 </button>
               </div>
 
-              {/* Modal Body: Book Chapters */}
-              <div className="p-6 md:p-8 max-h-[60vh] overflow-y-auto space-y-6 bg-slate-50/50">
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-900 flex items-center justify-between">
+              {/* Modal Body */}
+              <div className="p-6 md:p-8 max-h-[60vh] overflow-y-auto space-y-6 bg-[var(--wn-surface-soft)]">
+                <div className="bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-2xl p-4 text-xs text-[var(--wn-heading)] flex items-center justify-between gap-3">
                   <span>{previewBook.description}</span>
-                  <span className="shrink-0 font-bold bg-emerald-200 text-emerald-950 px-2.5 py-1 rounded-full mr-2">
-                    {previewBook.pages} {isAr ? 'صفحة' : 'pages'}
+                  <span className="shrink-0 font-bold bg-[var(--wn-surface)] text-[var(--wn-heading)] border border-[var(--wn-border-mint)] px-2.5 py-1 rounded-full ms-2">
+                    {previewBook.pages} {copy.pagesWord}
                   </span>
                 </div>
 
                 {previewBook.chapters.map((ch, idx) => (
-                  <div key={idx} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3">
-                    <h4 className="font-bold text-base text-emerald-800 border-b border-slate-100 pb-2 flex items-center gap-2">
-                      <Sparkles size={16} className="text-amber-500" />
+                  <div key={idx} className="bg-[var(--wn-surface)] rounded-2xl p-6 border border-[var(--wn-border)] shadow-sm space-y-3">
+                    <h3 className="font-bold text-base text-[var(--wn-heading)] border-b border-[var(--wn-border)] pb-2 flex items-center gap-2">
+                      <Sparkles size={16} className="text-[var(--wn-text-gold)]" aria-hidden="true" />
                       <span>{ch.title}</span>
-                    </h4>
-                    <div className="font-serif text-slate-800 text-base md:text-lg leading-loose whitespace-pre-line select-all bg-amber-50/30 p-4 rounded-xl border border-amber-100/50">
+                    </h3>
+                    <div className="font-serif text-[var(--wn-text-primary)] text-base md:text-lg leading-loose whitespace-pre-line select-all bg-[var(--wn-gold-soft)] p-4 rounded-xl border border-[var(--wn-border)]">
                       {ch.content}
                     </div>
                   </div>
@@ -613,35 +877,35 @@ export default function LibraryPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="bg-white border-t border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="bg-[var(--wn-surface)] border-t border-[var(--wn-border)] p-4 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                  className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-[var(--wn-text-primary)] bg-[var(--wn-surface-sunken)] hover:bg-[var(--wn-emerald-soft)] transition"
                 >
-                  <Printer size={15} />
-                  <span>{isAr ? 'طباعة هذه المعاينة' : 'Print Preview'}</span>
+                  <Printer size={15} aria-hidden="true" />
+                  <span>{copy.printPreview}</span>
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setPreviewBook(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                    onClick={closePreview}
+                    className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-[var(--wn-text-secondary)] hover:bg-[var(--wn-surface-sunken)] transition"
                   >
-                    {isAr ? 'إغلاق' : 'Close'}
+                    {copy.closeBtn}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => {
                       handleDownload(previewBook);
-                      setPreviewBook(null);
+                      closePreview();
                     }}
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 transition"
+                    className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] shadow-sm hover:bg-[var(--wn-emerald-hover)] transition"
                   >
-                    <Download size={15} />
-                    <span>{isAr ? 'تحميل النسخة الكاملة' : 'Download Full Copy'}</span>
+                    <Download size={15} aria-hidden="true" />
+                    <span>{copy.downloadFullCopy}</span>
                   </button>
                 </div>
               </div>

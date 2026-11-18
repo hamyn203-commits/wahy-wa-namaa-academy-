@@ -75,9 +75,9 @@ router.get('/teachers', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     const [teachers, students] = await Promise.all([
-      Teacher.countDocuments({ status: 'approved', 'personalInfo.gender': 'female', 'quranInfo.specializations': 'women' }),
+      Teacher.countDocuments({ status: 'approved', isVerified: true, 'personalInfo.gender': 'female', 'quranInfo.specializations': 'women' }),
       Teacher.aggregate([
-        { $match: { status: 'approved', 'personalInfo.gender': 'female' } },
+        { $match: { status: 'approved', isVerified: true, 'personalInfo.gender': 'female' } },
         { $group: { _id: null, totalStudents: { $sum: '$stats.totalStudents' } } },
       ]),
     ]);

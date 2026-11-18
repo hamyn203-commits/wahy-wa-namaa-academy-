@@ -1,8 +1,12 @@
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Blog = require('../models/Blog');
 const { protect, authorize } = require('../middleware/auth');
+const { isMockMode } = require('../config/runtime');
+
+const isDBConnected = () => mongoose.connection.readyState === 1;
 
 const pickLocalized = (doc, locale = 'ar') => {
   const get = (field) => field?.[locale] || field?.ar || field?.en || '';
@@ -72,6 +76,12 @@ router.get('/', async (req, res) => {
     }
 
     const skip = (pageNum - 1) * limitNum;
+    if (isMockMode && !isDBConnected()) {
+      return res.json({
+        posts: [],
+        pagination: { page: pageNum, limit: limitNum, total: 0, pages: 0 },
+      });
+    }
     const [posts, total] = await Promise.all([
       Blog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
       Blog.countDocuments(filter),
@@ -90,6 +100,9 @@ router.get('/:slug', async (req, res) => {
   try {
     const rawLocale = String(req.query.locale || 'ar');
     const locale = ALLOWED_BLOG_LOCALES.has(rawLocale) ? rawLocale : 'ar';
+    if (isMockMode && !isDBConnected()) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
     const post = await Blog.findOneAndUpdate(
       { slug: String(req.params.slug || '').trim().slice(0, 180), status: 'published' },
       { $inc: { views: 1 } },

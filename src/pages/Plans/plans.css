@@ -219,7 +219,7 @@
 }
 
 .wn-plans-frequency button {
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   padding: 8px 13px;
   border: 0;
   border-radius: 11px;
@@ -632,4 +632,255 @@
   color: #0f6b4f;
   font-size: 10px;
   font-weight: 800;
+}
+
+/* Dark theme overrides using --wn-* design tokens (0 raw hex/rgba/important) */
+[data-theme="dark"] .wn-plans-page {
+  background: var(--wn-bg);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plans-hero__price {
+  border-color: var(--wn-border-strong);
+  background: var(--wn-surface);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plans-hero__price small,
+[data-theme="dark"] .wn-plans-hero__price span {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-hero__price strong {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-plans-controls {
+  border-color: var(--wn-border);
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-lg);
+}
+
+[data-theme="dark"] .wn-plans-segment button {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-segment button strong {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-segment button.is-active {
+  border-color: var(--wn-border-mint);
+  background: var(--wn-emerald-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-segment button.is-women.is-active {
+  border-color: var(--wn-women-border);
+  background: var(--wn-women-soft);
+  color: var(--wn-women-accent);
+}
+
+[data-theme="dark"] .wn-plans-frequency {
+  background: var(--wn-surface-sunken);
+}
+
+[data-theme="dark"] .wn-plans-frequency > span {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-frequency button {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plans-frequency button.is-active {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-plans-selection {
+  border-color: var(--wn-border-mint);
+  background: var(--wn-emerald-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-selection p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-women-banner {
+  border-color: var(--wn-women-border);
+  background: var(--wn-women-soft);
+}
+
+[data-theme="dark"] .wn-plans-women-banner__icon {
+  background: var(--wn-surface);
+  color: var(--wn-women-accent);
+}
+
+[data-theme="dark"] .wn-plans-women-banner span {
+  color: var(--wn-women-accent);
+}
+
+[data-theme="dark"] .wn-plans-women-banner h2 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-women-banner p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-heading > span {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-plans-heading h2 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-heading p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card {
+  border-color: var(--wn-border);
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-md);
+}
+
+[data-theme="dark"] .wn-plan-card:hover {
+  border-color: var(--wn-border-mint);
+  box-shadow: var(--wn-shadow-lg);
+}
+
+[data-theme="dark"] .wn-plan-card.is-featured {
+  border-color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-plan-card__media {
+  background: var(--wn-surface-mint);
+}
+
+[data-theme="dark"] .wn-plan-card.is-gold .wn-plan-card__media {
+  background: var(--wn-gold-soft);
+}
+
+[data-theme="dark"] .wn-plan-card__badge {
+  background: var(--wn-surface);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plan-card__title {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-plan-card__title span {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card__title h3 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plan-card__duration {
+  border-color: var(--wn-border);
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card__duration svg {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-plan-card__duration strong {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plan-card__price > span,
+[data-theme="dark"] .wn-plan-card__price small {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card__price > strong {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-plan-card__price b {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plan-card__monthly {
+  background: var(--wn-surface-soft);
+}
+
+[data-theme="dark"] .wn-plan-card__monthly span {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card__monthly strong {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plan-card li {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plan-card li svg {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-plans-note {
+  border-color: var(--wn-border);
+  background: var(--wn-surface);
+}
+
+[data-theme="dark"] .wn-plans-note strong {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-note p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-compare {
+  border-color: var(--wn-border);
+  background: var(--wn-surface);
+}
+
+[data-theme="dark"] .wn-plans-compare__header {
+  border-color: var(--wn-border);
+  background: var(--wn-surface-soft);
+}
+
+[data-theme="dark"] .wn-plans-compare__header h3 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-compare__header p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-compare__table th,
+[data-theme="dark"] .wn-plans-compare__table td {
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-plans-compare__table thead th {
+  background: var(--wn-surface-sunken);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-plans-compare__table tbody tr.is-featured {
+  background: var(--wn-emerald-soft);
+}
+
+[data-theme="dark"] .wn-plans-compare__plan-name {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-plans-compare__tag {
+  background: var(--wn-gold-soft);
+  color: var(--wn-text-gold);
 }
