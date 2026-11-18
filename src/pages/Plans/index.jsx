@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BadgeCheck, BookOpenCheck, Check, Clock3,
   Crown, Heart, ShieldCheck, Sparkles, Users, UserRound
@@ -101,18 +101,302 @@ const PLAN_DEFS = [
   },
 ];
 
+const PLANS_COPY = {
+  ar: {
+    pageTitle: 'خطط الاشتراك | أكاديمية وحي ونماء',
+    pageDesc: 'خطط مرنة لتعلّم القرآن تبدأ من 10 جنيه للحصة مع حلقات جماعية، مجموعات مركزة، وحصص فردية، وقسم سيدات مستقل.',
+    home: 'الرئيسية',
+    breadcrumb: 'خطط الاشتراك',
+    kicker: 'خطط تناسب كل بيت',
+    heroTitle: 'ابدأ رحلتك مع القرآن من 10 جنيه للحصة',
+    heroDesc: 'كلما صغر حجم الحلقة زاد وقت المتابعة والتسميع لكل طالب. اختر المستوى الذي يناسب ميزانيتك واحتياجك.',
+    proof1: 'معلمون ومعلمات معتمدون',
+    proof2: 'حفظ وتجويد وتأسيس',
+    proof3: 'مدة مرنة حسب نوع الخطة',
+    startAt: 'تبدأ من',
+    currencyLong: 'جنيه',
+    currencyShort: 'ج',
+    perSession: 'للحصة',
+    sectionLabel: 'اختيار القسم',
+    menTitle: 'قسم الرجال والأطفال',
+    menDesc: 'رجال وأطفال حسب العمر والمستوى',
+    womenTitle: 'قسم السيدات',
+    womenDesc: 'معلمات متخصصات وبيئة مريحة',
+    sessionsAria: 'عدد الحصص في الباقة',
+    sessionsLabel: 'عدد الحصص',
+    sessionsWord: 'حصص',
+    sessionWordSingle: 'حصة',
+    catalogKicker: '5 خطط واضحة',
+    catalogTitle: 'كلما قل العدد، زادت المتابعة',
+    catalogDesc: 'السعر المعروض هو سعر الطالب للحصة الواحدة. اختر 4 أو 8 أو 12 أو 24 حصة، وسيظهر إجمالي الباقة تلقائيًا.',
+    durationLabel: 'مدة الحصة:',
+    fromWord: 'من ',
+    perSessionUnit: '/ الحصة',
+    inPackage: 'في الباقة',
+    saving: 'جاري الحفظ...',
+    renewBtn: 'تجديد الباقة',
+    chooseBtn: 'اختيار الخطة',
+    compareTitle: 'جدول المقارنة السريع بين الخطط',
+    compareDesc: 'مقارنة شاملة حسب عدد الطلاب ومدة الحصة والتكلفة الإجمالية للباقة المختارة.',
+    colPlan: 'الخطة',
+    colSize: 'عدد الطلاب',
+    colDuration: 'مدة الحصة',
+    colPerSession: 'سعر الحصة',
+    colTotal: 'إجمالي',
+    bottomKicker: 'لسه محتار؟',
+    bottomTitle: 'ابدأ بالتجربة، وبعدها نرشح لك الخطة الأنسب',
+    bottomBtn: 'اختيار معلم',
+  },
+  en: {
+    pageTitle: 'Subscription Plans | Wahy Wa Namaa Academy',
+    pageDesc: 'Flexible Quran learning plans starting from 10 EGP per session, with group, focused, private, and women-only learning options.',
+    home: 'Home',
+    breadcrumb: 'Plans & Pricing',
+    kicker: 'Plans for every learner',
+    heroTitle: 'Start your Quran journey from 10 EGP per session',
+    heroDesc: 'Smaller circles give each learner more recitation and tutor attention. Choose the balance that fits your goals and budget.',
+    proof1: 'Approved tutors',
+    proof2: 'Hifz, Tajweed & foundation',
+    proof3: 'Flexible duration by plan',
+    startAt: 'Starting at',
+    currencyLong: 'EGP',
+    currencyShort: 'EGP',
+    perSession: 'per session',
+    sectionLabel: 'Choose section',
+    menTitle: 'Men & children',
+    menDesc: 'Men and children by age and level',
+    womenTitle: 'Women’s section',
+    womenDesc: 'Female tutors in a comfortable environment',
+    sessionsAria: 'Sessions in package',
+    sessionsLabel: 'Sessions',
+    sessionsWord: 'sessions',
+    sessionWordSingle: 'sessions',
+    catalogKicker: '5 clear plans',
+    catalogTitle: 'Fewer learners. More tutor attention.',
+    catalogDesc: 'Prices are per learner, per session. Choose 4, 8, 12, or 24 sessions and the package total updates automatically.',
+    durationLabel: 'Session duration:',
+    fromWord: 'from ',
+    perSessionUnit: '/ session',
+    inPackage: 'in package',
+    saving: 'Saving...',
+    renewBtn: 'Renew package',
+    chooseBtn: 'Choose plan',
+    compareTitle: 'Quick Plan Comparison',
+    compareDesc: 'Side-by-side comparison of group size, session duration, and package total.',
+    colPlan: 'Plan',
+    colSize: 'Group size',
+    colDuration: 'Session duration',
+    colPerSession: 'Per session',
+    colTotal: 'Total',
+    bottomKicker: 'Not sure yet?',
+    bottomTitle: 'Start with a trial, then we recommend the best plan',
+    bottomBtn: 'Choose a tutor',
+  },
+  fr: {
+    pageTitle: 'Forfaits d’abonnement | Académie Wahy Wa Namaa',
+    home: 'Accueil',
+    breadcrumb: 'Forfaits & Tarifs',
+    kicker: 'Des forfaits pour chaque foyer',
+    heroTitle: 'Commencez votre parcours coranique dès 10 EGP par séance',
+    heroDesc: 'Plus le cercle est restreint, plus chaque élève bénéficie d’écoute et d’attention personnalisée.',
+    proof1: 'Enseignants certifiés',
+    proof2: 'Hifz, Tajwid & Bases',
+    proof3: 'Durée flexible selon le forfait',
+    startAt: 'À partir de',
+    perSession: 'par séance',
+    sectionLabel: 'Choisir la section',
+    menTitle: 'Section Hommes & Enfants',
+    menDesc: 'Hommes et enfants selon l’âge et le niveau',
+    womenTitle: 'Section Femmes',
+    womenDesc: 'Enseignantes dédiées dans un cadre serein',
+    sessionsLabel: 'Séances',
+    sessionsWord: 'séances',
+    sessionWordSingle: 'séances',
+    saving: 'Enregistrement...',
+    renewBtn: 'Renouveler le forfait',
+    chooseBtn: 'Choisir ce forfait',
+    bottomKicker: 'Vous hésitez encore ?',
+    bottomTitle: 'Commencez par un essai, puis nous vous conseillons le meilleur forfait',
+    bottomBtn: 'Choisir un enseignant',
+  },
+  de: {
+    pageTitle: 'Abo-Pläne | Wahy Wa Namaa Akademie',
+    home: 'Startseite',
+    breadcrumb: 'Pläne & Preise',
+    kicker: 'Pläne für jeden Lernenden',
+    heroTitle: 'Starten Sie Ihre Koran-Reise ab 10 EGP pro Sitzung',
+    heroDesc: 'Kleinere Lerngruppen bieten mehr Rezitationszeit und persönliche Betreuung.',
+    proof1: 'Geprüfte Lehrkräfte',
+    proof2: 'Hifz, Tadschwid & Grundlagen',
+    proof3: 'Flexible Dauer je Plan',
+    startAt: 'Ab',
+    perSession: 'pro Sitzung',
+    sectionLabel: 'Bereich wählen',
+    menTitle: 'Bereich Männer & Kinder',
+    menDesc: 'Männer und Kinder nach Alter und Niveau',
+    womenTitle: 'Bereich Frauen',
+    womenDesc: 'Weibliche Lehrkräfte in geschützter Umgebung',
+    sessionsLabel: 'Sitzungen',
+    sessionsWord: 'Sitzungen',
+    sessionWordSingle: 'Sitzungen',
+    saving: 'Speichern...',
+    renewBtn: 'Paket verlängern',
+    chooseBtn: 'Plan wählen',
+    bottomKicker: 'Noch unsicher?',
+    bottomTitle: 'Mit einer Probestunde starten und den besten Plan finden',
+    bottomBtn: 'Lehrkraft wählen',
+  },
+  tr: {
+    pageTitle: 'Abonelik Planları | Wahy Wa Namaa Akademisi',
+    home: 'Ana Sayfa',
+    breadcrumb: 'Planlar ve Fiyatlar',
+    kicker: 'Herkese uygun planlar',
+    heroTitle: 'Ders başına 10 EGP’den başlayan fiyatlarla Kur’an yolculuğunuza başlayın',
+    heroDesc: 'Halka küçüldükçe her öğrenciye ayrılan dinleme ve takip süresi artar.',
+    proof1: 'Onaylı eğitmenler',
+    proof2: 'Hıfz, Tecvid ve Temel Eğitim',
+    proof3: 'Plana göre esnek süre',
+    startAt: 'Başlangıç',
+    perSession: 'ders başı',
+    sectionLabel: 'Bölüm seçin',
+    menTitle: 'Erkekler ve Çocuklar Bölümü',
+    menDesc: 'Yaş ve seviyeye göre erkekler ve çocuklar',
+    womenTitle: 'Hanımlar Bölümü',
+    womenDesc: 'Rahat bir ortamda kadın hocalar',
+    sessionsLabel: 'Ders sayısı',
+    sessionsWord: 'ders',
+    sessionWordSingle: 'ders',
+    saving: 'Kaydediliyor...',
+    renewBtn: 'Paketi yenile',
+    chooseBtn: 'Planı seç',
+    bottomKicker: 'Hâlâ kararsız mısınız?',
+    bottomTitle: 'Deneme dersiyle başlayın, size en uygun planı önerelim',
+    bottomBtn: 'Eğitmen seç',
+  },
+  ur: {
+    pageTitle: 'سبسکرپشن پلانز | وحی و نما اکیڈمی',
+    home: 'صفحہ اول',
+    breadcrumb: 'پلانز اور قیمتیں',
+    kicker: 'ہر گھرانے کے لیے موزوں پلانز',
+    heroTitle: 'فی سیشن 10 EGP سے اپنا قرآنی سفر شروع کریں',
+    heroDesc: 'حلقہ جتنا چھوٹا ہوگا، ہر طالب علم کو اتنا ہی زیادہ وقت اور توجہ ملے گی۔',
+    proof1: 'مستند معلمین و معلمات',
+    proof2: 'حفظ، تجوید اور بنیاد',
+    proof3: 'پلان کے مطابق لچکدار دورانیہ',
+    startAt: 'ابتداء از',
+    perSession: 'فی سیشن',
+    sectionLabel: 'شعبہ منتخب کریں',
+    menTitle: 'مرد و بچوں کا شعبہ',
+    menDesc: 'عمر اور سطح کے مطابق مرد اور بچے',
+    womenTitle: 'خواتین کا شعبہ',
+    womenDesc: 'آرام دہ ماحول میں ماہر معلمات',
+    sessionsLabel: 'سیشنز',
+    sessionsWord: 'سیشنز',
+    sessionWordSingle: 'سیشنز',
+    saving: 'محفوظ ہو رہا ہے...',
+    renewBtn: 'پیکج کی تجدید کریں',
+    chooseBtn: 'پلان منتخب کریں',
+    bottomKicker: 'ابھی فیصلہ نہیں کیا؟',
+    bottomTitle: 'آزمائشی کلاس سے شروع کریں، پھر ہم بہترین پلان تجویز کریں گے',
+    bottomBtn: 'استاد منتخب کریں',
+  },
+  id: {
+    pageTitle: 'Paket Langganan | Akademi Wahy Wa Namaa',
+    home: 'Beranda',
+    breadcrumb: 'Paket & Harga',
+    kicker: 'Paket untuk setiap pelajar',
+    heroTitle: 'Mulai perjalanan Al-Qur’an dari 10 EGP per sesi',
+    heroDesc: 'Semakin kecil kelompok, semakin banyak waktu setoran dan perhatian pengajar untuk setiap siswa.',
+    proof1: 'Pengajar terverifikasi',
+    proof2: 'Tahfidz, Tajwid & Dasar',
+    proof3: 'Durasi fleksibel sesuai paket',
+    startAt: 'Mulai dari',
+    perSession: 'per sesi',
+    sectionLabel: 'Pilih bagian',
+    menTitle: 'Bagian Putra & Anak',
+    menDesc: 'Putra dan anak sesuai usia dan level',
+    womenTitle: 'Bagian Muslimah',
+    womenDesc: 'Pengajar wanita di lingkungan nyaman',
+    sessionsLabel: 'Jumlah sesi',
+    sessionsWord: 'sesi',
+    sessionWordSingle: 'sesi',
+    saving: 'Menyimpan...',
+    renewBtn: 'Perbarui paket',
+    chooseBtn: 'Pilih paket',
+    bottomKicker: 'Masih bingung?',
+    bottomTitle: 'Mulai dengan kelas percobaan, lalu kami rekomendasikan paket terbaik',
+    bottomBtn: 'Pilih pengajar',
+  },
+  ms: {
+    pageTitle: 'Pelan Langganan | Akademi Wahy Wa Namaa',
+    home: 'Utama',
+    breadcrumb: 'Pelan & Harga',
+    kicker: 'Pelan untuk setiap pelajar',
+    heroTitle: 'Mulakan perjalanan Al-Quran daripada 10 EGP setiap sesi',
+    heroDesc: 'Kumpulan yang lebih kecil memberi lebih masa bacaan dan perhatian guru kepada setiap pelajar.',
+    proof1: 'Guru bertauliah',
+    proof2: 'Hafazan, Tajwid & Asas',
+    proof3: 'Tempoh fleksibel mengikut pelan',
+    startAt: 'Bermula dari',
+    perSession: 'setiap sesi',
+    sectionLabel: 'Pilih bahagian',
+    menTitle: 'Bahagian Lelaki & Kanak-Kanak',
+    menDesc: 'Lelaki dan kanak-kanak mengikut umur dan tahap',
+    womenTitle: 'Bahagian Wanita',
+    womenDesc: 'Guru wanita dalam suasana selesa',
+    sessionsLabel: 'Bilangan sesi',
+    sessionsWord: 'sesi',
+    sessionWordSingle: 'sesi',
+    saving: 'Menyimpan...',
+    renewBtn: 'Perbaharui pelan',
+    chooseBtn: 'Pilih pelan',
+    bottomKicker: 'Masih belum pasti?',
+    bottomTitle: 'Mulakan dengan kelas percubaan, kemudian kami cadangkan pelan terbaik',
+    bottomBtn: 'Pilih guru',
+  },
+  ku: {
+    pageTitle: 'پلانەکانی بەشداریکردن | ئەکادیمیای وەحی و نەما',
+    home: 'سەرەتا',
+    breadcrumb: 'پلان و نرخەکان',
+    kicker: 'پلان بۆ هەموو ماڵێک',
+    heroTitle: 'گەشتە قورئانییەکەت لە 10 EGP بۆ هەر وانەیەک دەست پێبکە',
+    heroDesc: 'تا ژمارەی فێرخوازان کەمتر بێت، کاتی گوێگرتن و بەدواداچوون بۆ هەر فێرخوازێک زیاتر دەبێت.',
+    proof1: 'مامۆستایانی باوەڕپێکراو',
+    proof2: 'لەبەرکردن، تەجوید و بنەما',
+    proof3: 'ماوەی گونجاو بەپێی پلان',
+    startAt: 'دەست پێدەکات لە',
+    perSession: 'بۆ هەر وانەیەک',
+    sectionLabel: 'هەڵبژاردنی بەش',
+    menTitle: 'بەشی پیاوان و منداڵان',
+    menDesc: 'پیاوان و منداڵان بەپێی تەمەن و ئاست',
+    womenTitle: 'بەشی خانمان',
+    womenDesc: 'مامۆستایانی ئافرەت و ژینگەیەکی ئارام',
+    sessionsLabel: 'ژمارەی وانەکان',
+    sessionsWord: 'وانە',
+    sessionWordSingle: 'وانە',
+    saving: 'پاشەکەوت دەکرێت...',
+    renewBtn: 'نوێکردنەوەی پلان',
+    chooseBtn: 'هەڵبژاردنی پلان',
+    bottomKicker: 'هێشتا دوودڵیت؟',
+    bottomTitle: 'بە تاقیکردنەوە دەست پێبکە، پاشان باشترین پلانت بۆ پێشنیار دەکەین',
+    bottomBtn: 'هەڵبژاردنی مامۆستا',
+  },
+};
+
 export default function PlansPage() {
-  const { locale } = useI18n();
+  const { locale, isRTL, dir } = useI18n();
+  const baseCopy = isRTL ? PLANS_COPY.ar : PLANS_COPY.en;
+  const copy = { ...baseCopy, ...(PLANS_COPY[locale] || {}) };
   const { user, isAuthenticated, isLoading } = useAuth();
   const { createOfferCatalogSchema, createBreadcrumbSchema } = useSEO();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const renewalId = searchParams.get('renew') || '';
   const targetStudentId = searchParams.get('student') || '';
   const requestedPlanId = searchParams.get('plan') || '';
-  const isAr = locale === 'ar';
-  const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const [audience, setAudience] = useState(() => (
     searchParams.get('section') === 'women' || searchParams.get('section') === 'ladies' ? 'women' : 'general'
   ));
@@ -126,6 +410,8 @@ export default function PlansPage() {
   const [selection, setSelection] = useState(null);
   const [selectingPlan, setSelectingPlan] = useState('');
   const [renewalSource, setRenewalSource] = useState(null);
+  const generalTabRef = useRef(null);
+  const womenTabRef = useRef(null);
 
   useEffect(() => {
     if (!renewalId && enrolledSection) setTimeout(() => setAudience(enrolledSection === 'ladies' ? 'women' : 'general'), 0);
@@ -160,13 +446,13 @@ export default function PlansPage() {
         setAudience(source.section === 'ladies' ? 'women' : 'general');
       })
       .catch((error) => {
-        if (!cancelled) toast.error(error.message || (isAr ? 'تعذر تحميل بيانات التجديد.' : 'Could not load renewal details.'));
+        if (!cancelled) toast.error(error.message || (isRTL ? 'تعذر تحميل بيانات التجديد.' : 'Could not load renewal details.'));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [renewalId, isAuthenticated, user?.role, toast, isAr]);
+  }, [renewalId, isAuthenticated, user?.role, toast, isRTL]);
 
   const serverPlans = useMemo(
     () => new Map((catalog?.plans || []).map((plan) => [plan.key, plan])),
@@ -202,17 +488,27 @@ export default function PlansPage() {
     ? plans.filter((plan) => plan.id === renewalSource.planKey)
     : plans;
 
+  const handleSegmentKeyDown = (e) => {
+    if (renewalSource || enrolledSection) return;
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const next = audience === 'general' ? 'women' : 'general';
+      setAudience(next);
+      (next === 'women' ? womenTabRef.current : generalTabRef.current)?.focus();
+    }
+  };
+
   const handlePlanSelect = async (plan) => {
-    if (isLoading) return;
+    if (isLoading || selectingPlan) return;
 
     if (!isAuthenticated) {
-      const returnTo = localizedPath('/plans', locale);
+      const returnTo = (location.pathname || localizedPath('/plans', locale)) + (location.search || '');
       navigate(localizedPath('/login', locale) + '?redirect=' + encodeURIComponent(returnTo));
       return;
     }
 
     if (user?.role !== 'student' && !(user?.role === 'guardian' && (targetStudentId || renewalId))) {
-      toast.warning(isAr ? 'اختيار باقات الطلاب متاح من حساب الطالب.' : 'Student packages can only be selected from a student account.');
+      toast.warning(isRTL ? 'اختيار باقات الطلاب متاح من حساب الطالب.' : 'Student packages can only be selected from a student account.');
       return;
     }
 
@@ -234,10 +530,10 @@ export default function PlansPage() {
       setSelection(data.subscription || null);
       toast.success(
         renewalSource
-          ? (isAr
+          ? (isRTL
               ? 'تم إنشاء التجديد بنفس المعلم والجروب. أكمل التحويل.'
               : 'Renewal created for the same tutor and group. Complete the transfer.')
-          : (isAr
+          : (isRTL
               ? 'تم حفظ اختيارك. اختر الشيخ ثم ارفع إثبات التحويل.'
               : 'Your selection is saved. Choose your tutor, then upload the transfer proof.')
       );
@@ -251,29 +547,23 @@ export default function PlansPage() {
         );
       }
     } catch (error) {
-      toast.error(error.message || (isAr ? 'تعذر حفظ اختيار الباقة.' : 'Could not save the package selection.'));
+      toast.error(error.message || (isRTL ? 'تعذر حفظ اختيار الباقة.' : 'Could not save the package selection.'));
     } finally {
       setSelectingPlan('');
     }
   };
 
-  const pageTitle = isAr
-    ? 'خطط الاشتراك | أكاديمية وحي ونماء'
-    : 'Subscription Plans | Wahy Wa Namaa Academy';
-  const pageDescription = isAr
-    ? 'خطط مرنة لتعلّم القرآن تبدأ من 10 جنيه للحصة مع حلقات جماعية، مجموعات مركزة، وحصص فردية، وقسم سيدات مستقل.'
-    : 'Flexible Quran learning plans starting from 10 EGP per session, with group, focused, private, and women-only learning options.';
   const plansSchemas = [
     createOfferCatalogSchema({
-      name: pageTitle,
-      description: pageDescription,
+      name: copy.pageTitle,
+      description: copy.pageDesc,
       url: '/plans',
       offers: PLAN_DEFS.map((plan) => ({
-        name: isAr ? plan.nameAr : plan.nameEn,
+        name: isRTL ? plan.nameAr : plan.nameEn,
         description: [
-          isAr ? plan.studentsAr : plan.studentsEn,
-          isAr ? plan.durationAr : plan.durationEn,
-          ...((isAr ? plan.featuresAr : plan.featuresEn) || []),
+          isRTL ? plan.studentsAr : plan.studentsEn,
+          isRTL ? plan.durationAr : plan.durationEn,
+          ...((isRTL ? plan.featuresAr : plan.featuresEn) || []),
         ]
           .filter(Boolean)
           .join(' • '),
@@ -282,8 +572,8 @@ export default function PlansPage() {
       })),
     }),
     createBreadcrumbSchema([
-      { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
-      { name: isAr ? 'خطط الاشتراك' : 'Plans & Pricing', url: '/plans' },
+      { name: copy.home, url: '/' },
+      { name: copy.breadcrumb, url: '/plans' },
     ]),
   ];
 
@@ -291,8 +581,8 @@ export default function PlansPage() {
     <>
       <SEOHead
         page={{
-          title: pageTitle,
-          description: pageDescription,
+          title: copy.pageTitle,
+          description: copy.pageDesc,
           url: '/plans',
           type: 'website',
           schema: plansSchemas,
@@ -300,22 +590,18 @@ export default function PlansPage() {
       />
       <GlobalHeader />
 
-      <main className="wn-plans-page">
+      <main className="wn-plans-page" dir={dir}>
         <section className="wn-plans-hero">
           <div className="wn-plans-hero__glow" aria-hidden="true" />
           <div className="wn-plans-container wn-plans-hero__grid">
             <div className="wn-plans-hero__copy">
-              <span className="wn-plans-kicker"><Sparkles size={16} /> {isAr ? 'خطط تناسب كل بيت' : 'Plans for every learner'}</span>
-              <h1>{isAr ? 'ابدأ رحلتك مع القرآن من 10 جنيه للحصة' : 'Start your Quran journey from 10 EGP per session'}</h1>
-              <p>
-                {isAr
-                  ? 'كلما صغر حجم الحلقة زاد وقت المتابعة والتسميع لكل طالب. اختر المستوى الذي يناسب ميزانيتك واحتياجك.'
-                  : 'Smaller circles give each learner more recitation and tutor attention. Choose the balance that fits your goals and budget.'}
-              </p>
+              <span className="wn-plans-kicker"><Sparkles size={16} aria-hidden="true" /> {copy.kicker}</span>
+              <h1>{copy.heroTitle}</h1>
+              <p>{copy.heroDesc}</p>
               <div className="wn-plans-hero__proof">
-                <span><ShieldCheck size={18} /> {isAr ? 'معلمون ومعلمات معتمدون' : 'Approved tutors'}</span>
-                <span><BookOpenCheck size={18} /> {isAr ? 'حفظ وتجويد وتأسيس' : 'Hifz, Tajweed & foundation'}</span>
-                <span><Clock3 size={18} /> {isAr ? 'مدة مرنة حسب نوع الخطة' : 'Flexible duration by plan'}</span>
+                <span><ShieldCheck size={18} aria-hidden="true" /> {copy.proof1}</span>
+                <span><BookOpenCheck size={18} aria-hidden="true" /> {copy.proof2}</span>
+                <span><Clock3 size={18} aria-hidden="true" /> {copy.proof3}</span>
               </div>
             </div>
 
@@ -323,14 +609,14 @@ export default function PlansPage() {
               <img
                 src={audience === 'women' ? '/images/plans/plan-women.svg' : '/images/plans/plan-community.svg'}
                 decoding="async"
-                alt={isAr
+                alt={isRTL
                   ? (audience === 'women' ? 'حلقة قرآن لقسم السيدات' : 'طلاب في حلقة قرآن جماعية')
                   : (audience === 'women' ? 'Women Quran learning circle' : 'Students in a group Quran circle')}
               />
               <div className="wn-plans-hero__price">
-                <small>{isAr ? 'تبدأ من' : 'Starting at'}</small>
-                <strong>10 <em>{isAr ? 'جنيه' : 'EGP'}</em></strong>
-                <span>{isAr ? 'للحصة' : 'per session'}</span>
+                <small>{copy.startAt}</small>
+                <strong>10 <em>{copy.currencyLong}</em></strong>
+                <span>{copy.perSession}</span>
               </div>
             </div>
           </div>
@@ -339,47 +625,61 @@ export default function PlansPage() {
         <section className="wn-plans-control-shell">
           <div className="wn-plans-container">
             <div className="wn-plans-controls">
-              <div className="wn-plans-segment" role="tablist" aria-label={isAr ? 'اختيار القسم' : 'Choose section'}>
+              <div
+                className="wn-plans-segment"
+                role="tablist"
+                aria-label={copy.sectionLabel}
+                onKeyDown={handleSegmentKeyDown}
+              >
                 <button
+                  ref={generalTabRef}
+                  id="plans-tab-general"
                   type="button"
                   role="tab"
                   aria-selected={audience === 'general'}
+                  aria-controls="plans-catalog-panel"
+                  tabIndex={audience === 'general' ? 0 : -1}
                   className={audience === 'general' ? 'is-active' : ''}
                   disabled={Boolean(renewalSource) || enrolledSection === 'ladies'}
                   onClick={() => !renewalSource && !enrolledSection && setAudience('general')}
                 >
-                  <Users size={18} />
+                  <Users size={18} aria-hidden="true" />
                   <span>
-                    <strong>{isAr ? 'قسم الرجال والأطفال' : 'Men & children'}</strong>
-                    <small>{isAr ? 'رجال وأطفال حسب العمر والمستوى' : 'Men and children by age and level'}</small>
+                    <strong>{isRTL ? 'قسم الرجال والأطفال' : copy.menTitle}</strong>
+                    <small>{copy.menDesc}</small>
                   </span>
                 </button>
                 <button
+                  ref={womenTabRef}
+                  id="plans-tab-women"
                   type="button"
                   role="tab"
                   aria-selected={audience === 'women'}
+                  aria-controls="plans-catalog-panel"
+                  tabIndex={audience === 'women' ? 0 : -1}
                   className={audience === 'women' ? 'is-active is-women' : 'is-women'}
                   disabled={Boolean(renewalSource) || enrolledSection === 'men_children'}
                   onClick={() => !renewalSource && !enrolledSection && setAudience('women')}
                 >
-                  <Heart size={18} />
+                  <Heart size={18} aria-hidden="true" />
                   <span>
-                    <strong>{isAr ? 'قسم السيدات' : 'Women’s section'}</strong>
-                    <small>{isAr ? 'معلمات متخصصات وبيئة مريحة' : 'Female tutors in a comfortable environment'}</small>
+                    <strong>{isRTL ? 'قسم السيدات' : copy.womenTitle}</strong>
+                    <small>{copy.womenDesc}</small>
                   </span>
                 </button>
               </div>
 
-              <div className="wn-plans-frequency" aria-label={isAr ? 'عدد الحصص في الباقة' : 'Sessions in package'}>
-                <span>{isAr ? 'عدد الحصص' : 'Sessions'}</span>
+              <div className="wn-plans-frequency" role="group" aria-label={copy.sessionsAria}>
+                <span>{copy.sessionsLabel}</span>
                 {packageOptions.map((count) => (
                   <button
                     type="button"
                     key={count}
+                    aria-pressed={sessionCount === count}
                     className={sessionCount === count ? 'is-active' : ''}
                     onClick={() => setSessionCount(count)}
                   >
-                    {count} {isAr ? (count === 12 ? 'حصة' : 'حصص') : 'sessions'}
+                    {count} {count === 12 ? copy.sessionWordSingle : copy.sessionsWord}
                   </button>
                 ))}
               </div>
@@ -387,11 +687,11 @@ export default function PlansPage() {
 
             {renewalSource && (
               <aside className="wn-plans-selection" role="status">
-                <BadgeCheck size={22} />
+                <BadgeCheck size={22} aria-hidden="true" />
                 <div>
-                  <strong>{isAr ? 'تجديد سريع لنفس الحلقة' : 'Fast renewal for the same circle'}</strong>
+                  <strong>{isRTL ? 'تجديد سريع لنفس الحلقة' : 'Fast renewal for the same circle'}</strong>
                   <p>
-                    {isAr
+                    {isRTL
                       ? 'الخطة والمعلم والجروب ثابتون. اختر فقط عدد الحصص الجديدة ثم أكمل التحويل.'
                       : 'Plan, tutor, and group stay the same. Choose only the new session count, then complete the transfer.'}
                   </p>
@@ -401,11 +701,11 @@ export default function PlansPage() {
 
             {selection && (
               <aside className="wn-plans-selection" role="status">
-                <BadgeCheck size={22} />
+                <BadgeCheck size={22} aria-hidden="true" />
                 <div>
-                  <strong>{isAr ? 'تم حفظ اختيار الباقة' : 'Package selection saved'}</strong>
+                  <strong>{isRTL ? 'تم حفظ اختيار الباقة' : 'Package selection saved'}</strong>
                   <p>
-                    {isAr
+                    {isRTL
                       ? `${selection.sessionCount} حصة · الإجمالي ${selection.totalAmountMinor / 100} جنيه · لم يتم الدفع بعد`
                       : `${selection.sessionCount} sessions · total ${selection.totalAmountMinor / 100} EGP · payment not completed`}
                   </p>
@@ -415,11 +715,11 @@ export default function PlansPage() {
 
             {audience === 'women' && (
               <aside className="wn-plans-women-banner">
-                <div className="wn-plans-women-banner__icon"><Heart size={24} /></div>
+                <div className="wn-plans-women-banner__icon"><Heart size={24} aria-hidden="true" /></div>
                 <div>
-                  <span>{isAr ? 'قسم السيدات' : 'Women’s section'}</span>
-                  <h2>{isAr ? 'نفس الخطط والأسعار — مع معلمات فقط' : 'Same plans and pricing — female tutors only'}</h2>
-                  <p>{isAr ? 'يتم توزيع الطالبات حسب السن والمستوى، مع الحفاظ على الخصوصية وجودة المتابعة.' : 'Learners are grouped by age and level with privacy and consistent academic follow-up.'}</p>
+                  <span>{isRTL ? 'قسم السيدات' : copy.womenTitle}</span>
+                  <h2>{isRTL ? 'نفس الخطط والأسعار — مع معلمات فقط' : 'Same plans and pricing — female tutors only'}</h2>
+                  <p>{isRTL ? 'يتم توزيع الطالبات حسب السن والمستوى، مع الحفاظ على الخصوصية وجودة المتابعة.' : 'Learners are grouped by age and level with privacy and consistent academic follow-up.'}</p>
                 </div>
                 <img src="/images/plans/plan-women.svg" alt="" aria-hidden="true" loading="lazy" decoding="async" />
               </aside>
@@ -427,12 +727,17 @@ export default function PlansPage() {
           </div>
         </section>
 
-        <section className="wn-plans-catalog">
+        <section
+          id="plans-catalog-panel"
+          role="tabpanel"
+          aria-labelledby={audience === 'women' ? 'plans-tab-women' : 'plans-tab-general'}
+          className="wn-plans-catalog"
+        >
           <div className="wn-plans-container">
             <div className="wn-plans-heading">
-              <span>{isAr ? '5 خطط واضحة' : '5 clear plans'}</span>
-              <h2>{isAr ? 'كلما قل العدد، زادت المتابعة' : 'Fewer learners. More tutor attention.'}</h2>
-              <p>{isAr ? 'السعر المعروض هو سعر الطالب للحصة الواحدة. اختر 4 أو 8 أو 12 أو 24 حصة، وسيظهر إجمالي الباقة تلقائيًا.' : 'Prices are per learner, per session. Choose 4, 8, 12, or 24 sessions and the package total updates automatically.'}</p>
+              <span>{copy.catalogKicker}</span>
+              <h2>{copy.catalogTitle}</h2>
+              <p>{copy.catalogDesc}</p>
             </div>
 
             <div className="wn-plans-grid">
@@ -447,42 +752,42 @@ export default function PlansPage() {
                   }
                 >
                   <div className="wn-plan-card__media">
-                    <img src={plan.image} alt={isAr ? plan.nameAr : plan.nameEn} loading="lazy" decoding="async" />
-                    <span className="wn-plan-card__badge">{isAr ? plan.badgeAr : plan.badgeEn}</span>
+                    <img src={plan.image} alt={isRTL ? plan.nameAr : plan.nameEn} loading="lazy" decoding="async" />
+                    <span className="wn-plan-card__badge">{isRTL ? plan.badgeAr : plan.badgeEn}</span>
                   </div>
 
                   <div className="wn-plan-card__body">
                     <div className="wn-plan-card__title">
                       <div>
-                        <span>{isAr ? plan.studentsAr : plan.studentsEn}</span>
-                        <h3>{isAr ? plan.nameAr : plan.nameEn}</h3>
+                        <span>{isRTL ? plan.studentsAr : plan.studentsEn}</span>
+                        <h3>{isRTL ? plan.nameAr : plan.nameEn}</h3>
                       </div>
-                      {plan.featured ? <Crown size={22} /> : <BadgeCheck size={21} />}
+                      {plan.featured ? <Crown size={22} aria-hidden="true" /> : <BadgeCheck size={21} aria-hidden="true" />}
                     </div>
 
                     <div className="wn-plan-card__duration">
-                      <Clock3 size={15} />
-                      <span>{isAr ? 'مدة الحصة:' : 'Session duration:'}</span>
-                      <strong>{isAr ? plan.durationAr : plan.durationEn}</strong>
+                      <Clock3 size={15} aria-hidden="true" />
+                      <span>{copy.durationLabel}</span>
+                      <strong>{isRTL ? plan.durationAr : plan.durationEn}</strong>
                     </div>
 
                     <div className="wn-plan-card__price">
-                      <span>{isAr ? (plan.from ? 'من' : '') : (plan.from ? 'from' : '')}</span>
+                      <span>{plan.from ? copy.fromWord : ''}</span>
                       <strong>{plan.price}</strong>
                       <div>
-                        <b>{isAr ? 'جنيه' : 'EGP'}</b>
-                        <small>{isAr ? '/ الحصة' : '/ session'}</small>
+                        <b>{copy.currencyLong}</b>
+                        <small>{copy.perSessionUnit}</small>
                       </div>
                     </div>
 
                     <div className="wn-plan-card__monthly">
-                      <span>{sessionCount} {isAr ? (sessionCount === 12 ? 'حصة في الباقة' : 'حصص في الباقة') : 'sessions in package'}</span>
-                      <strong>{plan.from && (isAr ? 'من ' : 'from ')}{plan.packageTotal} {isAr ? 'ج' : 'EGP'}</strong>
+                      <span>{sessionCount} {sessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord} {copy.inPackage}</span>
+                      <strong>{plan.from ? copy.fromWord : ''}{plan.packageTotal} {copy.currencyShort}</strong>
                     </div>
 
                     <ul>
-                      {(isAr ? plan.featuresAr : plan.featuresEn).map((feature) => (
-                        <li key={feature}><Check size={15} /> {feature}</li>
+                      {(isRTL ? plan.featuresAr : plan.featuresEn).map((feature) => (
+                        <li key={feature}><Check size={15} aria-hidden="true" /> {feature}</li>
                       ))}
                     </ul>
 
@@ -490,14 +795,20 @@ export default function PlansPage() {
                       type="button"
                       className="wn-plan-card__cta"
                       onClick={() => handlePlanSelect(plan)}
-                      disabled={selectingPlan === plan.id}
+                      disabled={Boolean(selectingPlan)}
+                      aria-busy={selectingPlan === plan.id}
                     >
-                      {selectingPlan === plan.id
-                        ? (isAr ? 'جاري الحفظ...' : 'Saving...')
-                        : renewalSource
-                          ? (isAr ? 'تجديد الباقة' : 'Renew package')
-                          : (isAr ? 'اختيار الخطة' : 'Choose plan')}
-                      <ArrowIcon size={17} />
+                      {selectingPlan === plan.id ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true" />
+                          <span>{copy.saving}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{renewalSource ? copy.renewBtn : copy.chooseBtn}</span>
+                          <ArrowIcon size={17} aria-hidden="true" />
+                        </>
+                      )}
                     </button>
                   </div>
                 </article>
@@ -507,18 +818,18 @@ export default function PlansPage() {
             {visiblePlans.length > 1 && (
               <div className="wn-plans-compare">
                 <div className="wn-plans-compare__header">
-                  <h3>{isAr ? 'جدول المقارنة السريع بين الخطط' : 'Quick Plan Comparison'}</h3>
-                  <p>{isAr ? 'مقارنة شاملة حسب عدد الطلاب ومدة الحصة والتكلفة الإجمالية للباقة المختارة.' : 'Side-by-side comparison of group size, session duration, and package total.'}</p>
+                  <h3>{copy.compareTitle}</h3>
+                  <p>{copy.compareDesc}</p>
                 </div>
                 <div className="wn-plans-compare__scroll">
                   <table className="wn-plans-compare__table">
                     <thead>
                       <tr>
-                        <th>{isAr ? 'الخطة' : 'Plan'}</th>
-                        <th>{isAr ? 'عدد الطلاب' : 'Group size'}</th>
-                        <th>{isAr ? 'مدة الحصة' : 'Session duration'}</th>
-                        <th>{isAr ? 'سعر الحصة' : 'Per session'}</th>
-                        <th>{isAr ? `إجمالي (${sessionCount} ${sessionCount === 12 ? 'حصة' : 'حصص'})` : `Total (${sessionCount} sessions)`}</th>
+                        <th>{copy.colPlan}</th>
+                        <th>{copy.colSize}</th>
+                        <th>{copy.colDuration}</th>
+                        <th>{copy.colPerSession}</th>
+                        <th>{`${copy.colTotal} (${sessionCount} ${sessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord})`}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -526,14 +837,14 @@ export default function PlansPage() {
                         <tr key={plan.id} className={plan.featured ? 'is-featured' : ''}>
                           <td>
                             <div className="wn-plans-compare__plan-name">
-                              <span>{isAr ? plan.nameAr : plan.nameEn}</span>
-                              <span className="wn-plans-compare__tag">{isAr ? plan.badgeAr : plan.badgeEn}</span>
+                              <span>{isRTL ? plan.nameAr : plan.nameEn}</span>
+                              <span className="wn-plans-compare__tag">{isRTL ? plan.badgeAr : plan.badgeEn}</span>
                             </div>
                           </td>
-                          <td>{isAr ? plan.studentsAr : plan.studentsEn}</td>
-                          <td>{isAr ? plan.durationAr : plan.durationEn}</td>
-                          <td><strong>{plan.from ? (isAr ? 'من ' : 'from ') : ''}{plan.price} {isAr ? 'ج' : 'EGP'}</strong></td>
-                          <td><strong>{plan.from ? (isAr ? 'من ' : 'from ') : ''}{plan.packageTotal} {isAr ? 'ج' : 'EGP'}</strong></td>
+                          <td>{isRTL ? plan.studentsAr : plan.studentsEn}</td>
+                          <td>{isRTL ? plan.durationAr : plan.durationEn}</td>
+                          <td><strong>{plan.from ? copy.fromWord : ''}{plan.price} {copy.currencyShort}</strong></td>
+                          <td><strong>{plan.from ? copy.fromWord : ''}{plan.packageTotal} {copy.currencyShort}</strong></td>
                         </tr>
                       ))}
                     </tbody>
@@ -543,10 +854,10 @@ export default function PlansPage() {
             )}
 
             <div className="wn-plans-note">
-              <UserRound size={21} />
+              <UserRound size={21} aria-hidden="true" />
               <div>
-                <strong>{isAr ? 'التسكين حسب المستوى والعمر' : 'Placement by level and age'}</strong>
-                <p>{isAr ? 'بعد الحصة التجريبية نرشح الحلقة الأنسب للطالب. الحلقة الاقتصادية 10 جنيه تبدأ عند اكتمال الحد الأدنى المناسب للتشغيل.' : 'After the trial, we recommend the best-fit circle. The 10 EGP community plan starts once the minimum viable group is formed.'}</p>
+                <strong>{isRTL ? 'التسكين حسب المستوى والعمر' : 'Placement by level and age'}</strong>
+                <p>{isRTL ? 'بعد الحصة التجريبية نرشح الحلقة الأنسب للطالب. الحلقة الاقتصادية 10 جنيه تبدأ عند اكتمال الحد الأدنى المناسب للتشغيل.' : 'After the trial, we recommend the best-fit circle. The 10 EGP community plan starts once the minimum viable group is formed.'}</p>
               </div>
             </div>
           </div>
@@ -555,12 +866,12 @@ export default function PlansPage() {
         <section className="wn-plans-bottom-cta">
           <div className="wn-plans-container">
             <div>
-              <span>{isAr ? 'لسه محتار؟' : 'Not sure yet?'}</span>
-              <h2>{isAr ? 'ابدأ بالتجربة، وبعدها نرشح لك الخطة الأنسب' : 'Start with a trial, then we recommend the best plan'}</h2>
+              <span>{copy.bottomKicker}</span>
+              <h2>{copy.bottomTitle}</h2>
             </div>
             <LocalizedLink to="/teachers" locale={locale} className="wn-plans-bottom-cta__button">
-              {isAr ? 'اختيار معلم' : 'Choose a tutor'}
-              <ArrowIcon size={18} />
+              {copy.bottomBtn}
+              <ArrowIcon size={18} aria-hidden="true" />
             </LocalizedLink>
           </div>
         </section>

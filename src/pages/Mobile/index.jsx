@@ -5,7 +5,6 @@ import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
-import PwaInstallPrompt from '../../components/PwaInstallPrompt';
 import '../../styles/public-experience.css';
 
 const STEPS = [
@@ -16,25 +15,28 @@ const STEPS = [
 ];
 
 export default function MobileAppPage() {
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, isRTL, dir, t } = useI18n();
   const lp = (path) => localizedPath(path, locale);
 
   return (
     <>
-      <SEOHead page={{ url: '/app', title: isAr ? 'وحي ونماء على الهاتف' : 'Wahy Wa Namaa on mobile', description: isAr ? 'تعرف على طريقة تثبيت تجربة وحي ونماء على هاتفك كتطبيق ويب.' : 'Learn how to install Wahy Wa Namaa as a web app on your phone.' }} />
+      <SEOHead page={{
+        url: '/app',
+        title: isRTL ? 'وحي ونماء على الهاتف' : 'Wahy Wa Namaa on mobile',
+        description: isRTL ? 'تعرف على طريقة تثبيت تجربة وحي ونماء على هاتفك كتطبيق ويب.' : 'Learn how to install Wahy Wa Namaa as a web app on your phone.',
+      }} />
       <GlobalHeader />
 
-      <main className="wn-public-shell">
+      <main className="wn-public-shell" dir={dir}>
         <section className="wn-public-hero">
           <div className="page-container wn-public-hero__inner">
             <div>
-              <span className="wn-auth-visual__eyebrow"><Sparkles size={14} /> {isAr ? 'تجربة الهاتف' : 'MOBILE EXPERIENCE'}</span>
-              <h1>{isAr ? 'خلي وحي ونماء أقرب إليك' : 'Keep Wahy Wa Namaa close at hand'}</h1>
-              <p>{isAr ? 'يمكن تثبيت المنصة كتطبيق ويب من المتصفح للوصول السريع إلى حسابك ودروسك.' : 'Install the platform as a web app from your browser for faster access to your account and lessons.'}</p>
+              <span className="wn-auth-visual__eyebrow"><Sparkles size={14} aria-hidden="true" /> {isRTL ? 'تجربة الهاتف' : 'MOBILE EXPERIENCE'}</span>
+              <h1>{isRTL ? 'خلي وحي ونماء أقرب إليك' : 'Keep Wahy Wa Namaa close at hand'}</h1>
+              <p>{isRTL ? 'يمكن تثبيت المنصة كتطبيق ويب من المتصفح للوصول السريع إلى حسابك ودروسك.' : 'Install the platform as a web app from your browser for faster access to your account and lessons.'}</p>
               <div className="flex flex-wrap gap-2 mt-5">
-                <Link to={lp('/register/student')} className="wn-btn wn-btn--accent">{isAr ? 'إنشاء حساب' : 'Create account'}</Link>
-                <Link to={lp('/login')} className="wn-btn wn-btn--secondary">{isAr ? 'تسجيل الدخول' : 'Sign in'}</Link>
+                <Link to={lp('/register/student')} className="wn-btn wn-btn--accent min-h-[44px]">{t.common?.register || (isRTL ? 'إنشاء حساب' : 'Create account')}</Link>
+                <Link to={lp('/login')} className="wn-btn wn-btn--secondary min-h-[44px]">{t.common?.login || (isRTL ? 'تسجيل الدخول' : 'Sign in')}</Link>
               </div>
             </div>
 
@@ -42,8 +44,8 @@ export default function MobileAppPage() {
               <div className="wn-mobile-preview" aria-hidden="true">
                 <div className="wn-mobile-preview__screen">
                   <Smartphone size={52} strokeWidth={1.2} />
-                  <strong>{isAr ? 'وحي ونماء' : 'Wahy Wa Namaa'}</strong>
-                  <small>{isAr ? 'تعلم • احفظ • انمُ' : 'Learn • Memorize • Grow'}</small>
+                  <strong>{t.common?.appName || (isRTL ? 'وحي ونماء' : 'Wahy Wa Namaa')}</strong>
+                  <small>{isRTL ? 'تعلم • احفظ • انمُ' : 'Learn • Memorize • Grow'}</small>
                 </div>
               </div>
             </div>
@@ -54,8 +56,8 @@ export default function MobileAppPage() {
           <div className="wn-public-feature-grid">
             {STEPS.map(({ icon: Icon, ar, en }) => (
               <article key={ar} className="wn-public-feature-card">
-                <span><Icon size={21} /></span>
-                <h3>{isAr ? ar : en}</h3>
+                <span><Icon size={21} aria-hidden="true" /></span>
+                <h3>{isRTL ? ar : en}</h3>
               </article>
             ))}
           </div>
@@ -63,7 +65,6 @@ export default function MobileAppPage() {
       </main>
 
       <GlobalFooter />
-      <PwaInstallPrompt />
     </>
   );
 }

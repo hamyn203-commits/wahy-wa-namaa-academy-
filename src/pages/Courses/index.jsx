@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Route,
+  RefreshCw,
 } from 'lucide-react';
 import { localizedPath } from '../../lib/locale';
 import GlobalHeader from '../../components/GlobalHeader';
@@ -49,16 +50,15 @@ function CourseCardSkeleton() {
   );
 }
 
-function localizedValue(value, locale) {
+function localizedValue(value, locale, isRTL) {
   if (typeof value === 'string') return value;
-  return value?.[locale] || value?.ar || value?.en || '';
+  return value?.[locale] || (isRTL ? (value?.ar || value?.en) : (value?.en || value?.ar)) || '';
 }
 
-const CourseCard = memo(function CourseCard({ course, locale }) {
+const CourseCard = memo(function CourseCard({ course, locale, isRTL }) {
   const { t } = useI18n();
   const { displayPrice } = useMarket();
-  const isAr = locale === 'ar';
-  const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
 
   const levelLabels = {
     beginner: t.courses.beginner,
@@ -68,6 +68,7 @@ const CourseCard = memo(function CourseCard({ course, locale }) {
 
   const hasRating = Number(course.reviews) > 0 && Number(course.rating) > 0;
   const isFree = Number(course.price) === 0;
+  const courseTitle = localizedValue(course.title, locale, isRTL);
 
   return (
     <motion.article
@@ -77,30 +78,30 @@ const CourseCard = memo(function CourseCard({ course, locale }) {
       className="wn-course-card"
     >
       <div className="wn-course-card__visual">
-        <BookOpen size={44} strokeWidth={1.35} />
+        <BookOpen size={44} strokeWidth={1.35} aria-hidden="true" />
         <span className="wn-course-level">{levelLabels[course.level] || course.level}</span>
       </div>
 
       <div className="wn-course-card__body">
-        <h3>{localizedValue(course.title, locale)}</h3>
-        <p>{localizedValue(course.description, locale)}</p>
+        <h3>{courseTitle}</h3>
+        <p>{localizedValue(course.description, locale, isRTL)}</p>
 
         <div className="wn-course-meta">
-          {course.duration ? <span><Clock size={14} /> {course.duration}</span> : null}
-          {Number(course.students) > 0 ? <span><Users size={14} /> {course.students}</span> : null}
-          {hasRating ? <span><Star size={14} /> {Number(course.rating).toFixed(1)} ({course.reviews})</span> : null}
+          {course.duration ? <span><Clock size={14} aria-hidden="true" /> {course.duration}</span> : null}
+          {Number(course.students) > 0 ? <span><Users size={14} aria-hidden="true" /> {course.students}</span> : null}
+          {hasRating ? <span><Star size={14} aria-hidden="true" /> {Number(course.rating).toFixed(1)} ({course.reviews})</span> : null}
         </div>
 
         <div className="wn-course-card__footer">
           <span className="wn-course-price">
-            {isFree ? (isAr ? 'مجاني' : 'Free') : displayPrice(course.price, course.currency || 'USD')}
+            {isFree ? (t.courses?.free || (isRTL ? 'مجاني' : 'Free')) : displayPrice(course.price, course.currency || 'USD')}
           </span>
           <Link
             to={localizedPath('/courses/' + (course.slug || course.id), locale)}
-            className="wn-course-card__link"
-            aria-label={(isAr ? 'عرض دورة ' : 'View course ') + localizedValue(course.title, locale)}
+            className="wn-course-card__link min-h-[44px] min-w-[44px]"
+            aria-label={(isRTL ? 'عرض دورة ' : 'View course ') + courseTitle}
           >
-            <ArrowIcon size={15} />
+            <ArrowIcon size={15} aria-hidden="true" />
           </Link>
         </div>
       </div>
@@ -109,13 +110,13 @@ const CourseCard = memo(function CourseCard({ course, locale }) {
 });
 
 export default function Courses() {
-  const { t, locale } = useI18n();
+  const { t, locale, isRTL, dir } = useI18n();
   const { createCollectionSchema, createBreadcrumbSchema } = useSEO();
-  const isAr = locale === 'ar';
-  const ArrowIcon = isAr ? ArrowLeft : ArrowRight;
+  const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const [searchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(() => {
@@ -126,14 +127,16 @@ export default function Courses() {
   const [showFilters, setShowFilters] = useState(false);
 
   const quickCategories = useMemo(() => ([
-    { id: 'all', label: isAr ? 'كل البرامج' : 'All programs' },
-    { id: 'quran', label: isAr ? 'القرآن والحفظ' : 'Quran & Hifz' },
-    { id: 'tajweed', label: isAr ? 'التجويد' : 'Tajweed' },
-    { id: 'arabic', label: isAr ? 'اللغة العربية' : 'Arabic' },
-    { id: 'ijazah', label: isAr ? 'الإجازة والسند' : 'Ijazah' },
-  ]), [isAr]);
+    { id: 'all', label: isRTL ? 'كل البرامج' : 'All programs' },
+    { id: 'quran', label: isRTL ? 'القرآن والحفظ' : 'Quran & Hifz' },
+    { id: 'tajweed', label: isRTL ? 'التجويد' : 'Tajweed' },
+    { id: 'arabic', label: isRTL ? 'اللغة العربية' : 'Arabic' },
+    { id: 'ijazah', label: isRTL ? 'الإجازة والسند' : 'Ijazah' },
+  ]), [isRTL]);
 
-  useEffect(() => {
+  const loadCourses = useCallback(() => {
+    setLoading(true);
+    setFetchError('');
     api.get('/api/courses')
       .then((data) => {
         const source = Array.isArray(data?.courses) ? data.courses : [];
@@ -152,16 +155,23 @@ export default function Courses() {
           reviews: course.stats?.rating?.count || 0,
         })));
       })
-      .catch(() => setCourses([]))
+      .catch((err) => {
+        setCourses([]);
+        setFetchError(err?.message || (isRTL ? 'تعذر تحميل الدورات الآن.' : 'Could not load courses right now.'));
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [isRTL]);
+
+  useEffect(() => {
+    loadCourses();
+  }, [loadCourses]);
 
   const sortedCourses = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     const filtered = courses.filter((course) => {
-      const title = localizedValue(course.title, locale).toLowerCase();
-      const description = localizedValue(course.description, locale).toLowerCase();
+      const title = localizedValue(course.title, locale, isRTL).toLowerCase();
+      const description = localizedValue(course.description, locale, isRTL).toLowerCase();
       const matchesSearch = !query || title.includes(query) || description.includes(query);
       const matchesLevel = selectedLevel === 'all' || course.level === selectedLevel;
       const matchesCategory = selectedCategory === 'all' || course.category === selectedCategory;
@@ -175,7 +185,7 @@ export default function Courses() {
       if (sortBy === 'price-high') return b.price - a.price;
       return 0;
     });
-  }, [courses, locale, searchQuery, selectedCategory, selectedLevel, sortBy]);
+  }, [courses, locale, isRTL, searchQuery, selectedCategory, selectedLevel, sortBy]);
 
   return (
     <>
@@ -191,12 +201,12 @@ export default function Courses() {
             description: t.courses.subtitle,
             url: '/courses',
             items: sortedCourses.slice(0, 12).map((course) => ({
-              name: localizedValue(course.title, locale),
+              name: localizedValue(course.title, locale, isRTL),
               url: '/courses/' + (course.slug || course.id),
             })),
           }),
           createBreadcrumbSchema([
-            { name: isAr ? 'الرئيسية' : 'Home', url: '/' },
+            { name: t.common?.home || (isRTL ? 'الرئيسية' : 'Home'), url: '/' },
             { name: t.courses.title, url: '/courses' },
           ]),
         ],
@@ -204,17 +214,17 @@ export default function Courses() {
 
       <GlobalHeader />
 
-      <main className="wn-public-shell">
+      <main className="wn-public-shell" dir={dir}>
         <section className="wn-public-hero">
           <div className="page-container wn-public-hero__inner">
             <div>
               <span className="wn-auth-visual__eyebrow">
-                <Sparkles size={14} />
-                {isAr ? 'برامج ومسارات وحي ونماء' : 'WAHY WA NAMAA PROGRAMS'}
+                <Sparkles size={14} aria-hidden="true" />
+                {isRTL ? 'برامج ومسارات وحي ونماء' : 'WAHY WA NAMAA PROGRAMS'}
               </span>
-              <h1>{isAr ? 'اختر المسار الذي يخدم هدفك مع القرآن' : 'Choose the path that serves your Quran goal'}</h1>
+              <h1>{isRTL ? 'اختر المسار الذي يخدم هدفك مع القرآن' : 'Choose the path that serves your Quran goal'}</h1>
               <p>
-                {isAr
+                {isRTL
                   ? 'من التأسيس والحفظ إلى التجويد والإجازة، استكشف البرامج المتاحة واختر ما يناسب مستواك ووقتك.'
                   : 'From foundations and memorization to Tajweed and Ijazah, explore available programs and choose what fits your level and schedule.'}
               </p>
@@ -231,17 +241,17 @@ export default function Courses() {
           <section className="wn-public-track-banner">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
               <div>
-                <span className="wn-auth-visual__eyebrow"><Award size={14} /> {isAr ? 'المسارات المتدرجة' : 'STRUCTURED TRACKS'}</span>
-                <h2>{isAr ? 'تفضّل رحلة طويلة المدى بخطة واضحة؟' : 'Prefer a long-term structured journey?'}</h2>
+                <span className="wn-auth-visual__eyebrow"><Award size={14} aria-hidden="true" /> {isRTL ? 'المسارات المتدرجة' : 'STRUCTURED TRACKS'}</span>
+                <h2>{isRTL ? 'تفضّل رحلة طويلة المدى بخطة واضحة؟' : 'Prefer a long-term structured journey?'}</h2>
                 <p>
-                  {isAr
+                  {isRTL
                     ? 'استكشف مسارات الحفظ والمراجعة، الإجازة، وتأسيس الأطفال في صفحة واحدة منظمة.'
                     : 'Explore memorization and review, Ijazah, and children’s foundation tracks in one structured view.'}
                 </p>
               </div>
-              <Link to={localizedPath('/tracks', locale)} className="wn-btn wn-btn--accent">
-                <span>{isAr ? 'استكشف المسارات' : 'Explore tracks'}</span>
-                <ArrowIcon size={15} />
+              <Link to={localizedPath('/tracks', locale)} className="wn-btn wn-btn--accent min-h-[44px]">
+                <span>{isRTL ? 'استكشف المسارات' : 'Explore tracks'}</span>
+                <ArrowIcon size={15} aria-hidden="true" />
               </Link>
             </div>
           </section>
@@ -249,32 +259,40 @@ export default function Courses() {
           <section className="wn-public-filter-panel">
             <div className="flex flex-col md:flex-row gap-3">
               <div className="wn-public-search">
-                <Search size={18} />
+                <Search size={18} aria-hidden="true" />
                 <input
                   type="search"
+                  aria-label={isRTL ? 'ابحث باسم الدورة أو محتواها' : 'Search by course name or content'}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={isAr ? 'ابحث باسم الدورة أو محتواها...' : 'Search by course name or content...'}
+                  placeholder={isRTL ? 'ابحث باسم الدورة أو محتواها...' : 'Search by course name or content...'}
                 />
               </div>
 
               <div className="wn-public-filter-actions">
-                <button type="button" onClick={() => setShowFilters((open) => !open)} className="wn-public-filter-button">
-                  <Filter size={17} />
-                  {isAr ? 'الفلاتر' : 'Filters'}
-                  <ChevronDown size={15} className={showFilters ? 'rotate-180 transition' : 'transition'} />
+                <button
+                  type="button"
+                  aria-expanded={showFilters}
+                  aria-controls="courses-expanded-filters"
+                  onClick={() => setShowFilters((open) => !open)}
+                  className="wn-public-filter-button min-h-[44px]"
+                >
+                  <Filter size={17} aria-hidden="true" />
+                  {isRTL ? 'الفلاتر' : 'Filters'}
+                  <ChevronDown size={15} className={showFilters ? 'rotate-180 transition' : 'transition'} aria-hidden="true" />
                 </button>
               </div>
             </div>
 
             <div className="wn-quick-filter-bar">
-              <div className="wn-quick-spec-pills" role="group" aria-label={isAr ? 'تصنيفات البرامج' : 'Program categories'}>
+              <div className="wn-quick-spec-pills" role="group" aria-label={isRTL ? 'تصنيفات البرامج' : 'Program categories'}>
                 {quickCategories.map((cat) => (
                   <button
                     key={cat.id}
                     type="button"
+                    aria-pressed={selectedCategory === cat.id}
                     onClick={() => setSelectedCategory(cat.id)}
-                    className={selectedCategory === cat.id ? 'wn-quick-spec-pill is-active' : 'wn-quick-spec-pill'}
+                    className={selectedCategory === cat.id ? 'wn-quick-spec-pill is-active min-h-[44px]' : 'wn-quick-spec-pill min-h-[44px]'}
                   >
                     {cat.label}
                   </button>
@@ -283,27 +301,27 @@ export default function Courses() {
             </div>
 
             {showFilters && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="wn-public-expanded-filters">
-                <select value={selectedLevel} onChange={(event) => setSelectedLevel(event.target.value)} className="wn-public-select">
-                  <option value="all">{isAr ? 'كل المستويات' : 'All levels'}</option>
+              <motion.div id="courses-expanded-filters" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="wn-public-expanded-filters">
+                <select aria-label={isRTL ? 'المستوى' : 'Level'} value={selectedLevel} onChange={(event) => setSelectedLevel(event.target.value)} className="wn-public-select min-h-[44px]">
+                  <option value="all">{isRTL ? 'كل المستويات' : 'All levels'}</option>
                   <option value="beginner">{t.courses.beginner}</option>
                   <option value="intermediate">{t.courses.intermediate}</option>
                   <option value="advanced">{t.courses.advanced}</option>
                 </select>
 
-                <select value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} className="wn-public-select">
-                  <option value="all">{isAr ? 'كل الفئات' : 'All categories'}</option>
-                  <option value="quran">{isAr ? 'القرآن' : 'Quran'}</option>
-                  <option value="tajweed">{isAr ? 'التجويد' : 'Tajweed'}</option>
-                  <option value="arabic">{isAr ? 'اللغة العربية' : 'Arabic'}</option>
-                  <option value="ijazah">{isAr ? 'الإجازة' : 'Ijazah'}</option>
+                <select aria-label={isRTL ? 'الفئة' : 'Category'} value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} className="wn-public-select min-h-[44px]">
+                  <option value="all">{isRTL ? 'كل الفئات' : 'All categories'}</option>
+                  <option value="quran">{isRTL ? 'القرآن' : 'Quran'}</option>
+                  <option value="tajweed">{isRTL ? 'التجويد' : 'Tajweed'}</option>
+                  <option value="arabic">{isRTL ? 'اللغة العربية' : 'Arabic'}</option>
+                  <option value="ijazah">{isRTL ? 'الإجازة' : 'Ijazah'}</option>
                 </select>
 
-                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="wn-public-select">
-                  <option value="popular">{isAr ? 'الأكثر التحاقًا' : 'Most enrolled'}</option>
-                  <option value="rating">{isAr ? 'الأعلى تقييمًا' : 'Highest rated'}</option>
-                  <option value="price-low">{isAr ? 'السعر: الأقل أولًا' : 'Price: low to high'}</option>
-                  <option value="price-high">{isAr ? 'السعر: الأعلى أولًا' : 'Price: high to low'}</option>
+                <select aria-label={isRTL ? 'ترتيب حسب' : 'Sort by'} value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="wn-public-select min-h-[44px]">
+                  <option value="popular">{isRTL ? 'الأكثر التحاقًا' : 'Most enrolled'}</option>
+                  <option value="rating">{isRTL ? 'الأعلى تقييمًا' : 'Highest rated'}</option>
+                  <option value="price-low">{isRTL ? 'السعر: الأقل أولًا' : 'Price: low to high'}</option>
+                  <option value="price-high">{isRTL ? 'السعر: الأعلى أولًا' : 'Price: high to low'}</option>
                 </select>
               </motion.div>
             )}
@@ -312,27 +330,37 @@ export default function Courses() {
           <section className="wn-public-section">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
-                <span className="wn-public-eyebrow">{isAr ? 'الدورات المتاحة' : 'AVAILABLE COURSES'}</span>
+                <span className="wn-public-eyebrow">{isRTL ? 'الدورات المتاحة' : 'AVAILABLE COURSES'}</span>
                 <p className="mt-1 text-sm text-[var(--wn-text-secondary)]">
-                  {isAr ? 'النتائج المتاحة حاليًا: ' : 'Currently available: '}{sortedCourses.length}
+                  {isRTL ? 'النتائج المتاحة حاليًا: ' : 'Currently available: '}{sortedCourses.length}
                 </p>
               </div>
             </div>
 
             {loading ? (
               <div className="wn-public-grid" role="status" aria-live="polite">
-                <span className="sr-only">{isAr ? 'جاري تحميل الدورات...' : 'Loading courses...'}</span>
+                <span className="sr-only">{t.common?.loading || (isRTL ? 'جاري تحميل الدورات...' : 'Loading courses...')}</span>
                 {Array.from({ length: 6 }, (_, idx) => <CourseCardSkeleton key={idx} />)}
+              </div>
+            ) : fetchError ? (
+              <div className="wn-public-empty" role="alert">
+                <BookOpen size={48} aria-hidden="true" />
+                <h3>{isRTL ? 'تعذر تحميل الدورات' : 'Unable to load courses'}</h3>
+                <p>{fetchError}</p>
+                <button type="button" onClick={loadCourses} className="wn-btn wn-btn--primary mt-4 min-h-[44px]">
+                  <RefreshCw size={16} aria-hidden="true" />
+                  <span>{isRTL ? 'إعادة المحاولة' : 'Retry'}</span>
+                </button>
               </div>
             ) : sortedCourses.length === 0 ? (
               <div className="wn-public-empty">
-                <BookOpen size={48} />
-                <h3>{isAr ? 'لا توجد دورات مطابقة الآن' : 'No matching courses right now'}</h3>
-                <p>{isAr ? 'غيّر الفلاتر أو ارجع لاحقًا عند نشر برامج جديدة.' : 'Adjust the filters or return when new programs are published.'}</p>
+                <BookOpen size={48} aria-hidden="true" />
+                <h3>{isRTL ? 'لا توجد دورات مطابقة الآن' : 'No matching courses right now'}</h3>
+                <p>{isRTL ? 'غيّر الفلاتر أو ارجع لاحقًا عند نشر برامج جديدة.' : 'Adjust the filters or return when new programs are published.'}</p>
               </div>
             ) : (
               <div className="wn-public-grid">
-                {sortedCourses.map((course) => <CourseCard key={course.id} course={course} locale={locale} />)}
+                {sortedCourses.map((course) => <CourseCard key={course.id} course={course} locale={locale} isRTL={isRTL} />)}
               </div>
             )}
           </section>

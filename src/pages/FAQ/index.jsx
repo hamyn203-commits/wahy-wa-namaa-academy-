@@ -9,10 +9,10 @@ import { useSEO } from '../../hooks/useSEO';
 import '../../styles/public-experience.css';
 
 export default function FAQPage() {
-  const { t, locale } = useI18n();
+  const { t, isRTL, dir } = useI18n();
   const { createFAQSchema } = useSEO();
-  const isAr = locale === 'ar';
   const [open, setOpen] = useState(null);
+  const [closedInSearch, setClosedInSearch] = useState(() => new Set());
   const [query, setQuery] = useState('');
 
   const allFaqs = [
@@ -36,23 +36,36 @@ export default function FAQPage() {
 
   const faqSchema = createFAQSchema(allFaqs.map((item) => ({ question: item.q, answer: item.a })));
 
+  const handleToggle = (question) => {
+    if (searching) {
+      setClosedInSearch((prev) => {
+        const next = new Set(prev);
+        if (next.has(question)) next.delete(question);
+        else next.add(question);
+        return next;
+      });
+    } else {
+      setOpen((prev) => (prev === question ? null : question));
+    }
+  };
+
   return (
     <>
       <SEOHead page={{
-        title: t.faq?.title || (isAr ? 'الأسئلة الشائعة' : 'FAQ'),
+        title: t.faq?.title || (isRTL ? 'الأسئلة الشائعة' : 'FAQ'),
         description: t.faq?.subtitle,
         url: '/faq',
         type: 'website',
         schema: faqSchema,
       }} />
       <GlobalHeader />
-      <main className="wn-public-shell">
+      <main className="wn-public-shell" dir={dir}>
         <section className="wn-public-hero">
           <div className="page-container wn-public-hero__inner">
             <div>
-              <span className="wn-auth-visual__eyebrow"><Sparkles size={14} /> {isAr ? 'مركز المساعدة' : 'HELP CENTER'}</span>
-              <h1>{t.faq?.title || (isAr ? 'الأسئلة الشائعة' : 'Frequently asked questions')}</h1>
-              <p>{t.faq?.subtitle || (isAr ? 'إجابات مختصرة على الأسئلة المتكررة عن الدراسة والحسابات.' : 'Short answers to common questions about learning and accounts.')}</p>
+              <span className="wn-auth-visual__eyebrow"><Sparkles size={14} aria-hidden="true" /> {isRTL ? 'مركز المساعدة' : 'HELP CENTER'}</span>
+              <h1>{t.faq?.title || (isRTL ? 'الأسئلة الشائعة' : 'Frequently asked questions')}</h1>
+              <p>{t.faq?.subtitle || (isRTL ? 'إجابات مختصرة على الأسئلة المتكررة عن الدراسة والحسابات.' : 'Short answers to common questions about learning and accounts.')}</p>
             </div>
             <div className="wn-public-hero__art" aria-hidden="true"><div className="wn-public-orbit" /><div className="wn-public-orbit__core"><HelpCircle size={46} strokeWidth={1.25} /></div></div>
           </div>
@@ -60,38 +73,48 @@ export default function FAQPage() {
 
         <section className="wn-editorial-wrap">
           <div className="relative mb-5">
-            <Search size={18} className="pointer-events-none absolute top-1/2 -translate-y-1/2 ltr:left-4 rtl:right-4 text-[var(--wn-text-tertiary)]" aria-hidden="true" />
+            <Search size={18} className="pointer-events-none absolute top-1/2 -translate-y-1/2 start-4 text-[var(--wn-text-tertiary)]" aria-hidden="true" />
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t.faq?.searchPlaceholder || (isAr ? 'ابحث في الأسئلة...' : 'Search questions...')}
-              aria-label={t.faq?.searchPlaceholder || (isAr ? 'ابحث في الأسئلة' : 'Search questions')}
-              className="input-field !py-3 ltr:pl-11 ltr:pr-4 rtl:pr-11 rtl:pl-4"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setClosedInSearch(new Set());
+              }}
+              placeholder={t.faq?.searchPlaceholder || (isRTL ? 'ابحث في الأسئلة...' : 'Search questions...')}
+              aria-label={t.faq?.searchPlaceholder || (isRTL ? 'ابحث في الأسئلة' : 'Search questions')}
+              className="input-field min-h-[44px] !py-3 ps-11 pe-4"
             />
           </div>
 
           {faqs.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-[var(--wn-border)] bg-white px-6 py-12 text-center">
-              <SearchX size={32} className="text-[var(--wn-gold)]" strokeWidth={1.5} />
-              <p className="text-sm text-[var(--wn-text-secondary)]">{t.faq?.noResults || (isAr ? 'لا توجد نتائج مطابقة.' : 'No matching questions.')}</p>
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-[var(--wn-border)] bg-[var(--wn-surface)] px-6 py-12 text-center">
+              <SearchX size={32} className="text-[var(--wn-gold)]" strokeWidth={1.5} aria-hidden="true" />
+              <p className="text-sm text-[var(--wn-text-secondary)]">{t.faq?.noResults || (isRTL ? 'لا توجد نتائج مطابقة.' : 'No matching questions.')}</p>
             </div>
           ) : (
             <div className="wn-faq-list">
-              {faqs.map((item) => {
-                const isOpen = searching || open === item.q;
+              {faqs.map((item, idx) => {
+                const isOpen = searching ? !closedInSearch.has(item.q) : open === item.q;
+                const panelId = `faq-answer-${idx}`;
                 return (
                   <div key={item.q} className="wn-faq-item">
-                    <button type="button" onClick={() => setOpen(open === item.q ? null : item.q)} aria-expanded={isOpen} className="wn-faq-button">
+                    <button
+                      type="button"
+                      onClick={() => handleToggle(item.q)}
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                      className="wn-faq-button min-h-[44px]"
+                    >
                       <span>{item.q}</span>
-                      <ChevronDown size={18} className={'shrink-0 transition-transform ' + (isOpen ? 'rotate-180' : '')} />
+                      <ChevronDown size={18} className={'shrink-0 transition-transform ' + (isOpen ? 'rotate-180' : '')} aria-hidden="true" />
                     </button>
                     {searching ? (
-                      isOpen ? <div className="wn-faq-answer">{item.a}</div> : null
+                      <div id={panelId} hidden={!isOpen} className="wn-faq-answer">{item.a}</div>
                     ) : (
                       <AnimatePresence initial={false}>
-                        {open === item.q ? (
-                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                        {isOpen ? (
+                          <motion.div id={panelId} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                             <div className="wn-faq-answer">{item.a}</div>
                           </motion.div>
                         ) : null}
