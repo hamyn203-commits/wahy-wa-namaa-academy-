@@ -60,11 +60,21 @@
   --wn-border-strong: #d5ccb6;
   --wn-border-mint: #c9e3d9;
   --wn-focus: var(--wn-emerald);
-  /* Dual-ring focus: canvas gap + solid emerald ring (WCAG 2.4.11 / 2.4.13) */
-  --wn-focus-ring: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-emerald);
+  /* Dual-ring focus: canvas gap + solid focus ring (WCAG 2.4.11 / 2.4.13) */
+  --wn-focus-ring: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-focus);
 
   --wn-danger: #b42318;
   --wn-danger-soft: #fdecea;
+  --wn-text-danger: #b42318;
+  --wn-text-accent: var(--wn-emerald);
+  --wn-btn-secondary-text: var(--wn-emerald-dark);
+  --wn-btn-secondary-hover-border: var(--wn-emerald);
+  --wn-btn-ghost-text: var(--wn-emerald-dark);
+  --wn-btn-light-bg: var(--wn-text-inverse);
+  --wn-btn-light-text: var(--wn-emerald-dark);
+  --wn-badge-emerald-text: var(--wn-emerald-dark);
+  --wn-badge-gold-text: #78571e;
+  --wn-section-label-text: var(--wn-emerald-dark);
   --wn-success: var(--wn-emerald);
   --wn-warning: #b54708;
   --wn-women-accent: #8f3d56;
@@ -218,7 +228,20 @@
   --wn-border: #23392f;
   --wn-border-strong: #2f4a3e;
   --wn-border-mint: #2a4a3f;
+  --wn-focus: var(--wn-teal);
+  --wn-focus-ring: 0 0 0 2px var(--wn-surface-canvas), 0 0 0 4px var(--wn-focus);
   --wn-text-gold: #d4af6b;        /* 8.92:1 on the dark canvas — AAA */
+  --wn-text-accent: var(--wn-teal);
+  --wn-text-danger: #fca5a5;      /* 8.51:1 on --wn-danger-soft, 9.86:1 on --wn-bg */
+  --wn-danger-soft: #3b1619;
+  --wn-btn-secondary-text: var(--wn-heading);
+  --wn-btn-secondary-hover-border: var(--wn-teal);
+  --wn-btn-ghost-text: var(--wn-heading);
+  --wn-btn-light-bg: var(--wn-text-inverse);
+  --wn-btn-light-text: var(--wn-emerald-dark);
+  --wn-badge-emerald-text: #a7dfd0;
+  --wn-badge-gold-text: var(--wn-gold);
+  --wn-section-label-text: var(--wn-heading);
   --wn-surface-canvas: var(--wn-bg);
   --wn-surface-subtle: var(--wn-surface);
   --wn-emerald-soft: #173a2e;
@@ -229,6 +252,7 @@
   --wn-women-soft: #2a1820;
   --wn-ivory: #0b1612;
   --wn-ivory-deep: #0e1c17;
+  --wn-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --wn-shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
   --wn-shadow-md: 0 10px 28px -12px rgba(0, 0, 0, 0.6);
   --wn-shadow-lg: 0 24px 56px -24px rgba(0, 0, 0, 0.7);

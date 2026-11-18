@@ -56,7 +56,7 @@ export default function TeacherAvatar({
         >
           <div className="flex flex-col items-center justify-center gap-1 text-center">
             {initials ? (
-              <span className={`font-arabic font-black tracking-tight ${textSizeClass}`}>
+              <span className={`font-display font-black tracking-tight ${textSizeClass}`}>
                 {initials}
               </span>
             ) : (
