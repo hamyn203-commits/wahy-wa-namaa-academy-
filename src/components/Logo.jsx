@@ -18,7 +18,7 @@ export default function Logo({ size = 42, showText = true, variant = 'dark' }) {
         <div className="flex flex-col leading-tight">
           <span
             className={`font-black tracking-tight font-serif ${
-              isLight ? 'text-white' : 'text-[#0e382b]'
+              isLight ? 'text-[var(--wn-white)]' : 'text-[var(--wn-emerald-deep)]'
             }`}
             style={{ 
               fontSize: `${Math.max(15, size * 0.44)}px`, 
@@ -29,7 +29,7 @@ export default function Logo({ size = 42, showText = true, variant = 'dark' }) {
           </span>
           <span
             className={`font-bold tracking-[0.2em] uppercase leading-none mt-0.5 ${
-              isLight ? 'text-[#f1e5c5]' : 'text-[#14533e]'
+              isLight ? 'text-[var(--wn-sand)]' : 'text-[var(--wn-emerald-dark)]'
             }`}
             style={{ 
               fontSize: `${Math.max(9, size * 0.23)}px` 
