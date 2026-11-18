@@ -98,8 +98,8 @@ function pageRoutes() {
       <Route path="terms" element={<StudentShell><Terms /></StudentShell>} />
       <Route path="courses" element={<StudentShell><Courses /></StudentShell>} />
       <Route path="courses/:slug" element={<StudentShell><CourseDetail /></StudentShell>} />
-      <Route path="courses/:slug/learn" element={<CourseLearn />} />
-      <Route path="courses/:slug/learn/:lessonId" element={<CourseLearn />} />
+      <Route path="courses/:slug/learn" element={<ProtectedRoute roles={['student', 'teacher', 'admin']}><CourseLearn /></ProtectedRoute>} />
+      <Route path="courses/:slug/learn/:lessonId" element={<ProtectedRoute roles={['student', 'teacher', 'admin']}><CourseLearn /></ProtectedRoute>} />
       <Route path="blog" element={<StudentPublicRedirect><Blog /></StudentPublicRedirect>} />
       <Route path="blog/:slug" element={<StudentPublicRedirect><BlogDetail /></StudentPublicRedirect>} />
       <Route path="contact" element={<StudentPublicRedirect tab="support"><Contact /></StudentPublicRedirect>} />
