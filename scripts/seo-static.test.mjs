@@ -140,6 +140,41 @@ test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid J
       }
     }
 
+    const expectedBreadcrumbHome = {
+      ar: 'الرئيسية',
+      en: 'Home',
+      fr: 'Accueil',
+      de: 'Startseite',
+      tr: 'Ana Sayfa',
+      ur: 'ہوم',
+      id: 'Beranda',
+      ms: 'Laman Utama',
+      ku: 'سەرەکی',
+    };
+    const expectedNoscriptCourses = {
+      ar: 'الدورات',
+      en: 'Courses',
+      fr: 'Cours',
+      de: 'Kurse',
+      tr: 'Kurslar',
+      ur: 'کورسز',
+      id: 'Kursus',
+      ms: 'Kursus',
+      ku: 'خولەکان',
+    };
+
+    for (const locale of SEO_LOCALES) {
+      const coursesHtml = readFileSync(resolve(distTmp, `${locale}/courses.html`), 'utf8');
+      const ldJsonList = [...coursesHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+        .map(([, raw]) => JSON.parse(raw));
+      const breadcrumb = ldJsonList.find((item) => item['@type'] === 'BreadcrumbList');
+      assert.equal(breadcrumb?.itemListElement?.[0]?.name, expectedBreadcrumbHome[locale], `Breadcrumb Home mismatch for ${locale}`);
+      assert.ok(
+        coursesHtml.includes(`<a href="/${locale}/courses">${expectedNoscriptCourses[locale]}</a>`),
+        `Noscript courses link label mismatch for ${locale}`
+      );
+    }
+
     for (const route of STATIC_SEO_ROUTES) {
       for (const locale of SEO_LOCALES) {
         assert.ok(route.title?.[locale], `Route ${route.path} missing localized title for ${locale}`);

@@ -84,6 +84,22 @@ export function generateSitemapIndex(siteUrl) {
 `;
 }
 
+const STATIC_NAV_LABELS = {
+  ar: { home: 'الرئيسية', courses: 'الدورات', teachers: 'المعلمون', plans: 'الخطط', freeTrial: 'حصة مجانية' },
+  en: { home: 'Home', courses: 'Courses', teachers: 'Teachers', plans: 'Plans', freeTrial: 'Free Trial' },
+  fr: { home: 'Accueil', courses: 'Cours', teachers: 'Enseignants', plans: 'Forfaits', freeTrial: 'Essai gratuit' },
+  de: { home: 'Startseite', courses: 'Kurse', teachers: 'Lehrer', plans: 'Tarife', freeTrial: 'Kostenlose Probestunde' },
+  tr: { home: 'Ana Sayfa', courses: 'Kurslar', teachers: 'Öğretmenler', plans: 'Planlar', freeTrial: 'Ücretsiz Deneme' },
+  ur: { home: 'ہوم', courses: 'کورسز', teachers: 'اساتذہ', plans: 'منصوبے', freeTrial: 'مفت تجرباتی کلاس' },
+  id: { home: 'Beranda', courses: 'Kursus', teachers: 'Guru', plans: 'Paket', freeTrial: 'Coba Gratis' },
+  ms: { home: 'Laman Utama', courses: 'Kursus', teachers: 'Guru', plans: 'Pelan', freeTrial: 'Cuba Percuma' },
+  ku: { home: 'سەرەکی', courses: 'خولەکان', teachers: 'مامۆستایان', plans: 'پاکێجەکان', freeTrial: 'تاقیکاری بەخۆڕایی' },
+};
+
+function getStaticNavLabels(locale) {
+  return STATIC_NAV_LABELS[locale] || STATIC_NAV_LABELS.en;
+}
+
 function buildRouteSchemas({ baseUrl, locale, pathSuffix, canonicalUrl, title, description, brand, schemaType }) {
   const orgSchema = {
     '@context': 'https://schema.org',
@@ -129,7 +145,7 @@ function buildRouteSchemas({ baseUrl, locale, pathSuffix, canonicalUrl, title, d
   const schemas = [orgSchema, websiteSchema, webPageSchema];
 
   if (pathSuffix) {
-    const homeLabel = locale === 'ar' ? 'الرئيسية' : 'Home';
+    const homeLabel = getStaticNavLabels(locale).home;
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
@@ -227,6 +243,7 @@ export function renderStaticRouteHtml(templateHtml, route, locale, siteUrl) {
   const headInject = `${preloadHero}    <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />\n${ogAlternates}\n${hreflangs}\n${jsonLd}\n`;
   html = html.replace('</head>', `${headInject}  </head>`);
 
+  const navLabels = getStaticNavLabels(locale);
   const heading = escapeHtml(title.split(' | ')[0]);
   const noscriptBlock = `    <noscript>
       <main lang="${locale}" dir="${dir}" style="max-width:760px;margin:2rem auto;padding:1.5rem;font-family:sans-serif">
@@ -234,10 +251,10 @@ export function renderStaticRouteHtml(templateHtml, route, locale, siteUrl) {
         <p>${escapeHtml(description)}</p>
         <nav aria-label="Primary">
           <a href="/${locale}">${escapeHtml(brand.appName)}</a> ·
-          <a href="/${locale}/courses">${locale === 'ar' ? 'الدورات' : 'Courses'}</a> ·
-          <a href="/${locale}/teachers">${locale === 'ar' ? 'المعلمون' : 'Teachers'}</a> ·
-          <a href="/${locale}/plans">${locale === 'ar' ? 'الخطط' : 'Plans'}</a> ·
-          <a href="/${locale}/free-trial">${locale === 'ar' ? 'حصة مجانية' : 'Free Trial'}</a>
+          <a href="/${locale}/courses">${escapeHtml(navLabels.courses)}</a> ·
+          <a href="/${locale}/teachers">${escapeHtml(navLabels.teachers)}</a> ·
+          <a href="/${locale}/plans">${escapeHtml(navLabels.plans)}</a> ·
+          <a href="/${locale}/free-trial">${escapeHtml(navLabels.freeTrial)}</a>
         </nav>
       </main>
     </noscript>\n`;
