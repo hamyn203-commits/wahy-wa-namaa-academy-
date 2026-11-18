@@ -49,7 +49,7 @@
 }
 
 .wn-dashboard-action {
-  min-height: 38px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -66,6 +66,11 @@
 .wn-dashboard-action:hover {
   border-color: rgba(212,175,107,.45);
   color: var(--wn-emerald-dark);
+}
+
+.wn-dashboard-action:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-dashboard-main {
@@ -133,13 +138,18 @@
 }
 
 .wn-dashboard-tab {
-  min-height: 38px;
+  min-height: var(--wn-control-md);
   padding: .45rem .72rem;
   border-radius: 10px;
   color: var(--wn-text-secondary);
   font-size: .68rem;
   font-weight: 750;
   transition: background .2s ease, color .2s ease;
+}
+
+.wn-dashboard-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-dashboard-tab.is-active {
@@ -169,7 +179,8 @@
   }
 
   .wn-dashboard-action {
-    width: 38px;
+    width: var(--wn-control-md);
+    height: var(--wn-control-md);
     padding: 0;
   }
 }
@@ -331,7 +342,7 @@
 .wn-student-primary-action,
 .wn-student-secondary-action,
 .wn-student-join-action {
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -360,6 +371,13 @@
 .wn-student-secondary-action:hover,
 .wn-student-join-action:hover {
   transform: translateY(-1px);
+}
+
+.wn-student-primary-action:focus-visible,
+.wn-student-secondary-action:focus-visible,
+.wn-student-join-action:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-welcome__summary {
@@ -630,6 +648,11 @@
   transform: translateY(-1px);
   border-color: rgba(184,138,57,.34);
   background: #fffdf7;
+}
+
+.wn-student-quick-card:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-stat-grid {
@@ -924,6 +947,11 @@
   color: var(--wn-emerald-dark);
 }
 
+.wn-student-command__item:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
 .wn-student-command__item.is-active {
   border-color: rgba(212,175,107,.20);
   background:
@@ -936,8 +964,7 @@
 .wn-student-command__item.is-active::after {
   content: '';
   position: absolute;
-  left: 18%;
-  right: 18%;
+  inset-inline: 18%;
   bottom: 5px;
   height: 2px;
   border-radius: 999px;
@@ -1065,8 +1092,8 @@
 }
 
 .wn-student-command__more-heading button {
-  width: 30px;
-  height: 30px;
+  min-width: var(--wn-control-md);
+  min-height: var(--wn-control-md);
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -1076,6 +1103,11 @@
 .wn-student-command__more-heading button:hover {
   background: rgba(15,107,79,.06);
   color: var(--wn-emerald-dark);
+}
+
+.wn-student-command__more-heading button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-command__more-grid {
@@ -1104,6 +1136,11 @@
   transform: translateY(-1px);
   border-color: rgba(184,138,57,.25);
   background: #fffdf7;
+}
+
+.wn-student-command__more-item:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-command__more-item.is-active {
@@ -1217,8 +1254,7 @@
 
   .wn-student-command__more-panel {
     position: fixed;
-    left: .75rem;
-    right: .75rem;
+    inset-inline: .75rem;
     top: clamp(72px, 12vh, 130px);
     width: auto;
     max-height: min(78vh, calc(100dvh - 14vh - 20px));
@@ -3895,7 +3931,7 @@
 }
 
 .wn-student-guardian-invitations button {
-  min-height: 30px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   gap: .25rem;
@@ -3905,6 +3941,11 @@
   color: var(--wn-emerald-dark);
   font-size: .5rem;
   font-weight: 800;
+}
+
+.wn-student-guardian-invitations button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-guardian-invitations button:last-child {
