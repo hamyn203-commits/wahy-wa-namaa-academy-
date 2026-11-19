@@ -155,7 +155,15 @@ export function containsEmail(text = '') {
  */
 export function inspectMessage(text = '') {
   if (!text || !text.trim()) {
-    return { isSafe: true, safe: true, reason: null, reasonArabic: null, warning: '' };
+    return {
+      isSafe: true,
+      safe: true,
+      reason: null,
+      reasonKey: null,
+      warningKey: null,
+      reasonArabic: null,
+      warning: '',
+    };
   }
 
   if (containsEmail(text)) {
@@ -163,8 +171,10 @@ export function inspectMessage(text = '') {
       isSafe: false,
       safe: false,
       reason: 'email',
+      reasonKey: 'emailBlocked',
+      warningKey: 'warningMessage',
       reasonArabic: 'مشاركة البريد الإلكتروني غير مسموح بها',
-      warning: SAFETY_WARNING_MESSAGE
+      warning: SAFETY_WARNING_MESSAGE,
     };
   }
 
@@ -173,8 +183,10 @@ export function inspectMessage(text = '') {
       isSafe: false,
       safe: false,
       reason: 'url',
+      reasonKey: 'urlBlocked',
+      warningKey: 'warningMessage',
       reasonArabic: 'مشاركة الروابط والمواقع الخارجية غير مسموح بها',
-      warning: SAFETY_WARNING_MESSAGE
+      warning: SAFETY_WARNING_MESSAGE,
     };
   }
 
@@ -183,8 +195,10 @@ export function inspectMessage(text = '') {
       isSafe: false,
       safe: false,
       reason: 'phone',
+      reasonKey: 'phoneBlocked',
+      warningKey: 'warningMessage',
       reasonArabic: 'مشاركة أرقام الهواتف غير مسموح بها',
-      warning: SAFETY_WARNING_MESSAGE
+      warning: SAFETY_WARNING_MESSAGE,
     };
   }
 
@@ -192,8 +206,10 @@ export function inspectMessage(text = '') {
     isSafe: true,
     safe: true,
     reason: null,
+    reasonKey: null,
+    warningKey: null,
     reasonArabic: null,
-    warning: ''
+    warning: '',
   };
 }
 

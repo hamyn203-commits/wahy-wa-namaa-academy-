@@ -58,7 +58,7 @@ async function getRoomAccess(liveSession, user) {
 
   if (user.role === 'admin') {
     const bookedSession = liveSession.session
-      ? await Session.findById(liveSession.session).select('student teacher circle scheduledAt duration timezone status')
+      ? await Session.findById(liveSession.session).select('student teacher circle attendance scheduledAt duration timezone status')
       : null;
     return { allowed: true, isHost: true, isObserver: false, bookedSession };
   }
@@ -133,14 +133,6 @@ async function buildSessionContext(liveSession, bookedSession) {
   if (Array.isArray(bookedSession?.attendance)) {
     for (const entry of bookedSession.attendance) {
       if (entry?.student) studentIds.add(String(entry.student));
-    }
-  }
-  if (bookedSession?.circle) {
-    const circle = await GroupCircle.findById(bookedSession.circle).select('students title').lean().catch(() => null);
-    if (Array.isArray(circle?.students)) {
-      for (const sid of circle.students) {
-        if (sid) studentIds.add(String(sid));
-      }
     }
   }
   let roster = [];
@@ -225,7 +217,10 @@ router.post('/demo-room', verifyAccessToken, requireRole('admin'), async (req, r
       isLive: false,
       participants: 0,
     });
-    return res.status(201).json({ ...presentLiveSession(session), configured: isLiveKitConfigured() });
+    return res.status(201).json({
+      ...presentLiveSession(session, { isHost: true, isObserver: false }),
+      configured: isLiveKitConfigured(),
+    });
   } catch (error) {
     return res.status(500).json({ error: 'Failed to create demo room' });
   }

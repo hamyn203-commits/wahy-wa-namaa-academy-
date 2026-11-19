@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, PauseCircle, PlayCircle, RotateCcw, Send, Square, X } from 'lucide-react';
+import { Mic, PauseCircle, PlayCircle, RotateCcw, Send, Square, MessageSquare } from 'lucide-react';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
+import { useI18n } from '../../i18n';
+import { resolveIntlLocale } from '../../lib/locale';
+import Modal from '../shared/Modal';
+import Skeleton from '../shared/Skeleton';
+import EmptyState from '../shared/EmptyState';
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_AUDIO_SECONDS = 120;
@@ -13,7 +18,7 @@ function formatSeconds(total = 0) {
   return `${minutes}:${seconds}`;
 }
 
-function SecureVoiceNote({ url, duration, isMe }) {
+function SecureVoiceNote({ url, duration, isMe, labels }) {
   const [audioUrl, setAudioUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,7 +36,7 @@ function SecureVoiceNote({ url, duration, isMe }) {
       const blob = await response.blob();
       setAudioUrl(URL.createObjectURL(blob));
     } catch (err) {
-      setError(err.message || 'تعذر تحميل الرسالة الصوتية');
+      setError(err.message || labels.loadAudioError);
     } finally {
       setLoading(false);
     }
@@ -43,7 +48,7 @@ function SecureVoiceNote({ url, duration, isMe }) {
         src={audioUrl}
         controls
         preload="metadata"
-        className="w-full min-w-[220px] max-w-[320px]"
+        className="w-full min-w-[180px] max-w-[320px]"
       />
     );
   }
@@ -52,18 +57,21 @@ function SecureVoiceNote({ url, duration, isMe }) {
     <button
       type="button"
       onClick={loadAudio}
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold ${
-        isMe ? 'bg-emerald-800 text-white' : 'bg-white text-emerald-800 border border-emerald-100'
+      className={`min-h-[44px] inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+        isMe
+          ? 'bg-[var(--wn-emerald-dark)] text-[var(--wn-white)]'
+          : 'bg-[var(--wn-surface)] text-[var(--wn-text-accent)] border border-[var(--wn-border)]'
       }`}
     >
-      {loading ? <PauseCircle size={17} className="animate-pulse" /> : <PlayCircle size={17} />}
-      <span>{error || (loading ? 'جاري التحميل...' : `رسالة صوتية ${duration ? formatSeconds(duration) : ''}`)}</span>
+      {loading ? <PauseCircle size={17} className="animate-pulse" aria-hidden="true" /> : <PlayCircle size={17} aria-hidden="true" />}
+      <span>{error || (loading ? labels.loadingAudio : `${labels.voiceNote} ${duration ? formatSeconds(duration) : ''}`.trim())}</span>
     </button>
   );
 }
 
-export default function SessionChatModal({ session, onClose, locale = 'ar', viewerRole = 'student' }) {
-  const isAr = locale === 'ar';
+export default function SessionChatModal({ session, onClose, locale: propLocale, viewerRole = 'student' }) {
+  const { locale: ctxLocale, dir, t } = useI18n();
+  const locale = propLocale || ctxLocale || 'ar';
   const sessionId = session?._id;
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -93,11 +101,11 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
       setMessages(result.messages || []);
       setError('');
     } catch (err) {
-      if (!silent) setError(err.message || (isAr ? 'تعذر تحميل المحادثة' : 'Unable to load chat'));
+      if (!silent) setError(err.message || t.live.chatModal.loadError);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [sessionId, locale, isAr]);
+  }, [sessionId, locale, t]);
 
   useEffect(() => {
     loadMessages();
@@ -183,7 +191,7 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
         const actualType = recorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunksRef.current, { type: actualType });
         if (blob.size > MAX_AUDIO_BYTES) {
-          setError('الرسالة الصوتية أكبر من 10 MB. سجّل رسالة أقصر.');
+          setError(t.live.chatModal.audioTooLarge);
           setAudioBlob(null);
           return;
         }
@@ -197,9 +205,7 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
         setRecordSeconds((current) => current + 1);
       }, 1000);
     } catch {
-      setError(isAr
-        ? 'اسمح للموقع باستخدام الميكروفون لإرسال رسالة صوتية.'
-        : 'Allow microphone access to send a voice note.');
+      setError(t.live.chatModal.micPermissionError);
     }
   };
 
@@ -224,13 +230,13 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
       );
       setText('');
       if (created?._id) {
-        setMessages((current) => current.some((message) => String(message._id) === String(created._id))
+        setMessages((current) => (current.some((message) => String(message._id) === String(created._id))
           ? current
-          : [...current, created]);
+          : [...current, created]));
       }
       await loadMessages({ silent: true });
     } catch (err) {
-      setError(err.message || 'فشل إرسال الرسالة');
+      setError(err.message || t.live.chatModal.sendError);
     } finally {
       setSending(false);
     }
@@ -270,46 +276,54 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
       resetRecording();
       await loadMessages({ silent: true });
     } catch (err) {
-      setError(err.message || 'فشل إرسال الرسالة الصوتية');
+      setError(err.message || t.live.chatModal.voiceSendError);
     } finally {
       setSending(false);
     }
   };
 
   const peerName = viewerRole === 'teacher'
-    ? (session?.student?.name || (isAr ? 'الطالب' : 'Student'))
-    : (session?.teacher?.user?.name || session?.teacher?.personalInfo?.fullName || session?.teacher?.name || (isAr ? 'المعلم' : 'Tutor'));
+    ? (session?.student?.name || t.live.chatModal.studentFallback)
+    : (session?.teacher?.user?.name || session?.teacher?.personalInfo?.fullName || session?.teacher?.name || t.live.chatModal.tutorFallback);
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/55 p-3 md:p-6 flex items-center justify-center" dir={isAr ? 'rtl' : 'ltr'}>
-      <div className="w-full max-w-2xl h-[min(760px,92vh)] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <header className="border-b px-4 py-3 flex items-center justify-between gap-3 bg-slate-50">
-          <div>
-            <h3 className="font-black text-slate-900">{isAr ? 'محادثة الحصة' : 'Session chat'}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{peerName}{session?.scheduledAt ? ` · ${new Date(session.scheduledAt).toLocaleString(isAr ? 'ar-EG' : 'en')}` : ''}</p>
-          </div>
-          <button type="button" aria-label={isAr ? 'إغلاق المحادثة' : 'Close chat'} onClick={onClose} className="p-2 rounded-lg hover:bg-white text-slate-500">
-            <X size={20} />
-          </button>
-        </header>
+    <Modal
+      isOpen={Boolean(session)}
+      onClose={onClose}
+      title={t.live.chatModal.title}
+      maxWidth="672px"
+      ariaLabel={t.live.chatModal.title}
+    >
+      <div className="flex flex-col h-[min(620px,76vh)]" dir={dir}>
+        <p className="text-xs text-[var(--wn-text-secondary)] pb-2 border-b border-[var(--wn-border)]">
+          {peerName}
+          {session?.scheduledAt ? ` · ${new Date(session.scheduledAt).toLocaleString(resolveIntlLocale(locale))}` : ''}
+        </p>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto py-3 px-1 space-y-3">
           {loading ? (
-            <div className="text-center text-sm text-slate-500 py-10">{isAr ? 'جاري تحميل المحادثة...' : 'Loading chat...'}</div>
+            <div className="space-y-3 py-4" role="status" aria-busy="true" aria-label={t.live.chatModal.loadingChat}>
+              <Skeleton className="h-12 w-3/4 rounded-2xl" />
+              <Skeleton className="h-12 w-2/3 ms-auto rounded-2xl" />
+              <Skeleton className="h-12 w-3/5 rounded-2xl" />
+            </div>
           ) : messages.length === 0 ? (
-            <div className="text-center py-10">
-              <p className="font-bold text-slate-700">{isAr ? 'ابدأ المحادثة' : 'Start the conversation'}</p>
-              <p className="text-xs text-slate-500 mt-1">{isAr ? 'يمكنك إرسال رسالة نصية أو صوتية مرتبطة بهذه الحصة.' : 'Send a text or voice note for this session.'}</p>
+            <div className="py-6">
+              <EmptyState
+                icon={MessageSquare}
+                title={t.live.chatModal.emptyTitle}
+                description={t.live.chatModal.emptyDesc}
+              />
             </div>
           ) : messages.map((message) => (
             <div key={message._id} className={`flex ${message.isMe ? 'justify-start' : 'justify-end'}`}>
               <div className={`max-w-[84%] rounded-2xl px-3 py-2 ${
                 message.isMe
-                  ? 'bg-emerald-700 text-white rounded-tr-sm'
-                  : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
+                  ? 'bg-[var(--wn-emerald)] text-[var(--wn-white)] rounded-ss-sm'
+                  : 'bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] rounded-se-sm'
               }`}>
-                <p className={`text-[10px] mb-1 ${message.isMe ? 'text-emerald-100' : 'text-slate-400'}`}>
-                  {message.userName || (message.isMe ? (isAr ? 'أنت' : 'You') : '')}
+                <p className={`text-[10px] mb-1 ${message.isMe ? 'text-emerald-100' : 'text-[var(--wn-text-tertiary)]'}`}>
+                  {message.userName || (message.isMe ? t.live.chatModal.you : '')}
                 </p>
 
                 {message.kind === 'audio' && message.audioUrl ? (
@@ -317,14 +331,15 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
                     url={message.audioUrl}
                     duration={message.audioDurationSeconds}
                     isMe={message.isMe}
+                    labels={t.live.chatModal}
                   />
                 ) : (
                   <>
                     <p className="text-sm whitespace-pre-wrap leading-6">{message.translation || message.text}</p>
                     {message.translation && message.text && message.translation !== message.text && (
                       <details className="mt-1">
-                        <summary className={`cursor-pointer text-[10px] ${message.isMe ? 'text-emerald-100' : 'text-slate-400'}`}>
-                          {isAr ? 'عرض النص الأصلي' : 'Original text'}
+                        <summary className={`cursor-pointer text-[10px] ${message.isMe ? 'text-emerald-100' : 'text-[var(--wn-text-secondary)]'}`}>
+                          {t.live.chatModal.originalText}
                         </summary>
                         <p className="text-xs mt-1 opacity-80">{message.text}</p>
                       </details>
@@ -332,8 +347,8 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
                   </>
                 )}
 
-                <p className={`mt-1 text-[9px] ${message.isMe ? 'text-emerald-100/80' : 'text-slate-400'}`}>
-                  {new Date(message.createdAt).toLocaleTimeString(isAr ? 'ar-EG' : 'en', { hour: '2-digit', minute: '2-digit' })}
+                <p className={`mt-1 text-[9px] ${message.isMe ? 'text-emerald-100/80' : 'text-[var(--wn-text-tertiary)]'}`}>
+                  {new Date(message.createdAt).toLocaleTimeString(resolveIntlLocale(locale), { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
             </div>
@@ -342,33 +357,54 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
         </div>
 
         {error && (
-          <div className="px-4 py-2 text-xs bg-red-50 text-red-700 border-t border-red-100">{error}</div>
+          <div role="alert" className="px-3 py-2 text-xs bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)] border-t border-[var(--wn-border)] rounded-lg mb-2">
+            {error}
+          </div>
         )}
 
-        <footer className="border-t bg-white p-3 space-y-3">
+        <footer className="border-t border-[var(--wn-border)] pt-3 space-y-3">
           {recording || audioBlob ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className={`h-3 w-3 rounded-full ${recording ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
-                  <strong className="font-mono text-sm">{formatSeconds(recordSeconds)}</strong>
-                  <span className="text-xs text-slate-500">
-                    {recording ? (isAr ? 'جاري التسجيل' : 'Recording') : (isAr ? 'جاهزة للإرسال' : 'Ready to send')}
+                  <span className={`h-3 w-3 rounded-full ${recording ? 'bg-[var(--wn-danger)] animate-pulse' : 'bg-[var(--wn-emerald)]'}`} />
+                  <strong className="font-mono text-sm text-[var(--wn-text-primary)]">{formatSeconds(recordSeconds)}</strong>
+                  <span className="text-xs text-[var(--wn-text-secondary)]">
+                    {recording ? t.live.chatModal.recording : t.live.chatModal.readyToSend}
                   </span>
                 </div>
 
                 <div className="flex gap-2">
                   {recording ? (
-                    <button type="button" onClick={stopRecording} className="p-2 rounded-lg bg-slate-900 text-white" title="إيقاف">
-                      <Square size={16} />
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      aria-label={t.live.chatModal.stop}
+                      title={t.live.chatModal.stop}
+                      className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg bg-[var(--wn-emerald-deep)] text-[var(--wn-white)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    >
+                      <Square size={16} aria-hidden="true" />
                     </button>
                   ) : (
                     <>
-                      <button type="button" onClick={resetRecording} className="p-2 rounded-lg border text-slate-600" title="إعادة">
-                        <RotateCcw size={16} />
+                      <button
+                        type="button"
+                        onClick={resetRecording}
+                        aria-label={t.live.chatModal.reset}
+                        title={t.live.chatModal.reset}
+                        className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                      >
+                        <RotateCcw size={16} aria-hidden="true" />
                       </button>
-                      <button type="button" onClick={sendVoice} disabled={sending} className="p-2 rounded-lg bg-emerald-700 text-white disabled:opacity-50" title="إرسال">
-                        <Send size={16} />
+                      <button
+                        type="button"
+                        onClick={sendVoice}
+                        disabled={sending}
+                        aria-label={t.live.chatModal.send}
+                        title={t.live.chatModal.send}
+                        className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg bg-[var(--wn-emerald)] text-[var(--wn-white)] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                      >
+                        <Send size={16} aria-hidden="true" />
                       </button>
                     </>
                   )}
@@ -378,7 +414,7 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
               {previewUrl && !recording && (
                 <audio src={previewUrl} controls className="w-full mt-3" />
               )}
-              <p className="text-[10px] text-slate-400 mt-2">{isAr ? 'الحد الأقصى دقيقتان و10 MB.' : 'Maximum 2 minutes and 10 MB.'}</p>
+              <p className="text-[10px] text-[var(--wn-text-tertiary)] mt-2">{t.live.chatModal.maxDurationHint}</p>
             </div>
           ) : null}
 
@@ -387,29 +423,32 @@ export default function SessionChatModal({ session, onClose, locale = 'ar', view
               type="button"
               onClick={startRecording}
               disabled={recording || sending}
-              className="p-3 rounded-xl border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-              title={isAr ? 'رسالة صوتية' : 'Voice note'}
+              aria-label={t.live.chatModal.voiceNote}
+              title={t.live.chatModal.voiceNote}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-accent)] hover:bg-[var(--wn-emerald-soft)] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <Mic size={19} />
+              <Mic size={19} aria-hidden="true" />
             </button>
-            <textarea aria-label={isAr ? 'اكتب رسالة' : 'Write a message'}
+            <textarea
+              aria-label={t.live.chatModal.writeMessageAria}
               value={text}
               onChange={(event) => setText(event.target.value)}
               rows={1}
               maxLength={4000}
-              placeholder={isAr ? 'اكتب رسالة للشيخ/الطالب...' : 'Write a message...'}
-              className="flex-1 min-h-[46px] max-h-28 resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-400"
+              placeholder={t.live.chatModal.inputPlaceholder}
+              className="flex-1 min-h-[46px] max-h-28 resize-y rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] px-3 py-2.5 text-sm outline-none focus:border-[var(--wn-focus)] focus:ring-2 focus:ring-[var(--wn-focus)]"
             />
             <button
               type="submit"
               disabled={!text.trim() || sending}
-              className="p-3 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-40"
+              aria-label={t.live.chatModal.send}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl bg-[var(--wn-emerald)] text-[var(--wn-white)] hover:bg-[var(--wn-emerald-hover)] disabled:opacity-40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <Send size={19} />
+              <Send size={19} aria-hidden="true" />
             </button>
           </form>
         </footer>
       </div>
-    </div>
+    </Modal>
   );
 }
