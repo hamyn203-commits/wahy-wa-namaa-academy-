@@ -4927,8 +4927,8 @@
 }
 
 .wn-admin-dossier__header > button {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: 10px;
@@ -5096,7 +5096,7 @@
 }
 
 .wn-admin-review-checklist__actions button {
-  min-height: 31px;
+  min-height: 44px;
   padding: .35rem .5rem;
   border-radius: 8px;
   background: #f1f4f2;
@@ -5265,7 +5265,7 @@
 }
 
 .wn-admin-dossier__footer button {
-  min-height: 38px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5386,8 +5386,8 @@
 }
 
 .wn-admin-global-search__clear {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -6019,7 +6019,7 @@
 .wn-admin-sidebar {
   position: fixed;
   inset-block: 0;
-  left: 0;
+  inset-inline-start: 0;
   z-index: 60;
   width: 238px;
   display: flex;
@@ -6031,6 +6031,10 @@
     linear-gradient(180deg,var(--admin-navy-950),var(--admin-navy-900) 55%,#05172d);
   color: #fff;
   box-shadow: 22px 0 55px -42px rgba(3,14,29,.85);
+}
+
+[dir="rtl"] .wn-admin-sidebar {
+  box-shadow: -22px 0 55px -42px color-mix(in srgb, var(--wn-surface-dark) 85%, transparent);
 }
 
 .wn-admin-sidebar::before,
@@ -6046,14 +6050,14 @@
   width: 170px;
   height: 170px;
   top: -88px;
-  left: -58px;
+  inset-inline-start: -58px;
 }
 
 .wn-admin-sidebar::after {
   width: 210px;
   height: 210px;
   bottom: -112px;
-  right: -98px;
+  inset-inline-end: -98px;
 }
 
 .wn-admin-sidebar__brand {
@@ -6181,8 +6185,8 @@
 }
 
 .wn-admin-sidebar__profile > button {
-  width: 31px;
-  height: 31px;
+  min-width: 44px;
+  min-height: 44px;
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -6192,7 +6196,7 @@
 
 .wn-admin-stage {
   min-height: 100vh;
-  margin-left: 238px;
+  margin-inline-start: 238px;
 }
 
 .wn-admin-topbar {
@@ -6242,8 +6246,8 @@
   color: var(--admin-navy-800);
 }
 
-.wn-admin-topbar__actions > .relative > button {
-  color: var(--admin-navy-800) !important;
+.wn-admin-app .wn-admin-topbar__actions > .relative > button {
+  color: var(--admin-navy-800);
 }
 
 .wn-admin-topbar__date {
@@ -6542,7 +6546,7 @@
 
 .wn-admin-people-home__cards > button { 
   width: 100%;
-  text-align: right;
+  text-align: start;
   cursor: pointer;
   transition: border-color .15s, transform .15s, box-shadow .15s;
 
@@ -6617,10 +6621,10 @@
   .wn-admin-mobile-toggle {
     position: fixed;
     top: 14px;
-    left: 14px;
+    inset-inline-start: 14px;
     z-index: 85;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     display: grid;
     place-items: center;
     border: 1px solid rgba(211,163,60,.32);
@@ -6635,7 +6639,12 @@
     transition: transform .22s ease;
   }
 
-  .wn-admin-sidebar.is-open {
+  [dir="rtl"] .wn-admin-sidebar {
+    transform: translateX(105%);
+  }
+
+  .wn-admin-sidebar.is-open,
+  [dir="rtl"] .wn-admin-sidebar.is-open {
     transform: translateX(0);
   }
 
@@ -6649,11 +6658,11 @@
   }
 
   .wn-admin-stage {
-    margin-left: 0;
+    margin-inline-start: 0;
   }
 
   .wn-admin-topbar {
-    padding-left: 4rem;
+    padding-inline-start: 4rem;
   }
 
   .wn-admin-topbar__date {
@@ -6671,16 +6680,22 @@
 
 @media (max-width: 640px) {
   .wn-admin-topbar {
+    grid-template-areas:
+      "actions"
+      "search";
     grid-template-columns: minmax(0,1fr);
-    gap: .35rem;
-    padding-top: .6rem;
-    padding-bottom: .55rem;
+    gap: .5rem;
+    padding-inline: 1rem;
+    padding-top: .65rem;
+    padding-bottom: .65rem;
   }
 
   .wn-admin-topbar__actions {
-    position: absolute;
-    top: 14px;
-    right: 10px;
+    position: static;
+    width: 100%;
+    min-height: 44px;
+    padding-inline-start: 4rem;
+    justify-content: flex-end;
   }
 
   .wn-admin-topbar__locale {
@@ -7067,6 +7082,10 @@
   background: #fffaf0;
 }
 
+[dir="ltr"] .wn-admin-exec-priority-list > button:hover {
+  transform: translateX(2px);
+}
+
 .wn-admin-exec-priority-list__icon {
   width: 34px;
   height: 34px;
@@ -7313,7 +7332,7 @@
   display: inline-flex;
   align-items: center;
   gap: .3rem;
-  min-height: 34px;
+  min-height: 44px;
   padding: .42rem .6rem;
   border-radius: 9px;
   background: #071a33;
@@ -7515,25 +7534,6 @@
   cursor: pointer;
 }
 
-.wn-admin-exec-metric.is-clickable::after {
-  content: "فتح القسم ←";
-  position: absolute;
-  inset-inline-end: .72rem;
-  bottom: .52rem;
-  color: #9aa2af;
-  font-size: .38rem;
-  font-weight: 800;
-  opacity: 0;
-  transform: translateY(3px);
-  transition: .16s ease;
-}
-
-.wn-admin-exec-metric.is-clickable:hover::after,
-.wn-admin-exec-metric.is-clickable:focus-visible::after {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .wn-admin-exec-metric.is-clickable:focus-visible,
 .wn-admin-exec-quick-actions > button:focus-visible,
 .wn-admin-exec-priority-list > button:focus-visible {
@@ -7613,7 +7613,7 @@
   display: inline-flex;
   align-items: center;
   gap: .3rem;
-  min-height: 34px;
+  min-height: 44px;
   padding: .42rem .6rem;
   border-radius: 9px;
   background: #071a33;
@@ -7633,7 +7633,7 @@
 }
 
 .wn-admin-session-control__filters button {
-  min-height: 32px;
+  min-height: 44px;
   padding: .38rem .55rem;
   border-radius: 9px;
   color: #687388;
@@ -7861,7 +7861,7 @@
 }
 
 .wn-admin-guardian-links__list > article > button {
-  min-height: 32px;
+  min-height: 44px;
   padding: .38rem .52rem;
   border-radius: 8px;
   background: #071a33;
@@ -7987,7 +7987,7 @@
   transition: width .24s ease, transform .24s ease;
 }
 .wn-admin-stage {
-  transition: margin-left .24s ease;
+  transition: margin-inline-start .24s ease;
 }
 .wn-admin-sidebar__nav {
   gap: .18rem;
@@ -8015,7 +8015,7 @@
 }
 .wn-admin-sidebar__profile strong {font-size: .78rem;}
 .wn-admin-sidebar__profile small {font-size: .64rem; color: #b0bbcb;}
-.wn-admin-sidebar__profile > button {min-width: 32px; min-height: 32px;}
+.wn-admin-sidebar__profile > button {min-width: 44px; min-height: 44px;}
 .wn-admin-topbar {
   grid-template-areas: "actions search toggle";
   grid-template-columns: auto minmax(0,1fr) auto;
@@ -8028,8 +8028,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(12,39,73,.12);
   border-radius: 12px;
   color: #0c2749;
@@ -8059,8 +8059,11 @@
   .wn-admin-app.is-sidebar-collapsed .wn-admin-sidebar {
     transform: translateX(-105%);
   }
+  [dir="rtl"] .wn-admin-app.is-sidebar-collapsed .wn-admin-sidebar {
+    transform: translateX(105%);
+  }
   .wn-admin-app.is-sidebar-collapsed .wn-admin-stage {
-    margin-left: 0;
+    margin-inline-start: 0;
   }
 }
 
@@ -8072,11 +8075,13 @@
   }
   .wn-admin-topbar__sidebar-toggle {display: none;}
   .wn-admin-app.is-sidebar-collapsed .wn-admin-sidebar {width: 238px;}
-  .wn-admin-app.is-sidebar-collapsed .wn-admin-stage {margin-left: 0;}
+  .wn-admin-app.is-sidebar-collapsed .wn-admin-stage {margin-inline-start: 0;}
 }
 @media (max-width: 640px) {
   .wn-admin-topbar {
-    grid-template-areas: "search";
+    grid-template-areas:
+      "actions"
+      "search";
     grid-template-columns: minmax(0,1fr);
   }
 }
@@ -8105,6 +8110,11 @@
   background-size: cover;
   background-position: center;
   box-shadow: 0 22px 52px -43px rgba(6, 45, 47, .44);
+}
+[dir="ltr"] .wn-admin-welcome--illustrated {
+  background-image:
+    linear-gradient(90deg, color-mix(in srgb, var(--wn-white) 99%, transparent) 0%, color-mix(in srgb, var(--wn-white) 97%, transparent) 32%, color-mix(in srgb, var(--wn-white) 78%, transparent) 51%, color-mix(in srgb, var(--wn-white) 7%, transparent) 87%),
+    url('/images/admin-mosque-hero.svg');
 }
 .wn-admin-welcome--illustrated::before { display: none; }
 .wn-admin-welcome--illustrated .wn-admin-welcome__copy {
@@ -8252,7 +8262,7 @@
 .wn-admin-exec-section-title h3 { font-size: 1.02rem; }
 .wn-admin-exec-panel__head p,
 .wn-admin-exec-section-title p { font-size: .79rem; line-height: 1.65; }
-.wn-admin-exec-section-title > button { font-size: .8rem; min-height: 40px; }
+.wn-admin-exec-section-title > button { font-size: .8rem; min-height: 44px; }
 .wn-admin-topbar__date { font-size: .72rem; }
 .wn-admin-topbar__locale { font-size: .75rem; }
 
@@ -8261,6 +8271,11 @@
     min-height: 255px;
     background-image:
       linear-gradient(270deg, rgba(255,255,255,.98), rgba(255,255,255,.94) 46%, rgba(255,255,255,.34) 100%),
+      url('/images/admin-mosque-hero.svg');
+  }
+  [dir="ltr"] .wn-admin-welcome--illustrated {
+    background-image:
+      linear-gradient(90deg, color-mix(in srgb, var(--wn-white) 98%, transparent), color-mix(in srgb, var(--wn-white) 94%, transparent) 46%, color-mix(in srgb, var(--wn-white) 34%, transparent) 100%),
       url('/images/admin-mosque-hero.svg');
   }
   .wn-admin-exec-metrics { grid-template-columns: repeat(3, minmax(0,1fr)); }
@@ -8281,6 +8296,11 @@
       url('/images/admin-mosque-hero.svg');
     background-position: 32% center;
     border-radius: 18px;
+  }
+  [dir="ltr"] .wn-admin-welcome--illustrated {
+    background-image:
+      linear-gradient(90deg, color-mix(in srgb, var(--wn-white) 98%, transparent), color-mix(in srgb, var(--wn-white) 92%, transparent) 68%, color-mix(in srgb, var(--wn-white) 62%, transparent)),
+      url('/images/admin-mosque-hero.svg');
   }
   .wn-admin-welcome--illustrated .wn-admin-welcome__copy h1 { font-size: 1.45rem; }
   .wn-admin-welcome--illustrated .wn-admin-welcome__copy p { font-size: .86rem; line-height: 1.8; }
@@ -8610,8 +8630,8 @@
 /* Room for larger Arabic navigation, labels, input fields and KPI values. */
 @media (min-width: 901px) {
   .wn-admin-app .wn-admin-sidebar { width: 298px; }
-  .wn-admin-app .wn-admin-stage { margin-left: 298px; }
-  .wn-admin-app.is-sidebar-collapsed .wn-admin-stage { margin-left: 0; }
+  .wn-admin-app .wn-admin-stage { margin-inline-start: 298px; }
+  .wn-admin-app.is-sidebar-collapsed .wn-admin-stage { margin-inline-start: 0; }
 }
 .wn-admin-app .wn-admin-sidebar__nav button,
 .wn-admin-app .wn-admin-sidebar__system button,
@@ -8688,7 +8708,7 @@
 }
 @media (max-width: 900px) {
   .wn-admin-app .wn-admin-sidebar { width: min(298px, 88vw); }
-  .wn-admin-app .wn-admin-stage { margin-left: 0; }
+  .wn-admin-app .wn-admin-stage { margin-inline-start: 0; }
   .wn-admin-app.is-sidebar-collapsed .wn-admin-sidebar { width: min(298px, 88vw); }
   .wn-admin-app .wn-admin-exec-quick-actions {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 195px), 1fr));
@@ -9547,4 +9567,859 @@
 
 [data-theme="dark"] .wn-guardian-child-card__open {
   border-top-color: var(--wn-border);
+}
+
+/* ============================================================================
+   Cycle 4 — Admin 360, Executive Home, Payments & Support Dark Mode Coverage
+   (#C4-CA-002, #C4-UI-003, #C4-UI-004)
+   ============================================================================ */
+
+[data-theme="dark"] .wn-admin-app {
+  --admin-ink: var(--wn-text-primary);
+  --admin-muted: var(--wn-text-secondary);
+  --admin-border: var(--wn-border);
+  --admin-bg: var(--wn-surface-canvas);
+  background:
+    radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--wn-gold) 10%, transparent), transparent 24rem),
+    linear-gradient(135deg, var(--wn-bg) 0%, var(--wn-surface-sunken) 56%, var(--wn-bg) 100%);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-app input,
+[data-theme="dark"] .wn-admin-app textarea,
+[data-theme="dark"] .wn-admin-app select {
+  background-color: var(--wn-surface-sunken);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-app input:focus,
+[data-theme="dark"] .wn-admin-app textarea:focus,
+[data-theme="dark"] .wn-admin-app select:focus {
+  border-color: var(--wn-focus);
+  box-shadow: var(--wn-focus-ring);
+}
+
+[data-theme="dark"] .wn-admin-topbar__actions {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-app .wn-admin-topbar__actions > .relative > button {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-topbar__date,
+[data-theme="dark"] .wn-admin-topbar__locale,
+[data-theme="dark"] .wn-admin-topbar__sidebar-toggle {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-topbar__sidebar-toggle:hover,
+[data-theme="dark"] .wn-admin-topbar__sidebar-toggle:focus-visible {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-mobile-toggle {
+  background: var(--wn-surface-dark);
+  border-color: color-mix(in srgb, var(--wn-gold) 36%, transparent);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-admin-sidebar-scrim {
+  background: color-mix(in srgb, var(--wn-bg) 72%, transparent);
+}
+
+[data-theme="dark"] .wn-admin-welcome,
+[data-theme="dark"] .wn-admin-page-heading {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  box-shadow: var(--wn-shadow-md);
+}
+
+[data-theme="dark"] .wn-admin-welcome--illustrated {
+  background-color: var(--wn-surface);
+  border-color: color-mix(in srgb, var(--wn-gold) 26%, transparent);
+  background-image:
+    linear-gradient(270deg, color-mix(in srgb, var(--wn-surface) 97%, transparent) 0%, color-mix(in srgb, var(--wn-surface) 92%, transparent) 38%, color-mix(in srgb, var(--wn-surface) 74%, transparent) 58%, color-mix(in srgb, var(--wn-surface) 32%, transparent) 92%),
+    url('/images/admin-mosque-hero.svg');
+}
+
+[data-theme="dark"][dir="ltr"] .wn-admin-welcome--illustrated,
+[data-theme="dark"] [dir="ltr"] .wn-admin-welcome--illustrated {
+  background-image:
+    linear-gradient(90deg, color-mix(in srgb, var(--wn-surface) 97%, transparent) 0%, color-mix(in srgb, var(--wn-surface) 92%, transparent) 38%, color-mix(in srgb, var(--wn-surface) 74%, transparent) 58%, color-mix(in srgb, var(--wn-surface) 32%, transparent) 92%),
+    url('/images/admin-mosque-hero.svg');
+}
+
+[data-theme="dark"] .wn-admin-welcome--illustrated .wn-admin-welcome__eyebrow {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-welcome__copy > span,
+[data-theme="dark"] .wn-admin-page-heading > span {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-welcome__copy h1,
+[data-theme="dark"] .wn-admin-welcome--illustrated .wn-admin-welcome__copy h1,
+[data-theme="dark"] .wn-admin-page-heading h1 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-welcome--illustrated .wn-admin-welcome__copy h1 em {
+  color: var(--wn-teal);
+}
+
+[data-theme="dark"] .wn-admin-welcome__copy p,
+[data-theme="dark"] .wn-admin-welcome--illustrated .wn-admin-welcome__copy p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-welcome__ornament {
+  background: linear-gradient(135deg, var(--wn-gold-soft), var(--wn-surface-soft));
+  border-color: color-mix(in srgb, var(--wn-gold) 30%, transparent);
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-welcome__actions button.is-primary {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-admin-welcome__actions button.is-primary:hover {
+  background: var(--wn-emerald-hover);
+}
+
+[data-theme="dark"] .wn-admin-welcome__actions button.is-secondary {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-welcome__actions button.is-secondary:hover {
+  background: var(--wn-emerald-soft);
+}
+
+[data-theme="dark"] .wn-admin-welcome__scroll {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-welcome__scroll:hover {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-heading);
+}
+
+/* Executive Home */
+[data-theme="dark"] .wn-admin-exec-hero {
+  background: var(--wn-surface);
+  border-color: color-mix(in srgb, var(--wn-gold) 22%, transparent);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__copy > span,
+[data-theme="dark"] .wn-admin-exec-panel__head > div > span,
+[data-theme="dark"] .wn-admin-exec-section-title > div > span,
+[data-theme="dark"] .wn-admin-people-home__intro > span,
+[data-theme="dark"] .wn-admin-session-control__hero > div > span,
+[data-theme="dark"] .wn-admin-guardian-links > header > div > span,
+[data-theme="dark"] .wn-admin-system-center__hero > div > span {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__copy h2,
+[data-theme="dark"] .wn-admin-exec-metric__body > strong,
+[data-theme="dark"] .wn-admin-exec-shortcut strong,
+[data-theme="dark"] .wn-admin-exec-quick-actions strong,
+[data-theme="dark"] .wn-admin-exec-priority-list strong,
+[data-theme="dark"] .wn-admin-exec-activity__list strong,
+[data-theme="dark"] .wn-admin-exec-system__ring > div,
+[data-theme="dark"] .wn-admin-people-home__intro h2,
+[data-theme="dark"] .wn-admin-people-home__cards strong,
+[data-theme="dark"] .wn-admin-session-control__hero h2,
+[data-theme="dark"] .wn-admin-session-control__stats strong,
+[data-theme="dark"] .wn-admin-session-control__date,
+[data-theme="dark"] .wn-admin-session-control__people strong,
+[data-theme="dark"] .wn-admin-guardian-links > header h3,
+[data-theme="dark"] .wn-admin-guardian-links__list strong,
+[data-theme="dark"] .wn-admin-system-center__hero h2,
+[data-theme="dark"] .wn-admin-system-center__features strong {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__copy p,
+[data-theme="dark"] .wn-admin-exec-panel__head p,
+[data-theme="dark"] .wn-admin-exec-section-title p,
+[data-theme="dark"] .wn-admin-exec-metric__body > span,
+[data-theme="dark"] .wn-admin-exec-metric__body > small,
+[data-theme="dark"] .wn-admin-exec-priority-list small,
+[data-theme="dark"] .wn-admin-exec-system__ring small,
+[data-theme="dark"] .wn-admin-exec-activity__list small,
+[data-theme="dark"] .wn-admin-exec-activity__list time,
+[data-theme="dark"] .wn-admin-exec-shortcut small,
+[data-theme="dark"] .wn-admin-exec-quick-actions small,
+[data-theme="dark"] .wn-admin-exec-empty,
+[data-theme="dark"] .wn-admin-people-home__intro p,
+[data-theme="dark"] .wn-admin-people-home__cards p,
+[data-theme="dark"] .wn-admin-session-control__hero p,
+[data-theme="dark"] .wn-admin-session-control__stats span,
+[data-theme="dark"] .wn-admin-session-control__date small,
+[data-theme="dark"] .wn-admin-session-control__people small,
+[data-theme="dark"] .wn-admin-session-control__list code,
+[data-theme="dark"] .wn-admin-guardian-links > header p,
+[data-theme="dark"] .wn-admin-guardian-links__list small,
+[data-theme="dark"] .wn-admin-system-center__hero p,
+[data-theme="dark"] .wn-admin-system-center__features small {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__status.is-clear {
+  background: var(--wn-status-success-bg);
+  border-color: var(--wn-status-success-border);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__status.is-clear > span {
+  background: var(--wn-surface-mint);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__status.is-alert {
+  background: var(--wn-status-warn-bg);
+  border-color: var(--wn-status-warn-border);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-hero__status.is-alert > span {
+  background: var(--wn-gold-soft);
+}
+
+[data-theme="dark"] .wn-admin-exec-quick-actions > button {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-exec-quick-actions > button:hover {
+  background: var(--wn-surface-soft);
+  border-color: color-mix(in srgb, var(--wn-gold) 36%, transparent);
+}
+
+[data-theme="dark"] .wn-admin-exec-quick-actions > button > svg:first-child {
+  background: var(--wn-gold-soft);
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric__icon {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric.is-gold .wn-admin-exec-metric__icon {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric.is-blue .wn-admin-exec-metric__icon {
+  background: var(--wn-status-info-bg);
+  color: var(--wn-status-info-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric.is-green .wn-admin-exec-metric__icon {
+  background: var(--wn-status-success-bg);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric.is-purple .wn-admin-exec-metric__icon {
+  background: color-mix(in srgb, var(--wn-chart-5) 18%, var(--wn-surface));
+  color: var(--wn-chart-5);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric.is-red .wn-admin-exec-metric__icon {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-metric__badge,
+[data-theme="dark"] .wn-admin-exec-live,
+[data-theme="dark"] .wn-admin-exec-health-score.is-good {
+  background: var(--wn-status-success-bg);
+  border-color: var(--wn-status-success-border);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-health-score.is-warning {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-panel__head {
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-exec-count,
+[data-theme="dark"] .wn-admin-exec-priority-list b,
+[data-theme="dark"] .wn-admin-exec-shortcut > div > span,
+[data-theme="dark"] .wn-admin-system-center__hero > strong {
+  background: var(--wn-emerald-deep);
+  color: var(--wn-gold);
+}
+
+[data-theme="dark"] .wn-admin-exec-priority-list > button:hover {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-admin-exec-priority-list__icon {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-exec-priority-list button.is-danger .wn-admin-exec-priority-list__icon {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-priority-list button.is-warning .wn-admin-exec-priority-list__icon {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-priority-list button.is-info .wn-admin-exec-priority-list__icon {
+  background: var(--wn-status-info-bg);
+  color: var(--wn-status-info-text);
+}
+
+[data-theme="dark"] .wn-admin-exec-system__ring {
+  background: conic-gradient(var(--wn-gold) 0 var(--health), var(--wn-surface-sunken) var(--health) 360deg);
+}
+
+[data-theme="dark"] .wn-admin-exec-system__ring > div {
+  background: var(--wn-surface);
+  box-shadow: inset 0 0 0 1px var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-exec-system__features > span {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-exec-activity__list > div {
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-exec-activity__dot {
+  border-color: var(--wn-surface);
+  background: var(--wn-gold);
+}
+
+[data-theme="dark"] .wn-admin-exec-shortcut {
+  background: linear-gradient(100deg, var(--wn-gold-soft), var(--wn-surface));
+  border-color: color-mix(in srgb, var(--wn-gold) 24%, transparent);
+}
+
+[data-theme="dark"] .wn-admin-exec-shortcut > button,
+[data-theme="dark"] .wn-admin-exec-section-title > button,
+[data-theme="dark"] .wn-admin-session-control__hero > button,
+[data-theme="dark"] .wn-admin-guardian-links > header > button,
+[data-theme="dark"] .wn-admin-guardian-links__list > article > button {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-admin-exec-review {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-exec-review > .wn-dashboard-surface {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+}
+
+/* Session Control, Guardian Links, System Center & People Home */
+[data-theme="dark"] .wn-admin-session-control__hero,
+[data-theme="dark"] .wn-admin-guardian-links > header,
+[data-theme="dark"] .wn-admin-system-center__hero,
+[data-theme="dark"] .wn-admin-people-home {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+[data-theme="dark"] .wn-admin-session-control__filters,
+[data-theme="dark"] .wn-admin-session-control__stats > div,
+[data-theme="dark"] .wn-admin-session-control__list > article,
+[data-theme="dark"] .wn-admin-guardian-links__list > article,
+[data-theme="dark"] .wn-admin-system-center__features > div,
+[data-theme="dark"] .wn-admin-people-home__cards > button {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-session-control__filters button {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-session-control__filters button.is-active {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-admin-session-control__people button {
+  background: var(--wn-surface-soft);
+}
+
+[data-theme="dark"] .wn-admin-session-control__people button:hover:not(:disabled) {
+  background: var(--wn-surface-mint);
+}
+
+[data-theme="dark"] .wn-admin-session-control__meta span {
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-session-control__meta span.is-accepted {
+  background: var(--wn-status-info-bg);
+  color: var(--wn-status-info-text);
+}
+
+[data-theme="dark"] .wn-admin-session-control__meta span.is-completed {
+  background: var(--wn-status-success-bg);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-session-control__empty,
+[data-theme="dark"] .wn-admin-session-control__loading,
+[data-theme="dark"] .wn-admin-guardian-links__empty {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-session-control__error {
+  background: var(--wn-status-danger-bg);
+  border-color: var(--wn-status-danger-border);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-guardian-links__icon {
+  background: var(--wn-gold-soft);
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-system-center__features > div.is-on > span {
+  background: var(--wn-status-success-bg);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-system-center__features > div.is-off > span {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-people-home__cards svg {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-people-home__cards > button:hover,
+[data-theme="dark"] .wn-admin-people-home__cards > button:focus-visible {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-gold);
+}
+
+/* Global Search, Audit List & Payment Readable */
+[data-theme="dark"] .wn-admin-global-search__bar > svg {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-global-search__clear {
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-global-search__bar > button:last-child {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-admin-global-search__results {
+  background: var(--wn-surface);
+  border-color: var(--wn-border-strong);
+  box-shadow: var(--wn-shadow-lg);
+}
+
+[data-theme="dark"] .wn-admin-global-search__results-head strong {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-global-search__results-head span {
+  color: var(--wn-text-danger);
+}
+
+[data-theme="dark"] .wn-admin-global-search__group > span,
+[data-theme="dark"] .wn-admin-global-search__group small,
+[data-theme="dark"] .wn-admin-global-search__group code {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-global-search__group > button,
+[data-theme="dark"] .wn-admin-global-search__record {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-global-search__group > button:hover {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-admin-global-search__group > button > span:first-child,
+[data-theme="dark"] .wn-admin-global-search__record > span:first-child {
+  background: var(--wn-surface);
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-global-search__group strong,
+[data-theme="dark"] .wn-admin-audit-list strong {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-audit-list > div {
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-audit-list small {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-payment-readable {
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-payment-readable .wn-dashboard-surface {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-payment-readable :is(input, select, textarea) {
+  background-color: var(--wn-surface-sunken);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-primary);
+}
+
+/* Teacher Review Dossier, 360 Dossiers & Asset Viewer */
+[data-theme="dark"] .wn-admin-dossier-backdrop {
+  background: color-mix(in srgb, var(--wn-bg) 78%, transparent);
+}
+
+[data-theme="dark"] .wn-admin-dossier__header > button,
+[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__header-actions button[aria-label="إغلاق"],
+[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__close {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-gate__intro {
+  background: var(--wn-surface-soft);
+  border-inline-start-color: var(--wn-teal);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-group + .wn-admin-review-group {
+  border-top-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-group__heading h3 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-group__heading p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-group__heading > span {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist > article.is-approved {
+  background: var(--wn-status-success-bg);
+  border-color: var(--wn-status-success-border);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist > article.is-changes-requested {
+  background: var(--wn-status-warn-bg);
+  border-color: var(--wn-status-warn-border);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__label p.wn-admin-review-checklist__hint {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__label p.wn-admin-review-checklist__missing-text,
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__label p.wn-admin-review-checklist__note {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__actions button {
+  background: var(--wn-surface-sunken);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__actions button.is-inspect {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist__actions button.is-change {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-review-gate__bar {
+  background: var(--wn-surface-sunken);
+}
+
+[data-theme="dark"] .wn-admin-review-gate__state.is-ready {
+  background: var(--wn-status-success-bg);
+  color: var(--wn-status-success-text);
+}
+
+[data-theme="dark"] .wn-admin-review-gate__state.is-blocked {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-dossier__privacy {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-admin-dossier__footer .is-reject {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-dossier__footer .is-change {
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
+}
+
+[data-theme="dark"] .wn-admin-360-summary > div,
+[data-theme="dark"] .wn-admin-360__info,
+[data-theme="dark"] .wn-admin-360-list > button,
+[data-theme="dark"] .wn-admin-360-subsection > div,
+[data-theme="dark"] .wn-admin-session-timeline > article,
+[data-theme="dark"] .wn-admin-homework-list > article,
+[data-theme="dark"] .wn-admin-360-columns > div,
+[data-theme="dark"] .wn-admin-360-columns > div > div,
+[data-theme="dark"] .wn-admin-360-feed > article,
+[data-theme="dark"] .wn-admin-family-grid > button,
+[data-theme="dark"] .wn-admin-family-grid > button > div > span {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-360-summary > div.is-alert {
+  background: var(--wn-status-danger-bg);
+  border-color: var(--wn-status-danger-border);
+}
+
+[data-theme="dark"] .wn-admin-360-summary strong,
+[data-theme="dark"] .wn-admin-360-subsection > strong,
+[data-theme="dark"] .wn-admin-360-columns > div > strong,
+[data-theme="dark"] .wn-admin-360-table strong,
+[data-theme="dark"] .wn-admin-session-report b {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-session-report {
+  background: var(--wn-gold-soft);
+}
+
+[data-theme="dark"] .wn-admin-homework-list article > div > span {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-360-table > div {
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__panel {
+  background: var(--wn-surface);
+  color: var(--wn-text-primary);
+  border: 1px solid var(--wn-border-strong);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__header,
+[data-theme="dark"] .wn-admin-asset-viewer__footer {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__header h3 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__header p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__header button {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__content {
+  background: var(--wn-bg);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__metadata {
+  background: var(--wn-surface-soft);
+  border-top-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__panel > .wn-admin-asset-viewer__message.is-error {
+  background: var(--wn-status-danger-bg);
+  color: var(--wn-status-danger-text);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__footer a,
+[data-theme="dark"] .wn-admin-asset-viewer__footer button.wn-admin-asset-viewer__retry {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-admin-asset-viewer__footer button {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+/* Support Chat & Inbox Dark Mode + Focus Ring (#C4-UI-004) */
+[data-theme="dark"] .wn-support-launcher {
+  background: linear-gradient(120deg, var(--wn-surface-mint), var(--wn-surface));
+  border-color: var(--wn-border-mint);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-support-launcher p {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-support-launcher button,
+[data-theme="dark"] .wn-support-compose button {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-support-badge {
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+}
+
+[data-theme="dark"] .wn-support-chat,
+[data-theme="dark"] .wn-support-inbox > aside {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  box-shadow: var(--wn-shadow-md);
+}
+
+[data-theme="dark"] .wn-support-chat__header {
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-support-chat__header h2,
+[data-theme="dark"] .wn-support-inbox > aside > h2,
+[data-theme="dark"] .wn-support-empty h3 {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-support-chat__header p,
+[data-theme="dark"] .wn-support-inbox > aside > p,
+[data-theme="dark"] .wn-support-inbox > aside > button p,
+[data-theme="dark"] .wn-support-inbox > aside > button small,
+[data-theme="dark"] .wn-support-compose small,
+[data-theme="dark"] .wn-support-empty {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-support-chat__header > button,
+[data-theme="dark"] .wn-support-icon {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-support-sync {
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-support-chat__messages {
+  background: var(--wn-surface-sunken);
+}
+
+[data-theme="dark"] .wn-support-bubble {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-support-bubble.is-mine {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+[data-theme="dark"] .wn-support-empty svg,
+[data-theme="dark"] .wn-support-older {
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-support-compose label {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-support-compose textarea {
+  background: var(--wn-surface-sunken);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-support-compose textarea:focus,
+[data-theme="dark"] .wn-support-compose textarea:focus-visible {
+  outline: none;
+  border-color: var(--wn-focus);
+  box-shadow: var(--wn-focus-ring);
+}
+
+[data-theme="dark"] .wn-support-error {
+  color: var(--wn-text-danger);
+}
+
+[data-theme="dark"] .wn-support-inbox > aside > button {
+  border-bottom-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-support-inbox > aside > button.is-active {
+  background: var(--wn-emerald-soft);
+}
+
+.wn-support-compose textarea:focus-visible,
+.wn-support-launcher button:focus-visible,
+.wn-support-inbox button:focus-visible,
+.wn-support-chat button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
