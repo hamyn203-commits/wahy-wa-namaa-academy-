@@ -12,6 +12,9 @@ import {
   ShieldCheck,
   Mail,
   Phone,
+  Copy,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -405,15 +408,158 @@ const CONTACT_COPY = {
 
 const HELP_ICONS = [BookOpenCheck, MessageCircle, Handshake];
 
+const CHANNELS_COPY = {
+  ar: {
+    heading: 'طرق التواصل المباشر',
+    whatsappTitle: 'واتساب مباشر',
+    whatsappDesc: 'أسرع وسيلة للرد والاستفسار عن الباقات والحصص التجريبية.',
+    whatsappCta: 'ابدأ محادثة واتساب',
+    emailTitle: 'البريد الإلكتروني الرسمي',
+    emailDesc: 'للاستفسارات التفصيلية، الشراكات، ومتابعة الحسابات.',
+    emailCta: 'أرسل بريداً إلكترونياً',
+    phoneTitle: 'اتصال هاتفي مباشر',
+    phoneDesc: 'تواصل معنا هاتفياً خلال ساعات العمل الرسمية.',
+    phoneCta: 'اتصل بنا الآن',
+    copy: 'نسخ',
+    copied: 'تم النسخ',
+  },
+  en: {
+    heading: 'Direct Contact Channels',
+    whatsappTitle: 'WhatsApp Direct',
+    whatsappDesc: 'Fastest way to ask about plans, schedules, and free trials.',
+    whatsappCta: 'Chat on WhatsApp',
+    emailTitle: 'Official Email',
+    emailDesc: 'For detailed inquiries, partnerships, and account support.',
+    emailCta: 'Send an Email',
+    phoneTitle: 'Direct Phone Call',
+    phoneDesc: 'Reach our support team directly during working hours.',
+    phoneCta: 'Call Us Now',
+    copy: 'Copy',
+    copied: 'Copied',
+  },
+  fr: {
+    heading: 'Canaux de contact direct',
+    whatsappTitle: 'WhatsApp Direct',
+    whatsappDesc: 'Le moyen le plus rapide pour toute question sur les formules et essais.',
+    whatsappCta: 'Discuter sur WhatsApp',
+    emailTitle: 'E-mail officiel',
+    emailDesc: 'Pour les demandes détaillées, partenariats et assistance.',
+    emailCta: 'Envoyer un e-mail',
+    phoneTitle: 'Appel téléphonique',
+    phoneDesc: 'Contactez notre équipe directement aux heures ouvrables.',
+    phoneCta: 'Appeler maintenant',
+    copy: 'Copier',
+    copied: 'Copié',
+  },
+  de: {
+    heading: 'Direkte Kontaktwege',
+    whatsappTitle: 'WhatsApp Direkt',
+    whatsappDesc: 'Der schnellste Weg für Fragen zu Tarifen und Probestunden.',
+    whatsappCta: 'Auf WhatsApp schreiben',
+    emailTitle: 'Offizielle E-Mail',
+    emailDesc: 'Für ausführliche Anfragen, Partnerschaften und Support.',
+    emailCta: 'E-Mail senden',
+    phoneTitle: 'Direkter Anruf',
+    phoneDesc: 'Erreichen Sie unser Team telefonisch zu den Geschäftszeiten.',
+    phoneCta: 'Jetzt anrufen',
+    copy: 'Kopieren',
+    copied: 'Kopiert',
+  },
+  tr: {
+    heading: 'Doğrudan İletişim Kanalları',
+    whatsappTitle: 'Doğrudan WhatsApp',
+    whatsappDesc: 'Paketler ve ücretsiz deneme dersleri için en hızlı iletişim yolu.',
+    whatsappCta: 'WhatsApp ile Yaz',
+    emailTitle: 'Resmi E-posta',
+    emailDesc: 'Detaylı sorular, iş birlikleri ve hesap desteği için.',
+    emailCta: 'E-posta Gönder',
+    phoneTitle: 'Doğrudan Telefon',
+    phoneDesc: 'Mesai saatleri içinde ekibimize doğrudan ulaşın.',
+    phoneCta: 'Hemen Ara',
+    copy: 'Kopyala',
+    copied: 'Kopyalandı',
+  },
+  ur: {
+    heading: 'براہِ راست رابطے کے ذرائع',
+    whatsappTitle: 'براہِ راست واٹس ایپ',
+    whatsappDesc: 'پیکجز اور مفت تجرباتی کلاس کے لیے تیز ترین رابطہ۔',
+    whatsappCta: 'واٹس ایپ پر رابطہ کریں',
+    emailTitle: 'آفیشل ای میل',
+    emailDesc: 'تفصیلی استفسارات، شراکت داری اور اکاؤنٹ سپورٹ کے لیے۔',
+    emailCta: 'ای میل بھیجیں',
+    phoneTitle: 'براہِ راست فون کال',
+    phoneDesc: 'دفتری اوقات میں براہِ راست ہماری ٹیم سے بات کریں۔',
+    phoneCta: 'ابھی کال کریں',
+    copy: 'کاپی کریں',
+    copied: 'کاپی ہو گیا',
+  },
+  id: {
+    heading: 'Saluran Kontak Langsung',
+    whatsappTitle: 'WhatsApp Langsung',
+    whatsappDesc: 'Cara tercepat bertanya tentang paket dan kelas percobaan gratis.',
+    whatsappCta: 'Chat di WhatsApp',
+    emailTitle: 'Email Resmi',
+    emailDesc: 'Untuk pertanyaan detail, kemitraan, dan bantuan akun.',
+    emailCta: 'Kirim Email',
+    phoneTitle: 'Telepon Langsung',
+    phoneDesc: 'Hubungi tim kami langsung pada jam kerja.',
+    phoneCta: 'Hubungi Sekarang',
+    copy: 'Salin',
+    copied: 'Tersalin',
+  },
+  ms: {
+    heading: 'Saluran Hubungan Terus',
+    whatsappTitle: 'WhatsApp Terus',
+    whatsappDesc: 'Cara terpantas bertanya tentang pelan dan kelas percubaan percuma.',
+    whatsappCta: 'Sembang di WhatsApp',
+    emailTitle: 'E-mel Rasmi',
+    emailDesc: 'Untuk pertanyaan terperinci, kerjasama, dan sokongan akaun.',
+    emailCta: 'Hantar E-mel',
+    phoneTitle: 'Panggilan Telefon Terus',
+    phoneDesc: 'Hubungi pasukan kami terus pada waktu bekerja.',
+    phoneCta: 'Hubungi Sekarang',
+    copy: 'Salin',
+    copied: 'Disalin',
+  },
+  ku: {
+    heading: 'ڕێگاکانی پەیوەندی ڕاستەوخۆ',
+    whatsappTitle: 'واتسئەپی ڕاستەوخۆ',
+    whatsappDesc: 'خێراترین ڕێگا بۆ پرسیار دەربارەی پاکێج و وانەی تاقیکاری.',
+    whatsappCta: 'گفتوگۆ لە واتسئەپ',
+    emailTitle: 'ئیمەیڵی فەرمی',
+    emailDesc: 'بۆ پرسیارە وردەکان، هاوبەشی، و پشتگیری هەژمار.',
+    emailCta: 'ئیمەیڵ بنێرە',
+    phoneTitle: 'پەیوەندی تەلەفۆنی ڕاستەوخۆ',
+    phoneDesc: 'لە کاتژمێرە فەرمییەکانی کاردا ڕاستەوخۆ پەیوەندیمان پێوە بکە.',
+    phoneCta: 'ئێستا پەیوەندی بکە',
+    copy: 'لەبەرگرتنەوە',
+    copied: 'لەبەرگیرایەوە',
+  },
+};
+
 export default function Contact() {
-  const { locale, dir, t } = useI18n();
+  const { locale, dir, isRTL, t } = useI18n();
   const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const toast = useToast();
   const copy = CONTACT_COPY[locale] || CONTACT_COPY.en;
+  const ch = CHANNELS_COPY[locale] || (isRTL ? CHANNELS_COPY.ar : CHANNELS_COPY.en);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', subject: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
+
+  const handleCopy = async (key, value) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      setCopiedKey(key);
+      toast.success(ch.copied);
+      setTimeout(() => setCopiedKey((prev) => (prev === key ? '' : prev)), 2200);
+    } catch {
+      toast.error(copy.toastFail);
+    }
+  };
 
   const handleChange = (event) => {
     setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -488,6 +634,108 @@ export default function Contact() {
         </section>
 
         <section className="page-container wn-public-copy-section">
+          {(SOCIAL_LINKS.whatsapp || CONTACT.email || CONTACT.phone) && (
+            <div className="mb-8" aria-label={ch.heading}>
+              <h2 className="text-lg font-bold text-[var(--wn-heading)] mb-4">{ch.heading}</h2>
+              <div className="wn-public-feature-grid">
+                {SOCIAL_LINKS.whatsapp && (
+                  <article className="wn-public-feature-card flex flex-col justify-between gap-4">
+                    <div>
+                      <span><MessageCircle size={21} aria-hidden="true" /></span>
+                      <h3>{ch.whatsappTitle}</h3>
+                      <p>{ch.whatsappDesc}</p>
+                      <p className="mt-2 font-bold text-sm text-[var(--wn-heading)]" dir="ltr">
+                        {CONTACT.phone || '+20 155 789 1330'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-2">
+                      <a
+                        href={SOCIAL_LINKS.whatsapp}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="wn-btn wn-btn--primary min-h-[44px] flex-1 justify-center gap-1.5 text-sm"
+                      >
+                        <ExternalLink size={15} aria-hidden="true" />
+                        <span>{ch.whatsappCta}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('whatsapp', (CONTACT.phone || '+201557891330').replace(/\s/g, ''))}
+                        className="wn-btn wn-btn--secondary min-h-[44px] min-w-[44px] px-3 text-xs gap-1"
+                        aria-label={`${ch.copy} ${ch.whatsappTitle}`}
+                      >
+                        {copiedKey === 'whatsapp' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                        <span>{copiedKey === 'whatsapp' ? ch.copied : ch.copy}</span>
+                      </button>
+                    </div>
+                  </article>
+                )}
+
+                {CONTACT.email && (
+                  <article className="wn-public-feature-card flex flex-col justify-between gap-4">
+                    <div>
+                      <span><Mail size={21} aria-hidden="true" /></span>
+                      <h3>{ch.emailTitle}</h3>
+                      <p>{ch.emailDesc}</p>
+                      <p className="mt-2 font-bold text-sm text-[var(--wn-heading)] break-all" dir="ltr">
+                        {CONTACT.email}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-2">
+                      <a
+                        href={'mailto:' + CONTACT.email}
+                        className="wn-btn wn-btn--primary min-h-[44px] flex-1 justify-center gap-1.5 text-sm"
+                      >
+                        <Mail size={15} aria-hidden="true" />
+                        <span>{ch.emailCta}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('email', CONTACT.email)}
+                        className="wn-btn wn-btn--secondary min-h-[44px] min-w-[44px] px-3 text-xs gap-1"
+                        aria-label={`${ch.copy} ${ch.emailTitle}`}
+                      >
+                        {copiedKey === 'email' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                        <span>{copiedKey === 'email' ? ch.copied : ch.copy}</span>
+                      </button>
+                    </div>
+                  </article>
+                )}
+
+                {CONTACT.phone && (
+                  <article className="wn-public-feature-card flex flex-col justify-between gap-4">
+                    <div>
+                      <span><Phone size={21} aria-hidden="true" /></span>
+                      <h3>{ch.phoneTitle}</h3>
+                      <p>{ch.phoneDesc}</p>
+                      <p className="mt-2 font-bold text-sm text-[var(--wn-heading)]" dir="ltr">
+                        {CONTACT.phone}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-2">
+                      <a
+                        href={'tel:' + CONTACT.phone.replace(/\s/g, '')}
+                        className="wn-btn wn-btn--primary min-h-[44px] flex-1 justify-center gap-1.5 text-sm"
+                      >
+                        <Phone size={15} aria-hidden="true" />
+                        <span>{ch.phoneCta}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('phone', CONTACT.phone.replace(/\s/g, ''))}
+                        className="wn-btn wn-btn--secondary min-h-[44px] min-w-[44px] px-3 text-xs gap-1"
+                        aria-label={`${ch.copy} ${ch.phoneTitle}`}
+                      >
+                        {copiedKey === 'phone' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                        <span>{copiedKey === 'phone' ? ch.copied : ch.copy}</span>
+                      </button>
+                    </div>
+                  </article>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="wn-public-feature-grid mb-6">
             {copy.helpCards.map(({ title, text }, idx) => {
               const Icon = HELP_ICONS[idx];
