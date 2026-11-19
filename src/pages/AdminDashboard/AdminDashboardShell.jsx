@@ -1,29 +1,30 @@
 import {
   ArrowDown, BookOpen, CalendarClock, CreditCard, FileText, GraduationCap, History,
-  Home, LogOut, Mail, Menu, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, TrendingUp, Users,
-  WalletCards, X, Sparkles, UserRoundCheck,
+  Home, LogOut, Mail, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
+  Settings, ShieldCheck, TrendingUp, Users, WalletCards, X, Sparkles, UserRoundCheck,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import BrandLogo from '../../components/BrandLogo';
 import NotificationBell from '../../components/NotificationBell';
 import { useI18n } from '../../i18n';
+import { resolveIntlLocale } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
 
 const NAV_ITEMS = [
-  { id: 'overview', label: 'مركز القيادة', icon: Home },
-  { id: 'teachers', label: 'المعلمون', icon: GraduationCap },
-  { id: 'people', label: 'الطلاب والأسر', icon: Users },
-  { id: 'sessions', label: 'مركز الحصص', icon: CalendarClock },
-  { id: 'trials', label: 'الحصص التجريبية', icon: Sparkles, route: 'trials' },
-  { id: 'payments', label: 'المدفوعات', icon: CreditCard, route: 'payments' },
-  { id: 'subscriptions', label: 'الاشتراكات والتسكين', icon: UserRoundCheck, route: 'subscriptions' },
-  { id: 'withdrawals', label: 'السحوبات والمالية', icon: WalletCards },
-  { id: 'courses', label: 'الدورات والمحتوى', icon: BookOpen },
-  { id: 'messages', label: 'الدعم والرسائل', icon: Mail },
-  { id: 'growth', label: 'التحليلات والنمو', icon: TrendingUp },
-  { id: 'blog', label: 'المدونة', icon: FileText },
-  { id: 'audit', label: 'سجل الإدارة', icon: History },
+  { id: 'overview', icon: Home },
+  { id: 'teachers', icon: GraduationCap },
+  { id: 'people', icon: Users },
+  { id: 'sessions', icon: CalendarClock },
+  { id: 'trials', icon: Sparkles, route: 'trials' },
+  { id: 'payments', icon: CreditCard, route: 'payments' },
+  { id: 'subscriptions', icon: UserRoundCheck, route: 'subscriptions' },
+  { id: 'withdrawals', icon: WalletCards },
+  { id: 'courses', icon: BookOpen },
+  { id: 'messages', icon: Mail },
+  { id: 'growth', icon: TrendingUp },
+  { id: 'blog', icon: FileText },
+  { id: 'audit', icon: History },
 ];
 
 export default function AdminDashboardShell({
@@ -35,7 +36,9 @@ export default function AdminDashboardShell({
   search,
   children,
 }) {
-  const { locale } = useI18n();
+  const { locale, dir, isRTL, t } = useI18n();
+  const sh = t.adminPortal.shell;
+  const intlLocale = resolveIntlLocale(locale);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -55,16 +58,20 @@ export default function AdminDashboardShell({
   }, [collapsed]);
 
   const roleHome = dashboardPathForRole('admin', locale);
-  const firstName = user?.name?.trim().split(/\s+/)[0] || 'مدير الأكاديمية';
-  const activeSectionTitle = NAV_ITEMS.find((item) => item.id === active)?.label
-    || (active === 'system' ? 'إدارة النظام' : 'لوحة الإدارة');
+  const firstName = user?.name?.trim().split(/\s+/)[0] || sh.adminFallbackName;
+  const navItems = useMemo(
+    () => NAV_ITEMS.map((item) => ({ ...item, label: sh.nav?.[item.id] || item.id })),
+    [sh.nav]
+  );
+  const activeSectionTitle = navItems.find((item) => item.id === active)?.label
+    || (active === 'system' ? sh.systemSectionTitle : sh.defaultSectionTitle);
 
-  const today = useMemo(() => new Intl.DateTimeFormat('ar-EG', {
+  const today = useMemo(() => new Intl.DateTimeFormat(intlLocale, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-  }).format(new Date()), []);
+  }).format(new Date()), [intlLocale]);
 
   const selectItem = (item) => {
     setMobileOpen(false);
@@ -75,20 +82,26 @@ export default function AdminDashboardShell({
     onChange?.(item.id);
   };
 
+  const ToggleIcon = isRTL
+    ? (collapsed ? PanelRightOpen : PanelRightClose)
+    : (collapsed ? PanelLeftOpen : PanelLeftClose);
+
   return (
-    <div className={`wn-admin-app ${collapsed ? 'is-sidebar-collapsed' : ''}`} dir="rtl">
+    <div className={`wn-admin-app ${collapsed ? 'is-sidebar-collapsed' : ''}`} dir={dir}>
       <button
         type="button"
         className="wn-admin-mobile-toggle"
         onClick={() => setMobileOpen((value) => !value)}
-        aria-label={mobileOpen ? 'إغلاق القائمة الجانبية' : 'فتح القائمة الجانبية'}
+        aria-label={mobileOpen ? sh.toggleMobileClose : sh.toggleMobileOpen}
         aria-expanded={mobileOpen}
         aria-controls="wn-admin-sidebar"
       >
-        {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+        {mobileOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
       </button>
 
-      {mobileOpen ? <button type="button" className="wn-admin-sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="إغلاق القائمة" /> : null}
+      {mobileOpen ? (
+        <button type="button" className="wn-admin-sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label={sh.closeScrim} />
+      ) : null}
 
       <aside id="wn-admin-sidebar" className={`wn-admin-sidebar ${mobileOpen ? 'is-open' : ''}`}>
         <div className="wn-admin-sidebar__brand">
@@ -103,8 +116,8 @@ export default function AdminDashboardShell({
 
         <div className="wn-admin-sidebar__divider" />
 
-        <nav className="wn-admin-sidebar__nav" aria-label="أقسام لوحة الإدارة">
-          {NAV_ITEMS.map((item) => {
+        <nav className="wn-admin-sidebar__nav" aria-label={sh.navAriaLabel}>
+          {navItems.map((item) => {
             const Icon = item.icon;
             const selected = !item.route && active === item.id;
             return (
@@ -117,7 +130,7 @@ export default function AdminDashboardShell({
                 aria-label={item.label}
                 title={item.label}
               >
-                <Icon size={18} />
+                <Icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>
               </button>
             );
@@ -125,28 +138,32 @@ export default function AdminDashboardShell({
         </nav>
 
         <div className="wn-admin-sidebar__system">
-          <button type="button" onClick={() => { setMobileOpen(false); onChange?.('system'); }}
+          <button
+            type="button"
+            onClick={() => { setMobileOpen(false); onChange?.('system'); }}
             className={active === 'system' ? 'is-active' : ''}
-            aria-label="النظام"
+            aria-label={sh.systemNavLabel}
             aria-current={active === 'system' ? 'page' : undefined}
-            title="النظام"
+            title={sh.systemNavLabel}
           >
-            <Settings size={18} />
-            <span>النظام</span>
+            <Settings size={18} aria-hidden="true" />
+            <span>{sh.systemNavLabel}</span>
           </button>
-          <Link to={roleHome} aria-label="لوحة الإدارة" title="لوحة الإدارة" onClick={() => setMobileOpen(false)}>
-            <ShieldCheck size={18} />
-            <span>لوحة الإدارة</span>
+          <Link to={roleHome} aria-label={sh.adminLink} title={sh.adminLink} onClick={() => setMobileOpen(false)}>
+            <ShieldCheck size={18} aria-hidden="true" />
+            <span>{sh.adminLink}</span>
           </Link>
         </div>
 
         <div className="wn-admin-sidebar__profile">
-          <div className="wn-admin-sidebar__avatar">{user?.name?.slice(0, 1) || 'A'}</div>
+          <div className="wn-admin-sidebar__avatar">{user?.name?.slice(0, 1) || sh.avatarFallback}</div>
           <div>
-            <strong>{user?.name || 'Admin'}</strong>
-            <small>مدير الأكاديمية</small>
+            <strong>{user?.name || sh.adminFallbackName}</strong>
+            <small>{sh.roleTitle}</small>
           </div>
-          <button type="button" onClick={onLogout} aria-label="تسجيل الخروج" title="تسجيل الخروج"><LogOut size={17} /></button>
+          <button type="button" onClick={onLogout} aria-label={sh.logout} title={sh.logout}>
+            <LogOut size={17} aria-hidden="true" />
+          </button>
         </div>
       </aside>
 
@@ -156,18 +173,18 @@ export default function AdminDashboardShell({
           <div className="wn-admin-topbar__actions">
             <NotificationBell />
             <span className="wn-admin-topbar__date">{today}</span>
-            <span className="wn-admin-topbar__locale">AR</span>
+            <span className="wn-admin-topbar__locale">{locale.toUpperCase()}</span>
           </div>
           <button
             type="button"
             className="wn-admin-topbar__sidebar-toggle"
             onClick={() => setCollapsed((value) => !value)}
-            aria-label={collapsed ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            aria-label={collapsed ? sh.toggleSidebarShow : sh.toggleSidebarHide}
             aria-expanded={!collapsed}
             aria-controls="wn-admin-sidebar"
-            title={collapsed ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية'}
+            title={collapsed ? sh.toggleSidebarShow : sh.toggleSidebarHide}
           >
-            {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+            <ToggleIcon size={19} aria-hidden="true" />
           </button>
         </header>
 
@@ -175,25 +192,25 @@ export default function AdminDashboardShell({
           {active === 'overview' ? (
             <section className="wn-admin-welcome wn-admin-welcome--illustrated" aria-labelledby="admin-welcome-title">
               <div className="wn-admin-welcome__copy">
-                <span className="wn-admin-welcome__eyebrow"><Sparkles size={15} /> وَحْيٌ وَنَمَاء · مركز القيادة</span>
-                <h1 id="admin-welcome-title">مرحبًا بعودتك، <em>{firstName}</em></h1>
-                <p>من هنا تبدأ رؤية أوضح لكل ما يحدث في الأكاديمية، وخطوات أسرع لما يستحق اهتمامك.</p>
+                <span className="wn-admin-welcome__eyebrow"><Sparkles size={15} aria-hidden="true" /> {sh.welcomeEyebrow}</span>
+                <h1 id="admin-welcome-title">{sh.welcomeTitlePrefix} <em>{firstName}</em></h1>
+                <p>{sh.welcomeSubtitle}</p>
                 <div className="wn-admin-welcome__actions">
                   <button type="button" className="is-primary" onClick={() => onChange?.('sessions')}>
-                    <CalendarClock size={17} /> متابعة الحصص
+                    <CalendarClock size={17} aria-hidden="true" /> {sh.ctaSessions}
                   </button>
                   <button type="button" className="is-secondary" onClick={() => onChange?.('teachers')}>
-                    <GraduationCap size={17} /> مراجعة المعلمين
+                    <GraduationCap size={17} aria-hidden="true" /> {sh.ctaTeachers}
                   </button>
                 </div>
               </div>
               <a className="wn-admin-welcome__scroll" href="#admin-executive-content">
-                استكشف لوحة التشغيل <ArrowDown size={15} />
+                {sh.scrollLabel} <ArrowDown size={15} aria-hidden="true" />
               </a>
             </section>
           ) : (
             <section className="wn-admin-page-heading" aria-labelledby="admin-section-title">
-              <span>وَحْيٌ وَنَمَاء · الإدارة</span>
+              <span>{sh.pageHeadingBrand}</span>
               <h1 id="admin-section-title">{activeSectionTitle}</h1>
             </section>
           )}

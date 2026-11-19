@@ -1,43 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, BookOpen, CalendarClock, CheckCircle2, Clock3, GraduationCap,
-  RefreshCw, UserRound, Video,
+  Loader2, RefreshCw, UserRound, Video,
 } from 'lucide-react';
+import EmptyState from '../../components/shared/EmptyState';
+import Modal from '../../components/shared/Modal';
+import Skeleton from '../../components/shared/Skeleton';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
+import { formatMsg } from './adminFormat';
 
-const FOCUS_META = {
-  all: {
-    title: 'كل الحصص',
-    description: 'آخر الحصص المسجلة في الأكاديمية.',
-    icon: CalendarClock,
-  },
-  overdue: {
-    title: 'حصص انتهى موعدها ولم تُغلق',
-    description: 'حصص ما زالت Accepted رغم أن موعدها أصبح في الماضي.',
-    icon: AlertTriangle,
-  },
-  'missing-reports': {
-    title: 'حصص مكتملة بدون تقرير طالب',
-    description: 'حصص تم إغلاقها لكن لم يتم تسجيل تقرير الطالب بعدها.',
-    icon: BookOpen,
-  },
+const FOCUS_ICONS = {
+  all: CalendarClock,
+  overdue: AlertTriangle,
+  'missing-reports': BookOpen,
 };
-
-function statusLabel(status) {
-  const labels = {
-    pending: 'معلقة',
-    accepted: 'مؤكدة',
-    rejected: 'مرفوضة',
-    completed: 'مكتملة',
-    cancelled: 'ملغاة',
-    'no-show': 'غياب',
-  };
-  return labels[status] || status;
-}
 
 export default function AdminSessionControl({
   initialFocus = 'all',
@@ -45,34 +25,18 @@ export default function AdminSessionControl({
   onOpenTeacher,
   onFocusChange,
 }) {
-  const safeInitial = FOCUS_META[initialFocus] ? initialFocus : 'all';
+  const safeInitial = FOCUS_ICONS[initialFocus] ? initialFocus : 'all';
   const [focus, setFocus] = useState(safeInitial);
   const toast = useToast();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
+  const sc = t.adminPortal.sessionControl;
+  const dash = t.adminPortal.common.dash;
+
   const [sessions, setSessions] = useState([]);
   const [updatingSessionId, setUpdatingSessionId] = useState('');
-
-  const updateSessionStatus = async (sessionId, nextStatus) => {
-    setUpdatingSessionId(sessionId);
-    try {
-      await api.put(`/api/admin/session-control/${sessionId}/status`, {
-        status: nextStatus,
-        reason: nextStatus === 'completed' ? 'إغلاق حصة متأخرة من مركز التحكم' : 'إلغاء حصة من مركز التحكم',
-      }, { auth: true });
-      toast.success(nextStatus === 'completed' ? 'تم إغلاق الحصة كمكتملة' : 'تم إلغاء الحصة');
-      await load();
-    } catch (err) {
-      toast.error(err.message || 'تعذر تحديث حالة الحصة');
-    } finally {
-      setUpdatingSessionId('');
-    }
-  };
+  const [confirmAction, setConfirmAction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (FOCUS_META[initialFocus] && initialFocus !== focus) setFocus(initialFocus);
-  }, [initialFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,16 +45,45 @@ export default function AdminSessionControl({
       const result = await api.get('/api/admin/session-control?focus=' + encodeURIComponent(focus), { auth: true });
       setSessions(result.sessions || []);
     } catch (loadError) {
-      setError(loadError.message || 'تعذر تحميل الحصص');
+      setError(loadError.message || sc.loadError);
       setSessions([]);
     } finally {
       setLoading(false);
     }
-  }, [focus]);
+  }, [focus, sc.loadError]);
+
+  useEffect(() => {
+    if (FOCUS_ICONS[initialFocus] && initialFocus !== focus) setFocus(initialFocus);
+  }, [initialFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 
-  const meta = FOCUS_META[focus] || FOCUS_META.all;
+  const updateSessionStatus = async (sessionId, nextStatus) => {
+    if (updatingSessionId) return false;
+    setUpdatingSessionId(sessionId);
+    try {
+      await api.put(`/api/admin/session-control/${sessionId}/status`, {
+        status: nextStatus,
+        reason: nextStatus === 'completed' ? sc.reasonCompleted : sc.reasonCancelled,
+      }, { auth: true });
+      toast.success(nextStatus === 'completed' ? sc.updateSuccessCompleted : sc.updateSuccessCancelled);
+      await load();
+      return true;
+    } catch (err) {
+      toast.error(err.message || sc.updateError);
+      return false;
+    } finally {
+      setUpdatingSessionId('');
+    }
+  };
+
+  const focusMeta = useMemo(() => ({
+    all: { ...(sc.focuses?.all || {}), icon: CalendarClock },
+    overdue: { ...(sc.focuses?.overdue || {}), icon: AlertTriangle },
+    'missing-reports': { ...(sc.focuses?.missingReports || {}), icon: BookOpen },
+  }), [sc.focuses]);
+
+  const meta = focusMeta[focus] || focusMeta.all;
   const Icon = meta.icon;
 
   const groupedStats = useMemo(() => ({
@@ -104,26 +97,32 @@ export default function AdminSessionControl({
     onFocusChange?.(next);
   };
 
+  const statusLabel = (status) => {
+    if (status === 'no-show') return sc.statuses?.noShow || status;
+    return sc.statuses?.[status] || status;
+  };
+
   return (
     <section className="wn-admin-session-control">
       <header className="wn-admin-session-control__hero">
         <div>
-          <span>SESSION CONTROL CENTER</span>
-          <h2><Icon size={20} /> {meta.title}</h2>
-          <p>{meta.description}</p>
+          <span>{sc.eyebrow}</span>
+          <h2><Icon size={20} aria-hidden="true" /> {meta.title}</h2>
+          <p>{meta.desc}</p>
         </div>
-        <button type="button" onClick={load} disabled={loading}>
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          تحديث
+        <button type="button" onClick={load} disabled={loading} className="min-h-[44px]">
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+          {sc.refresh}
         </button>
       </header>
 
-      <nav className="wn-admin-session-control__filters" aria-label="تصفية الحصص">
-        {Object.entries(FOCUS_META).map(([key, item]) => (
+      <nav className="wn-admin-session-control__filters" aria-label={sc.filtersAria}>
+        {Object.entries(focusMeta).map(([key, item]) => (
           <button
             type="button"
             key={key}
-            className={focus === key ? 'is-active' : ''}
+            aria-pressed={focus === key}
+            className={`min-h-[44px] ${focus === key ? 'is-active' : ''}`}
             onClick={() => chooseFocus(key)}
           >
             {item.title}
@@ -132,47 +131,53 @@ export default function AdminSessionControl({
       </nav>
 
       <div className="wn-admin-session-control__stats">
-        <div><strong>{groupedStats.total}</strong><span>حصة في القائمة</span></div>
-        <div><strong>{groupedStats.withMeeting}</strong><span>لها غرفة اجتماع</span></div>
-        <div><strong>{groupedStats.withRecording}</strong><span>لها تسجيل</span></div>
+        <div><strong>{groupedStats.total}</strong><span>{sc.stats.total}</span></div>
+        <div><strong>{groupedStats.withMeeting}</strong><span>{sc.stats.withMeeting}</span></div>
+        <div><strong>{groupedStats.withRecording}</strong><span>{sc.stats.withRecording}</span></div>
       </div>
 
-      {error ? <div className="wn-admin-session-control__error"><AlertTriangle size={17} /> {error}</div> : null}
+      {error ? (
+        <div role="alert" className="wn-admin-session-control__error flex flex-wrap items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-2"><AlertTriangle size={17} aria-hidden="true" /> {error}</span>
+          <button type="button" onClick={load} className="wn-btn wn-btn--secondary min-h-[44px]">
+            {t.adminPortal.common.retry}
+          </button>
+        </div>
+      ) : null}
 
       {loading ? (
-        <div className="wn-admin-session-control__loading">جاري تحميل مركز الحصص...</div>
-      ) : sessions.length === 0 ? (
-        <div className="wn-admin-session-control__empty">
-          <CheckCircle2 size={23} />
-          <strong>لا توجد حالات في هذا القسم</strong>
-          <span>الحالة التشغيلية هنا مستقرة حاليًا.</span>
+        <div className="space-y-3" role="status" aria-label={sc.loading}>
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
         </div>
-      ) : (
+      ) : !error && sessions.length === 0 ? (
+        <EmptyState icon={CheckCircle2} title={sc.emptyTitle} description={sc.emptyDesc} />
+      ) : !error ? (
         <div className="wn-admin-session-control__list">
           {sessions.map((session) => (
             <article key={session._id}>
               <div className="wn-admin-session-control__date">
-                <CalendarClock size={17} />
-                <span>{formatSessionDateTime(session, 'ar-EG', { dateStyle: 'medium' })}</span>
-                <small>{formatSessionDateTime(session, 'ar-EG', { timeStyle: 'short' })} · {sessionTimeZone(session)}</small>
+                <CalendarClock size={17} aria-hidden="true" />
+                <span>{formatSessionDateTime(session, locale, { dateStyle: 'medium' })}</span>
+                <small>{formatSessionDateTime(session, locale, { timeStyle: 'short' })} · {sessionTimeZone(session)}</small>
               </div>
 
               <div className="wn-admin-session-control__people">
-                <button type="button" disabled={!session.student?._id} onClick={() => onOpenStudent?.(session.student?._id)}>
-                  <UserRound size={16} />
-                  <span><strong>{session.student?.name || 'طالب جماعي'}</strong><small>{session.student?.email || session.circle?.name || '—'}</small></span>
+                <button type="button" disabled={!session.student?._id} onClick={() => onOpenStudent?.(session.student?._id)} className="min-h-[44px]">
+                  <UserRound size={16} aria-hidden="true" />
+                  <span><strong>{session.student?.name || sc.studentFallback}</strong><small>{session.student?.email || session.circle?.name || dash}</small></span>
                 </button>
-                <button type="button" disabled={!session.teacher?._id} onClick={() => onOpenTeacher?.(session.teacher?._id)}>
-                  <GraduationCap size={16} />
-                  <span><strong>{session.teacher?.name || 'معلم'}</strong><small>{session.teacher?.email || '—'}</small></span>
+                <button type="button" disabled={!session.teacher?._id} onClick={() => onOpenTeacher?.(session.teacher?._id)} className="min-h-[44px]">
+                  <GraduationCap size={16} aria-hidden="true" />
+                  <span><strong>{session.teacher?.name || sc.teacherFallback}</strong><small>{session.teacher?.email || dash}</small></span>
                 </button>
               </div>
 
               <div className="wn-admin-session-control__meta">
                 <span className={`is-${session.status}`}>{statusLabel(session.status)}</span>
-                <span><Clock3 size={13} /> {session.duration || 0} دقيقة</span>
-                <span><BookOpen size={13} /> {session.reportCount || 0} تقرير</span>
-                {session.recordingAvailable ? <span><Video size={13} /> تسجيل متاح</span> : null}
+                <span><Clock3 size={13} aria-hidden="true" /> {formatMsg(sc.meta.minutes, { count: session.duration || 0 })}</span>
+                <span><BookOpen size={13} aria-hidden="true" /> {formatMsg(sc.meta.reports, { count: session.reportCount || 0 })}</span>
+                {session.recordingAvailable ? <span><Video size={13} aria-hidden="true" /> {sc.meta.recording}</span> : null}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -181,28 +186,29 @@ export default function AdminSessionControl({
                     href={localizedPath(`/live/${session.roomId || session._id}`, locale)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 transition"
+                    className="min-h-[44px] inline-flex items-center px-3 py-2 rounded-lg bg-[var(--wn-status-success-bg)] text-[var(--wn-status-success-text)] border border-[var(--wn-status-success-border)] text-xs font-bold transition"
                   >
-                    دخول الغرفة كمراقب
+                    {sc.actions.joinObserver}
                   </a>
                 ) : null}
                 {session.status === 'accepted' ? (
                   <>
                     <button
                       type="button"
-                      disabled={updatingSessionId === session._id}
-                      onClick={() => updateSessionStatus(session._id, 'completed')}
-                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition"
+                      disabled={Boolean(updatingSessionId)}
+                      onClick={() => setConfirmAction({ sessionId: session._id, nextStatus: 'completed' })}
+                      className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--wn-status-info-bg)] text-[var(--wn-status-info-text)] border border-[var(--wn-status-info-border)] text-xs font-bold transition disabled:opacity-50"
                     >
-                      إغلاق كمكتملة
+                      {updatingSessionId === session._id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : null}
+                      {sc.actions.complete}
                     </button>
                     <button
                       type="button"
-                      disabled={updatingSessionId === session._id}
-                      onClick={() => updateSessionStatus(session._id, 'cancelled')}
-                      className="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 transition"
+                      disabled={Boolean(updatingSessionId)}
+                      onClick={() => setConfirmAction({ sessionId: session._id, nextStatus: 'cancelled' })}
+                      className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] border border-[var(--wn-status-danger-border)] text-xs font-bold transition disabled:opacity-50"
                     >
-                      إلغاء الحصة
+                      {sc.actions.cancel}
                     </button>
                   </>
                 ) : null}
@@ -211,7 +217,44 @@ export default function AdminSessionControl({
             </article>
           ))}
         </div>
-      )}
+      ) : null}
+
+      <Modal
+        isOpen={Boolean(confirmAction)}
+        onClose={() => { if (!updatingSessionId) setConfirmAction(null); }}
+        title={confirmAction?.nextStatus === 'completed' ? sc.confirmModal.completeTitle : sc.confirmModal.cancelTitle}
+        disableClose={Boolean(updatingSessionId)}
+      >
+        {confirmAction ? (
+          <div className="space-y-4 text-sm text-[var(--wn-text-secondary)]">
+            <p>{confirmAction.nextStatus === 'completed' ? sc.confirmModal.completeBody : sc.confirmModal.cancelBody}</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--wn-border)]">
+              <button
+                type="button"
+                disabled={Boolean(updatingSessionId)}
+                onClick={() => setConfirmAction(null)}
+                className="min-h-[44px] px-4 py-2 rounded-lg border border-[var(--wn-border)] text-[var(--wn-text-secondary)] disabled:opacity-50"
+              >
+                {sc.confirmModal.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(updatingSessionId)}
+                onClick={async () => {
+                  const ok = await updateSessionStatus(confirmAction.sessionId, confirmAction.nextStatus);
+                  if (ok) setConfirmAction(null);
+                }}
+                className={`min-h-[44px] px-4 py-2 rounded-lg text-[var(--wn-text-inverse)] font-semibold inline-flex items-center gap-2 disabled:opacity-50 ${
+                  confirmAction.nextStatus === 'completed' ? 'bg-[var(--wn-emerald)]' : 'bg-[var(--wn-danger)]'
+                }`}
+              >
+                {updatingSessionId ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
+                {confirmAction.nextStatus === 'completed' ? sc.confirmModal.completeConfirm : sc.confirmModal.cancelConfirm}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </section>
   );
 }
