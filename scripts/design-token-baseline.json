@@ -1,29 +1,21 @@
 {
   "generatedBy": "scripts/design-token-scan.mjs",
   "totals": {
-    "important": 115,
-    "hex": 1121,
-    "rgba": 978,
-    "fontSize": 801,
-    "radiusPx": 468
+    "important": 111,
+    "hex": 1004,
+    "rgba": 965,
+    "fontSize": 774,
+    "radiusPx": 447
   },
   "files": {
     "src/App.css": {
       "important": 3
     },
     "src/components/classroom/classroom.css": {
-      "hex": 39,
-      "rgba": 60,
+      "hex": 30,
+      "rgba": 58,
       "fontSize": 21,
       "radiusPx": 18
-    },
-    "src/components/dashboard/QuranJourneyWidgets.jsx": {
-      "hex": 5
-    },
-    "src/components/support/support.css": {
-      "hex": 57,
-      "fontSize": 18,
-      "radiusPx": 15
     },
     "src/components/WahyNamaaEmblem.jsx": {
       "hex": 17
@@ -31,26 +23,11 @@
     "src/index.css": {
       "important": 3
     },
-    "src/pages/AdminDashboard/AdminExecutiveHome.jsx": {
-      "hex": 11
-    },
-    "src/pages/AdminDashboard/index.jsx": {
-      "hex": 20
-    },
     "src/pages/AdminDashboard/TeacherReviewDossier.css": {
-      "hex": 47,
+      "hex": 46,
       "rgba": 2,
       "fontSize": 28,
       "radiusPx": 11
-    },
-    "src/pages/BookSession/index.jsx": {
-      "hex": 1
-    },
-    "src/pages/Certificate/index.jsx": {
-      "hex": 3
-    },
-    "src/pages/CourseLearn/index.jsx": {
-      "hex": 1
     },
     "src/pages/FreeTrial/FreeTrial.jsx": {
       "hex": 1
@@ -59,14 +36,11 @@
       "hex": 12
     },
     "src/pages/LiveRoom/LiveRoom.css": {
-      "hex": 21,
+      "hex": 20,
       "rgba": 25,
       "fontSize": 23,
       "radiusPx": 4,
       "important": 24
-    },
-    "src/pages/Meeting/MeetingRoom.jsx": {
-      "hex": 1
     },
     "src/pages/NewLandingPage/approved-homepage.css": {
       "hex": 48,
@@ -102,17 +76,15 @@
       "radiusPx": 1
     },
     "src/styles/dashboard-experience.css": {
-      "hex": 525,
-      "rgba": 373,
-      "fontSize": 457,
+      "hex": 524,
+      "rgba": 372,
+      "fontSize": 456,
       "radiusPx": 236,
-      "important": 21
+      "important": 17
     },
     "src/styles/learning-experience.css": {
-      "hex": 10,
-      "rgba": 21,
-      "fontSize": 8,
-      "radiusPx": 6
+      "hex": 4,
+      "rgba": 11
     },
     "src/styles/public-experience.css": {
       "hex": 110,
