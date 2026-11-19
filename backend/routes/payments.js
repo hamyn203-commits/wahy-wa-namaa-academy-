@@ -965,6 +965,10 @@ router.get('/admin/manual', protect, authorize('admin'), async (req, res) => {
 
 router.get('/admin/manual/:id/proof', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid payment ID' });
+    }
+
     const payment = await Payment.findOne({
       _id: req.params.id,
       provider: 'manual',
@@ -1197,6 +1201,10 @@ router.post('/paymob/webhook', async (req, res) => {
 
 router.get('/:id/status', protect, authorize('student', 'guardian', 'admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid payment ID' });
+    }
+
     const payment = await Payment.findById(req.params.id)
       .populate('course', 'slug title')
       .populate('subscription', 'planKey section sessionCount status preferredTeacher pricingSnapshot')
