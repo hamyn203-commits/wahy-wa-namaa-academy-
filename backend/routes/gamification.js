@@ -210,6 +210,7 @@ router.get('/leaderboard/:type/:timeframe', readAccessTokenIfValid, async (req, 
         rank: raw.rank,
         score: raw.score,
         details: raw.details,
+        isCurrentUser: Boolean(viewer?.id && raw.user?._id && String(raw.user._id) === String(viewer.id)),
         user: {
           name: maskDisplayName(raw.user?.name),
           avatar: raw.user?.avatar || '',
