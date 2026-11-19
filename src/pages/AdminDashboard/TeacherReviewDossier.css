@@ -28,12 +28,12 @@
   gap: 10px;
 }
 .wn-admin-dossier .wn-admin-dossier__header-actions button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 9px 12px;
   border-radius: 10px;
 }
-.wn-admin-dossier .wn-admin-dossier__header-actions button[aria-label="إغلاق"] {
-  width: 40px;
+.wn-admin-dossier .wn-admin-dossier__header-actions button.wn-admin-dossier__close {
+  width: 44px;
   display: grid;
   place-items: center;
   background: #eef3f1;
@@ -78,7 +78,7 @@
   margin: 18px 0;
   padding: 13px 15px;
   border-radius: 12px;
-  border-right: 3px solid #0f7056;
+  border-inline-start: 3px solid var(--wn-emerald);
   background: #f3f8f5;
   color: #345348;
   font-size: 14px;
@@ -185,7 +185,7 @@
   gap: 7px;
 }
 .wn-admin-dossier .wn-admin-review-checklist__actions button {
-  min-height: 39px;
+  min-height: 44px;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 750;
@@ -311,8 +311,8 @@
   color: #617569;
 }
 .wn-admin-asset-viewer__header button {
-  min-width: 42px;
-  min-height: 42px;
+  min-width: 44px;
+  min-height: 44px;
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -381,7 +381,7 @@
 }
 .wn-admin-asset-viewer__footer a,
 .wn-admin-asset-viewer__footer button {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

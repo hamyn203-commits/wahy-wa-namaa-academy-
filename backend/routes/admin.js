@@ -1382,13 +1382,18 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
       price = 0, instructorId, image = '/courses/default.jpg', status = 'published', programs = [],
     } = req.body;
 
-    if (!titleAr || !slug || !instructorId) {
+    const cleanTitleAr = String(titleAr || '').trim();
+    const cleanSlug = String(slug || '').trim().toLowerCase().replace(/\s+/g, '-');
+    if (!cleanTitleAr || !cleanSlug || !instructorId) {
       return res.status(400).json({ error: 'العنوان والرابط والمعلم مطلوبة' });
     }
+    if (!mongoose.Types.ObjectId.isValid(instructorId)) {
+      return res.status(400).json({ error: 'معرف المعلم غير صالح' });
+    }
     const course = await Course.create({
-      title: { ar: titleAr, en: titleEn || titleAr },
-      description: { ar: descAr || titleAr, en: descEn || titleEn || titleAr },
-      slug: slug.toLowerCase().replace(/\s+/g, '-'),
+      title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
+      description: { ar: String(descAr || cleanTitleAr).trim(), en: String(descEn || titleEn || cleanTitleAr).trim() },
+      slug: cleanSlug,
       category,
       level,
       price,
@@ -1403,6 +1408,13 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
       certificate: { enabled: true },
       stats: { enrolled: 0, rating: { average: 0, count: 0 } },
     });
+    await logAdminAction({
+      req,
+      action: 'course.created',
+      entityType: 'course',
+      entityId: course._id,
+      metadata: { slug: course.slug, status: course.status },
+    });
     res.status(201).json(course);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1411,6 +1423,9 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
 
 router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدورة غير صالح' });
+    }
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ error: 'الدورة غير موجودة' });
 
@@ -1426,6 +1441,13 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
       if (status === 'published' && !course.publishedAt) course.publishedAt = new Date();
     }
     await course.save();
+    await logAdminAction({
+      req,
+      action: 'course.updated',
+      entityType: 'course',
+      entityId: course._id,
+      metadata: { slug: course.slug, status: course.status },
+    });
     res.json(course);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1434,14 +1456,25 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/courses/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const Enrollment = require('../models/Enrollment');
-    const Payment = require('../models/Payment');
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدورة غير صالح' });
+    }
+    const existingCourse = await Course.findById(req.params.id);
+    if (!existingCourse) return res.status(404).json({ error: 'الدورة غير موجودة' });
+
     const [hasEnrollment, hasPayment] = await Promise.all([
       Enrollment.exists({ course: req.params.id, status: { $in: ['active', 'completed'] } }),
       Payment.exists({ course: req.params.id, status: { $in: ['pending', 'succeeded'] } }),
     ]);
     if (hasEnrollment || hasPayment) {
       await Course.findByIdAndUpdate(req.params.id, { $set: { status: 'archived' } });
+      await logAdminAction({
+        req,
+        action: 'course.archived',
+        entityType: 'course',
+        entityId: req.params.id,
+        metadata: { slug: existingCourse.slug },
+      });
       return res.json({
         message: 'تمت أرشفة الدورة بدلاً من الحذف النهائي لوجود طلاب أو مدفوعات مرتبطة بها',
         archived: true,
@@ -1449,6 +1482,13 @@ router.delete('/courses/:id', protect, authorize('admin'), async (req, res) => {
     }
     await Lesson.deleteMany({ course: req.params.id });
     await Course.findByIdAndDelete(req.params.id);
+    await logAdminAction({
+      req,
+      action: 'course.deleted',
+      entityType: 'course',
+      entityId: req.params.id,
+      metadata: { slug: existingCourse.slug },
+    });
     res.json({ message: 'تم حذف الدورة' });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -1457,6 +1497,9 @@ router.delete('/courses/:id', protect, authorize('admin'), async (req, res) => {
 
 router.get('/courses/:id/lessons', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدورة غير صالح' });
+    }
     const lessons = await Lesson.find({ course: req.params.id }).sort({ order: 1 });
     res.json(lessons);
   } catch (error) {
@@ -1478,6 +1521,9 @@ function isSafeLessonVideoSource(raw) {
 
 router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدورة غير صالح' });
+    }
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ error: 'الدورة غير موجودة' });
 
@@ -1485,6 +1531,11 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
       titleAr, titleEn, slug, type = 'video', duration = 10,
       videoUrl, youtubeUrl, textAr, textEn, order, isPublished = true,
     } = req.body;
+
+    const cleanTitleAr = String(titleAr || '').trim();
+    if (!cleanTitleAr) {
+      return res.status(400).json({ error: 'عنوان الدرس مطلوب' });
+    }
 
     const count = await Lesson.countDocuments({ course: course._id });
     const videoSrc = String(videoUrl || youtubeUrl || '').trim();
@@ -1494,8 +1545,8 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
     const provider = youtubeUrl || videoSrc.includes('youtube') ? 'youtube' : 'self-hosted';
 
     const lesson = await Lesson.create({
-      title: { ar: titleAr, en: titleEn || titleAr },
-      slug: (slug || `lesson-${count + 1}`).toLowerCase(),
+      title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
+      slug: String(slug || `lesson-${count + 1}`).trim().toLowerCase(),
       course: course._id,
       order: order ?? count + 1,
       type,
@@ -1509,6 +1560,13 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
 
     course.lessons.push(lesson._id);
     await course.save();
+    await logAdminAction({
+      req,
+      action: 'lesson.created',
+      entityType: 'lesson',
+      entityId: lesson._id,
+      metadata: { courseId: String(course._id), type },
+    });
     res.status(201).json(lesson);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1517,6 +1575,9 @@ router.post('/courses/:id/lessons', protect, authorize('admin'), async (req, res
 
 router.put('/lessons/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدرس غير صالح' });
+    }
     const lesson = await Lesson.findById(req.params.id);
     if (!lesson) return res.status(404).json({ error: 'الدرس غير موجود' });
 
@@ -1538,6 +1599,13 @@ router.put('/lessons/:id', protect, authorize('admin'), async (req, res) => {
       lesson.content.text = { ...lesson.content.text, ar: textAr };
     }
     await lesson.save();
+    await logAdminAction({
+      req,
+      action: 'lesson.updated',
+      entityType: 'lesson',
+      entityId: lesson._id,
+      metadata: { courseId: String(lesson.course || '') },
+    });
     res.json(lesson);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1546,9 +1614,19 @@ router.put('/lessons/:id', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/lessons/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الدرس غير صالح' });
+    }
     const lesson = await Lesson.findByIdAndDelete(req.params.id);
     if (!lesson) return res.status(404).json({ error: 'الدرس غير موجود' });
     await Course.updateOne({ _id: lesson.course }, { $pull: { lessons: lesson._id } });
+    await logAdminAction({
+      req,
+      action: 'lesson.deleted',
+      entityType: 'lesson',
+      entityId: lesson._id,
+      metadata: { courseId: String(lesson.course || '') },
+    });
     res.json({ message: 'تم حذف الدرس' });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });
@@ -1567,14 +1645,19 @@ router.get('/blog', protect, authorize('admin'), async (req, res) => {
 router.post('/blog', protect, authorize('admin'), async (req, res) => {
   try {
     const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, status = 'published' } = req.body;
+    const cleanTitleAr = String(titleAr || '').trim();
+    const cleanSlug = String(slug || '').trim().toLowerCase().replace(/\s+/g, '-');
+    if (!cleanTitleAr || !cleanSlug) {
+      return res.status(400).json({ error: 'العنوان والرابط مطلوبان' });
+    }
     let authorName = req.user.name;
     if (!authorName) {
       const adminUser = await User.findById(req.user.id).select('name').lean();
       authorName = adminUser?.name || 'إدارة الأكاديمية';
     }
     const post = await Blog.create({
-      slug: slug.toLowerCase().replace(/\s+/g, '-'),
-      title: { ar: titleAr, en: titleEn || titleAr },
+      slug: cleanSlug,
+      title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
       excerpt: { ar: excerptAr || '', en: excerptAr || '' },
       content: { ar: contentAr || '', en: contentAr || '' },
       coverImage: coverImage || '',
@@ -1582,6 +1665,13 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
       author: req.user.id,
       authorName,
       status,
+    });
+    await logAdminAction({
+      req,
+      action: 'blog.created',
+      entityType: 'blog',
+      entityId: post._id,
+      metadata: { slug: post.slug, status: post.status },
     });
     res.status(201).json(post);
   } catch (error) {
@@ -1591,6 +1681,9 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
 
 router.put('/blog/:id', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف المقال غير صالح' });
+    }
     const post = await Blog.findById(req.params.id);
     if (!post) return res.status(404).json({ error: 'المقال غير موجود' });
     const { titleAr, titleEn, contentAr, excerptAr, status, featured, coverImage } = req.body;
@@ -1602,6 +1695,13 @@ router.put('/blog/:id', protect, authorize('admin'), async (req, res) => {
     if (featured != null) post.featured = featured;
     if (coverImage) post.coverImage = coverImage;
     await post.save();
+    await logAdminAction({
+      req,
+      action: 'blog.updated',
+      entityType: 'blog',
+      entityId: post._id,
+      metadata: { slug: post.slug, status: post.status },
+    });
     res.json(post);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -1610,7 +1710,18 @@ router.put('/blog/:id', protect, authorize('admin'), async (req, res) => {
 
 router.delete('/blog/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    await Blog.findByIdAndDelete(req.params.id);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف المقال غير صالح' });
+    }
+    const post = await Blog.findByIdAndDelete(req.params.id);
+    if (!post) return res.status(404).json({ error: 'المقال غير موجود' });
+    await logAdminAction({
+      req,
+      action: 'blog.deleted',
+      entityType: 'blog',
+      entityId: post._id,
+      metadata: { slug: post.slug },
+    });
     res.json({ message: 'تم حذف المقال' });
   } catch (error) {
     res.status(500).json({ error: safeErrorMessage(error, 500) });

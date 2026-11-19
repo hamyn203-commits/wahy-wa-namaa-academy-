@@ -1,53 +1,53 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CalendarClock, CheckCircle, Phone, RefreshCw, UserCheck, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import {
+  AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, Loader2, Phone, RefreshCw, UserCheck, XCircle,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/dashboard/DashboardLayout';
+import EmptyState from '../../components/shared/EmptyState';
+import Modal from '../../components/shared/Modal';
+import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
+import { useI18n } from '../../i18n';
+import { resolveIntlLocale } from '../../lib/locale';
 import api from '../../lib/api';
 
-const STATUS_LABELS = {
-  pending: 'بانتظار تعيين معلم',
-  scheduled: 'مجدولة',
-  completed: 'مكتملة',
-  no_show: 'لم يحضر',
-  cancelled: 'ملغاة',
-};
-
-const STATUS_STYLES = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  scheduled: 'bg-blue-100 text-blue-800',
-  completed: 'bg-green-100 text-green-800',
-  no_show: 'bg-orange-100 text-orange-800',
-  cancelled: 'bg-red-100 text-red-700',
-};
-
-const TRACK_LABELS = {
-  memorization: 'الحفظ والمراجعة',
-  tajweed_ijazah: 'التجويد والإجازة',
-  kids_foundation: 'تأسيس الأطفال',
-};
-
-const SLOT_LABELS = {
-  morning: 'صباحًا',
-  afternoon: 'ظهرًا',
-  evening: 'مساءً',
-  flexible: 'مرن',
-};
-
-function teacherName(teacher) {
-  return teacher?.personalInfo?.fullName || teacher?.user?.name || 'معلم';
+function formatMsg(template, vars = {}) {
+  return Object.entries(vars).reduce(
+    (acc, [key, value]) => acc.replaceAll(`{${key}}`, String(value ?? '')),
+    String(template || '')
+  );
 }
 
-function formatDate(value, withTime = false) {
-  if (!value) return '—';
+const STATUS_STYLES = {
+  pending: 'bg-[var(--wn-status-warn-bg)] text-[var(--wn-status-warn-text)]',
+  scheduled: 'bg-[var(--wn-status-info-bg)] text-[var(--wn-status-info-text)]',
+  completed: 'bg-[var(--wn-status-success-bg)] text-[var(--wn-status-success-text)]',
+  no_show: 'bg-[var(--wn-status-warn-bg)] text-[var(--wn-status-warn-text)]',
+  cancelled: 'bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)]',
+};
+
+function teacherName(teacher, fallback) {
+  return teacher?.personalInfo?.fullName || teacher?.user?.name || fallback;
+}
+
+function formatDate(value, intlLocale, dash, withTime = false) {
+  if (!value) return dash;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return withTime ? date.toLocaleString('ar-EG') : date.toLocaleDateString('ar-EG');
+  if (Number.isNaN(date.getTime())) return dash;
+  return withTime ? date.toLocaleString(intlLocale) : date.toLocaleDateString(intlLocale);
 }
 
 function AssignPanel({ trial, teachers, onDone, onCancel }) {
   const toast = useToast();
+  const { t } = useI18n();
+  const pt = t.payments.trials;
+  const ap = pt.assignPanel;
+  const teacherSelectId = useId();
+  const scheduledInputId = useId();
+  const notesInputId = useId();
   const [teacherId, setTeacherId] = useState(trial.assignedTeacher?._id || '');
   const [scheduledAt, setScheduledAt] = useState('');
   const [notes, setNotes] = useState('');
@@ -66,8 +66,9 @@ function AssignPanel({ trial, teachers, onDone, onCancel }) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (saving) return;
     if (!teacherId || !scheduledAt) {
-      toast.error('اختر المعلم وموعد الحصة');
+      toast.error(pt.toasts.selectTeacherAndTime);
       return;
     }
     setSaving(true);
@@ -79,62 +80,66 @@ function AssignPanel({ trial, teachers, onDone, onCancel }) {
         timezone,
         notes: notes.trim() || undefined,
       }, { auth: true });
-      toast.success(result.studentLinked
-        ? 'تمت الجدولة وإشعار المعلم والطالب'
-        : 'تمت الجدولة وإشعار المعلم — الطالب ليس لديه حساب بعد، تواصل معه عبر واتساب');
+      toast.success(result.studentLinked ? pt.toasts.scheduledLinked : pt.toasts.scheduledUnlinked);
       onDone();
     } catch (error) {
-      toast.error(error.message || 'تعذر جدولة الحصة');
+      toast.error(error.message || pt.toasts.scheduleFailed);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <form onSubmit={submit} className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+    <form onSubmit={submit} className="mt-4 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-4 space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-sm font-semibold space-y-1">
-          <span>المعلم</span>
+        <div className="text-sm font-semibold space-y-1">
+          <label htmlFor={teacherSelectId} className="block text-[var(--wn-heading)]">{ap.teacher}</label>
           <select
+            id={teacherSelectId}
             value={teacherId}
             onChange={(event) => setTeacherId(event.target.value)}
-            className="w-full border rounded-lg px-3 py-2 bg-white"
+            className="w-full min-h-[44px] border border-[var(--wn-border)] rounded-lg px-3 py-2 bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
             required
           >
-            <option value="">— اختر معلمًا معتمدًا —</option>
+            <option value="">{ap.selectTeacher}</option>
             {sortedTeachers.map((teacher) => (
               <option key={teacher._id} value={teacher._id}>
-                {teacherName(teacher)}
-                {teacher.personalInfo?.gender ? (teacher.personalInfo.gender === 'female' ? ' (معلمة)' : ' (معلم)') : ''}
+                {teacherName(teacher, pt.card.teacherFallback)}
+                {teacher.personalInfo?.gender ? (teacher.personalInfo.gender === 'female' ? ap.femaleSuffix : ap.maleSuffix) : ''}
               </option>
             ))}
           </select>
-        </label>
-        <label className="text-sm font-semibold space-y-1">
-          <span>موعد الحصة (بتوقيتك المحلي)</span>
+        </div>
+        <div className="text-sm font-semibold space-y-1">
+          <label htmlFor={scheduledInputId} className="block text-[var(--wn-heading)]">{ap.scheduledAt}</label>
           <input
+            id={scheduledInputId}
             type="datetime-local"
             value={scheduledAt}
             onChange={(event) => setScheduledAt(event.target.value)}
-            className="w-full border rounded-lg px-3 py-2 bg-white"
+            className="w-full min-h-[44px] border border-[var(--wn-border)] rounded-lg px-3 py-2 bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
             required
           />
-        </label>
+        </div>
       </div>
-      <label className="text-sm font-semibold space-y-1 block">
-        <span>ملاحظات للمعلم (اختياري)</span>
+      <div className="text-sm font-semibold space-y-1">
+        <label htmlFor={notesInputId} className="block text-[var(--wn-heading)]">{ap.notes}</label>
         <textarea
+          id={notesInputId}
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           rows={2}
           maxLength={500}
-          className="w-full border rounded-lg px-3 py-2 bg-white"
+          className="w-full border border-[var(--wn-border)] rounded-lg px-3 py-2 bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
         />
-      </label>
+      </div>
       <div className="flex gap-2 justify-end">
-        <button type="button" onClick={onCancel} className="wn-btn wn-btn--secondary">إلغاء</button>
-        <button type="submit" disabled={saving} className="wn-btn wn-btn--primary">
-          <CalendarClock size={16} /> {saving ? 'جارٍ الجدولة...' : 'تأكيد الجدولة'}
+        <button type="button" onClick={onCancel} disabled={saving} className="wn-btn wn-btn--secondary min-h-[44px]">
+          {ap.cancel}
+        </button>
+        <button type="submit" disabled={saving} className="wn-btn wn-btn--primary min-h-[44px]">
+          {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <CalendarClock size={16} aria-hidden="true" />}
+          {saving ? ap.saving : ap.submit}
         </button>
       </div>
     </form>
@@ -145,17 +150,25 @@ export default function AdminTrials() {
   const { user, ready, logout } = useRequireAuth(['admin']);
   const navigate = useNavigate();
   const toast = useToast();
+  const { locale, isRTL, t } = useI18n();
+  const pt = t.payments.trials;
+  const dash = t.adminPortal.common.dash;
+  const intlLocale = resolveIntlLocale(locale);
+  const cancelReasonId = useId();
   const showLoadError = toast.error;
   const [filter, setFilter] = useState('pending');
   const [trials, setTrials] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeId, setActiveId] = useState('');
   const [working, setWorking] = useState('');
   const [cancelModal, setCancelModal] = useState(null);
+  const [noShowModal, setNoShowModal] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const query = filter === 'all' ? '' : '?status=' + encodeURIComponent(filter);
       const [trialResult, teacherResult] = await Promise.all([
@@ -165,24 +178,30 @@ export default function AdminTrials() {
       setTrials(trialResult.trials || []);
       setTeachers(Array.isArray(teacherResult) ? teacherResult : (teacherResult?.teachers || []));
     } catch (error) {
-      showLoadError(error.message || 'تعذر تحميل طلبات الحصص التجريبية');
+      const message = error.message || pt.loadError;
+      setLoadError(message);
+      setTrials([]);
+      showLoadError(message);
     } finally {
       setLoading(false);
     }
-  }, [filter, showLoadError]);
+  }, [filter, showLoadError, pt.loadError]);
 
   useEffect(() => {
     if (ready) load();
   }, [ready, load]);
 
   const updateStatus = async (trial, status, reason = '') => {
+    if (working) return false;
     setWorking(trial._id);
     try {
       await api.put('/api/trials/' + trial._id + '/status', { status, reason }, { auth: true });
-      toast.success(status === 'cancelled' ? 'تم إلغاء الطلب' : 'تم تحديث الحالة');
+      toast.success(status === 'cancelled' ? pt.toasts.cancelled : pt.toasts.updated);
       await load();
+      return true;
     } catch (error) {
-      toast.error(error.message || 'تعذر تحديث الحالة');
+      toast.error(error.message || pt.toasts.updateFailed);
+      return false;
     } finally {
       setWorking('');
     }
@@ -190,113 +209,164 @@ export default function AdminTrials() {
 
   if (!ready) return null;
 
+  const isCancelling = Boolean(cancelModal && working === cancelModal.trial._id);
+  const isMarkingNoShow = Boolean(noShowModal && working === noShowModal._id);
+
   return (
-    <DashboardLayout title="طلبات الحصص التجريبية" user={user} onLogout={logout}>
+    <DashboardLayout title={pt.title} user={user} onLogout={logout}>
+      <SEOHead page={{ title: pt.seoTitle, description: pt.seoDesc, noindex: true, canonical: false }} />
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-        <button onClick={() => navigate('..', { relative: 'path' })} className="wn-btn wn-btn--secondary">
-          <ArrowRight size={16} /> لوحة الإدارة
+        <button type="button" onClick={() => navigate('..', { relative: 'path' })} className="wn-btn wn-btn--secondary min-h-[44px]">
+          {isRTL ? <ArrowRight size={16} aria-hidden="true" /> : <ArrowLeft size={16} aria-hidden="true" />} {pt.backToAdmin}
         </button>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <select
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
-            aria-label="تصفية حسب الحالة"
+            className="min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+            aria-label={pt.filterAria}
           >
-            <option value="pending">بانتظار تعيين معلم</option>
-            <option value="scheduled">مجدولة</option>
-            <option value="completed">مكتملة</option>
-            <option value="no_show">لم يحضر</option>
-            <option value="cancelled">ملغاة</option>
-            <option value="all">الكل</option>
+            <option value="pending">{pt.statuses.pending}</option>
+            <option value="scheduled">{pt.statuses.scheduled}</option>
+            <option value="completed">{pt.statuses.completed}</option>
+            <option value="no_show">{pt.statuses.no_show}</option>
+            <option value="cancelled">{pt.statuses.cancelled}</option>
+            <option value="all">{pt.statuses.all}</option>
           </select>
-          <button onClick={load} className="wn-btn wn-btn--secondary" disabled={loading} aria-label="تحديث">
-            <RefreshCw size={16} />
+          <button
+            type="button"
+            onClick={load}
+            className="wn-btn wn-btn--secondary min-h-[44px] min-w-[44px]"
+            disabled={loading}
+            aria-label={pt.refreshAria}
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {!loading && teachers.length === 0 ? (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          لا يوجد معلمون معتمدون حاليًا — اعتمد معلمًا من لوحة الإدارة قبل جدولة الحصص التجريبية.
+      {!loading && !loadError && teachers.length === 0 ? (
+        <div className="mb-4 rounded-lg border border-[var(--wn-status-warn-border)] bg-[var(--wn-status-warn-bg)] p-3 text-sm text-[var(--wn-status-warn-text)]">
+          {pt.noTeachersWarning}
         </div>
       ) : null}
 
       {loading ? (
-        <div className="flex justify-center py-20"><div className="spinner spinner-lg" /></div>
+        <div className="space-y-4" role="status" aria-label={t.adminPortal.common.loading}>
+          {[1, 2, 3].map((row) => (
+            <div key={row} className="wn-dashboard-surface space-y-3">
+              <Skeleton className="h-5 w-52" />
+              <Skeleton className="h-4 w-72" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ))}
+        </div>
+      ) : loadError ? (
+        <div role="alert" className="wn-dashboard-surface border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={20} aria-hidden="true" />
+            <span className="font-semibold">{loadError}</span>
+          </div>
+          <button type="button" onClick={load} className="wn-btn wn-btn--secondary min-h-[44px]">
+            {pt.retry}
+          </button>
+        </div>
       ) : trials.length === 0 ? (
-        <div className="wn-dashboard-surface text-center text-gray-500 py-12">لا توجد طلبات في هذه الحالة.</div>
+        <div className="wn-dashboard-surface">
+          <EmptyState title={pt.empty} />
+        </div>
       ) : (
         <div className="space-y-4">
           {trials.map((trial) => {
             const session = trial.scheduledSession && typeof trial.scheduledSession === 'object' ? trial.scheduledSession : null;
             const canSchedule = ['pending', 'scheduled', 'no_show'].includes(trial.status);
+            const isBusy = working === trial._id;
+
             return (
               <div key={trial._id} className="wn-dashboard-surface">
                 <div className="flex flex-wrap justify-between gap-4">
                   <div className="space-y-1">
-                    <h3 className="font-bold text-lg">
+                    <h3 className="font-bold text-lg text-[var(--wn-heading)]">
                       {trial.studentName}
-                      <span className="text-sm font-normal text-gray-500"> — {trial.age} سنة، {trial.gender === 'female' ? 'أنثى' : 'ذكر'}</span>
+                      <span className="text-sm font-normal text-[var(--wn-text-secondary)]">
+                        {' '}— {trial.age} {pt.card.yearsSuffix}، {trial.gender === 'female' ? pt.card.female : pt.card.male}
+                      </span>
                     </h3>
-                    {trial.guardianName ? <p className="text-sm">ولي الأمر: <strong>{trial.guardianName}</strong></p> : null}
+                    {trial.guardianName ? <p className="text-sm text-[var(--wn-text-primary)]">{pt.card.guardian}: <strong>{trial.guardianName}</strong></p> : null}
                     <p className="text-sm flex items-center gap-1">
-                      <Phone size={14} />
-                      <a href={'https://wa.me/' + String(trial.whatsappPhone || '').replace(/\D/g, '')} target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline" dir="ltr">
+                      <Phone size={14} aria-hidden="true" />
+                      <a href={'https://wa.me/' + String(trial.whatsappPhone || '').replace(/\D/g, '')} target="_blank" rel="noopener noreferrer" className="text-[var(--wn-link)] underline" dir="ltr">
                         {trial.whatsappPhone}
                       </a>
                     </p>
-                    <p className="text-sm">
-                      المسار: <strong>{TRACK_LABELS[trial.preferredTrack] || trial.preferredTrack}</strong>
-                      {trial.currentLevel ? <> · المستوى: <strong>{trial.currentLevel}</strong></> : null}
+                    <p className="text-sm text-[var(--wn-text-primary)]">
+                      {pt.card.track}: <strong>{pt.tracks[trial.preferredTrack] || trial.preferredTrack}</strong>
+                      {trial.currentLevel ? <> · {pt.card.level}: <strong>{trial.currentLevel}</strong></> : null}
                     </p>
-                    <p className="text-sm">
-                      التفضيل: <strong>{SLOT_LABELS[trial.preferredTimeSlot] || trial.preferredTimeSlot || '—'}</strong>
-                      {trial.preferredDate ? <> · {formatDate(trial.preferredDate)}</> : null}
+                    <p className="text-sm text-[var(--wn-text-primary)]">
+                      {pt.card.preference}: <strong>{pt.slots[trial.preferredTimeSlot] || trial.preferredTimeSlot || dash}</strong>
+                      {trial.preferredDate ? <> · {formatDate(trial.preferredDate, intlLocale, dash)}</> : null}
                       {trial.preferredTeacherGender && trial.preferredTeacherGender !== 'any'
-                        ? <> · يفضّل {trial.preferredTeacherGender === 'female' ? 'معلمة' : 'معلمًا'}</>
+                        ? <> · {trial.preferredTeacherGender === 'female' ? pt.card.prefersFemaleTeacher : pt.card.prefersMaleTeacher}</>
                         : null}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {trial.studentUser ? <span className="inline-flex items-center gap-1 text-emerald-700"><UserCheck size={12} /> مرتبط بحساب: {trial.studentUser.name || trial.studentUser.email || 'طالب'}</span> : 'بدون حساب على المنصة'}
-                      {trial.referenceNumber ? <> · المرجع: <span dir="ltr">{trial.referenceNumber}</span></> : null}
-                      {' · '}{formatDate(trial.createdAt, true)}
+                    <p className="text-xs text-[var(--wn-text-secondary)]">
+                      {trial.studentUser ? (
+                        <span className="inline-flex items-center gap-1 text-[var(--wn-emerald)]">
+                          <UserCheck size={12} aria-hidden="true" />
+                          {formatMsg(pt.card.linkedAccount, { name: trial.studentUser.name || trial.studentUser.email || pt.card.studentFallback })}
+                        </span>
+                      ) : pt.card.noAccount}
+                      {trial.referenceNumber ? <> · {pt.card.refPrefix} <span dir="ltr">{trial.referenceNumber}</span></> : null}
+                      {' · '}{formatDate(trial.createdAt, intlLocale, dash, true)}
                     </p>
-                    {trial.notes ? <p className="text-xs text-gray-600 whitespace-pre-line">ملاحظات: {trial.notes}</p> : null}
+                    {trial.notes ? <p className="text-xs text-[var(--wn-text-secondary)] whitespace-pre-line">{pt.card.notes}: {trial.notes}</p> : null}
                     {trial.assignedTeacher ? (
-                      <p className="text-sm">
-                        المعلم: <strong>{teacherName(trial.assignedTeacher)}</strong>
-                        {session?.scheduledAt ? <> · الموعد: <strong>{formatDate(session.scheduledAt, true)}</strong></> : null}
+                      <p className="text-sm text-[var(--wn-text-primary)]">
+                        {pt.card.teacher}: <strong>{teacherName(trial.assignedTeacher, pt.card.teacherFallback)}</strong>
+                        {session?.scheduledAt ? <> · {pt.card.scheduledAt}: <strong>{formatDate(session.scheduledAt, intlLocale, dash, true)}</strong></> : null}
                       </p>
                     ) : null}
                     {trial.assessment?.level ? (
-                      <p className="text-sm text-emerald-800">
-                        التقييم: المستوى <strong>{trial.assessment.level}</strong> · المسار المقترح <strong>{TRACK_LABELS[trial.assessment.recommendedTrack] || trial.assessment.recommendedTrack}</strong>
+                      <p className="text-sm text-[var(--wn-emerald)]">
+                        {pt.card.assessment}: {pt.card.level} <strong>{trial.assessment.level}</strong> · {pt.card.recommendedTrack} <strong>{pt.tracks[trial.assessment.recommendedTrack] || trial.assessment.recommendedTrack}</strong>
                       </p>
                     ) : null}
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
-                    <span className={'text-xs px-3 py-1 rounded-full ' + (STATUS_STYLES[trial.status] || 'bg-gray-100 text-gray-700')}>
-                      {STATUS_LABELS[trial.status] || trial.status}
+                    <span className={'text-xs px-3 py-1 rounded-full font-semibold ' + (STATUS_STYLES[trial.status] || 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-secondary)]')}>
+                      {pt.statuses[trial.status] || trial.status}
                     </span>
                     {canSchedule ? (
                       <button
+                        type="button"
                         onClick={() => setActiveId(activeId === trial._id ? '' : trial._id)}
-                        className="wn-btn wn-btn--primary"
-                        disabled={working === trial._id}
+                        className="wn-btn wn-btn--primary min-h-[44px]"
+                        disabled={Boolean(working)}
                       >
-                        <CalendarClock size={16} /> {trial.status === 'pending' ? 'تعيين معلم وموعد' : 'إعادة الجدولة'}
+                        <CalendarClock size={16} aria-hidden="true" /> {trial.status === 'pending' ? pt.card.assignBtn : pt.card.rescheduleBtn}
                       </button>
                     ) : null}
                     {trial.status === 'scheduled' ? (
-                      <button onClick={() => updateStatus(trial, 'no_show')} disabled={working === trial._id} className="wn-btn wn-btn--secondary">
-                        <CheckCircle size={16} /> لم يحضر
+                      <button
+                        type="button"
+                        onClick={() => setNoShowModal(trial)}
+                        disabled={Boolean(working)}
+                        className="wn-btn wn-btn--secondary min-h-[44px]"
+                      >
+                        {isBusy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <CheckCircle size={16} aria-hidden="true" />}
+                        {pt.card.noShowBtn}
                       </button>
                     ) : null}
                     {['pending', 'scheduled'].includes(trial.status) ? (
-                      <button onClick={() => setCancelModal({ trial, reason: '' })} disabled={working === trial._id} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold flex items-center gap-2">
-                        <XCircle size={16} /> إلغاء
+                      <button
+                        type="button"
+                        onClick={() => setCancelModal({ trial, reason: '' })}
+                        disabled={Boolean(working)}
+                        className="min-h-[44px] px-4 py-2 rounded-lg bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <XCircle size={16} aria-hidden="true" /> {pt.card.cancelBtn}
                       </button>
                     ) : null}
                   </div>
@@ -316,53 +386,91 @@ export default function AdminTrials() {
         </div>
       )}
 
-      {cancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" dir="rtl" role="dialog" aria-modal="true">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-base">إلغاء طلب الحصة التجريبية</h3>
-              <button type="button" onClick={() => setCancelModal(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
-                <XCircle size={18} />
-              </button>
-            </div>
-            <div className="p-4 space-y-3 text-sm text-slate-600">
-              <p>الطالب: <strong>{cancelModal.trial.studentName || '—'}</strong></p>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">سبب الإلغاء (اختياري):</label>
-                <textarea
-                  autoFocus
-                  rows={3}
-                  value={cancelModal.reason}
-                  onChange={(e) => setCancelModal({ ...cancelModal, reason: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  placeholder="اكتب سبب الإلغاء..."
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 p-3 bg-slate-50 border-t border-slate-100">
+      <Modal
+        isOpen={Boolean(noShowModal)}
+        onClose={() => { if (!isMarkingNoShow) setNoShowModal(null); }}
+        title={pt.noShowModal.title}
+        disableClose={isMarkingNoShow}
+      >
+        {noShowModal ? (
+          <div className="space-y-4 text-sm text-[var(--wn-text-secondary)]">
+            <p>{formatMsg(pt.noShowModal.body, { name: noShowModal.studentName || pt.card.studentFallback })}</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--wn-border)]">
               <button
                 type="button"
-                onClick={() => setCancelModal(null)}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition"
+                disabled={isMarkingNoShow}
+                onClick={() => setNoShowModal(null)}
+                className="min-h-[44px] px-4 py-2 text-sm text-[var(--wn-text-secondary)] border border-[var(--wn-border)] rounded-lg disabled:opacity-50"
               >
-                رجوع
+                {pt.noShowModal.cancel}
               </button>
               <button
                 type="button"
+                disabled={isMarkingNoShow}
                 onClick={async () => {
-                  const targetTrial = cancelModal.trial;
-                  const reason = cancelModal.reason.trim();
-                  setCancelModal(null);
-                  await updateStatus(targetTrial, 'cancelled', reason);
+                  const ok = await updateStatus(noShowModal, 'no_show');
+                  if (ok) setNoShowModal(null);
                 }}
-                className="px-4 py-2 text-sm text-white font-medium rounded-lg transition bg-red-600 hover:bg-red-700"
+                className="wn-btn wn-btn--primary min-h-[44px] disabled:opacity-50"
               >
-                تأكيد الإلغاء
+                {isMarkingNoShow ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : null}
+                {pt.noShowModal.confirm}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(cancelModal)}
+        onClose={() => { if (!isCancelling) setCancelModal(null); }}
+        title={pt.cancelModal.title}
+        disableClose={isCancelling}
+      >
+        {cancelModal ? (
+          <div className="space-y-4 text-sm text-[var(--wn-text-secondary)]">
+            <p>{pt.cancelModal.student} <strong>{cancelModal.trial.studentName || dash}</strong></p>
+            <div>
+              <label htmlFor={cancelReasonId} className="block text-xs font-semibold text-[var(--wn-heading)] mb-1">
+                {pt.cancelModal.reasonLabel}
+              </label>
+              <textarea
+                id={cancelReasonId}
+                rows={3}
+                value={cancelModal.reason}
+                disabled={isCancelling}
+                onChange={(e) => setCancelModal({ ...cancelModal, reason: e.target.value })}
+                className="w-full border border-[var(--wn-border-strong)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] rounded-lg p-2.5 text-sm"
+                placeholder={pt.cancelModal.reasonPlaceholder}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--wn-border)]">
+              <button
+                type="button"
+                disabled={isCancelling}
+                onClick={() => setCancelModal(null)}
+                className="min-h-[44px] px-4 py-2 text-sm text-[var(--wn-text-secondary)] border border-[var(--wn-border)] rounded-lg disabled:opacity-50"
+              >
+                {pt.cancelModal.back}
+              </button>
+              <button
+                type="button"
+                disabled={isCancelling}
+                onClick={async () => {
+                  const targetTrial = cancelModal.trial;
+                  const reason = cancelModal.reason.trim();
+                  const ok = await updateStatus(targetTrial, 'cancelled', reason);
+                  if (ok) setCancelModal(null);
+                }}
+                className="min-h-[44px] px-4 py-2 text-sm text-[var(--wn-text-inverse)] font-medium rounded-lg bg-[var(--wn-danger)] inline-flex items-center gap-2 disabled:opacity-50"
+              >
+                {isCancelling ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : null}
+                {isCancelling ? pt.cancelModal.confirming : pt.cancelModal.confirm}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </DashboardLayout>
   );
 }
