@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   MessageCircle, Send, X, Bot, User, Gift
 } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -8,48 +8,27 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { api } from '../lib/api';
 import { localizedPath } from '../lib/locale';
 
-const QUICK_QUESTIONS = [
-  { id: 'pricing', label: '💰 ما هي الأسعار والباقات؟' },
-  { id: 'trial', label: '🎁 كيف أحجز حصة تجريبية مجانية؟' },
-  { id: 'tracks', label: '📖 ما هي مسارات الدراسة المتاحة؟' },
-  { id: 'reschedule', label: '⏰ ما هي سياسة الغياب والتعويض؟' },
-  { id: 'guardian', label: '👨‍👩‍👧 هل يحق لولي الأمر المتابعة؟' },
-  { id: 'human', label: '💬 التواصل مع فريق الدعم' }
-];
-
-const PRESET_ANSWERS = {
-  pricing: `💰 **الأسعار والباقات**
-الأسعار قد تختلف حسب البرنامج والسوق ونوع الجلسة. راجع صفحة الدورات أو أرسل استفسارك من صفحة التواصل للحصول على المعلومات المتاحة حاليًا.`,
-
-  trial: `🎁 **الجلسة التعريفية المجانية**
-يمكنك طلب جلسة تعريفية لفهم مستوى الطالب وهدفه واقتراح المسار المناسب، بدون التزام مالي.`,
-
-  tracks: `📚 **المسارات التعليمية**
-1. التحفيظ والمراجعة: حفظ جديد ومراجعة منظمة.
-2. التجويد المتقدم والإجازة: بحسب مستوى الطالب وأهلية البرنامج وتوفر معلم مؤهل.
-3. تأسيس الأطفال: القراءة ومخارج الحروف والتدرج في التلاوة.`,
-
-  reschedule: `⏰ **الغياب والتعويض**
-سياسة الاعتذار أو التعويض تعتمد على نوع الحجز والبرنامج وحالة الجلسة. راجع تفاصيل الحجز أو تواصل مع الفريق قبل الموعد إذا احتجت إلى تغيير.`,
-
-  guardian: `👨‍👩‍👧 **متابعة ولي الأمر**
-تتيح لوحة ولي الأمر متابعة البيانات المسجلة للأبناء، مثل الجلسات والتقارير والتقدم عندما تكون متاحة في الحساب.`,
-
-  human: `💬 **فريق الدعم**
-يمكنك فتح صفحة التواصل وإرسال سؤالك بالتفاصيل، وسيرد الفريق باستخدام بيانات التواصل التي تكتبها.`
-};
+const QUICK_QUESTION_IDS = ['pricing', 'trial', 'tracks', 'reschedule', 'guardian', 'human'];
 
 export default function QuranChatWidget() {
   const { user } = useAuth();
-  const { locale } = useI18n();
+  const { locale, dir, t } = useI18n();
   const navigate = useNavigate();
 
+  const quickQuestions = useMemo(() => (
+    QUICK_QUESTION_IDS.map((id) => ({
+      id,
+      label: t.live.quranWidget.quickQuestions[id],
+    }))
+  ), [t]);
+
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState(() => [
     {
       id: 1,
       sender: 'bot',
-      text: 'السلام عليكم ورحمة الله وبركاته! مرحباً بك في أكاديمية وَحْيٌ وَنَمَاء لتعليم القرآن الكريم والتجويد.\n\nأنا **مساعد وَحْيٌ وَنَمَاء الذكي**، كيف يمكنني مساعدتك اليوم؟ اختر سؤالاً أو اكتب استفسارك مباشرة:'
+      isWelcome: true,
+      text: t.live.quranWidget.welcomeMessage,
     }
   ]);
   const [input, setInput] = useState('');
@@ -72,10 +51,10 @@ export default function QuranChatWidget() {
 
   const handleQuickQuestion = (item) => {
     const userMsg = { id: nextMessageIdRef.current++, sender: 'user', text: item.label };
-    const botReply = { 
-      id: nextMessageIdRef.current++, 
-      sender: 'bot', 
-      text: PRESET_ANSWERS[item.id],
+    const botReply = {
+      id: nextMessageIdRef.current++,
+      sender: 'bot',
+      text: t.live.quranWidget.presetAnswers[item.id],
       action: item.id === 'trial' ? 'trial_cta' : item.id === 'human' ? 'contact_cta' : null
     };
 
@@ -93,25 +72,24 @@ export default function QuranChatWidget() {
     setLoading(true);
 
     try {
-      const res = await api.post('/api/ai/quran-assistant', { 
-        question: userText, 
-        locale: locale || 'ar' 
-      }, { auth: !!user }).catch(() => null);
+      const res = await api.post('/api/ai/quran-assistant', {
+        question: userText,
+        locale: locale || 'ar'
+      }, { auth: !!user });
 
-      const replyText = res?.answer || 
-        'شكراً لتواصلك! لقد تم تسجيل استفسارك وسيقوم فريق الأكاديمية بالرد عليك، أو يمكنك طلب جلسة تعريفية أو إرسال استفسارك من صفحة التواصل.';
+      const replyText = res?.answer || t.live.quranWidget.fallbackReply;
 
       setMessages((prev) => [
-        ...prev, 
+        ...prev,
         { id: nextMessageIdRef.current++, sender: 'bot', text: replyText }
       ]);
     } catch {
       setMessages((prev) => [
-        ...prev, 
-        { 
-          id: nextMessageIdRef.current++, 
-          sender: 'bot', 
-          text: 'يسعدنا تواصلك دائماً! يمكنك فتح صفحة التواصل أو طلب جلسة تعريفية الآن.',
+        ...prev,
+        {
+          id: nextMessageIdRef.current++,
+          sender: 'bot',
+          text: t.live.quranWidget.errorReply,
           action: 'trial_cta'
         }
       ]);
@@ -120,157 +98,162 @@ export default function QuranChatWidget() {
     }
   };
 
+  const fontClass = locale === 'ar' ? 'font-arabic' : '';
+
   return (
     <>
-      {/* Floating Launcher Button */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="wn-chat-launcher flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white px-4 py-3 rounded-full shadow-xl transition-all duration-300 active:scale-95 group border-2 border-emerald-300/30"
-        aria-label="مساعد وحي ونماء لخدمة العملاء"
+        className={`wn-chat-launcher min-h-[44px] flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white px-4 py-3 rounded-full shadow-xl transition-all duration-300 active:scale-95 group border-2 border-emerald-300/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${fontClass}`}
+        aria-label={t.live.quranWidget.launcherAria}
+        aria-expanded={open}
       >
         <div className="relative">
-          <MessageCircle size={22} className="animate-pulse" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full ring-2 ring-white" />
+          <MessageCircle size={22} className="animate-pulse" aria-hidden="true" />
+          <span className="absolute -top-1 -end-1 w-2.5 h-2.5 bg-amber-400 rounded-full ring-2 ring-white" />
         </div>
-        <span className="text-sm font-bold hidden sm:inline font-arabic">مساعد وحي ونماء الذكي</span>
+        <span className="text-sm font-bold hidden sm:inline">{t.live.quranWidget.launcherTitle}</span>
       </button>
 
-      {/* Chat Modal Box */}
       {open && (
-        <div className="wn-chat-panel bg-white rounded-2xl shadow-2xl border border-emerald-100 flex flex-col overflow-hidden animate-fade-in font-arabic">
-          
-          {/* Header */}
-          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white p-4 flex items-center justify-between shadow-md shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/30 border border-emerald-400/40 flex items-center justify-center text-amber-300">
-                <Bot size={22} />
+        <div
+          role="dialog"
+          aria-modal="false"
+          aria-label={t.live.quranWidget.headerTitle}
+          dir={dir}
+          className={`wn-chat-panel bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-2xl shadow-2xl border border-[var(--wn-border)] flex flex-col overflow-hidden animate-fade-in ${fontClass}`}
+        >
+          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white p-4 flex items-center justify-between shadow-md shrink-0 gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/30 border border-emerald-400/40 flex items-center justify-center text-amber-300 shrink-0">
+                <Bot size={22} aria-hidden="true" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  <span>مساعد أكاديمية وَحْيٌ وَنَمَاء</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="truncate">{t.live.quranWidget.headerTitle}</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
                 </h3>
-                <p className="text-[11px] text-emerald-200">متواجد لخدمتك والإجابة عن الحصص والأسعار</p>
+                <p className="text-[11px] text-emerald-200 truncate">{t.live.quranWidget.headerSubtitle}</p>
               </div>
             </div>
 
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="إغلاق المساعد"
-              className="wn-chat-close w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+              aria-label={t.live.quranWidget.closeAria}
+              className="wn-chat-close min-w-[44px] min-h-[44px] rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
 
-          {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/60 text-sm">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex gap-2.5 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {m.sender === 'bot' && (
-                  <div className="w-7 h-7 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0 mt-0.5 text-xs">
-                    <Bot size={15} />
-                  </div>
-                )}
-
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--wn-surface-soft)] text-sm">
+            {messages.map((m) => {
+              const displayText = m.isWelcome ? t.live.quranWidget.welcomeMessage : m.text;
+              return (
                 <div
-                  className={`p-3.5 rounded-2xl max-w-[85%] whitespace-pre-wrap leading-relaxed shadow-sm ${
-                    m.sender === 'user'
-                      ? 'bg-emerald-600 text-white rounded-br-none'
-                      : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
-                  }`}
+                  key={m.id}
+                  className={`flex gap-2.5 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <p className="text-xs sm:text-sm">{m.text}</p>
-
-                  {/* Optional CTA buttons inside message */}
-                  {m.action === 'trial_cta' && (
-                    <div className="mt-3 pt-2.5 border-t border-emerald-100 flex flex-col gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpen(false);
-                          navigate(localizedPath('/free-trial', locale));
-                        }}
-                        className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow flex items-center justify-center gap-1.5"
-                      >
-                        <Gift size={14} />
-                        <span>احجز حصتك التجريبية مجاناً الآن</span>
-                      </button>
+                  {m.sender === 'bot' && (
+                    <div className="w-7 h-7 rounded-lg bg-[var(--wn-emerald)] text-[var(--wn-white)] flex items-center justify-center shrink-0 mt-0.5 text-xs">
+                      <Bot size={15} aria-hidden="true" />
                     </div>
                   )}
 
-                  {m.action === 'contact_cta' && (
-                    <div className="mt-3 pt-2.5 border-t border-emerald-100">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpen(false);
-                          navigate(localizedPath('/contact', locale));
-                        }}
-                        className="w-full py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg transition shadow flex items-center justify-center gap-1.5"
-                      >
-                        <MessageCircle size={14} />
-                        <span>فتح صفحة التواصل</span>
-                      </button>
+                  <div
+                    className={`p-3.5 rounded-2xl max-w-[85%] whitespace-pre-wrap leading-relaxed shadow-sm ${
+                      m.sender === 'user'
+                        ? 'bg-[var(--wn-emerald)] text-[var(--wn-white)] rounded-ee-none'
+                        : 'bg-[var(--wn-surface)] text-[var(--wn-text-primary)] border border-[var(--wn-border)] rounded-es-none'
+                    }`}
+                  >
+                    <p className="text-xs sm:text-sm">{displayText}</p>
+
+                    {m.action === 'trial_cta' && (
+                      <div className="mt-3 pt-2.5 border-t border-[var(--wn-border)] flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpen(false);
+                            navigate(localizedPath('/free-trial', locale));
+                          }}
+                          className="w-full min-h-[44px] py-2 px-3 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] text-xs font-bold rounded-lg transition shadow flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                        >
+                          <Gift size={14} aria-hidden="true" />
+                          <span>{t.live.quranWidget.bookFreeTrialCta}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {m.action === 'contact_cta' && (
+                      <div className="mt-3 pt-2.5 border-t border-[var(--wn-border)]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpen(false);
+                            navigate(localizedPath('/contact', locale));
+                          }}
+                          className="w-full min-h-[44px] py-2 px-3 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] text-xs font-bold rounded-lg transition shadow flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                        >
+                          <MessageCircle size={14} aria-hidden="true" />
+                          <span>{t.live.quranWidget.contactPageCta}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {m.sender === 'user' && (
+                    <div className="w-7 h-7 rounded-lg bg-[var(--wn-surface-sunken)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] flex items-center justify-center shrink-0 mt-0.5 text-xs">
+                      <User size={15} aria-hidden="true" />
                     </div>
                   )}
                 </div>
-
-                {m.sender === 'user' && (
-                  <div className="w-7 h-7 rounded-lg bg-gray-300 text-gray-700 flex items-center justify-center shrink-0 mt-0.5 text-xs">
-                    <User size={15} />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
 
             {loading && (
-              <div className="flex gap-2 items-center text-xs text-gray-500 bg-white p-2.5 rounded-xl w-fit border border-gray-100">
-                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                <span>المساعد يكتب الآن...</span>
+              <div className="flex gap-2 items-center text-xs text-[var(--wn-text-secondary)] bg-[var(--wn-surface)] p-2.5 rounded-xl w-fit border border-[var(--wn-border)]">
+                <div className="w-4 h-4 border-2 border-[var(--wn-emerald)] border-t-transparent rounded-full animate-spin" />
+                <span>{t.live.quranWidget.typing}</span>
               </div>
             )}
 
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick FAQ Chips */}
-          <div className="px-3 py-2 bg-white border-t border-gray-100 overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
-            {QUICK_QUESTIONS.map((item) => (
+          <div className="px-3 py-2 bg-[var(--wn-surface)] border-t border-[var(--wn-border)] overflow-x-auto flex gap-1.5 no-scrollbar shrink-0">
+            {quickQuestions.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => handleQuickQuestion(item)}
-                className="whitespace-nowrap px-2.5 py-1 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200/60 transition shrink-0"
+                className="whitespace-nowrap min-h-[44px] px-3 py-2 text-xs bg-[var(--wn-emerald-soft)] hover:bg-[var(--wn-mint)] text-[var(--wn-badge-emerald-text)] rounded-full border border-[var(--wn-border-mint)] transition shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
               >
                 {item.label}
               </button>
             ))}
           </div>
 
-          {/* Input Box */}
-          <form onSubmit={handleSend} className="p-3 bg-white border-t border-gray-100 flex items-center gap-2 shrink-0">
+          <form onSubmit={handleSend} className="p-3 bg-[var(--wn-surface)] border-t border-[var(--wn-border)] flex items-center gap-2 shrink-0">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="اكتب سؤالك هنا..."
-              className="flex-1 border border-gray-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              aria-label={t.live.quranWidget.inputPlaceholder}
+              placeholder={t.live.quranWidget.inputPlaceholder}
+              className="flex-1 min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] rounded-xl px-3.5 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[var(--wn-focus)] transition"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="p-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl transition shrink-0 shadow-sm"
+              aria-label={t.common.send}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] disabled:opacity-40 text-[var(--wn-white)] rounded-xl transition shrink-0 shadow-sm cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <Send size={16} />
+              <Send size={16} aria-hidden="true" />
             </button>
           </form>
-
         </div>
       )}
     </>

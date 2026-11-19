@@ -1,47 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Radio, Plus, Users, Calendar, Clock, Play, 
-  Video, BookOpen, Trash2, Copy, Check
+import {
+  Radio, Plus, Users, Calendar, Clock, Play,
+  Video, BookOpen, Trash2, Copy, Check, Loader2, AlertCircle, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '../../components/BrandLogo';
 import Modal from '../../components/shared/Modal';
 import EmptyState from '../../components/shared/EmptyState';
+import Skeleton from '../../components/shared/Skeleton';
 import api from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
+import { useToast } from '../../context/ToastProvider';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import { formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
 import '../LiveRoom/LiveRoom.css';
 import '../../styles/session-experience.css';
 
 export default function LiveSessions() {
   const navigate = useNavigate();
-  const { locale, t } = useI18n();
+  const { locale, dir, t } = useI18n();
+  const toast = useToast();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [liveStatus, setLiveStatus] = useState({ configured: false });
   const [demoLoading, setDemoLoading] = useState(false);
   const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const copyTimerRef = useRef(null);
 
   const role = user?.role || '';
   const canManage = role === 'teacher' || role === 'admin';
 
-  const fetchSessions = async () => {
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
+
+  const fetchSessions = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
     try {
       const data = await api.get('/api/live/sessions', { auth: true });
       setSessions(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
       setSessions([]);
+      setLoadError(error?.message || t.common.errorTitle);
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -53,13 +66,22 @@ export default function LiveSessions() {
 
     fetchSessions();
     api.get('/api/live/status').then(setLiveStatus).catch(() => {});
-  }, [authLoading, isAuthenticated, navigate, locale]);
+  }, [authLoading, isAuthenticated, navigate, locale, fetchSessions]);
 
-  const copyLink = (roomId) => {
+  const copyLink = async (roomId) => {
     const link = `${window.location.origin}${localizedPath(`/live/${roomId}`, locale)}`;
-    navigator.clipboard.writeText(link);
-    setCopiedId(roomId);
-    setTimeout(() => setCopiedId(null), 2000);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(link);
+      setCopiedId(roomId);
+      toast.success(t.live.sessions.copySuccess);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error(t.live.sessions.copyError);
+    }
   };
 
   const joinSession = (roomId) => {
@@ -67,46 +89,51 @@ export default function LiveSessions() {
   };
 
   const startDemo = async () => {
+    if (demoLoading) return;
     setDemoLoading(true);
     try {
       const data = await api.post('/api/live/demo-room', {}, { auth: true });
       if (data.roomId) joinSession(data.roomId);
     } catch (e) {
-      console.error(e);
+      toast.error(e?.message || t.live.sessions.createError);
     } finally {
       setDemoLoading(false);
     }
   };
 
   const deleteSession = async (roomId) => {
-    if (!roomId) return;
-    setDeleteConfirmRoomId(null);
-    
+    if (!roomId || deleting) return;
+    setDeleting(true);
     try {
       await api.delete(`/api/live/sessions/${roomId}`, { auth: true });
-      setSessions(prev => prev.filter(s => s.roomId !== roomId));
+      setSessions((prev) => prev.filter((s) => s.roomId !== roomId));
+      setDeleteConfirmRoomId(null);
     } catch (error) {
       console.error('Failed to delete session:', error);
+      toast.error(error?.message || t.live.sessions.deleteError);
+    } finally {
+      setDeleting(false);
     }
   };
 
   return (
-    <div className="live-sessions-page wn-session-shell">
+    <div className="live-sessions-page wn-session-shell" dir={dir}>
       <header className="live-sessions-header">
         <div className="header-content">
-          <div className="header-right">
+          <div className="header-right flex-wrap">
             <BrandLogo size={50} />
-            <div className="header-info">
+            <div className="header-info min-w-0">
               <h1>{t.live.sessionsTitle}</h1>
               <p>{t.live.sessionsSubtitle}</p>
             </div>
           </div>
           {canManage && liveStatus.configured && (
-            <button 
-              className="btn-premium create-session-btn"
+            <button
+              type="button"
+              className="btn-premium create-session-btn min-h-[44px]"
               onClick={() => setShowCreateModal(true)}
             >
-              <Plus size={20} />
+              <Plus size={20} aria-hidden="true" />
               {t.live.createSession}
             </button>
           )}
@@ -114,17 +141,28 @@ export default function LiveSessions() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-3">
-        <div className={`rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm ${liveStatus.configured ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-amber-50 border border-amber-200 text-amber-900'}`}>
+        <div
+          className={`rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm border ${
+            liveStatus.configured
+              ? 'bg-[var(--wn-emerald-soft)] border-[var(--wn-border-mint)] text-[var(--wn-badge-emerald-text)]'
+              : 'bg-[var(--wn-gold-soft)] border-[var(--wn-border)] text-[var(--wn-badge-gold-text)]'
+          }`}
+        >
           <span className="flex items-center gap-2">
-            <Radio size={16} />
+            <Radio size={16} className="shrink-0" aria-hidden="true" />
             {liveStatus.configured
-              ? (t.live?.liveKitReady || 'LiveKit جاهز — يمكنك إنشاء غرفة أو تجربة العرض')
-              : (t.live?.liveKitPending || 'LiveKit غير مُفعّل — استخدم «غرفة تجريبية» للمعاينة')}
+              ? t.live.liveKitReady
+              : t.live.liveKitPending}
           </span>
           {import.meta.env.DEV && role === 'admin' && (
-            <button type="button" onClick={startDemo} disabled={demoLoading} className="btn-premium text-sm py-2 px-4">
-              <Play size={16} />
-              {demoLoading ? '...' : (t.live?.tryDemo || 'غرفة تجريبية')}
+            <button
+              type="button"
+              onClick={startDemo}
+              disabled={demoLoading}
+              className="btn-premium text-sm min-h-[44px] py-2 px-4 inline-flex items-center gap-2"
+            >
+              {demoLoading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+              <span>{demoLoading ? t.common.loading : t.live.tryDemo}</span>
             </button>
           )}
         </div>
@@ -132,9 +170,29 @@ export default function LiveSessions() {
 
       <main className="live-sessions-main">
         {loading ? (
-          <div className="loading-sessions">
-            <div className="spinner spinner-lg"></div>
-            <p>{t.common.loading}</p>
+          <div className="sessions-grid" role="status" aria-busy="true" aria-label={t.common.loading}>
+            {[0, 1, 2].map((idx) => (
+              <div key={idx} className="session-card premium-card space-y-4">
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-16 w-16 rounded-2xl" />
+                <Skeleton className="h-6 w-3/4 rounded" />
+                <Skeleton className="h-4 w-full rounded" />
+                <Skeleton className="h-11 w-full rounded-xl" />
+              </div>
+            ))}
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] p-6 text-center space-y-3">
+            <AlertCircle size={32} className="mx-auto text-[var(--wn-text-danger)]" aria-hidden="true" />
+            <p className="font-bold text-[var(--wn-text-danger)]">{loadError}</p>
+            <button
+              type="button"
+              onClick={fetchSessions}
+              className="btn-primary min-h-[44px] inline-flex items-center gap-2"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+              <span>{t.common.retry}</span>
+            </button>
           </div>
         ) : sessions.length === 0 ? (
           <EmptyState
@@ -142,11 +200,12 @@ export default function LiveSessions() {
             title={t.live.noSessions}
             description={t.live.noSessionsDesc}
             action={canManage && liveStatus.configured ? (
-              <button 
-                className="btn-premium"
+              <button
+                type="button"
+                className="btn-premium min-h-[44px]"
                 onClick={() => setShowCreateModal(true)}
               >
-                <Plus size={20} />
+                <Plus size={20} aria-hidden="true" />
                 {t.live.createFirst}
               </button>
             ) : null}
@@ -171,63 +230,68 @@ export default function LiveSessions() {
                       </span>
                     ) : (
                       <span className="scheduled-indicator">
-                        <Clock size={14} />
+                        <Clock size={14} aria-hidden="true" />
                         {t.live.scheduled}
                       </span>
                     )}
                   </div>
 
                   <div className="session-icon">
-                    <Video size={32} />
+                    <Video size={32} aria-hidden="true" />
                   </div>
 
                   <h3 className="session-title">{session.title}</h3>
-                  
+
                   {session.description && (
                     <p className="session-description">{session.description}</p>
                   )}
 
                   <div className="session-meta">
                     <div className="meta-item">
-                      <BookOpen size={16} />
+                      <BookOpen size={16} aria-hidden="true" />
                       <span>{session.subject || t.live.general}</span>
                     </div>
                     <div className="meta-item">
-                      <Users size={16} />
+                      <Users size={16} aria-hidden="true" />
                       <span>{session.participants || 0} {t.live.participants}</span>
                     </div>
                     {session.scheduledAt && (
                       <div className="meta-item">
-                        <Calendar size={16} />
-                        <span>{formatSessionDateTime(session, locale === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session)}</span>
+                        <Calendar size={16} aria-hidden="true" />
+                        <span>{formatSessionDateTime(session, resolveIntlLocale(locale), { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session)}</span>
                       </div>
                     )}
                   </div>
 
                   <div className="session-actions">
-                    <button 
-                      className="btn-premium join-btn"
+                    <button
+                      type="button"
+                      className="btn-premium join-btn min-h-[44px]"
                       onClick={() => joinSession(session.roomId)}
                     >
-                      <Play size={18} />
+                      <Play size={18} aria-hidden="true" />
                       {session.isLive ? t.live.joinNow : t.live.enterRoom}
                     </button>
-                    
-                    <button 
-                      className="btn-icon copy-btn"
+
+                    <button
+                      type="button"
+                      className="btn-icon copy-btn min-w-[44px] min-h-[44px]"
                       onClick={() => copyLink(session.roomId)}
+                      aria-label={t.live.copyLink}
                       title={t.live.copyLink}
                     >
-                      {copiedId === session.roomId ? <Check size={18} /> : <Copy size={18} />}
+                      {copiedId === session.roomId ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
                     </button>
 
                     {session.canManage && (
-                      <button 
-                        className="btn-icon delete-btn"
+                      <button
+                        type="button"
+                        className="btn-icon delete-btn min-w-[44px] min-h-[44px]"
                         onClick={() => setDeleteConfirmRoomId(session.roomId)}
+                        aria-label={t.common.delete}
                         title={t.common.delete}
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={18} aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -238,26 +302,43 @@ export default function LiveSessions() {
         )}
       </main>
 
-      <Modal isOpen={Boolean(deleteConfirmRoomId)} onClose={() => setDeleteConfirmRoomId(null)}>
-        <div className="p-4 space-y-4 text-right" dir="rtl">
-          <h3 className="text-lg font-bold text-slate-900">{t.live.confirmDelete || 'تأكيد حذف الغرفة المباشرة'}</h3>
-          <p className="text-sm text-slate-600">هل أنت متأكد من رغبتك في حذف هذه الغرفة المباشرة نهائياً؟</p>
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setDeleteConfirmRoomId(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold">
+      <Modal
+        isOpen={Boolean(deleteConfirmRoomId)}
+        onClose={() => !deleting && setDeleteConfirmRoomId(null)}
+        title={t.live.sessions.deleteTitle}
+        disableClose={deleting}
+      >
+        <div className="p-2 space-y-4 text-start" dir={dir}>
+          <p className="font-bold text-[var(--wn-text-primary)]">{t.live.sessions.confirmDelete}</p>
+          <p className="text-sm text-[var(--wn-text-secondary)]">{t.live.sessions.deleteConfirmBody}</p>
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteConfirmRoomId(null)}
+              className="min-h-[44px] px-4 py-2 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] font-semibold cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+            >
               {t.common.cancel}
             </button>
-            <button type="button" onClick={() => deleteSession(deleteConfirmRoomId)} className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold">
-              {t.common.delete}
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => deleteSession(deleteConfirmRoomId)}
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-[var(--wn-danger)] text-[var(--wn-white)] font-semibold inline-flex items-center gap-2 cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+            >
+              {deleting && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+              <span>{deleting ? t.common.deleting : t.live.sessions.deleteConfirmBtn}</span>
             </button>
           </div>
         </div>
       </Modal>
-      <CreateSessionModal 
+
+      <CreateSessionModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         role={role}
         onCreated={(session) => {
-          setSessions(prev => [session, ...prev]);
+          setSessions((prev) => [session, ...prev]);
           setShowCreateModal(false);
         }}
       />
@@ -266,11 +347,13 @@ export default function LiveSessions() {
 }
 
 function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
-  const { t } = useI18n();
+  const { locale, dir, t } = useI18n();
+  const toast = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [subject, setSubject] = useState('');
   const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [bookedSessions, setBookedSessions] = useState([]);
 
@@ -293,13 +376,14 @@ function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!title.trim() || (role === 'teacher' && !sessionId)) return;
+    if (creating || !title.trim() || (role === 'teacher' && !sessionId)) return;
 
     setCreating(true);
+    setFormError('');
     try {
       const session = await api.post('/api/live/sessions', {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         subject,
         sessionId: sessionId || undefined,
       }, { auth: true });
@@ -311,31 +395,45 @@ function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
       setSessionId('');
     } catch (error) {
       console.error('Failed to create session:', error);
+      const msg = error?.message || t.live.sessions.createError;
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setCreating(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      <div className="create-session-modal">
-        <h2 className="text-gradient-gold">{t.live.createSession}</h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={() => !creating && onClose()}
+      title={t.live.createSession}
+      disableClose={creating}
+    >
+      <div className="create-session-modal" dir={dir}>
         <p className="modal-subtitle">{t.live.createSessionDesc}</p>
+
+        {formError && (
+          <div role="alert" className="rounded-xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-3 py-2 text-xs text-[var(--wn-text-danger)]">
+            {formError}
+          </div>
+        )}
 
         <form onSubmit={handleCreate} className="session-form">
           {role === 'teacher' && (
             <div className="form-group">
-              <label>الحصة المرتبطة</label>
+              <label htmlFor="live-linked-session">{t.live.sessions.linkedSessionLabel}</label>
               <select
+                id="live-linked-session"
                 value={sessionId}
                 onChange={(e) => setSessionId(e.target.value)}
-                className="premium-input"
+                className="premium-input min-h-[44px]"
                 required
               >
-                <option value="">اختر حصة مقبولة</option>
+                <option value="">{t.live.sessions.selectAcceptedSession}</option>
                 {bookedSessions.map((session) => (
                   <option key={session._id} value={session._id}>
-                    {session.student?.name || 'حلقة / طالب'} — {new Date(session.scheduledAt).toLocaleString('ar-EG')}
+                    {session.student?.name || t.live.sessions.circleStudentFallback} — {new Date(session.scheduledAt).toLocaleString(resolveIntlLocale(locale))}
                   </option>
                 ))}
               </select>
@@ -343,23 +441,25 @@ function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
           )}
 
           <div className="form-group">
-            <label>{t.live.sessionTitle}</label>
+            <label htmlFor="live-session-title">{t.live.sessionTitle}</label>
             <input
+              id="live-session-title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={t.live.sessionTitlePlaceholder}
-              className="premium-input"
+              className="premium-input min-h-[44px]"
               required
             />
           </div>
 
           <div className="form-group">
-            <label>{t.live.sessionSubject}</label>
-            <select 
+            <label htmlFor="live-session-subject">{t.live.sessionSubject}</label>
+            <select
+              id="live-session-subject"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="premium-input"
+              className="premium-input min-h-[44px]"
             >
               <option value="">{t.live.selectSubject}</option>
               <option value="quran">{t.live.subjects.quran}</option>
@@ -372,8 +472,9 @@ function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
           </div>
 
           <div className="form-group">
-            <label>{t.live.sessionDescription}</label>
+            <label htmlFor="live-session-description">{t.live.sessionDescription}</label>
             <textarea
+              id="live-session-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t.live.sessionDescriptionPlaceholder}
@@ -383,22 +484,28 @@ function CreateSessionModal({ isOpen, onClose, onCreated, role }) {
           </div>
 
           <div className="form-actions">
-            <button 
-              type="button" 
-              className="btn-premium-outline"
+            <button
+              type="button"
+              disabled={creating}
+              className="btn-premium-outline min-h-[44px]"
               onClick={onClose}
             >
               {t.common.cancel}
             </button>
-            <button 
-              type="submit" 
-              className="btn-premium"
+            <button
+              type="submit"
+              className="btn-premium min-h-[44px] inline-flex items-center gap-2"
               disabled={creating || !title.trim() || (role === 'teacher' && !sessionId)}
             >
-              {creating ? t.common.loading : (
+              {creating ? (
                 <>
-                  <Radio size={18} />
-                  {t.live.startSession}
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  <span>{t.common.loading}</span>
+                </>
+              ) : (
+                <>
+                  <Radio size={18} aria-hidden="true" />
+                  <span>{t.live.startSession}</span>
                 </>
               )}
             </button>

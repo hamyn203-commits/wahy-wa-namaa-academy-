@@ -1,28 +1,16 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  Users, Hand, Clock, Play, Pause, 
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import {
+  Users, Hand, Clock, Play, Pause,
   RotateCcw, VolumeX,
-  ChevronRight, Award
+  ChevronRight, ChevronLeft, Award
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useI18n } from '../../i18n';
+import EmptyState from '../shared/EmptyState';
 import './classroom.css';
 
-// قائمة افتراضية لـ 10 طلاب لحلقة القرآن النموذجية
-const DEFAULT_STUDENTS_LIST = [
-  { id: 'seat-1', name: 'أحمد بن عبد الله', avatar: 'أ' },
-  { id: 'seat-2', name: 'عمر بن الفاروق', avatar: 'ع' },
-  { id: 'seat-3', name: 'يوسف بن إبراهيم', avatar: 'ي' },
-  { id: 'seat-4', name: 'عبد الرحمن خالد', avatar: 'ع' },
-  { id: 'seat-5', name: 'حمزة بن عبد المطلب', avatar: 'ح' },
-  { id: 'seat-6', name: 'زيد بن ثابت', avatar: 'ز' },
-  { id: 'seat-7', name: 'سليمان بن داود', avatar: 'س' },
-  { id: 'seat-8', name: 'بلال بن رباح', avatar: 'ب' },
-  { id: 'seat-9', name: 'معاذ بن جبل', avatar: 'م' },
-  { id: 'seat-10', name: 'أنس بن مالك', avatar: 'أ' }
-];
-
 /**
- * مكون إدارة الحلقة ونظام التسميع للـ 10 طلاب
+ * مكون إدارة الحلقة ونظام التسميع
  */
 export default function CircleTurnManager({
   room,
@@ -30,34 +18,45 @@ export default function CircleTurnManager({
   participants = [],
   isTeacher = false,
   isObserver = false,
-  currentUserName = 'مشارك',
+  currentUserName,
   onMuteLocalMic = null,
   rosterStudents = [],
 }) {
-  // حالة الطالب الحالي
-  const currentParticipantId = localParticipant?.localParticipant?.identity || currentUserName;
+  const { isRTL, t } = useI18n();
+  const resolvedUserName = currentUserName || t.live.circle.participantFallback;
+  const currentParticipantId = localParticipant?.localParticipant?.identity || resolvedUserName;
 
-  // حالة التسميع والمؤقت
   const [activeReciter, setActiveReciter] = useState(null); // { id, name }
-  const [timerDuration] = useState(300); // 5 دقائق (300 ثانية)
+  const [timerDuration] = useState(300); // 5 minutes
   const [timeLeft, setTimeLeft] = useState(300);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
-  // قائمة رافعي الأيدي بالدور
   const [waitingQueue, setWaitingQueue] = useState([]); // [{ id, name, timestamp }]
-
-  // سجل الوقت المستغرق لكل طالب (لتوزيع الوقت بالعدل)
   const [timeSpentMap, setTimeSpentMap] = useState({}); // { [studentId]: seconds }
-
-  // تنبيهات لحظية
   const [actionNotice, setActionNotice] = useState(null);
+  const noticeTimerRef = useRef(null);
 
-  // هل الطالب الحالي رافع يده؟
+  const showNotice = useCallback((message, durationMs = 3500) => {
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+    setActionNotice(message);
+    noticeTimerRef.current = setTimeout(() => {
+      setActionNotice(null);
+      noticeTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+  }, []);
+
   const isHandRaised = useMemo(() => {
-    return waitingQueue.some(item => item.id === currentParticipantId || item.name === currentUserName);
-  }, [waitingQueue, currentParticipantId, currentUserName]);
+    return waitingQueue.some((item) => item.id === currentParticipantId || item.name === resolvedUserName);
+  }, [waitingQueue, currentParticipantId, resolvedUserName]);
 
-  // إرسال إشارات الحلقة عبر LiveKit Data Channel
   const broadcastCircleAction = useCallback((action, payload = {}) => {
     if (!room || !localParticipant?.localParticipant) return;
 
@@ -65,7 +64,7 @@ export default function CircleTurnManager({
       type: 'CIRCLE_ACTION',
       action,
       payload,
-      senderName: currentUserName,
+      senderName: resolvedUserName,
       senderId: currentParticipantId,
       timestamp: Date.now()
     };
@@ -78,9 +77,8 @@ export default function CircleTurnManager({
     } catch (err) {
       console.error('Failed to publish circle action:', err);
     }
-  }, [room, localParticipant, currentUserName, currentParticipantId]);
+  }, [room, localParticipant, resolvedUserName, currentParticipantId]);
 
-  // الاستماع لأحداث الحلقة اللحظية
   useEffect(() => {
     if (!room) return;
 
@@ -100,28 +98,24 @@ export default function CircleTurnManager({
         switch (action) {
           case 'MUTE_ALL':
             if (!isTrustedHostSender(participant)) return;
-            // إذا كان المستخدم ليس المعلم، اكتم الصوت
             if (!isTeacher) {
               if (onMuteLocalMic) onMuteLocalMic();
               try { localParticipant?.localParticipant?.setMicrophoneEnabled(false); } catch { /* ignore */ }
-              setActionNotice('قام المعلم بكتم صوت الجميع للحفاظ على هدوء التسميع');
-              setTimeout(() => setActionNotice(null), 4000);
+              showNotice(t.live.circle.mutedNotice, 4000);
             }
             break;
 
           case 'START_RECITATION': {
             if (!isTrustedHostSender(participant)) return;
             const safeDuration = Math.min(1800, Math.max(30, Number(p.duration) || 300));
-            const safeName = String(p.studentName || 'طالب').slice(0, 80);
+            const safeName = String(p.studentName || t.live.circle.studentFallback).slice(0, 80);
             const safeStudentId = String(p.studentId || '').slice(0, 120);
             if (!safeStudentId) return;
             setActiveReciter({ id: safeStudentId, name: safeName });
             setTimeLeft(safeDuration);
             setIsTimerRunning(true);
-            // إزالة الطالب من قائمة الانتظار
-            setWaitingQueue(prev => prev.filter(item => item.id !== safeStudentId));
-            setActionNotice(`بدأ التسميع لـ: ${safeName}`);
-            setTimeout(() => setActionNotice(null), 3500);
+            setWaitingQueue((prev) => prev.filter((item) => item.id !== safeStudentId));
+            showNotice(`${t.live.circle.startedNotice} ${safeName}`, 3500);
             break;
           }
 
@@ -129,13 +123,11 @@ export default function CircleTurnManager({
             if (!isTrustedHostSender(participant)) return;
             setActiveReciter(null);
             setIsTimerRunning(false);
-            setActionNotice('تم إنهاء جولة التسميع الحالية');
-            setTimeout(() => setActionNotice(null), 3000);
+            showNotice(t.live.circle.endedNotice, 3000);
             break;
 
           case 'TIMER_TICK':
             if (!isTrustedHostSender(participant)) return;
-            // مزامنة وقت المؤقت من المعلم
             if (!isTeacher && p.timeLeft !== undefined) {
               const safeLeft = Math.min(1800, Math.max(0, Number(p.timeLeft) || 0));
               setTimeLeft(safeLeft);
@@ -147,9 +139,9 @@ export default function CircleTurnManager({
             if (!senderIdentity || senderIdentity.startsWith('guardian:')) return;
             if (p.studentId && String(p.studentId) !== senderIdentity) return;
             const verifiedId = senderIdentity;
-            const verifiedName = String(participant?.name || p.studentName || 'طالب').slice(0, 80);
-            setWaitingQueue(prev => {
-              if (prev.some(item => item.id === verifiedId)) return prev;
+            const verifiedName = String(participant?.name || p.studentName || t.live.circle.studentFallback).slice(0, 80);
+            setWaitingQueue((prev) => {
+              if (prev.some((item) => item.id === verifiedId)) return prev;
               return [...prev, { id: verifiedId, name: verifiedName, timestamp: Date.now() }];
             });
             break;
@@ -163,7 +155,7 @@ export default function CircleTurnManager({
             if (!isTrustedHostSender(participant) && p.studentId && String(p.studentId) !== senderIdentity) {
               return;
             }
-            setWaitingQueue(prev => prev.filter(item => item.id !== targetId));
+            setWaitingQueue((prev) => prev.filter((item) => item.id !== targetId));
             break;
           }
 
@@ -171,29 +163,26 @@ export default function CircleTurnManager({
             break;
         }
       } catch {
-        // تجاهل
+        // ignore malformed packets
       }
     };
 
     room.on('dataReceived', handleDataReceived);
     return () => room.off('dataReceived', handleDataReceived);
-  }, [room, isTeacher, onMuteLocalMic, localParticipant?.localParticipant]);
+  }, [room, isTeacher, onMuteLocalMic, localParticipant?.localParticipant, showNotice, t]);
 
-  // عداد المؤقت التنازلي
   useEffect(() => {
     let interval = null;
     if (isTimerRunning && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft(prev => {
+        setTimeLeft((prev) => {
           const next = prev - 1;
-          // تحديث وقت الطالب المستغرق
           if (activeReciter) {
-            setTimeSpentMap(m => ({
+            setTimeSpentMap((m) => ({
               ...m,
               [activeReciter.id]: (m[activeReciter.id] || 0) + 1
             }));
           }
-          // إذا كان المعلم، يبث مزامنة الوقت كل 5 ثوانٍ
           if (isTeacher && next % 5 === 0) {
             broadcastCircleAction('TIMER_TICK', { timeLeft: next, isRunning: true });
           }
@@ -202,35 +191,29 @@ export default function CircleTurnManager({
       }, 1000);
     } else if (timeLeft === 0 && isTimerRunning) {
       setIsTimerRunning(false);
-      setActionNotice('انتهى وقت التسميع لهذا الطالب!');
-      setTimeout(() => setActionNotice(null), 4000);
+      showNotice(t.live.circle.timeUpNotice, 4000);
     }
     return () => clearInterval(interval);
-  }, [isTimerRunning, timeLeft, activeReciter, isTeacher, broadcastCircleAction]);
+  }, [isTimerRunning, timeLeft, activeReciter, isTeacher, broadcastCircleAction, showNotice, t]);
 
-  // دمج الطلاب الـ 10 مع المشاركين الحقيقيين في الغرفة
   const circleStudents = useMemo(() => {
-    // قائمة أسماء الحاضرين في الغرفة
-    const activeNames = new Set(participants.map(p => p.name || p.identity));
-    const activeIdentities = new Set(participants.map(p => p.identity).filter(Boolean));
-    if (currentUserName) activeNames.add(currentUserName);
+    const activeNames = new Set(participants.map((p) => p.name || p.identity));
+    const activeIdentities = new Set(participants.map((p) => p.identity).filter(Boolean));
+    if (resolvedUserName) activeNames.add(resolvedUserName);
     if (currentParticipantId) activeIdentities.add(currentParticipantId);
-    const baseList = Array.isArray(rosterStudents) && rosterStudents.length > 0 ? rosterStudents : DEFAULT_STUDENTS_LIST;
-    if (currentUserName) activeNames.add(currentUserName);
+    const baseList = Array.isArray(rosterStudents) ? rosterStudents : [];
 
-    return baseList.map((student, index) => {
-      const matchedParticipant = Array.isArray(rosterStudents) && rosterStudents.length > 0
-        ? participants.find(p => p.identity === student.id || p.name === student.name)
-        : participants[index];
+    return baseList.map((student) => {
+      const matchedParticipant = participants.find(
+        (p) => p.identity === student.id || p.name === student.name
+      );
       const isOnline = Boolean(matchedParticipant) || activeIdentities.has(student.id) || activeNames.has(student.name);
-      // إما اسم مسجل أو مشارك فعلي في الغرفة
-
 
       const studentName = matchedParticipant?.name || student.name;
       const studentId = matchedParticipant?.identity || student.id;
 
       const isRecitingNow = activeReciter?.id === studentId || activeReciter?.name === studentName;
-      const queuePosition = waitingQueue.findIndex(item => item.id === studentId || item.name === studentName);
+      const queuePosition = waitingQueue.findIndex((item) => item.id === studentId || item.name === studentName);
 
       return {
         ...student,
@@ -243,19 +226,14 @@ export default function CircleTurnManager({
         timeSpent: timeSpentMap[studentId] || 0
       };
     });
-  }, [participants, currentUserName, currentParticipantId, rosterStudents, activeReciter, waitingQueue, timeSpentMap]);
+  }, [participants, resolvedUserName, currentParticipantId, rosterStudents, activeReciter, waitingQueue, timeSpentMap]);
 
-  // ── أدوات المعلم ──
-
-  // كتم صوت الجميع
   const handleMuteAll = () => {
     if (!isTeacher) return;
     broadcastCircleAction('MUTE_ALL');
-    setActionNotice('تم إرسال أمر كتم صوت الجميع للغرفة');
-    setTimeout(() => setActionNotice(null), 3000);
+    showNotice(t.live.circle.muteAllSentNotice, 3000);
   };
 
-  // بدء التسميع لطالب معين
   const handleStartRecitation = (student) => {
     if (!isTeacher) return;
     const duration = timerDuration;
@@ -269,7 +247,6 @@ export default function CircleTurnManager({
     });
   };
 
-  // إنهاء التسميع الحالي
   const handleEndRecitation = () => {
     if (!isTeacher) return;
     setActiveReciter(null);
@@ -277,88 +254,84 @@ export default function CircleTurnManager({
     broadcastCircleAction('END_RECITATION');
   };
 
-  // الانتقال للطالب التالي في قائمة الدور
   const handleNextInQueue = () => {
     if (!isTeacher || waitingQueue.length === 0) return;
     const nextStudent = waitingQueue[0];
     handleStartRecitation({ id: nextStudent.id, name: nextStudent.name });
   };
 
-  // ── أدوات الطالب ──
-
-  // رفع اليد / خفض اليد
   const toggleRaiseHand = () => {
-    if (isObserver) return; // المراقب لا يرفع يده
+    if (isObserver) return;
 
     if (isHandRaised) {
       broadcastCircleAction('LOWER_HAND', { studentId: currentParticipantId });
-      setWaitingQueue(prev => prev.filter(item => item.id !== currentParticipantId && item.name !== currentUserName));
+      setWaitingQueue((prev) => prev.filter((item) => item.id !== currentParticipantId && item.name !== resolvedUserName));
     } else {
       broadcastCircleAction('RAISE_HAND', {
         studentId: currentParticipantId,
-        studentName: currentUserName
+        studentName: resolvedUserName
       });
-      setWaitingQueue(prev => [
+      setWaitingQueue((prev) => [
         ...prev,
-        { id: currentParticipantId, name: currentUserName, timestamp: Date.now() }
+        { id: currentParticipantId, name: resolvedUserName, timestamp: Date.now() }
       ]);
     }
   };
 
-  // تنسيق دقائق وثواني
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // نسبة التقدم للمؤقت
   const progressPercent = Math.max(0, Math.min(100, (timeLeft / timerDuration) * 100));
 
   return (
     <div className="circle-manager-card">
-      {/* ── رأس مدير الحلقة ── */}
       <div className="circle-manager-header">
         <div className="circle-manager-title">
-          <Users size={18} className="text-emerald-700" />
+          <Users size={18} className="text-[var(--wn-emerald)]" aria-hidden="true" />
           <h3>
-            حلقة القرآن الكريم
-            <span className="circle-count-badge">{circleStudents.length} طلاب</span>
+            {t.live.circle.title}
+            <span className="circle-count-badge">{circleStudents.length} {t.live.circle.studentsCount}</span>
           </h3>
         </div>
 
-        {/* أدوات سريعة في الرأس */}
         <div className="flex items-center gap-2">
           {isTeacher ? (
-            <button 
-              onClick={handleMuteAll} 
-              className="btn-mute-all"
-              title="كتم صوت جميع الطلاب دفعة واحدة"
+            <button
+              type="button"
+              onClick={handleMuteAll}
+              className="btn-mute-all min-h-[44px]"
+              title={t.live.circle.muteAllTitle}
             >
-              <VolumeX size={15} />
-              كتم الجميع
+              <VolumeX size={15} aria-hidden="true" />
+              <span>{t.live.circle.muteAll}</span>
             </button>
           ) : !isObserver ? (
             <button
+              type="button"
               onClick={toggleRaiseHand}
-              className={`btn-raise-hand ${isHandRaised ? 'is-raised' : ''}`}
+              aria-pressed={isHandRaised}
+              className={`btn-raise-hand min-h-[44px] ${isHandRaised ? 'is-raised' : ''}`}
             >
-              <Hand size={15} />
-              {isHandRaised ? 'خفض اليد' : 'رفع اليد للتسميع'}
+              <Hand size={15} aria-hidden="true" />
+              <span>{isHandRaised ? t.live.circle.lowerHand : t.live.circle.raiseHand}</span>
             </button>
           ) : (
-            <span className="text-xs text-gray-500 font-semibold px-2 py-1 bg-gray-100 rounded">
-              وضع الاستماع فقط
+            <span className="text-xs text-[var(--wn-text-secondary)] font-semibold px-2.5 py-1.5 bg-[var(--wn-surface-sunken)] rounded-md border border-[var(--wn-border)]">
+              {t.live.circle.listenOnly}
             </span>
           )}
         </div>
       </div>
 
-      {/* ── شريط تنبيه الإجراءات ── */}
       <AnimatePresence>
         {actionNotice && (
-          <motion.div 
-            className="p-2 text-center text-xs font-bold bg-amber-100 text-amber-900 border-b border-amber-200"
+          <motion.div
+            role="status"
+            aria-live="polite"
+            className="p-2 text-center text-xs font-bold bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)] border-b border-[var(--wn-border)]"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -368,15 +341,14 @@ export default function CircleTurnManager({
         )}
       </AnimatePresence>
 
-      {/* ── مؤقت التسميع التنازلي المتزامن ── */}
       <div className={`recitation-timer-banner ${
         timeLeft < 30 ? 'timer-critical' : timeLeft < 60 ? 'timer-warning' : 'timer-active'
       }`}>
-        <div className="flex items-center gap-3">
-          <Clock size={20} className="text-emerald-800" />
-          <div>
-            <div className="text-xs text-gray-500 font-semibold">
-              {activeReciter ? `يسمّع الآن: ${activeReciter.name}` : 'لا يوجد طالب يسمّع حالياً'}
+        <div className="flex items-center gap-3 min-w-0">
+          <Clock size={20} className="text-[var(--wn-heading)] shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="text-xs text-[var(--wn-text-secondary)] font-semibold truncate">
+              {activeReciter ? `${t.live.circle.recitingNow}: ${activeReciter.name}` : t.live.circle.noActiveReciter}
             </div>
             <div className="timer-clock">
               {formatTime(timeLeft)}
@@ -384,54 +356,56 @@ export default function CircleTurnManager({
           </div>
         </div>
 
-        {/* أزرار تحكم المعلم بالمؤقت */}
         {isTeacher && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
+              type="button"
               onClick={() => setIsTimerRunning(!isTimerRunning)}
               disabled={!activeReciter}
-              className="p-1.5 rounded-lg border bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40"
-              title={isTimerRunning ? 'إيقاف مؤقت' : 'استئناف المؤقت'}
+              aria-label={isTimerRunning ? t.live.circle.pauseTimer : t.live.circle.resumeTimer}
+              title={isTimerRunning ? t.live.circle.pauseTimer : t.live.circle.resumeTimer}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] hover:bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              {isTimerRunning ? <Pause size={14} /> : <Play size={14} />}
+              {isTimerRunning ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
             </button>
             <button
+              type="button"
               onClick={() => setTimeLeft(timerDuration)}
               disabled={!activeReciter}
-              className="p-1.5 rounded-lg border bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40"
-              title="إعادة ضبط المؤقت"
+              aria-label={t.live.circle.resetTimer}
+              title={t.live.circle.resetTimer}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] hover:bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <RotateCcw size={14} />
+              <RotateCcw size={16} aria-hidden="true" />
             </button>
             {activeReciter && (
               <button
+                type="button"
                 onClick={handleEndRecitation}
-                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold"
+                className="min-h-[44px] px-3 bg-[var(--wn-danger)] text-[var(--wn-white)] rounded-lg text-xs font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
               >
-                إنهاء التسميع
+                {t.live.circle.endRecitation}
               </button>
             )}
           </div>
         )}
 
-        {/* شريط تقدم المؤقت */}
         <div className="timer-progress-bar">
-          <div 
+          <div
             className="timer-progress-fill"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
 
-      {/* ── قائمة المنتظرين بالدور (Queue) ── */}
       {waitingQueue.length > 0 && (
-        <div className="p-2 px-3 bg-amber-50/70 border-b border-amber-200/60 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
-            <Hand size={14} className="text-amber-600" />
-            <span>قائمة الدور ({waitingQueue.length}):</span>
-            <div className="flex items-center gap-1.5 overflow-x-auto max-w-[200px]">
+        <div className="p-2.5 px-3 bg-[var(--wn-gold-soft)] border-b border-[var(--wn-border)] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--wn-badge-gold-text)] min-w-0 flex-1">
+            <Hand size={14} className="shrink-0" aria-hidden="true" />
+            <span>{t.live.circle.queueLabel} ({waitingQueue.length}):</span>
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
               {waitingQueue.map((item, idx) => (
-                <span key={item.id} className="bg-amber-200/70 text-amber-950 px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
+                <span key={item.id} className="bg-[var(--wn-surface)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] px-2 py-0.5 rounded text-[11px] whitespace-nowrap">
                   #{idx + 1} {item.name}
                 </span>
               ))}
@@ -439,85 +413,90 @@ export default function CircleTurnManager({
           </div>
           {isTeacher && (
             <button
+              type="button"
               onClick={handleNextInQueue}
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold flex items-center gap-1"
+              className="min-h-[44px] px-3 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <span>التالي بالدور</span>
-              <ChevronRight size={13} />
+              <span>{t.live.circle.nextInQueue}</span>
+              {isRTL ? <ChevronLeft size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
             </button>
           )}
         </div>
       )}
 
-      {/* ── شبكة مقاعد الـ 10 طلاب ── */}
-      <div className="students-circle-grid">
-        {circleStudents.map((student, idx) => {
-          return (
-            <div 
+      {circleStudents.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <EmptyState
+            icon={Users}
+            title={t.live.circle.emptyRoster}
+          />
+        </div>
+      ) : (
+        <div className="students-circle-grid">
+          {circleStudents.map((student, idx) => (
+            <div
               key={student.id}
               className={`student-seat-card ${
                 student.isRecitingNow ? 'is-reciting' : ''
               } ${student.isOnline ? 'is-online' : 'is-offline'}`}
             >
-              {/* صورة وأيقونة المقعد */}
               <div className="seat-avatar-wrap">
                 <span>{student.avatar}</span>
                 <span className="seat-number-chip">{idx + 1}</span>
               </div>
 
-              {/* بيانات الطالب وحالته */}
               <div className="seat-info">
                 <p className="seat-name">{student.name}</p>
                 <div className="seat-status-row">
                   <span className={`status-dot ${
-                    student.isRecitingNow ? 'status-dot-reciting' : 
+                    student.isRecitingNow ? 'status-dot-reciting' :
                     student.isOnline ? 'status-dot-online' : 'status-dot-offline'
                   }`} />
-                  <span className="text-gray-500">
-                    {student.isRecitingNow ? 'يسمّع الآن 🎙️' :
-                     student.isOnline ? 'متصل بالحلقة' : 'غير متصل'}
+                  <span className="text-[var(--wn-text-secondary)]">
+                    {student.isRecitingNow ? t.live.circle.recitingBadge :
+                     student.isOnline ? t.live.circle.onlineStatus : t.live.circle.offlineStatus}
                   </span>
                   {student.timeSpent > 0 && (
-                    <span className="text-emerald-700 font-mono text-[10px]">
+                    <span className="text-[var(--wn-text-accent)] font-mono text-[10px]">
                       ({formatTime(student.timeSpent)})
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* شارة رفع اليد أو زر التسميع للمعلم */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {student.inQueue && (
-                  <span className="raised-hand-badge" title="في انتظار دوره للتسميع">
-                    <Hand size={11} />
+                  <span className="raised-hand-badge" title={t.live.circle.inQueueTitle}>
+                    <Hand size={11} aria-hidden="true" />
                     #{student.queueNumber}
                   </span>
                 )}
 
                 {isTeacher && !student.isRecitingNow && (
                   <button
+                    type="button"
                     onClick={() => handleStartRecitation(student)}
-                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition"
-                    title={`بدء التسميع لـ ${student.name}`}
+                    className="min-h-[44px] px-3 rounded-lg bg-[var(--wn-emerald-soft)] hover:bg-[var(--wn-mint)] text-[var(--wn-badge-emerald-text)] text-xs font-bold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    aria-label={`${t.live.circle.startRecitationTitle} ${student.name}`}
+                    title={`${t.live.circle.startRecitationTitle} ${student.name}`}
                   >
-                    تسميع
+                    {t.live.circle.reciteBtn}
                   </button>
                 )}
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* ── شريط عدالة توزيع الوقت ── */}
-      <div className="p-2.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-600 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Award size={14} className="text-amber-600" />
-          <span>مقياس عدالة الوقت:</span>
-          <span className="font-semibold text-gray-800">5 دقائق لكل طالب في الحلقة</span>
+          ))}
         </div>
-        <div className="text-[11px] text-gray-500">
-          إجمالي الحضور: {circleStudents.filter(s => s.isOnline).length}/{circleStudents.length}
+      )}
+
+      <div className="p-2.5 bg-[var(--wn-surface-soft)] border-t border-[var(--wn-border)] text-xs text-[var(--wn-text-secondary)] flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Award size={14} className="text-[var(--wn-text-gold)] shrink-0" aria-hidden="true" />
+          <span>{t.live.circle.fairnessTitle}</span>
+          <span className="font-semibold text-[var(--wn-text-primary)]">{t.live.circle.fairnessDesc}</span>
+        </div>
+        <div className="text-[11px] text-[var(--wn-text-secondary)]">
+          {t.live.circle.attendanceSummary} {circleStudents.filter((s) => s.isOnline).length}/{circleStudents.length}
         </div>
       </div>
     </div>

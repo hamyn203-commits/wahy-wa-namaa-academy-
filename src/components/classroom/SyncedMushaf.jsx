@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { 
-  ChevronRight, ChevronLeft, BookOpen, Sparkles, 
-  ZoomIn, ZoomOut, Lock, Unlock, 
+import {
+  ChevronRight, ChevronLeft, BookOpen, Sparkles,
+  ZoomIn, ZoomOut, Lock, Unlock,
   Sun, Moon, Eye, RotateCcw, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useI18n } from '../../i18n';
+import Modal from '../shared/Modal';
 import './classroom.css';
 
 /**
@@ -219,44 +221,61 @@ export default function SyncedMushaf({
   isObserver = false,
   onAyahClick = null,
 }) {
-  // حالة الصفحة
+  const { isRTL, dir, t } = useI18n();
   const [currentPage, setCurrentPage] = useState(1);
   const [highlightedAyah, setHighlightedAyah] = useState(null);
-  
-  // صلاحيات وتزامن
+
   const [allowIndependentReading, setAllowIndependentReading] = useState(false);
   const [isIndependentMode, setIsIndependentMode] = useState(false);
   const [teacherPage, setTeacherPage] = useState(1);
   const [syncToast, setSyncToast] = useState(null);
 
-  // إعدادات العرض
   const [theme, setTheme] = useState('parchment'); // 'parchment' | 'night' | 'white'
   const [zoomLevel, setZoomLevel] = useState(100);
   const [showSurahModal, setShowSurahModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [jumpPageInput, setJumpPageInput] = useState('');
   const [viewMode, setViewMode] = useState('interactive'); // 'interactive' | 'image'
   const [imageError, setImageError] = useState(false);
+  const [ayahFetchError, setAyahFetchError] = useState(false);
+  const [ayahRetryNonce, setAyahRetryNonce] = useState(0);
   const [dynamicPageVerses, setDynamicPageVerses] = useState({});
 
   const containerRef = useRef(null);
+  const toastTimerRef = useRef(null);
 
-  // السورة والجزء الحالي
+  const showSyncToast = useCallback((message) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setSyncToast(message);
+    toastTimerRef.current = setTimeout(() => {
+      setSyncToast(null);
+      toastTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+  }, []);
+
   const currentSurah = useMemo(() => getSurahForPage(currentPage), [currentPage]);
   const currentJuz = useMemo(() => getJuzFromPage(currentPage), [currentPage]);
 
-  // روابط صور صفحات المصحف عالية الدقة (High-Res CDN)
+  const surahTypeLabel = (type) => (type === 'مدنية' ? t.live.mushaf.medina : t.live.mushaf.mecca);
+
   const pageImageSrc = useMemo(() => {
-    // 3 مصادر موثوقة لصفحات المصحف الشريف
     return `https://cdn.jsdelivr.net/gh/spa5k/quran-images@master/quran-images-webp/${currentPage}.webp`;
   }, [currentPage]);
 
-  // إرسال رسالة التزامن عبر LiveKit Data Channel
   const broadcastMushafAction = useCallback((action, payload = {}) => {
     if (!room || !localParticipant?.localParticipant) return;
 
     const messageData = {
       type: 'MUSHAF_ACTION',
-      action, // 'PAGE_CHANGE' | 'AYAH_HIGHLIGHT' | 'MODE_TOGGLE'
+      action,
       page: payload.page ?? currentPage,
       ayahId: payload.ayahId ?? highlightedAyah,
       allowIndependent: payload.allowIndependent ?? allowIndependentReading,
@@ -274,7 +293,6 @@ export default function SyncedMushaf({
     }
   }, [room, localParticipant, currentPage, highlightedAyah, allowIndependentReading, isTeacher]);
 
-  // الاستماع لرسائل التزامن القادمة من المعلم
   useEffect(() => {
     if (!room) return;
 
@@ -295,7 +313,6 @@ export default function SyncedMushaf({
         };
         const safeAyahId = data.ayahId ? String(data.ayahId).slice(0, 24) : null;
 
-        // إذا كان المرسل هو المعلم ونحن لسنا في وضع القراءة الحرة
         if (data.action === 'PAGE_CHANGE') {
           const safePage = clampMushafPage(data.page);
           if (!safePage) return;
@@ -303,8 +320,7 @@ export default function SyncedMushaf({
           if (!isTeacher && !isIndependentMode) {
             setCurrentPage(safePage);
             setHighlightedAyah(safeAyahId);
-            setSyncToast(`انتقل الشيخ إلى صفحة ${safePage}`);
-            setTimeout(() => setSyncToast(null), 3000);
+            showSyncToast(`${t.live.mushaf.movedToPage} ${safePage}`);
           }
         } else if (data.action === 'AYAH_HIGHLIGHT') {
           if (!isTeacher && !isIndependentMode) {
@@ -313,22 +329,20 @@ export default function SyncedMushaf({
         } else if (data.action === 'MODE_TOGGLE') {
           setAllowIndependentReading(Boolean(data.allowIndependent));
           if (!data.allowIndependent) {
-            // المعلم أغلق القراءة الحرة -> إعادة الطالب للتزامن الإجباري
             setIsIndependentMode(false);
             const safePage = clampMushafPage(data.page);
             if (safePage) setCurrentPage(safePage);
           }
         }
       } catch {
-        // تجاهل الرسائل غير المطابقة (مثل رسائل الشات العادية)
+        // ignore non-matching messages
       }
     };
 
     room.on('dataReceived', handleDataReceived);
     return () => room.off('dataReceived', handleDataReceived);
-  }, [room, isTeacher, isIndependentMode]);
+  }, [room, isTeacher, isIndependentMode, showSyncToast, t]);
 
-  // تقليب الصفحة للأمام
   const goToNextPage = useCallback(() => {
     if (currentPage >= 604) return;
     const next = currentPage + 1;
@@ -341,7 +355,6 @@ export default function SyncedMushaf({
     }
   }, [currentPage, isTeacher, broadcastMushafAction]);
 
-  // تقليب الصفحة للخلف
   const goToPrevPage = useCallback(() => {
     if (currentPage <= 1) return;
     const prev = currentPage - 1;
@@ -354,7 +367,6 @@ export default function SyncedMushaf({
     }
   }, [currentPage, isTeacher, broadcastMushafAction]);
 
-  // الانتقال لصفحة معينة
   const jumpToPage = useCallback((pageNum) => {
     const validPage = Math.max(1, Math.min(604, parseInt(pageNum, 10) || 1));
     setCurrentPage(validPage);
@@ -367,9 +379,7 @@ export default function SyncedMushaf({
     }
   }, [isTeacher, broadcastMushafAction]);
 
-  // تظليل الآية
   const handleAyahClick = (ayahNum) => {
-    // المراقب لا يستطيع التظليل
     if (isObserver) return;
 
     const newHighlight = highlightedAyah === ayahNum ? null : ayahNum;
@@ -377,13 +387,11 @@ export default function SyncedMushaf({
 
     if (onAyahClick) onAyahClick(ayahNum);
 
-    // المعلم يبث التظليل للجميع
     if (isTeacher) {
       broadcastMushafAction('AYAH_HIGHLIGHT', { ayahId: newHighlight, page: currentPage });
     }
   };
 
-  // تبديل إذن القراءة الفردية للطالب من قبل المعلم
   const toggleAllowIndependent = () => {
     if (!isTeacher) return;
     const nextState = !allowIndependentReading;
@@ -391,32 +399,36 @@ export default function SyncedMushaf({
     broadcastMushafAction('MODE_TOGGLE', { allowIndependent: nextState, page: currentPage });
   };
 
-  // عودة الطالب للتزامن مع الشيخ
   const returnToTeacherSync = () => {
     setIsIndependentMode(false);
     setCurrentPage(teacherPage);
-    setSyncToast('تم العودة للتزامن اللحظي مع الشيخ');
-    setTimeout(() => setSyncToast(null), 3000);
+    showSyncToast(t.live.mushaf.returnedToSync);
   };
 
-  // تصفية السور للبحث السريع
   const filteredSurahs = useMemo(() => {
     if (!searchQuery.trim()) return QURAN_SURAHS;
-    return QURAN_SURAHS.filter(s => 
-      s.name.includes(searchQuery) || String(s.id) === searchQuery
+    return QURAN_SURAHS.filter((s) =>
+      s.name.includes(searchQuery.trim()) || String(s.id) === searchQuery.trim()
     );
   }, [searchQuery]);
 
-  // الحصول على الآيات التفاعلية للصفحة الحالية إن وُجدت
   const pageVerseData = SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage];
 
   useEffect(() => {
-    if (SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage]) return undefined;
+    if (SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage]) {
+      setAyahFetchError(false);
+      return undefined;
+    }
     let cancelled = false;
+    setAyahFetchError(false);
     fetch(`https://api.alquran.cloud/v1/page/${currentPage}/quran-uthmani`)
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Fetch failed'))))
       .then((json) => {
-        if (cancelled || !json?.data?.ayahs?.length) return;
+        if (cancelled) return;
+        if (!json?.data?.ayahs?.length) {
+          setAyahFetchError(true);
+          return;
+        }
         const ayahs = json.data.ayahs;
         const firstSurah = ayahs[0]?.surah?.name || '';
         setDynamicPageVerses((prev) => ({
@@ -432,129 +444,141 @@ export default function SyncedMushaf({
           },
         }));
       })
-      .catch(() => { /* fallback to image mode if offline */ });
+      .catch(() => {
+        if (!cancelled) setAyahFetchError(true);
+      });
     return () => { cancelled = true; };
-  }, [currentPage, dynamicPageVerses]);
+  }, [currentPage, dynamicPageVerses, ayahRetryNonce]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === 'Escape' && showSurahModal) {
-        setShowSurahModal(false);
-        return;
-      }
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
       if (!isTeacher && !isIndependentMode) return;
-      if (e.key === 'ArrowLeft') goToNextPage();
-      else if (e.key === 'ArrowRight') goToPrevPage();
+      if (e.key === 'ArrowLeft') {
+        if (isRTL) goToNextPage();
+        else goToPrevPage();
+      } else if (e.key === 'ArrowRight') {
+        if (isRTL) goToPrevPage();
+        else goToNextPage();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSurahModal, isTeacher, isIndependentMode, goToNextPage, goToPrevPage]);
+  }, [isRTL, isTeacher, isIndependentMode, goToNextPage, goToPrevPage]);
 
   return (
-    <div className={`synced-mushaf-container mushaf-theme-${theme}`} ref={containerRef}>
-      {/* ── الشريط العلوي لأدوات المصحف ── */}
+    <div className={`synced-mushaf-container mushaf-theme-${theme}`} ref={containerRef} dir={dir}>
       <div className="mushaf-top-bar">
         <div className="mushaf-meta-info">
           <div className="surah-badge">
-            <BookOpen size={20} className="text-amber-600" />
+            <BookOpen size={20} className="text-[var(--wn-text-gold)] shrink-0" aria-hidden="true" />
             <span>{currentSurah.name}</span>
           </div>
-          <span className="page-indicator">صفحة {currentPage} من 604</span>
-          <span className="page-indicator">الجزء {currentJuz}</span>
+          <span className="page-indicator">
+            {t.live.mushaf.pageLabel} {currentPage} {t.live.mushaf.ofLabel} 604
+          </span>
+          <span className="page-indicator">{t.live.mushaf.juzLabel} {currentJuz}</span>
 
-          {/* شارة حالة التزامن */}
           {isTeacher ? (
             <span className="sync-status-pill sync-status-synced">
-              <Sparkles size={13} />
-              بث مباشر للمصحف (أنت المعلم)
+              <Sparkles size={13} aria-hidden="true" />
+              {t.live.mushaf.teacherBroadcast}
             </span>
           ) : isIndependentMode ? (
             <span className="sync-status-pill sync-status-independent">
-              <Eye size={13} />
-              وضع القراءة الحرة
+              <Eye size={13} aria-hidden="true" />
+              {t.live.mushaf.independentMode}
             </span>
           ) : (
             <span className="sync-status-pill sync-status-synced">
-              <Sparkles size={13} />
-              متزامن مع الشيخ
+              <Sparkles size={13} aria-hidden="true" />
+              {t.live.mushaf.syncedWithTeacher}
             </span>
           )}
         </div>
 
-        {/* أدوات التحكم والخيارات */}
         <div className="mushaf-actions-group">
-          {/* اختيار السورة */}
-          <button 
-            className="mushaf-icon-btn" 
-            onClick={() => setShowSurahModal(true)}
-            title="فهرس السور والانتقال"
-          >
-            <Search size={16} />
-          </button>
-
-          {/* تبديل طريقة العرض (تفاعلي / صورة أصلية) */}
           <button
-            className={`mushaf-icon-btn ${viewMode === 'image' ? 'active' : ''}`}
-            onClick={() => setViewMode(v => v === 'interactive' ? 'image' : 'interactive')}
-            title={viewMode === 'interactive' ? 'عرض الصفحة المصورة' : 'عرض الخط التفاعلي'}
-          >
-            <BookOpen size={16} />
-          </button>
-
-          {/* تكبير / تصغير */}
-          <button 
-            className="mushaf-icon-btn" 
-            onClick={() => setZoomLevel(z => Math.min(140, z + 10))}
-            title="تكبير الخط"
-          >
-            <ZoomIn size={16} />
-          </button>
-          <button 
-            className="mushaf-icon-btn" 
-            onClick={() => setZoomLevel(z => Math.max(80, z - 10))}
-            title="تصغير الخط"
-          >
-            <ZoomOut size={16} />
-          </button>
-
-          {/* تبديل النمط الليلي / المصحفي */}
-          <button 
+            type="button"
             className="mushaf-icon-btn"
-            onClick={() => setTheme(t => t === 'parchment' ? 'night' : t === 'night' ? 'white' : 'parchment')}
-            title="تغيير المظهر"
+            onClick={() => setShowSurahModal(true)}
+            aria-label={t.live.mushaf.surahIndexTitle}
+            title={t.live.mushaf.surahIndexTitle}
           >
-            {theme === 'night' ? <Sun size={16} /> : <Moon size={16} />}
+            <Search size={16} aria-hidden="true" />
           </button>
 
-          {/* المعلم: زر السماح للطلاب بالقراءة الفردية */}
+          <button
+            type="button"
+            className={`mushaf-icon-btn ${viewMode === 'image' ? 'active' : ''}`}
+            onClick={() => setViewMode((v) => (v === 'interactive' ? 'image' : 'interactive'))}
+            aria-label={viewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
+            title={viewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
+          >
+            <BookOpen size={16} aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="mushaf-icon-btn"
+            onClick={() => setZoomLevel((z) => Math.min(140, z + 10))}
+            aria-label={t.live.mushaf.zoomInTitle}
+            title={t.live.mushaf.zoomInTitle}
+          >
+            <ZoomIn size={16} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="mushaf-icon-btn"
+            onClick={() => setZoomLevel((z) => Math.max(80, z - 10))}
+            aria-label={t.live.mushaf.zoomOutTitle}
+            title={t.live.mushaf.zoomOutTitle}
+          >
+            <ZoomOut size={16} aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="mushaf-icon-btn"
+            onClick={() => setTheme((prev) => (prev === 'parchment' ? 'night' : prev === 'night' ? 'white' : 'parchment'))}
+            aria-label={t.live.mushaf.changeTheme}
+            title={t.live.mushaf.changeTheme}
+          >
+            {theme === 'night' ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+          </button>
+
           {isTeacher && (
             <button
-              className={`mushaf-icon-btn ${allowIndependentReading ? 'text-amber-600' : ''}`}
+              type="button"
+              className={`mushaf-icon-btn ${allowIndependentReading ? 'text-[var(--wn-text-gold)]' : ''}`}
               onClick={toggleAllowIndependent}
-              title={allowIndependentReading ? 'السماح بالقراءة الحرة مفعل' : 'السماح للطلاب بالقراءة الفردية'}
+              aria-pressed={allowIndependentReading}
+              aria-label={allowIndependentReading ? t.live.mushaf.allowIndependentOn : t.live.mushaf.allowIndependentOff}
+              title={allowIndependentReading ? t.live.mushaf.allowIndependentOn : t.live.mushaf.allowIndependentOff}
             >
-              {allowIndependentReading ? <Unlock size={16} /> : <Lock size={16} />}
+              {allowIndependentReading ? <Unlock size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
             </button>
           )}
 
-          {/* المعلم: مسح التظليل الذهبي */}
           {isTeacher && highlightedAyah && (
             <button
-              className="mushaf-icon-btn text-amber-600"
+              type="button"
+              className="mushaf-icon-btn text-[var(--wn-text-gold)]"
               onClick={() => handleAyahClick(highlightedAyah)}
-              title="إلغاء تظليل الآية"
+              aria-label={t.live.mushaf.clearHighlight}
+              title={t.live.mushaf.clearHighlight}
             >
-              <RotateCcw size={16} />
+              <RotateCcw size={16} aria-hidden="true" />
             </button>
           )}
         </div>
       </div>
 
-      {/* شريط تنبيه تزامن / عودة */}
       <AnimatePresence>
         {syncToast && (
-          <motion.div 
+          <motion.div
+            role="status"
+            aria-live="polite"
             className="observer-banner"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -565,77 +589,76 @@ export default function SyncedMushaf({
         )}
       </AnimatePresence>
 
-      {/* شريط وضع القراءة الفردية للطالب */}
       {!isTeacher && !isObserver && allowIndependentReading && (
-        <div className="independent-reading-alert">
-          <div className="flex items-center gap-2">
-            <span>سمح المعلم بالقراءة الفردية للطلاب.</span>
+        <div className="independent-reading-alert flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{t.live.mushaf.independentAllowed}</span>
             {!isIndependentMode ? (
-              <button 
-                className="underline font-bold text-amber-800 hover:text-amber-950"
+              <button
+                type="button"
+                className="min-h-[44px] px-3 underline font-bold text-[var(--wn-badge-gold-text)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] rounded"
                 onClick={() => setIsIndependentMode(true)}
               >
-                تفعيل القراءة الحرة
+                {t.live.mushaf.enableIndependent}
               </button>
             ) : (
-              <span>أنت تقرأ بحرية الآن.</span>
+              <span>{t.live.mushaf.readingIndependently}</span>
             )}
           </div>
           {isIndependentMode && (
-            <button 
-              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold"
+            <button
+              type="button"
+              className="min-h-[44px] px-3 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] rounded-lg text-xs font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
               onClick={returnToTeacherSync}
             >
-              العودة لتزامن الشيخ (صفحة {teacherPage})
+              {t.live.mushaf.returnToTeacherSync} ({t.live.mushaf.pageLabel} {teacherPage})
             </button>
           )}
         </div>
       )}
 
-      {/* ── منطقة عرض الصفحة القرآنية ── */}
       <div className="mushaf-viewport">
-        {/* أزرار التنقل الجانبية العائمة */}
-        <button 
+        <button
+          type="button"
           className="mushaf-nav-btn mushaf-nav-prev"
           onClick={goToPrevPage}
           disabled={currentPage <= 1 || (!isTeacher && !isIndependentMode)}
-          title="الصفحة السابقة"
+          aria-label={t.live.mushaf.prevPage}
+          title={t.live.mushaf.prevPage}
         >
-          <ChevronRight size={24} />
+          {isRTL ? <ChevronRight size={24} aria-hidden="true" /> : <ChevronLeft size={24} aria-hidden="true" />}
         </button>
 
-        <button 
+        <button
+          type="button"
           className="mushaf-nav-btn mushaf-nav-next"
           onClick={goToNextPage}
           disabled={currentPage >= 604 || (!isTeacher && !isIndependentMode)}
-          title="الصفحة التالية"
+          aria-label={t.live.mushaf.nextPage}
+          title={t.live.mushaf.nextPage}
         >
-          <ChevronLeft size={24} />
+          {isRTL ? <ChevronLeft size={24} aria-hidden="true" /> : <ChevronRight size={24} aria-hidden="true" />}
         </button>
 
-        {/* إطار صفحة المصحف */}
-        <div 
+        <div
           className="mushaf-page-frame"
           style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
         >
           <div className="mushaf-page-inner-border" />
 
-          {/* رأس السورة المزخرف */}
           <div className="surah-header-ornament">
             <h2 className="surah-name-title">{currentSurah.name}</h2>
-            <div className="text-xs text-amber-700 mt-1">
-              سورة {currentSurah.type} • آياتها {currentSurah.verses}
+            <div className="text-xs text-[var(--wn-badge-gold-text)] mt-1">
+              {surahTypeLabel(currentSurah.type)} • {currentSurah.verses} {t.live.mushaf.ayahsLabel}
             </div>
           </div>
 
-          {/* البسملة الشريفة (إلا سورة التوبة) */}
           {currentSurah.id !== 9 && currentPage === currentSurah.startPage && (
             <div className="bismillah-text">
               بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
             </div>
           )}
 
-          {/* محتوى الصفحة: إما نص تفاعلي أو صورة عالية الدقة */}
           {viewMode === 'interactive' && pageVerseData ? (
             <div className="mushaf-verses-flow">
               {pageVerseData.verses.map((ayah) => {
@@ -644,9 +667,18 @@ export default function SyncedMushaf({
                 return (
                   <span
                     key={ayahIdentifier}
+                    role={isObserver ? undefined : 'button'}
+                    tabIndex={isObserver ? -1 : 0}
+                    aria-pressed={isObserver ? undefined : isHighlighted}
                     onClick={() => handleAyahClick(ayahIdentifier)}
-                    className={`mushaf-verse-span ${isHighlighted ? 'mushaf-verse-highlighted' : ''}`}
-                    title={isTeacher ? "انقر لتظليل الآية عند جميع طلاب الحلقة" : "آية قرآنية كريمة"}
+                    onKeyDown={(e) => {
+                      if (!isObserver && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        handleAyahClick(ayahIdentifier);
+                      }
+                    }}
+                    className={`mushaf-verse-span focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${isHighlighted ? 'mushaf-verse-highlighted' : ''}`}
+                    title={isTeacher ? t.live.mushaf.ayahTeacherTitle : t.live.mushaf.ayahStudentTitle}
                   >
                     {ayah.text}
                     <span className="ayah-number-badge">﴿{ayah.num}﴾</span>
@@ -654,122 +686,158 @@ export default function SyncedMushaf({
                 );
               })}
             </div>
+          ) : viewMode === 'interactive' && ayahFetchError ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center gap-3 my-auto">
+              <BookOpen size={40} className="opacity-60 text-[var(--wn-text-gold)]" aria-hidden="true" />
+              <p className="font-bold text-base">{t.live.mushaf.pageLabel} {currentPage} — {currentSurah.name}</p>
+              <p className="text-sm text-[var(--wn-text-secondary)] max-w-sm">
+                {t.live.mushaf.fallbackDesc}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAyahRetryNonce((n) => n + 1)}
+                  className="btn-primary min-h-[44px]"
+                >
+                  {t.common.retry}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageError(false);
+                    setViewMode('image');
+                  }}
+                  className="btn-secondary min-h-[44px]"
+                >
+                  {t.live.mushaf.viewImage}
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="mushaf-page-image-wrapper">
               {!imageError ? (
-                <img 
+                <img
                   src={pageImageSrc}
-                  alt={`صفحة المصحف الشريف ${currentPage}`}
+                  alt={`${t.live.mushaf.pageAlt} ${currentPage}`}
                   className="mushaf-page-image"
                   onError={() => setImageError(true)}
                   loading="eager"
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center p-12 text-center text-amber-800">
-                  <BookOpen size={48} className="mb-4 opacity-50" />
-                  <p className="font-bold text-lg mb-2">صفحة {currentPage} — {currentSurah.name}</p>
-                  <p className="text-sm text-gray-500 max-w-sm mb-4">
-                    يمكنك القراءة والتسميع مع الشيخ من خلال هذه الصفحة القرآنية.
+                <div className="flex flex-col items-center justify-center p-8 text-center text-[var(--wn-badge-gold-text)]">
+                  <BookOpen size={48} className="mb-4 opacity-50" aria-hidden="true" />
+                  <p className="font-bold text-lg mb-2">{t.live.mushaf.pageLabel} {currentPage} — {currentSurah.name}</p>
+                  <p className="text-sm text-[var(--wn-text-secondary)] max-w-sm mb-4">
+                    {t.live.mushaf.fallbackDesc}
                   </p>
-                  <button 
-                    onClick={() => setViewMode('interactive')}
-                    className="px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-semibold"
-                  >
-                    التبديل إلى الوضع التفاعلي
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setImageError(false)}
+                      className="btn-secondary min-h-[44px]"
+                    >
+                      {t.common.retry}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('interactive')}
+                      className="btn-primary min-h-[44px]"
+                    >
+                      {t.live.mushaf.switchInteractive}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* تذييل الصفحة برقمها */}
-          <div className="mt-auto pt-4 text-center text-xs text-amber-900/60 font-mono font-bold">
+          <div className="mt-auto pt-4 text-center text-xs text-[var(--wn-text-secondary)] font-mono font-bold">
             — {currentPage} —
           </div>
         </div>
       </div>
 
-      {/* ── نافذة فهرس السور والانتقال السريع ── */}
-      <AnimatePresence>
-        {showSurahModal && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <motion.div 
-              className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] flex flex-col overflow-hidden shadow-2xl"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+      <Modal
+        isOpen={showSurahModal}
+        onClose={() => setShowSurahModal(false)}
+        title={t.live.mushaf.surahModalTitle}
+        maxWidth="460px"
+      >
+        <div className="space-y-3" dir={dir}>
+          <div className="p-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] space-y-2.5">
+            <div className="relative">
+              <label htmlFor="mushaf-surah-search" className="sr-only">
+                {t.live.mushaf.searchPlaceholder}
+              </label>
+              <input
+                id="mushaf-surah-search"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t.live.mushaf.searchPlaceholder}
+                className="w-full min-h-[44px] ps-3 pe-9 py-2 border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--wn-focus)]"
+              />
+              <Search size={16} className="absolute end-3 top-3.5 text-[var(--wn-text-tertiary)] pointer-events-none" aria-hidden="true" />
+            </div>
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (jumpPageInput) jumpToPage(jumpPageInput);
+              }}
             >
-              <div className="p-4 border-b flex items-center justify-between bg-emerald-800 text-white">
-                <div className="flex items-center gap-2 font-bold text-lg font-amiri">
-                  <BookOpen size={20} />
-                  <span>فهرس سور القرآن الكريم</span>
-                </div>
-                <button 
-                  onClick={() => setShowSurahModal(false)}
-                  className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* حقل البحث أو القفز برقم الصفحة */}
-              <div className="p-3 border-b bg-gray-50 space-y-2">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="ابحث باسم السورة أو رقمها..."
-                    className="w-full px-3 py-2 border rounded-lg text-sm pr-9 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  />
-                  <Search size={16} className="absolute right-3 top-3 text-gray-400" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">انتقال لصفحة:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="604"
-                    placeholder="1-604"
-                    className="w-20 px-2 py-1 text-sm border rounded"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') jumpToPage(e.target.value);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* قائمة السور */}
-              <div className="overflow-y-auto flex-1 p-2 divide-y divide-gray-100">
-                {filteredSurahs.map((surah) => (
-                  <button
-                    key={surah.id}
-                    onClick={() => jumpToPage(surah.startPage)}
-                    className="w-full text-right p-3 hover:bg-emerald-50 rounded-lg flex items-center justify-between transition group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-900 font-bold text-xs flex items-center justify-center">
-                        {surah.id}
-                      </span>
-                      <div>
-                        <div className="font-bold text-sm text-gray-900 group-hover:text-emerald-900 font-amiri text-base">
-                          {surah.name}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {surah.type} • {surah.verses} آيات
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded font-mono">
-                      ص {surah.startPage}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
+              <label htmlFor="mushaf-jump-page" className="text-xs text-[var(--wn-text-secondary)] font-semibold">
+                {t.live.mushaf.jumpToPage}
+              </label>
+              <input
+                id="mushaf-jump-page"
+                type="number"
+                min="1"
+                max="604"
+                value={jumpPageInput}
+                onChange={(e) => setJumpPageInput(e.target.value)}
+                placeholder="1-604"
+                className="w-24 min-h-[44px] px-2.5 py-1.5 text-sm border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--wn-focus)]"
+              />
+              <button
+                type="submit"
+                disabled={!jumpPageInput}
+                className="btn-secondary min-h-[44px] px-3 text-xs"
+              >
+                {t.common.open}
+              </button>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="max-h-[52vh] overflow-y-auto divide-y divide-[var(--wn-border)] rounded-xl border border-[var(--wn-border)]">
+            {filteredSurahs.map((surah) => (
+              <button
+                key={surah.id}
+                type="button"
+                onClick={() => jumpToPage(surah.startPage)}
+                className="w-full min-h-[44px] text-start p-3 hover:bg-[var(--wn-emerald-soft)] flex items-center justify-between gap-2 transition group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-8 h-8 rounded-full bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] font-bold text-xs flex items-center justify-center shrink-0">
+                    {surah.id}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-bold text-base text-[var(--wn-text-primary)] group-hover:text-[var(--wn-heading)] font-amiri truncate">
+                      {surah.name}
+                    </div>
+                    <div className="text-xs text-[var(--wn-text-secondary)]">
+                      {surahTypeLabel(surah.type)} • {surah.verses} {t.live.mushaf.ayahsLabel}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs text-[var(--wn-badge-emerald-text)] bg-[var(--wn-emerald-soft)] px-2.5 py-1 rounded font-mono shrink-0">
+                  {t.live.mushaf.pageAbbr} {surah.startPage}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

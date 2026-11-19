@@ -3,15 +3,25 @@ import { Languages, Send, Mic, MicOff, Loader2 } from 'lucide-react';
 import { LANG_CODES, langLabel } from '../../lib/languages';
 import api from '../../lib/api';
 import { translateText } from '../../lib/translateApi';
+import { useI18n } from '../../i18n';
+import { useToast } from '../../context/ToastProvider';
+import { resolveIntlLocale } from '../../lib/locale';
 
-export default function SessionTranslateChat({ sessionId, myLang, partnerLang, isAr = true }) {
+export default function SessionTranslateChat({ sessionId, myLang, partnerLang, uiLocale }) {
+  const { locale, dir, t } = useI18n();
+  const toast = useToast();
+  const activeUiLocale = uiLocale || locale || 'ar';
+  const langLabelLocale = activeUiLocale === 'ar' ? 'ar' : 'en';
+
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [caption, setCaption] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const bottomRef = useRef(null);
   const sinceRef = useRef(null);
+  const recRef = useRef(null);
 
   const poll = useCallback(async () => {
     if (!sessionId) return;
@@ -26,13 +36,16 @@ export default function SessionTranslateChat({ sessionId, myLang, partnerLang, i
         });
         sinceRef.current = data.messages[data.messages.length - 1].createdAt;
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore background poll errors */ }
   }, [sessionId, myLang]);
 
   useEffect(() => {
     poll();
     const id = setInterval(poll, 2500);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      try { recRef.current?.stop?.(); } catch { /* ignore */ }
+    };
   }, [poll]);
 
   useEffect(() => {
@@ -43,12 +56,15 @@ export default function SessionTranslateChat({ sessionId, myLang, partnerLang, i
     e?.preventDefault();
     if (!text.trim() || sending) return;
     setSending(true);
+    setErrorMsg('');
     try {
-      await api.post(`/api/sessions/${sessionId}/translate/messages`, { text, lang: myLang }, { auth: true });
+      await api.post(`/api/sessions/${sessionId}/translate/messages`, { text: text.trim(), lang: myLang }, { auth: true });
       setText('');
       await poll();
     } catch (err) {
-      alert(err.message);
+      const msg = err?.message || t.live.translateChat.sendError;
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setSending(false);
     }
@@ -57,15 +73,17 @@ export default function SessionTranslateChat({ sessionId, myLang, partnerLang, i
   const toggleListen = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      alert(isAr ? 'المتصفح لا يدعم التعرف على الصوت — استخدم Chrome' : 'Speech recognition not supported');
+      toast.error(t.live.translateChat.speechUnsupported);
+      setErrorMsg(t.live.translateChat.speechUnsupported);
       return;
     }
     if (listening) {
+      try { recRef.current?.stop?.(); } catch { /* ignore */ }
       setListening(false);
       return;
     }
     const rec = new SR();
-    rec.lang = myLang === 'ar' ? 'ar-EG' : myLang === 'id' ? 'id-ID' : `${myLang}-${myLang.toUpperCase()}`;
+    rec.lang = resolveIntlLocale(myLang);
     rec.continuous = true;
     rec.interimResults = true;
     rec.onresult = async (ev) => {
@@ -79,40 +97,41 @@ export default function SessionTranslateChat({ sessionId, myLang, partnerLang, i
       }
     };
     rec.onend = () => setListening(false);
+    recRef.current = rec;
     rec.start();
     setListening(true);
   };
 
   return (
-    <div className="flex flex-col h-full bg-white border-l border-gray-200">
-      <div className="p-3 border-b bg-emerald-50 flex items-center gap-2">
-        <Languages className="text-emerald-600" size={20} />
-        <div>
-          <p className="font-bold text-sm">{isAr ? 'ترجمة الحصة' : 'Session translation'}</p>
-          <p className="text-xs text-gray-600">
-            {langLabel(myLang, isAr ? 'ar' : 'en')} → {langLabel(partnerLang, isAr ? 'ar' : 'en')}
+    <div className="flex flex-col h-full bg-[var(--wn-surface)] text-[var(--wn-text-primary)] border-s border-[var(--wn-border)]" dir={dir}>
+      <div className="p-3 border-b border-[var(--wn-border)] bg-[var(--wn-emerald-soft)] flex items-center gap-2">
+        <Languages className="text-[var(--wn-emerald)] shrink-0" size={20} aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="font-bold text-sm text-[var(--wn-heading)]">{t.live.translateChat.title}</p>
+          <p className="text-xs text-[var(--wn-text-secondary)]">
+            {langLabel(myLang, langLabelLocale)} → {langLabel(partnerLang, langLabelLocale)}
           </p>
         </div>
       </div>
 
       {caption && (
-        <div className="p-3 bg-amber-50 border-b text-sm">
-          <p className="text-xs text-amber-800 font-medium mb-1">{isAr ? 'ترجمة مباشرة' : 'Live caption'}</p>
-          <p>{caption}</p>
+        <div className="p-3 bg-[var(--wn-gold-soft)] border-b border-[var(--wn-border)] text-sm">
+          <p className="text-xs text-[var(--wn-badge-gold-text)] font-medium mb-1">{t.live.translateChat.liveCaption}</p>
+          <p className="text-[var(--wn-text-primary)]">{caption}</p>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 && (
-          <p className="text-center text-gray-400 text-sm py-8">{isAr ? 'اكتب رسالة — تُترجم تلقائياً للطرف الآخر' : 'Messages auto-translate for your partner'}</p>
+          <p className="text-center text-[var(--wn-text-secondary)] text-sm py-8">{t.live.translateChat.emptyHint}</p>
         )}
         {messages.map((m) => (
-          <div key={m._id} className={`text-sm ${m.isMe ? 'text-right' : 'text-left'}`}>
-            <p className="text-xs text-gray-500 mb-0.5">{m.userName}</p>
+          <div key={m._id} className={`text-sm ${m.isMe ? 'text-end' : 'text-start'}`}>
+            <p className="text-xs text-[var(--wn-text-secondary)] mb-0.5">{m.userName}</p>
             {m.lang !== myLang && m.text !== m.translation && (
-              <p className="text-gray-400 text-xs mb-1 line-through opacity-70">{m.text}</p>
+              <p className="text-[var(--wn-text-tertiary)] text-xs mb-1 line-through opacity-70">{m.text}</p>
             )}
-            <p className={`inline-block px-3 py-2 rounded-xl ${m.isMe ? 'bg-emerald-600 text-white' : 'bg-gray-100'}`}>
+            <p className={`inline-block px-3 py-2 rounded-xl ${m.isMe ? 'bg-[var(--wn-emerald)] text-[var(--wn-white)]' : 'bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] text-[var(--wn-text-primary)]'}`}>
               {m.translation || m.text}
             </p>
           </div>
@@ -120,30 +139,61 @@ export default function SessionTranslateChat({ sessionId, myLang, partnerLang, i
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={send} className="p-3 border-t flex gap-2">
-        <button type="button" onClick={toggleListen}
-          className={`p-2 rounded-lg border ${listening ? 'bg-red-100 border-red-300 text-red-600' : 'border-gray-200'}`}
-          title={isAr ? 'ترجمة صوتية' : 'Voice translate'}>
-          {listening ? <MicOff size={18} /> : <Mic size={18} />}
+      {errorMsg && (
+        <div role="alert" className="px-3 py-2 text-xs bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)] border-t border-[var(--wn-border)]">
+          {errorMsg}
+        </div>
+      )}
+
+      <form onSubmit={send} className="p-3 border-t border-[var(--wn-border)] flex gap-2">
+        <button
+          type="button"
+          onClick={toggleListen}
+          aria-label={t.live.translateChat.voiceTranslateTitle}
+          title={t.live.translateChat.voiceTranslateTitle}
+          aria-pressed={listening}
+          className={`min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+            listening
+              ? 'bg-[var(--wn-danger-soft)] border-[var(--wn-danger)] text-[var(--wn-text-danger)]'
+              : 'border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)]'
+          }`}
+        >
+          {listening ? <MicOff size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
         </button>
-        <input value={text} onChange={(e) => setText(e.target.value)}
-          placeholder={isAr ? 'اكتب بالعربية أو الإندونيسية...' : 'Type your message...'}
-          className="flex-1 border rounded-lg px-3 py-2 text-sm" />
-        <button type="submit" disabled={sending || !text.trim()} className="p-2 bg-emerald-600 text-white rounded-lg">
-          {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          aria-label={t.live.translateChat.inputPlaceholder}
+          placeholder={t.live.translateChat.inputPlaceholder}
+          className="flex-1 min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--wn-focus)]"
+        />
+        <button
+          type="submit"
+          disabled={sending || !text.trim()}
+          aria-label={t.common.send}
+          className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+        >
+          {sending ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Send size={18} aria-hidden="true" />}
         </button>
       </form>
     </div>
   );
 }
 
-export function LangSelect({ value, onChange, label, isAr }) {
+export function LangSelect({ value, onChange, label, isAr, uiLocale }) {
+  const { locale } = useI18n();
+  const activeLocale = uiLocale || locale || (isAr ? 'ar' : 'en');
+  const labelLocale = activeLocale === 'ar' ? 'ar' : 'en';
   return (
     <label className="text-xs flex flex-col gap-1">
-      <span className="text-gray-500">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="border rounded-lg px-2 py-1 text-sm">
+      <span className="text-[var(--wn-text-secondary)]">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--wn-focus)]"
+      >
         {LANG_CODES.map((c) => (
-          <option key={c} value={c}>{langLabel(c, isAr ? 'ar' : 'en')}</option>
+          <option key={c} value={c}>{langLabel(c, labelLocale)}</option>
         ))}
       </select>
     </label>
