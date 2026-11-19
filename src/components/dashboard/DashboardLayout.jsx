@@ -165,7 +165,7 @@ export default function DashboardLayout({ title, user, onLogout, children }) {
               type="button"
               onClick={onLogout}
               aria-label={logoutLabel}
-              className="wn-dashboard-action min-h-[44px] min-w-[44px] hover:!text-red-700 hover:!border-red-200"
+              className="wn-dashboard-action wn-dashboard-action--danger min-h-[44px] min-w-[44px] hover:text-[var(--wn-text-danger)] hover:border-[var(--wn-text-danger)] hover:bg-[var(--wn-danger-soft)] active:scale-[0.98]"
             >
               <LogOut size={15} aria-hidden="true" />
               <span>{logoutLabel}</span>
@@ -198,7 +198,7 @@ export function StatCard({ label, value, icon: Icon }) {
 }
 
 export function TabBar({ tabs = [], active, onChange, onTabChange, ariaLabel }) {
-  const { isRTL } = useI18n();
+  const { isRTL, t } = useI18n();
   const tabRefs = useRef([]);
   const handleSelect = onChange || onTabChange;
   const activeIndex = tabs.findIndex((tab) => tab.id === active);
@@ -234,7 +234,7 @@ export function TabBar({ tabs = [], active, onChange, onTabChange, ariaLabel }) 
         className="wn-dashboard-tabs__row"
         role="tablist"
         aria-orientation="horizontal"
-        aria-label={ariaLabel || undefined}
+        aria-label={ariaLabel || t?.dashboard?.navigation || 'Dashboard sections'}
       >
         {tabs.map((tab, index) => {
           const isSelected = active === tab.id;
