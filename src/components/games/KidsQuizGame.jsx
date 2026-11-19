@@ -1,74 +1,128 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trophy, RotateCcw } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
-const QUESTIONS = [
-  {
-    ar: 'كم عدد حروف الهجاء في اللغة العربية؟',
-    en: 'How many Arabic letters are there?',
-    options: { ar: ['28', '30', '26'], en: ['28', '30', '26'] },
-    correct: 0,
-  },
-  {
-    ar: 'ما حكم النون الساكنة عند التنوين؟',
-    en: 'What is the rule for noon sakinah with tanween?',
-    options: { ar: ['إظهار أو إدغام أو إقلاب أو إخفاء', 'إدغام فقط', 'إخفاء فقط'], en: ['Izhar, Idgham, Iqlab, or Ikhfa', 'Idgham only', 'Ikhfa only'] },
-    correct: 0,
-  },
-  {
-    ar: 'أين يقع حرف «ق» في كلمة «قرآن»؟',
-    en: 'Where is the letter Qaf in the word Quran?',
-    options: { ar: ['أول الكلمة', 'وسط الكلمة', 'آخر الكلمة'], en: ['Start', 'Middle', 'End'] },
-    correct: 0,
-  },
-];
-
-export default function KidsQuizGame({ locale = 'ar' }) {
-  const isAr = locale === 'ar';
+export default function KidsQuizGame() {
+  const { t, dir } = useI18n();
   const [idx, setIdx] = useState(0);
   const [score, setScore] = useState(0);
   const [picked, setPicked] = useState(null);
   const [done, setDone] = useState(false);
+  const timerRef = useRef(null);
 
-  const q = QUESTIONS[idx];
-  const opts = q.options[isAr ? 'ar' : 'en'];
+  useEffect(() => () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const quizCopy = t.lms?.kids?.quizGame || {};
+  const questions = [
+    {
+      prompt: quizCopy.q1 || 'How many Arabic letters are there?',
+      options: ['28', '30', '26'],
+      correct: 0,
+    },
+    {
+      prompt: quizCopy.q2 || 'What is the rule for Noon Sakinah and Tanween?',
+      options: [
+        quizCopy.q2Opt1 || 'Izhar, Idgham, Iqlab, or Ikhfa',
+        quizCopy.q2Opt2 || 'Idgham only',
+        quizCopy.q2Opt3 || 'Ikhfa only',
+      ],
+      correct: 0,
+    },
+    {
+      prompt: quizCopy.q3 || 'Where is the letter Qaf in the word Quran?',
+      options: [
+        quizCopy.q3Opt1 || 'Start',
+        quizCopy.q3Opt2 || 'Middle',
+        quizCopy.q3Opt3 || 'End',
+      ],
+      correct: 0,
+    },
+  ];
+
+  const q = questions[idx];
 
   const pick = (i) => {
     if (picked !== null) return;
     setPicked(i);
     if (i === q.correct) setScore((s) => s + 1);
-    setTimeout(() => {
-      if (idx + 1 >= QUESTIONS.length) setDone(true);
-      else { setIdx((n) => n + 1); setPicked(null); }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      if (idx + 1 >= questions.length) setDone(true);
+      else {
+        setIdx((n) => n + 1);
+        setPicked(null);
+      }
     }, 700);
   };
 
-  const reset = () => { setIdx(0); setScore(0); setPicked(null); setDone(false); };
+  const reset = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setIdx(0);
+    setScore(0);
+    setPicked(null);
+    setDone(false);
+  };
 
   if (done) {
     return (
-      <div className="bg-gradient-to-br from-amber-100 to-orange-50 rounded-2xl p-8 text-center border border-amber-200">
-        <Trophy className="mx-auto text-amber-500 mb-4" size={48} />
-        <h3 className="text-2xl font-bold mb-2">{isAr ? 'أحسنت!' : 'Well done!'}</h3>
-        <p className="text-lg text-gray-700 mb-6">{isAr ? `نقاطك: ${score} / ${QUESTIONS.length}` : `Score: ${score} / ${QUESTIONS.length}`}</p>
-        <button type="button" onClick={reset} className="inline-flex items-center gap-2 bg-amber-500 text-white px-5 py-2.5 rounded-xl font-semibold">
-          <RotateCcw size={18} /> {isAr ? 'العب مرة أخرى' : 'Play again'}
+      <div
+        dir={dir}
+        className="rounded-2xl p-8 text-center border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] text-[var(--wn-text-primary)] shadow-sm"
+      >
+        <Trophy className="mx-auto text-[var(--wn-text-gold)] mb-4" size={48} aria-hidden="true" />
+        <h3 className="text-2xl font-bold mb-2 text-[var(--wn-heading)]">
+          {quizCopy.wellDone || 'Well done!'}
+        </h3>
+        <p className="text-lg text-[var(--wn-text-secondary)] mb-6">
+          {t.lms?.kids?.score || 'Score'}: {score} / {questions.length}
+        </p>
+        <button
+          type="button"
+          onClick={reset}
+          className="wn-btn wn-btn--primary min-h-[44px]"
+        >
+          <RotateCcw size={18} aria-hidden="true" />
+          <span>{t.lms?.kids?.playAgain || 'Play again'}</span>
         </button>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-lg border border-amber-100">
-      <p className="text-xs text-amber-600 font-semibold mb-2">{isAr ? `سؤال ${idx + 1} من ${QUESTIONS.length}` : `Question ${idx + 1} of ${QUESTIONS.length}`}</p>
-      <h3 className="text-lg font-bold mb-5">{isAr ? q.ar : q.en}</h3>
+    <div
+      dir={dir}
+      className="rounded-2xl p-6 shadow-md border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
+    >
+      <p className="text-xs text-[var(--wn-text-gold)] font-semibold mb-2">
+        {quizCopy.questionOf || 'Question'} {idx + 1} {quizCopy.ofLabel || 'of'} {questions.length}
+      </p>
+      <h3 className="text-lg font-bold mb-5 text-[var(--wn-heading)]">{q.prompt}</h3>
       <div className="grid gap-3">
-        {opts.map((label, i) => (
-          <button key={label} type="button" onClick={() => pick(i)}
-            className={`text-right px-4 py-3 rounded-xl border-2 font-medium transition ${
-              picked === null ? 'border-gray-200 hover:border-amber-400 hover:bg-amber-50' :
-              i === q.correct ? 'border-emerald-500 bg-emerald-50 text-emerald-800' :
-              picked === i ? 'border-red-400 bg-red-50' : 'border-gray-100 opacity-60'
-            }`}>
+        {q.options.map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            disabled={picked !== null}
+            onClick={() => pick(i)}
+            className={`text-start min-h-[44px] px-4 py-3 rounded-xl border-2 font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:cursor-default ${
+              picked === null
+                ? 'border-[var(--wn-border)] bg-[var(--wn-surface-soft)] hover:border-[var(--wn-gold)] hover:bg-[var(--wn-gold-soft)]'
+                : i === q.correct
+                  ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald-soft)] text-[var(--wn-heading)]'
+                  : picked === i
+                    ? 'border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)]'
+                    : 'border-[var(--wn-border)] opacity-60'
+            }`}
+          >
             {label}
           </button>
         ))}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Award,
   Calendar,
@@ -13,29 +13,36 @@ import {
   Copy,
   ShieldCheck,
   QrCode,
+  Loader2,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
+import EmptyState from '../../components/shared/EmptyState';
 import { useToast } from '../../context/ToastProvider';
 import { downloadCertificatePdf } from '../../lib/certificatePdf';
 import { useI18n } from '../../i18n';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import '../../styles/public-experience.css';
 
 export default function CertificateView() {
   const { certificateId } = useParams();
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, isRTL, dir, t } = useI18n();
   const toast = useToast();
   const [certificate, setCertificate] = useState(null);
   const [verification, setVerification] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const loadErrorFallback = t.lms?.certificate?.loadError || 'Unable to load certificate';
 
   useEffect(() => {
     let ignore = false;
-    fetch('/api/certificates/' + certificateId)
+    setLoading(true);
+    setError(null);
+    fetch('/api/certificates/' + encodeURIComponent(certificateId))
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed');
@@ -46,7 +53,7 @@ export default function CertificateView() {
       })
       .catch((err) => {
         if (!ignore) {
-          setError(err.message || (isAr ? 'تعذر تحميل الشهادة' : 'Unable to load certificate'));
+          setError(err.message || loadErrorFallback);
         }
       })
       .finally(() => {
@@ -55,21 +62,30 @@ export default function CertificateView() {
     return () => {
       ignore = true;
     };
-  }, [certificateId, isAr]);
+  }, [certificateId, loadErrorFallback]);
 
   const handleDownload = async () => {
+    if (downloading || !certificate) return;
+    setDownloading(true);
     try {
       await downloadCertificatePdf({ certificate, locale });
-      toast.success(isAr ? 'تم تجهيز ملف الشهادة بصيغة PDF' : 'Certificate PDF downloaded');
+      toast.success(t.lms?.certificate?.pdfDownloaded || 'Certificate PDF downloaded');
     } catch {
-      toast.error(isAr ? 'تعذر إنشاء ملف PDF' : 'PDF generation failed');
+      toast.error(t.lms?.certificate?.pdfFailed || 'PDF generation failed');
+    } finally {
+      setDownloading(false);
     }
   };
 
+  const courseTitle = certificate
+    ? (isRTL
+        ? (certificate.course?.title?.[locale] || certificate.course?.title?.ar || certificate.course?.title?.en || '')
+        : (certificate.course?.title?.[locale] || certificate.course?.title?.en || certificate.course?.title?.ar || ''))
+    : '';
+
   const handleShare = async () => {
-    const title = isAr
-      ? 'شهادة إتمام ' + (certificate.course?.title?.ar || '')
-      : 'Certificate of completion';
+    const baseTitle = t.lms?.certificate?.shareTitle || 'Certificate of completion';
+    const title = courseTitle ? `${baseTitle} — ${courseTitle}` : baseTitle;
     if (navigator.share) {
       try {
         await navigator.share({ title, text: title, url: window.location.href });
@@ -77,16 +93,26 @@ export default function CertificateView() {
         // User cancelled share sheet
       }
     } else {
-      await navigator.clipboard.writeText(window.location.href);
-      toast.success(isAr ? 'تم نسخ رابط التحقق من الشهادة' : 'Verification link copied');
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(window.location.href);
+        toast.success(t.lms?.certificate?.linkCopied || 'Verification link copied');
+      } catch {
+        toast.error(t.common?.error || 'Error');
+      }
     }
   };
 
   const copyCertificateId = async () => {
     const code = certificate?.certificateId || certificateId;
     if (!code) return;
-    await navigator.clipboard?.writeText(String(code));
-    toast.success(isAr ? 'تم نسخ رقم الشهادة المرجعي' : 'Certificate ID copied');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(String(code));
+      toast.success(t.lms?.certificate?.idCopied || 'Certificate ID copied');
+    } catch {
+      toast.error(t.common?.error || 'Error');
+    }
   };
 
   if (loading) {
@@ -94,15 +120,15 @@ export default function CertificateView() {
       <>
         <SEOHead
           page={{
-            title: isAr ? 'التحقق من الشهادة' : 'Certificate verification',
+            title: t.lms?.certificate?.seoTitle || t.lms?.certificate?.verifyTitle || 'Certificate verification',
             url: '/verify-certificate/' + certificateId,
             noindex: true,
             canonical: false,
           }}
         />
         <GlobalHeader />
-        <main className="wn-public-shell" role="status" aria-live="polite">
-          <span className="sr-only">{isAr ? 'جاري التحقق من الشهادة...' : 'Verifying certificate...'}</span>
+        <main className="wn-public-shell" dir={dir} role="status" aria-live="polite">
+          <span className="sr-only">{t.lms?.certificate?.loadingMsg || 'Verifying certificate…'}</span>
           <section className="wn-utility-wrap max-w-4xl space-y-4">
             <Skeleton className="h-16 w-full rounded-2xl" />
             <div className="wn-certificate">
@@ -134,17 +160,24 @@ export default function CertificateView() {
       <>
         <SEOHead
           page={{
-            title: isAr ? 'التحقق من الشهادة' : 'Certificate verification',
+            title: t.lms?.certificate?.seoTitle || t.lms?.certificate?.verifyTitle || 'Certificate verification',
             url: '/verify-certificate/' + certificateId,
             noindex: true,
             canonical: false,
           }}
         />
         <GlobalHeader />
-        <main className="wn-public-shell min-h-[70vh] grid place-items-center px-4">
-          <div className="wn-public-empty max-w-xl w-full">
-            <XCircle size={48} />
-            <h3>{isAr ? 'الشهادة غير موجودة أو غير متاحة' : 'Certificate not found or unavailable'}</h3>
+        <main className="wn-public-shell min-h-[70vh] grid place-items-center px-4" dir={dir}>
+          <div className="max-w-xl w-full">
+            <EmptyState
+              icon={XCircle}
+              title={t.lms?.certificate?.notFound || t.lms?.certificate?.invalidOrNotFound || 'Certificate not found or unavailable'}
+              action={(
+                <Link to={localizedPath('/', locale)} className="wn-btn wn-btn--primary min-h-[44px]">
+                  {t.lms?.certificate?.backHome || 'Back to Home'}
+                </Link>
+              )}
+            />
           </div>
         </main>
         <GlobalFooter />
@@ -153,60 +186,50 @@ export default function CertificateView() {
   }
 
   const isValid = verification?.valid === true;
-  const courseTitle =
-    certificate.course?.title?.[locale] ||
-    certificate.course?.title?.ar ||
-    certificate.course?.title?.en ||
-    '';
   const studentName = certificate.student?.name || '—';
   const score = certificate.metadata?.score;
   const certCode = certificate.certificateId || certificateId;
+  const intlLocale = resolveIntlLocale(locale);
 
   return (
     <>
       <SEOHead
         page={{
-          title: isAr ? 'التحقق من شهادة ' + studentName : 'Certificate verification',
-          description: isAr
-            ? 'التحقق من شهادة صادرة وموثقة من نظام أكاديمية وحي ونماء.'
-            : 'Verify an official certificate issued by Wahy Wa Namaa Academy.',
+          title: `${t.lms?.certificate?.seoTitle || 'Certificate verification'} — ${studentName}`,
+          description: t.lms?.certificate?.seoDescription || 'Verify an official certificate issued by Wahy Wa Namaa Academy.',
           url: '/verify-certificate/' + certificateId,
           noindex: true,
           canonical: false,
         }}
       />
       <GlobalHeader />
-      <main className="wn-public-shell">
+      <main className="wn-public-shell" dir={dir}>
         <section className="wn-utility-wrap max-w-4xl">
           <div
             className={
               'mb-5 p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ' +
-              (isValid ? 'border-emerald-200 bg-emerald-50/90' : 'border-red-200 bg-red-50')
+              (isValid
+                ? 'border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] text-[var(--wn-heading)]'
+                : 'border-[var(--wn-danger)]/35 bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)]')
             }
           >
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3 min-w-0">
               {isValid ? (
-                <CheckCircle className="text-emerald-700 shrink-0 mt-0.5" size={22} />
+                <CheckCircle className="text-[var(--wn-success)] shrink-0 mt-0.5" size={22} aria-hidden="true" />
               ) : (
-                <XCircle className="text-red-700 shrink-0 mt-0.5" size={22} />
+                <XCircle className="text-[var(--wn-text-danger)] shrink-0 mt-0.5" size={22} aria-hidden="true" />
               )}
-              <div>
-                <strong className={isValid ? 'text-emerald-950 block' : 'text-red-900 block'}>
+              <div className="min-w-0">
+                <strong className="block">
                   {isValid
-                    ? isAr
-                      ? 'شهادة رسمية موثّقة في سجل أكاديمية وَحْيٌ وَنَمَاء'
-                      : 'Official Certificate Verified in Wahy Wa Namaa Registry'
-                    : isAr
-                      ? 'تعذر التحقق من صلاحية الشهادة'
-                      : 'Certificate could not be verified'}
+                    ? (t.lms?.certificate?.verifiedTitle || 'Official Certificate Verified in Wahy Wa Namaa Registry')
+                    : (t.lms?.certificate?.notVerifiedTitle || 'Certificate could not be verified')}
                 </strong>
                 {!isValid && verification?.reason ? (
-                  <p className="text-xs mt-1 text-red-700">{verification.reason}</p>
+                  <p className="text-xs mt-1">{verification.reason}</p>
                 ) : (
-                  <p className="text-xs mt-0.5 text-emerald-800/80">
-                    {isAr
-                      ? 'تم التحقق إلكترونيًا من صحة البيانات وتطابقها مع السجل الأكاديمي.'
-                      : 'Cryptographically and digitally matched with academy records.'}
+                  <p className="text-xs mt-0.5 text-[var(--wn-text-secondary)]">
+                    {t.lms?.certificate?.verifiedDesc || 'Digitally verified and matched with official academy records.'}
                   </p>
                 )}
               </div>
@@ -215,41 +238,42 @@ export default function CertificateView() {
             <button
               type="button"
               onClick={copyCertificateId}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-100/60 transition"
+              aria-label={t.lms?.certificate?.copyId || 'Copy Certificate ID'}
+              className="min-h-[44px] inline-flex items-center gap-1.5 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-3.5 py-2 text-xs font-bold text-[var(--wn-heading)] hover:bg-[var(--wn-surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] transition"
             >
-              <Copy size={13} />
+              <Copy size={14} aria-hidden="true" />
               <span>{certCode}</span>
             </button>
           </div>
 
           <article className="wn-certificate">
             <header className="wn-certificate__head">
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[#efd28e] mb-2">
-                <Sparkles size={14} />
-                {isAr ? 'وثيقة إتمام معتمدة' : 'CERTIFIED COMPLETION DOCUMENT'}
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[var(--wn-gold)] mb-2">
+                <Sparkles size={14} aria-hidden="true" />
+                {t.lms?.certificate?.eyebrow || 'CERTIFIED COMPLETION DOCUMENT'}
               </div>
-              <Award size={52} className="mx-auto mt-2 text-[#efd28e]" />
-              <h1 className="mt-2">{isAr ? 'شهادة إتمام وإنجاز' : 'Certificate of Completion'}</h1>
-              <p>{isAr ? 'أكاديمية وَحْيٌ وَنَمَاء للقرآن الكريم والعلوم الشرعية' : 'Wahy Wa Namaa Academy for Quran & Islamic Studies'}</p>
+              <Award size={52} className="mx-auto mt-2 text-[var(--wn-gold)]" aria-hidden="true" />
+              <h1 className="mt-2">{t.lms?.certificate?.heading || 'Certificate of Completion'}</h1>
+              <p>{t.lms?.certificate?.academySubtitle || 'Wahy Wa Namaa Academy for Quran & Islamic Studies'}</p>
             </header>
 
             <div className="wn-certificate__body">
               <p className="text-sm text-[var(--wn-text-secondary)]">
-                {isAr ? 'تشهد إدارة الأكاديمية بأن الطالب / الطالبة' : 'This certificate proudly attests that'}
+                {t.lms?.certificate?.attestsThat || 'This certificate proudly attests that'}
               </p>
               <h2 className="wn-certificate__name">{studentName}</h2>
               <p className="text-sm text-[var(--wn-text-secondary)]">
-                {isAr ? 'قد أتم بنجاح متطلبات البرنامج التعليمي المسجل باسم' : 'has successfully completed the recorded program'}
+                {t.lms?.certificate?.completedProgram || 'has successfully completed the recorded program'}
               </p>
               <h3 className="wn-certificate__course mt-2">{courseTitle}</h3>
 
               <div className="wn-certificate__meta">
                 <div>
-                  <Calendar size={19} />
-                  <small>{isAr ? 'تاريخ الإصدار' : 'Issue date'}</small>
+                  <Calendar size={19} aria-hidden="true" />
+                  <small>{t.lms?.certificate?.issueDateLabel || 'Issue date'}</small>
                   <strong>
                     {certificate.issuedAt
-                      ? new Date(certificate.issuedAt).toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                      ? new Date(certificate.issuedAt).toLocaleDateString(intlLocale, {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric',
@@ -258,51 +282,62 @@ export default function CertificateView() {
                   </strong>
                 </div>
                 <div>
-                  <BookOpen size={19} />
-                  <small>{isAr ? 'النتيجة المسجلة' : 'Recorded score'}</small>
+                  <BookOpen size={19} aria-hidden="true" />
+                  <small>{t.lms?.certificate?.recordedScoreLabel || 'Recorded score'}</small>
                   <strong>{score != null ? score + '%' : '—'}</strong>
                 </div>
                 <div>
-                  <User size={19} />
-                  <small>{isAr ? 'معرّف الشهادة' : 'Certificate ID'}</small>
+                  <User size={19} aria-hidden="true" />
+                  <small>{t.lms?.certificate?.certIdLabel || 'Certificate ID'}</small>
                   <strong>{certCode}</strong>
                 </div>
               </div>
 
               {/* QR & Verification Seal Section */}
-              <div className="mt-7 inline-flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-amber-200/70 bg-[#fffdf7] p-4 text-start max-w-lg mx-auto">
+              <div className="mt-7 inline-flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-[var(--wn-border-strong)] bg-[var(--wn-surface-soft)] p-4 text-start max-w-lg mx-auto">
                 {certificate.qrCode ? (
                   <img
                     src={certificate.qrCode}
-                    alt="QR"
-                    className="w-28 h-28 rounded-xl border border-amber-200/60 bg-white p-1.5 shrink-0"
+                    alt={t.lms?.certificate?.digitalSealTitle || 'QR'}
+                    className="w-28 h-28 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-white)] p-1.5 shrink-0"
                   />
                 ) : (
-                  <div className="w-20 h-20 rounded-xl border border-emerald-200 bg-emerald-50 grid place-items-center text-emerald-800 shrink-0">
-                    <QrCode size={36} />
+                  <div className="w-20 h-20 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] grid place-items-center text-[var(--wn-heading)] shrink-0">
+                    <QrCode size={36} aria-hidden="true" />
                   </div>
                 )}
                 <div>
-                  <span className="inline-flex items-center gap-1 text-xs font-extrabold text-emerald-800">
-                    <ShieldCheck size={15} />
-                    {isAr ? 'ختم التحقق الرقمي المعتمد' : 'Verified Digital Seal'}
+                  <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[var(--wn-heading)]">
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    {t.lms?.certificate?.digitalSealTitle || 'Verified Digital Seal'}
                   </span>
                   <p className="mt-1 text-xs leading-relaxed text-[var(--wn-text-secondary)]">
-                    {isAr
-                      ? 'يمكن لأي جهة التحقق الفوري من صحة هذه الشهادة عبر مسح رمز الاستجابة السريعة (QR) أو عبر الرابط الرسمي للشهادة.'
-                      : 'Anyone can verify the authenticity of this certificate by scanning the QR code or visiting the official verification URL.'}
+                    {t.lms?.certificate?.digitalSealDesc || 'Anyone can verify the authenticity of this certificate by scanning the QR code or visiting the official verification URL.'}
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-wrap justify-center gap-2.5 mt-7">
-                <button onClick={handleDownload} className="wn-btn wn-btn--primary">
-                  <Download size={16} />
-                  {isAr ? 'تحميل الشهادة PDF' : 'Download PDF'}
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="wn-btn wn-btn--primary min-h-[44px]"
+                >
+                  {downloading ? (
+                    <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download size={16} aria-hidden="true" />
+                  )}
+                  <span>{t.lms?.certificate?.downloadPdfBtn || t.lms?.certificate?.downloadPdf || 'Download PDF'}</span>
                 </button>
-                <button onClick={handleShare} className="wn-btn wn-btn--secondary">
-                  <Share2 size={16} />
-                  {isAr ? 'مشاركة رابط التحقق' : 'Share verification link'}
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="wn-btn wn-btn--secondary min-h-[44px]"
+                >
+                  <Share2 size={16} aria-hidden="true" />
+                  <span>{t.lms?.certificate?.shareLinkBtn || 'Share verification link'}</span>
                 </button>
               </div>
             </div>

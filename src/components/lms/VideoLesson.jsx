@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { useI18n } from '../../i18n';
+import Skeleton from '../shared/Skeleton';
 import api from '../../lib/api';
 
 function resolveSafeVideoSource(rawUrl) {
@@ -59,26 +62,35 @@ function resolveSafeVideoSource(rawUrl) {
   return { kind: 'none', url: '' };
 }
 
-export default function VideoLesson({ lesson, locale }) {
+export default function VideoLesson({ lesson, locale: propLocale }) {
+  const { locale: ctxLocale, isRTL, t, dir } = useI18n();
+  const locale = propLocale || ctxLocale;
   const protectedMediaUrl = lesson?.content?.video?.protectedMediaUrl || '';
   const rawUrl = lesson?.content?.video?.url || '';
   const [signedUrl, setSignedUrl] = useState('');
   const [loadingMedia, setLoadingMedia] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let active = true;
     if (!protectedMediaUrl) {
       setSignedUrl('');
+      setMediaError('');
       setLoadingMedia(false);
       return undefined;
     }
     setLoadingMedia(true);
+    setMediaError('');
     api.get(protectedMediaUrl, { auth: true })
       .then((res) => {
         if (active) setSignedUrl(typeof res?.url === 'string' ? res.url : '');
       })
-      .catch(() => {
-        if (active) setSignedUrl('');
+      .catch((err) => {
+        if (active) {
+          setSignedUrl('');
+          setMediaError(err?.message || t.lms?.videoLesson?.loadError || 'Unable to load video');
+        }
       })
       .finally(() => {
         if (active) setLoadingMedia(false);
@@ -86,18 +98,41 @@ export default function VideoLesson({ lesson, locale }) {
     return () => {
       active = false;
     };
-  }, [protectedMediaUrl]);
+  }, [protectedMediaUrl, retryCount, t.lms?.videoLesson?.loadError]);
 
   const resolved = signedUrl
     ? { kind: 'video', url: signedUrl }
     : resolveSafeVideoSource(rawUrl);
 
+  const videoTitle = isRTL
+    ? (lesson?.title?.[locale] || lesson?.title?.ar || lesson?.title?.en || t.lms?.videoLesson?.lessonVideoTitle || 'Lesson video')
+    : (lesson?.title?.[locale] || lesson?.title?.en || lesson?.title?.ar || t.lms?.videoLesson?.lessonVideoTitle || 'Lesson video');
+
+  const description = isRTL
+    ? (lesson?.description?.[locale] || lesson?.description?.ar || lesson?.description?.en || '')
+    : (lesson?.description?.[locale] || lesson?.description?.en || lesson?.description?.ar || '');
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-2xl">
+    <div className="max-w-4xl mx-auto" dir={dir}>
+      <div className="aspect-video bg-[var(--wn-surface-sunken)] border border-[var(--wn-border)] rounded-2xl overflow-hidden shadow-lg">
         {loadingMedia ? (
-          <div className="w-full h-full flex items-center justify-center text-gray-400">
-            {locale === 'ar' ? 'جاري تجهيز الفيديو...' : 'Loading video...'}
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6" role="status" aria-live="polite">
+            <Skeleton className="w-24 h-24 rounded-full" />
+            <span className="text-sm text-[var(--wn-text-secondary)]">
+              {t.lms?.videoLesson?.videoLoading || 'Loading video…'}
+            </span>
+          </div>
+        ) : mediaError && resolved.kind === 'none' ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center" role="alert">
+            <p className="text-sm font-semibold text-[var(--wn-text-danger)]">{mediaError}</p>
+            <button
+              type="button"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="wn-btn wn-btn--primary min-h-[44px]"
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+              <span>{t.common?.retry || 'Try again'}</span>
+            </button>
           </div>
         ) : resolved.kind === 'video' ? (
           <video
@@ -106,12 +141,12 @@ export default function VideoLesson({ lesson, locale }) {
             controlsList="nodownload"
             playsInline
             preload="metadata"
-            className="w-full h-full"
+            className="w-full h-full bg-black"
           />
         ) : resolved.kind === 'embed' ? (
           <iframe
             src={resolved.url}
-            title={lesson?.title?.[locale] || lesson?.title?.ar || 'Lesson video'}
+            title={videoTitle}
             className="w-full h-full"
             allowFullScreen
             sandbox="allow-scripts allow-same-origin allow-presentation"
@@ -119,14 +154,14 @@ export default function VideoLesson({ lesson, locale }) {
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400">
-            {locale === 'ar' ? 'لا يوجد فيديو' : 'No video available'}
+          <div className="w-full h-full flex items-center justify-center text-[var(--wn-text-secondary)] p-6 text-center">
+            {t.lms?.videoLesson?.noVideo || 'No video available'}
           </div>
         )}
       </div>
-      {lesson?.description?.[locale] && (
-        <p className="mt-4 text-gray-300 leading-relaxed">{lesson.description[locale]}</p>
-      )}
+      {description ? (
+        <p className="mt-4 text-[var(--wn-text-secondary)] leading-relaxed">{description}</p>
+      ) : null}
     </div>
   );
 }

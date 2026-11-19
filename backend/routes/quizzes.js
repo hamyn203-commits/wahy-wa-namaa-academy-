@@ -516,11 +516,18 @@ router.post('/attempts/:attemptId/submit', protect, authorize('student'), async 
         if (question.type === 'multiple-choice' || question.type === 'true-false') {
           const correctOption = question.options.find(opt => opt.isCorrect);
           if (correctOption) {
-            const correctTexts = Object.values(correctOption.text || {})
+            const rawText = typeof correctOption.text?.toObject === 'function'
+              ? correctOption.text.toObject()
+              : (correctOption.text || {});
+            const correctTexts = Object.values(rawText)
               .filter((t) => typeof t === 'string' && t.trim())
               .map(t => t.toLowerCase().trim());
             const submitted = String(answer.answer || '').toLowerCase().trim();
             answer.isCorrect = Boolean(submitted && correctTexts.includes(submitted));
+          } else if (question.type === 'true-false' && question.correctAnswer) {
+            const expected = String(question.correctAnswer).toLowerCase().trim();
+            const submitted = String(answer.answer || '').toLowerCase().trim();
+            answer.isCorrect = Boolean(expected && submitted === expected);
           } else {
             answer.isCorrect = false;
           }
