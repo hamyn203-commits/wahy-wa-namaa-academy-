@@ -17,13 +17,14 @@ import Skeleton from './shared/Skeleton';
 function useStudentContext() {
   const { user, isLoading, logout } = useAuth();
   const { locale: paramLocale } = useParams();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const activeLocale = paramLocale || locale;
   return {
     user,
     isLoading,
     logout,
     locale: activeLocale,
+    t,
     isStudent: user?.role === 'student',
     dashboardPath: dashboardPathForRole('student', activeLocale),
   };
@@ -40,10 +41,10 @@ export function StudentPublicRedirect({ tab, children }) {
   return children;
 }
 
-function StudentShellLoadingSkeleton({ isStudent, title, user, onLogout }) {
+function StudentShellLoadingSkeleton({ isStudent, title, user, onLogout, loadingLabel }) {
   const skeletonBody = (
     <div className="page-container py-8 space-y-5" role="status" aria-live="polite">
-      <span className="sr-only">جاري التحميل...</span>
+      <span className="sr-only">{loadingLabel}</span>
       <Skeleton className="h-44 w-full rounded-2xl" />
       <div className="grid gap-4 md:grid-cols-3">
         <Skeleton className="h-28 w-full rounded-2xl" />
@@ -74,7 +75,7 @@ function StudentShellLoadingSkeleton({ isStudent, title, user, onLogout }) {
  *  - 'block-unless-renewal': like 'block', but `?renew=` (same tutor renewal) stays allowed
  */
 export function StudentShell({ lockPolicy, children }) {
-  const { user, isLoading, logout, locale, isStudent, dashboardPath } = useStudentContext();
+  const { user, isLoading, logout, t, isStudent, dashboardPath } = useStudentContext();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const needsLock = isStudent && Boolean(lockPolicy);
@@ -87,7 +88,8 @@ export function StudentShell({ lockPolicy, children }) {
     }
   }, [lockPolicy, params.id]);
 
-  const title = locale === 'ar' ? 'لوحة الطالب' : locale === 'id' ? 'Dasbor Siswa' : 'Student Dashboard';
+  const title = t?.student?.shellTitle || t?.student?.dashboardTitle || 'Student Dashboard';
+  const loadingLabel = t?.common?.loading || 'Loading…';
 
   if (isLoading || (needsLock && lockLoading)) {
     return (
@@ -96,6 +98,7 @@ export function StudentShell({ lockPolicy, children }) {
         title={title}
         user={user}
         onLogout={logout}
+        loadingLabel={loadingLabel}
       />
     );
   }

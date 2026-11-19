@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Calendar, CheckCircle, FileText, Star, Trophy, BookOpen,
   Upload, Clock, Users, X, Award, Video, Gift, Copy, CreditCard,
-  Mic, Square, RotateCcw, Send, Sparkles, MoreHorizontal, UserRound, Megaphone
+  Mic, Square, RotateCcw, Send, Sparkles, MoreHorizontal, UserRound, Megaphone,
+  Loader2, RefreshCw
 } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 import DashboardLayout, { StatCard } from '../../components/dashboard/DashboardLayout';
@@ -14,12 +15,14 @@ import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { TASK_TYPES } from '../TeacherRegistration/constants';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import { localizeInternalHref } from '../../lib/navigation';
 import { apiUrl } from '../../config';
 import StudentTeacherMarketplace from './TeacherMarketplace';
 import SessionChatModal from '../../components/session/SessionChatModal';
 import SupportChat, { SupportLauncher } from '../../components/support/SupportChat';
+import EmptyState from '../../components/shared/EmptyState';
+import Modal from '../../components/shared/Modal';
 import Skeleton from '../../components/shared/Skeleton';
 import { StudentInspirationStrip, getDailyQuranicDua } from '../../components/dashboard/QuranJourneyWidgets';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
@@ -40,35 +43,32 @@ function getSessionLiveRoomPath(session) {
   return identifier ? `/live/${identifier}` : '/live';
 }
 
-function guardianRelationshipLabel(value, locale) {
-  const ar = { father: 'الأب', mother: 'الأم', guardian: 'ولي الأمر / الوصي', other: 'ولي أمر' };
-  const en = { father: 'Father', mother: 'Mother', guardian: 'Guardian', other: 'Guardian' };
-  return (locale === 'ar' ? ar : en)[value] || (locale === 'ar' ? 'ولي الأمر' : 'Guardian');
+function guardianRelationshipLabel(value, sd = {}) {
+  const map = sd.guardianRel || {};
+  return map[value] || map.guardian || 'Guardian';
 }
 
-function learnerLevelLabel(level, locale) {
-  const ar = { beginner: 'مبتدئ', intermediate: 'متوسط', advanced: 'متقدم', ijazah: 'إجازة' };
-  const en = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced', ijazah: 'Ijazah' };
-  return (locale === 'ar' ? ar : en)[level] || (locale === 'ar' ? 'غير محدد' : 'Not set');
+function learnerLevelLabel(level, ps = {}, acc = {}) {
+  const levels = ps.levels || {};
+  return levels[level] || acc.notSet || 'Not set';
 }
 
-function learnerTrackLabel(track, locale) {
-  const ar = { memorization: 'الحفظ والمراجعة', tajweed_ijazah: 'التجويد والإجازة', kids_foundation: 'تأسيس الأطفال' };
-  const en = { memorization: 'Memorization', tajweed_ijazah: 'Tajweed and Ijazah', kids_foundation: 'Kids foundation' };
-  return (locale === 'ar' ? ar : en)[track] || (locale === 'ar' ? 'لم يتم الاختيار' : 'Not selected');
+function learnerTrackLabel(track, ps = {}, acc = {}) {
+  const tracks = ps.tracks || {};
+  return tracks[track] || acc.notSelected || 'Not selected';
 }
 
-function guardianInvitationStatus(status, locale) {
-  const ar = { pending: 'بانتظار ولي الأمر', accepted: 'تم الربط', rejected: 'تم الرفض', cancelled: 'ملغي', expired: 'انتهت الصلاحية' };
-  const en = { pending: 'Waiting for guardian', accepted: 'Linked', rejected: 'Rejected', cancelled: 'Cancelled', expired: 'Expired' };
-  return (locale === 'ar' ? ar : en)[status] || status;
+function guardianInvitationStatus(status, sd = {}) {
+  const map = sd.guardianStatus || {};
+  return map[status] || status;
 }
 
-
-function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, locale }) {
+function StudentCommandBar({ primaryItems, secondaryItems, active, onChange }) {
+  const { t } = useI18n();
+  const sd = t?.student?.dashboard || {};
+  const common = t?.common || {};
   const [moreOpen, setMoreOpen] = useState(false);
   const secondaryActiveItem = secondaryItems.find((item) => item.id === active);
-  const isAr = locale === 'ar';
 
   const selectItem = (id) => {
     onChange(id);
@@ -77,12 +77,12 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
 
   return (
     <div className="wn-student-command-shell">
-      <nav className="wn-student-command" aria-label={isAr ? 'التنقل داخل لوحة الطالب' : 'Student dashboard navigation'}>
+      <nav className="wn-student-command" aria-label={sd.navAria || 'Student dashboard navigation'}>
         <div className="wn-student-command__identity" aria-hidden="true">
           <span className="wn-student-command__identity-icon"><Sparkles size={17} /></span>
           <div>
-            <strong>{isAr ? 'مساحتك التعليمية' : 'Your learning space'}</strong>
-            <small>{isAr ? 'كل رحلتك من مكان واحد' : 'Your journey in one place'}</small>
+            <strong>{sd.spaceTitle || 'Your learning space'}</strong>
+            <small>{sd.spaceSubtitle || 'Your journey in one place'}</small>
           </div>
         </div>
 
@@ -97,7 +97,7 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
                 className={'wn-student-command__item ' + (selected ? 'is-active' : '')}
                 aria-current={selected ? 'page' : undefined}
               >
-                <span className="wn-student-command__item-icon"><Icon size={18} /></span>
+                <span className="wn-student-command__item-icon"><Icon size={18} aria-hidden="true" /></span>
                 <span className="wn-student-command__item-copy">
                   <strong>{label}</strong>
                 </span>
@@ -115,9 +115,9 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
             aria-expanded={moreOpen}
             aria-haspopup="menu"
           >
-            <span className="wn-student-command__item-icon"><MoreHorizontal size={19} /></span>
+            <span className="wn-student-command__item-icon"><MoreHorizontal size={19} aria-hidden="true" /></span>
             <span className="wn-student-command__item-copy">
-              <strong>{isAr ? 'المزيد' : 'More'}</strong>
+              <strong>{sd.more || 'More'}</strong>
               {secondaryActiveItem ? <small>{secondaryActiveItem.label}</small> : null}
             </span>
           </button>
@@ -126,11 +126,16 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
             <div className="wn-student-command__more-panel" role="menu">
               <div className="wn-student-command__more-heading">
                 <div>
-                  <span>{isAr ? 'أدوات إضافية' : 'More tools'}</span>
-                  <strong>{isAr ? 'كل ما تحتاجه في رحلتك' : 'Everything else you need'}</strong>
+                  <span>{sd.moreToolsTitle || 'More tools'}</span>
+                  <strong>{sd.moreToolsSubtitle || 'Everything else you need'}</strong>
                 </div>
-                <button type="button" onClick={() => setMoreOpen(false)} aria-label={isAr ? 'إغلاق' : 'Close'}>
-                  <X size={17} />
+                <button
+                  type="button"
+                  onClick={() => setMoreOpen(false)}
+                  aria-label={common.close || 'Close'}
+                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                >
+                  <X size={17} aria-hidden="true" />
                 </button>
               </div>
               <div className="wn-student-command__more-grid">
@@ -144,7 +149,7 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
                       onClick={() => selectItem(id)}
                       className={'wn-student-command__more-item ' + (selected ? 'is-active' : '')}
                     >
-                      <span className="wn-student-command__more-icon"><Icon size={18} /></span>
+                      <span className="wn-student-command__more-icon"><Icon size={18} aria-hidden="true" /></span>
                       <span>
                         <strong>{label}</strong>
                         {description ? <small>{description}</small> : null}
@@ -162,64 +167,58 @@ function StudentCommandBar({ primaryItems, secondaryItems, active, onChange, loc
   );
 }
 
-const getStatusLabel = (status, locale) => {
-  const labels = {
-    id: {
-      pending: 'Menunggu',
-      accepted: 'Dikonfirmasi',
-      rejected: 'Ditolak',
-      completed: 'Selesai',
-      cancelled: 'Dibatalkan',
-    },
-    ar: {
-      pending: 'قيد الانتظار',
-      accepted: 'مؤكدة',
-      rejected: 'مرفوضة',
-      completed: 'مكتملة',
-      cancelled: 'ملغاة',
-    },
-    en: {
-      pending: 'Pending',
-      accepted: 'Confirmed',
-      rejected: 'Rejected',
-      completed: 'Completed',
-      cancelled: 'Cancelled',
-    }
-  };
-  const active = labels[locale] || labels.en;
-  return active[status] || status;
+const getStatusLabel = (status, sd = {}) => {
+  const labels = sd.status || {};
+  return labels[status] || status;
 };
 
-const getHwStatus = (status, locale) => {
-  const statuses = {
-    id: {
-      pending: { label: 'Belum Dikirim', cls: 'bg-yellow-100 text-yellow-700' },
-      submitted: { label: 'Dikirim', cls: 'bg-blue-100 text-blue-700' },
-      done: { label: 'Disetujui', cls: 'bg-green-100 text-green-700' },
-    },
-    ar: {
-      pending: { label: 'لم يُسلّم', cls: 'bg-yellow-100 text-yellow-700' },
-      submitted: { label: 'مُسلّم', cls: 'bg-blue-100 text-blue-700' },
-      done: { label: 'معتمد', cls: 'bg-green-100 text-green-700' },
-    },
-    en: {
-      pending: { label: 'Pending', cls: 'bg-yellow-100 text-yellow-700' },
-      submitted: { label: 'Submitted', cls: 'bg-blue-100 text-blue-700' },
-      done: { label: 'Approved', cls: 'bg-green-100 text-green-700' },
-    }
+const getHwStatus = (status, sd = {}) => {
+  const labels = sd.hwStatus || {};
+  const map = {
+    pending: { label: labels.pending || 'Pending', cls: 'bg-[var(--wn-gold-soft)] text-[var(--wn-text-gold)] border border-[var(--wn-border-strong)]' },
+    submitted: { label: labels.submitted || 'Submitted', cls: 'bg-[var(--wn-mint-soft)] text-[var(--wn-teal-dark)] border border-[var(--wn-border-mint)]' },
+    done: { label: labels.done || 'Approved', cls: 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)]' },
   };
-  const active = statuses[locale] || statuses.en;
-  return active[status] || active.pending;
+  return map[status] || map.pending;
 };
+
+function pickLocalizedTitle(obj, locale, fallback = '') {
+  if (!obj) return fallback;
+  if (typeof obj === 'string') return obj;
+  return obj[locale] || obj.en || obj.ar || fallback;
+}
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, ready, logout } = useRequireAuth(['student']);
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const lp = (path) => localizedPath(path, locale);
   const toast = useToast();
   const { stats: gameStats, badges } = useGamificationApi();
+
+  const st = t?.student || {};
+  const sd = st.dashboard || {};
+  const ov = sd.overview || {};
+  const acc = sd.account || {};
+  const trT = sd.trials || {};
+  const sessT = sd.sessionsTab || {};
+  const hwT = sd.homeworkTab || {};
+  const evT = sd.evaluationsTab || {};
+  const certT = sd.certificatesTab || {};
+  const recT = sd.recordingsTab || {};
+  const achT = sd.achievementsTab || {};
+  const refT = sd.referralTab || {};
+  const updT = sd.teacherUpdatesTab || {};
+  const modT = sd.modals || {};
+  const scT = sd.sessionCard || {};
+  const errT = st.errors || {};
+  const actT = st.actions || {};
+  const psT = st.profileSetup || {};
+  const qwT = st.quranWidgets || {};
+  const tabsT = st.tabs || {};
+  const common = t?.common || {};
+  const intlLocale = resolveIntlLocale(locale);
 
   const [requestedTab, setTab] = useState('overview');
   const [profile, setProfile] = useState(null);
@@ -229,14 +228,14 @@ export default function StudentDashboard() {
   const [homework, setHomework] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [discoverTeachers, setDiscoverTeachers] = useState([]);
-  // Sections whose request failed on the last load, so the UI can show
-  // "could not load + retry" instead of a misleading empty state.
   const [loadErrors, setLoadErrors] = useState({});
   const [evaluations, setEvaluations] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [courses, setCourses] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  const [certificatesLoaded, setCertificatesLoaded] = useState(false);
   const [recordings, setRecordings] = useState([]);
+  const [recordingsLoaded, setRecordingsLoaded] = useState(false);
   const [referral, setReferral] = useState(null);
   const [teacherUpdates, setTeacherUpdates] = useState([]);
   const [teacherUpdateVideoUrls, setTeacherUpdateVideoUrls] = useState({});
@@ -248,11 +247,12 @@ export default function StudentDashboard() {
   const [renewalSessionCount, setRenewalSessionCount] = useState(8);
   const [renewingSubscription, setRenewingSubscription] = useState(false);
   const [guardianInviteForm, setGuardianInviteForm] = useState({ guardianPhone: '', relationship: 'father' });
+  const [guardianPhoneError, setGuardianPhoneError] = useState('');
   const [savingGuardianInvite, setSavingGuardianInvite] = useState(false);
+  const [cancelInviteModal, setCancelInviteModal] = useState(null);
+  const [cancellingInviteId, setCancellingInviteId] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Once a tutor is chosen on a subscription the student stays with that tutor:
-  // the tutor marketplace is closed and only the chosen tutor is listed.
   const teacherLock = teacherLockFromSubscriptions(subscriptions);
   const tab = teacherLock && requestedTab === 'discover' ? 'overview' : requestedTab;
   const myTeachers = teacherLock
@@ -261,8 +261,10 @@ export default function StudentDashboard() {
 
   const [reviewModal, setReviewModal] = useState(null);
   const [reviewForm, setReviewForm] = useState(emptyReview);
+  const [submittingReview, setSubmittingReview] = useState(false);
   const [bookModal, setBookModal] = useState(null);
   const [bookForm, setBookForm] = useState(emptyBook);
+  const [bookError, setBookError] = useState('');
   const [bookAvailability, setBookAvailability] = useState({
     loading: false,
     configured: false,
@@ -278,6 +280,10 @@ export default function StudentDashboard() {
   const [submittingRsvp, setSubmittingRsvp] = useState(false);
   const [actionSessionId, setActionSessionId] = useState('');
   const [cancelPendingModal, setCancelPendingModal] = useState(null);
+  const [deleteHwModal, setDeleteHwModal] = useState(null);
+  const [deletingHwId, setDeletingHwId] = useState('');
+  const [uploadingHwId, setUploadingHwId] = useState('');
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   // In-Browser Voice Recording Studio
   const [recordModalHw, setRecordModalHw] = useState(null);
@@ -326,30 +332,16 @@ export default function StudentDashboard() {
         subRes,
       ] = results;
 
-      if (profRes.status === 'fulfilled' && profRes.value) {
-        setProfile(profRes.value);
-      }
-      if (stRes.status === 'fulfilled' && stRes.value) {
-        setStats(stRes.value);
-      }
-      if (trRes.status === 'fulfilled' && trRes.value) {
-        setTrials(trRes.value.sessions || []);
-      }
+      if (profRes.status === 'fulfilled' && profRes.value) setProfile(profRes.value);
+      if (stRes.status === 'fulfilled' && stRes.value) setStats(stRes.value);
+      if (trRes.status === 'fulfilled' && trRes.value) setTrials(trRes.value.sessions || []);
       if (sessRes.status === 'fulfilled' && sessRes.value) {
         setSessions((sessRes.value.sessions || []).filter((item) => item.type !== 'trial'));
       }
-      if (hwRes.status === 'fulfilled' && hwRes.value) {
-        setHomework(hwRes.value.homework || []);
-      }
-      if (tchRes.status === 'fulfilled' && tchRes.value) {
-        setTeachers(tchRes.value.teachers || []);
-      }
-      if (discRes.status === 'fulfilled' && discRes.value) {
-        setDiscoverTeachers(discRes.value.teachers || []);
-      }
-      if (evRes.status === 'fulfilled' && evRes.value) {
-        setEvaluations(evRes.value.evaluations || []);
-      }
+      if (hwRes.status === 'fulfilled' && hwRes.value) setHomework(hwRes.value.homework || []);
+      if (tchRes.status === 'fulfilled' && tchRes.value) setTeachers(tchRes.value.teachers || []);
+      if (discRes.status === 'fulfilled' && discRes.value) setDiscoverTeachers(discRes.value.teachers || []);
+      if (evRes.status === 'fulfilled' && evRes.value) setEvaluations(evRes.value.evaluations || []);
       if (revRes.status === 'fulfilled' && revRes.value) {
         const rev = revRes.value;
         setReviews(Array.isArray(rev) ? rev : rev.reviews || []);
@@ -357,39 +349,70 @@ export default function StudentDashboard() {
       if (enrollRes.status === 'fulfilled' && enrollRes.value) {
         setCourses(Array.isArray(enrollRes.value) ? enrollRes.value : []);
       }
-      if (refRes.status === 'fulfilled' && refRes.value) {
-        setReferral(refRes.value);
-      }
-      if (updRes.status === 'fulfilled' && updRes.value) {
-        setTeacherUpdates(updRes.value.updates || []);
-      }
+      if (refRes.status === 'fulfilled' && refRes.value) setReferral(refRes.value);
+      if (updRes.status === 'fulfilled' && updRes.value) setTeacherUpdates(updRes.value.updates || []);
       if (guardRes.status === 'fulfilled' && guardRes.value) {
         setGuardianInvitations(guardRes.value.invitations || []);
         setLinkedGuardians(guardRes.value.linkedGuardians || []);
       }
-      if (subRes.status === 'fulfilled' && subRes.value) {
-        setSubscriptions(subRes.value.subscriptions || []);
-      }
-      // Only a successful response confirms the package state; on failure the
-      // dashboard shows a retry notice instead of new-student onboarding.
+      if (subRes.status === 'fulfilled' && subRes.value) setSubscriptions(subRes.value.subscriptions || []);
+
       setSubscriptionsLoaded(subRes.status === 'fulfilled');
-      setLoadErrors({
+      setLoadErrors((prev) => ({
+        ...prev,
         discover: discRes.status === 'rejected',
         trials: trRes.status === 'rejected',
         sessions: sessRes.status === 'rejected',
-      });
+        homework: hwRes.status === 'rejected',
+        evaluations: evRes.status === 'rejected',
+        teacherUpdates: updRes.status === 'rejected',
+        courses: enrollRes.status === 'rejected',
+        referral: refRes.status === 'rejected',
+      }));
 
       if (profRes.status === 'rejected' && stRes.status === 'rejected') {
-        toast.error(locale === 'id' ? 'Gagal memuat data dasbor siswa' : locale === 'ar' ? 'تعذر تحميل بيانات لوحة الطالب' : 'Failed to load student dashboard data');
+        toast.error(errT.loadFailed || 'Failed to load student dashboard data');
       }
     } catch {
-      toast.error(locale === 'id' ? 'Gagal memuat data dasbor siswa' : locale === 'ar' ? 'تعذر تحميل بيانات لوحة الطالب' : 'Failed to load student dashboard data');
+      toast.error(errT.loadFailed || 'Failed to load student dashboard data');
     } finally {
       setLoading(false);
     }
-  }, [locale, toast]);
+  }, [toast, errT.loadFailed]);
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
+
+  const loadCertificatesTab = useCallback(async () => {
+    setLoadErrors((prev) => ({ ...prev, certificates: false }));
+    try {
+      const data = await api.get('/api/lms/my-certificates', { auth: true });
+      setCertificates(Array.isArray(data) ? data : data?.certificates || []);
+      setCertificatesLoaded(true);
+    } catch {
+      setLoadErrors((prev) => ({ ...prev, certificates: true }));
+    }
+  }, []);
+
+  const loadRecordingsTab = useCallback(async () => {
+    setLoadErrors((prev) => ({ ...prev, recordings: false }));
+    try {
+      const d = await api.get('/api/students/dashboard/recordings', { auth: true });
+      setRecordings(d?.sessions || []);
+      setRecordingsLoaded(true);
+    } catch {
+      setLoadErrors((prev) => ({ ...prev, recordings: true }));
+    }
+  }, []);
+
+  const loadReferralTab = useCallback(async () => {
+    setLoadErrors((prev) => ({ ...prev, referral: false }));
+    try {
+      const data = await api.get('/api/referrals/my', { auth: true });
+      setReferral(data || { code: '', stats: {}, referrals: [] });
+    } catch {
+      setLoadErrors((prev) => ({ ...prev, referral: true }));
+    }
+  }, []);
 
   const syncSessions = useCallback(async () => {
     if (!ready) return;
@@ -529,41 +552,40 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     if (!ready) return;
-    if (tab === 'certificates' && !certificates.length) {
-      api.get('/api/lms/my-certificates', { auth: true }).then(setCertificates).catch(() => setCertificates([]));
+    if (tab === 'certificates' && !certificatesLoaded && !loadErrors.certificates) {
+      loadCertificatesTab();
     }
-    if (tab === 'recordings' && !recordings.length) {
-      api.get('/api/students/dashboard/recordings', { auth: true })
-        .then((d) => setRecordings(d.sessions || [])).catch(() => setRecordings([]));
+    if (tab === 'recordings' && !recordingsLoaded && !loadErrors.recordings) {
+      loadRecordingsTab();
     }
-    if (tab === 'referral' && !referral) {
-      api.get('/api/referrals/my', { auth: true }).then(setReferral).catch(() => setReferral({ code: '', stats: {}, referrals: [] }));
+    if (tab === 'referral' && !referral && !loadErrors.referral) {
+      loadReferralTab();
     }
-  }, [tab, ready, certificates.length, recordings.length, referral]);
+  }, [tab, ready, certificatesLoaded, recordingsLoaded, referral, loadErrors.certificates, loadErrors.recordings, loadErrors.referral, loadCertificatesTab, loadRecordingsTab, loadReferralTab]);
 
   const downloadAllCertificates = async () => {
-    if (!certificates.length) return;
-    toast.success(
-      locale === 'id' ? 'Memulai unduhan massal...' :
-      locale === 'ar' ? 'بدء تحميل الشهادات...' :
-      'Starting batch download...'
-    );
+    if (downloadingAll || !certificates.length) return;
+    setDownloadingAll(true);
+    toast.success(certT.downloadingAll || 'Preparing certificates…');
 
-    for (let i = 0; i < certificates.length; i++) {
-      const c = certificates[i];
-      const certWithStudent = {
-        ...c,
-        student: c.student || { name: user.name }
-      };
-
-      setTimeout(async () => {
+    try {
+      const { downloadCertificatePdf } = await import('../../lib/certificatePdf');
+      for (let i = 0; i < certificates.length; i += 1) {
+        const c = certificates[i];
+        const certWithStudent = {
+          ...c,
+          student: c.student || { name: user.name },
+        };
         try {
-          const { downloadCertificatePdf } = await import('../../lib/certificatePdf');
           await downloadCertificatePdf({ certificate: certWithStudent, locale });
         } catch (err) {
           console.error('Failed to download certificate', c._id, err);
         }
-      }, i * 1500);
+      }
+    } catch {
+      toast.error(errT.loadFailed || 'Could not download certificates');
+    } finally {
+      setDownloadingAll(false);
     }
   };
 
@@ -622,52 +644,32 @@ export default function StudentDashboard() {
   const nextActiveSession = [...upcomingSessions, ...upcomingTrials]
     .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))[0] || null;
   const studentName = profile?.user?.name || user?.name || '';
-  const studentFirstName = studentName.trim().split(/\s+/)[0] || (locale === 'ar' ? 'طالبنا' : 'Student');
-  const dateLocale = locale === 'id' ? 'id-ID' : locale === 'ar' ? 'ar-EG' : 'en-US';
+  const studentFirstName = studentName.trim().split(/\s+/)[0] || (t?.lms?.leaderboard?.studentFallback || 'Student');
   const nextSessionTeacherName = nextActiveSession?.teacher?.user?.name
     || nextActiveSession?.teacher?.personalInfo?.fullName
     || nextActiveSession?.teacher?.name
-    || (locale === 'ar' ? 'معلم الأكاديمية' : 'Quran Tutor');
+    || (scT.tutorFallback || 'Quran Tutor');
   const nextSessionDate = nextActiveSession ? new Date(nextActiveSession.scheduledAt) : null;
   const currentSubscriptionTeacherName = currentSubscription?.preferredTeacher?.personalInfo?.fullName
     || currentSubscription?.preferredTeacher?.user?.name
     || '';
-  const subscriptionStatusCopy = currentSubscription ? ({
-    pending_payment: {
-      ar: 'اختر المعلم وارفع إثبات التحويل لإكمال الاشتراك.',
-      en: 'Choose your tutor and upload the transfer proof to continue.',
-    },
-    payment_review: {
-      ar: 'تم رفع التحويل وهو الآن قيد مراجعة الإدارة.',
-      en: 'Your transfer proof is under admin review.',
-    },
-    awaiting_placement: {
-      ar: 'تم اعتماد الدفع. الإدارة تعمل الآن على تسكينك مع المعلم الذي اخترته.',
-      en: 'Payment approved. Administration is placing you with your selected tutor.',
-    },
-    placed: {
-      ar: 'تم تسكينك في الجروب. الإدارة تحدد المواعيد وتبدأ الحلقة بعد اكتمال العدد، دون خصم أثناء الانتظار.',
-      en: 'You have been placed in the group. Administration will set the schedule and start the circle after its minimum size is reached. Waiting does not consume credits.',
-    },
-    active: {
-      ar: 'اشتراكك نشط والحلقة جاهزة.',
-      en: 'Your subscription is active and the circle is ready.',
-    },
-    paused: {
-      ar: 'اشتراكك متوقف مؤقتًا. تواصل مع الإدارة للمساعدة.',
-      en: 'Your subscription is temporarily paused. Contact administration for help.',
-    },
-    completed: {
-      ar: 'انتهى رصيد الباقة. يمكنك تجديد نفس الجروب والمعلم بسهولة.',
-      en: 'Your package balance is finished. You can easily renew the same group and tutor.',
-    },
-  }[currentSubscription.status] || {
-    ar: currentSubscription.status,
-    en: currentSubscription.status,
-  }) : null;
+  const subStatusCopy = currentSubscription
+    ? ((sd.subStatus || {})[currentSubscription.status] || currentSubscription.status)
+    : '';
+
+  const copyTextSafely = async (text, successMsg) => {
+    if (!text) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(text);
+      toast.success(successMsg);
+    } catch {
+      toast.error(errT.referralCopyFailed || refT.copyError || 'Could not copy to clipboard.');
+    }
+  };
 
   const renewSubscription = async (subscription) => {
-    if (!subscription?._id) return;
+    if (!subscription?._id || renewingSubscription) return;
     setRenewingSubscription(true);
     try {
       const result = await api.post(
@@ -676,9 +678,7 @@ export default function StudentDashboard() {
         { auth: true }
       );
       const renewal = result.subscription;
-      toast.success(locale === 'ar'
-        ? 'تم إنشاء التجديد بنفس الجروب والمعلم. أكمل التحويل.'
-        : 'Renewal created for the same group and tutor. Complete the transfer.');
+      toast.success(modT.renewalCreated || 'Renewal created with your tutor and group. Complete transfer.');
       if (renewal?._id) {
         navigate(lp('/payment/manual') + '?subscription=' + encodeURIComponent(renewal._id));
       }
@@ -687,7 +687,7 @@ export default function StudentDashboard() {
         navigate(lp('/payment/manual') + '?subscription=' + encodeURIComponent(error.data.subscription._id));
         return;
       }
-      toast.error(error.message || (locale === 'ar' ? 'تعذر إنشاء التجديد' : 'Could not create renewal'));
+      toast.error(error.message || errT.renewalFailed || 'Could not create renewal');
     } finally {
       setRenewingSubscription(false);
     }
@@ -704,12 +704,12 @@ export default function StudentDashboard() {
         [key]: apiUrl(result.streamUrl),
       }));
     } catch (error) {
-      toast.error(error.message || (locale === 'ar' ? 'تعذر فتح فيديو المعلم' : 'Could not open tutor video'));
+      toast.error(error.message || errT.videoOpenFailed || 'Could not open tutor video');
     }
   };
 
   const handleStudentRsvp = async (sessionId, status, reason = '') => {
-    if (!sessionId) return;
+    if (!sessionId || submittingRsvp) return;
     setSubmittingRsvp(true);
     try {
       const res = await api.post(`/api/sessions/${sessionId}/rsvp`, {
@@ -717,13 +717,13 @@ export default function StudentDashboard() {
         excuseReason: reason,
       }, { auth: true });
       toast.success(res.message || (status === 'confirmed'
-        ? (locale === 'ar' ? 'تم تأكيد حضورك للحصة بنجاح' : 'Attendance confirmed')
-        : (locale === 'ar' ? 'تم تسجيل اعتذارك عن الحصة' : 'Excuse recorded')));
+        ? (modT.statusUpdated || 'Attendance confirmed')
+        : (modT.excuseRecorded || 'Excuse recorded')));
       setStudentExcuseModal(null);
       setStudentExcuseReason('');
       await syncSessions();
     } catch (err) {
-      toast.error(err.message || (locale === 'ar' ? 'تعذر تحديث حالة الحضور' : 'Failed to update RSVP'));
+      toast.error(err.message || errT.rsvpFailed || 'Failed to update RSVP');
     } finally {
       setSubmittingRsvp(false);
     }
@@ -734,12 +734,10 @@ export default function StudentDashboard() {
     setActionSessionId(session._id);
     try {
       const res = await api.post(`/api/sessions/${session._id}/accept-reschedule`, {}, { auth: true });
-      toast.success(
-        res.message || (locale === 'ar' ? 'تم تأكيد الموعد الجديد للحصة بنجاح' : 'New session time confirmed')
-      );
+      toast.success(res.message || modT.rescheduleConfirmed || 'New session time confirmed');
       await syncSessions();
     } catch (err) {
-      toast.error(err.message || (locale === 'ar' ? 'تعذر تأكيد الموعد الجديد' : 'Could not confirm rescheduled time'));
+      toast.error(err.message || errT.rescheduleFailed || 'Could not confirm rescheduled time');
     } finally {
       setActionSessionId('');
     }
@@ -750,53 +748,61 @@ export default function StudentDashboard() {
     setActionSessionId(cancelPendingModal._id);
     try {
       const res = await api.post(`/api/sessions/${cancelPendingModal._id}/cancel-request`, {}, { auth: true });
-      toast.success(res.message || (locale === 'ar' ? 'تم إلغاء الطلب بنجاح' : 'Request cancelled'));
+      toast.success(res.message || modT.requestCancelled || 'Request cancelled');
       setCancelPendingModal(null);
       await load();
     } catch (err) {
-      toast.error(err.message || (locale === 'ar' ? 'تعذر إلغاء الطلب' : 'Could not cancel request'));
+      toast.error(err.message || errT.cancelRequestFailed || 'Could not cancel request');
     } finally {
       setActionSessionId('');
     }
   };
 
   const deleteHomeworkSubmission = async (hw) => {
+    if (!hw?._id || deletingHwId) return;
+    setDeletingHwId(hw._id);
     try {
       const endpoint = hw.isTask
         ? `/api/homework/tasks/${hw._id}/submission`
         : `/api/homework/submissions/${hw.submissionId || hw._id}`;
       await api.delete(endpoint, { auth: true });
-      toast.success(locale === 'ar' ? 'تم فتح الواجب لإعادة التسجيل أو رفع ملف جديد' : 'Submission cleared for re-upload');
+      toast.success(hwT.deleteSuccess || 'Submission cleared for re-upload');
+      setDeleteHwModal(null);
       await load();
     } catch (err) {
-      toast.error(err.message || (locale === 'ar' ? 'تعذر إعادة فتح الواجب' : 'Could not reset homework'));
+      toast.error(err.message || errT.homeworkDeleteFailed || hwT.deleteError || 'Could not reset submission');
+    } finally {
+      setDeletingHwId('');
     }
   };
 
   const shareStudentEvaluationViaWhatsApp = (s, reportSurah, reportFromAyah, reportToAyah, ev, reportNotes) => {
-    const tName = s.teacher?.user?.name || s.teacher?.personalInfo?.fullName || 'المعلم';
-    const text = `🌟 *بطاقة تقييم حلقة القرآن الكريم — أكاديمية وَحْيٌ وَنَمَاء* 🌟\n`
-      + `👤 *الطالب:* ${studentName || 'طالب الأكاديمية'}\n`
-      + `🎓 *المعلم:* ${tName}\n`
-      + (reportSurah ? `📖 *السورة:* ${reportSurah} (${reportFromAyah || 1} - ${reportToAyah || 'آخرها'})\n` : '')
-      + `⭐ *الحفظ:* ${ev.memorization ?? '—'}/5 · *التجويد:* ${ev.tajweed ?? '—'}/5\n`
-      + (reportNotes ? `💬 *ملاحظات المعلم:* ${reportNotes}\n` : '');
+    const tName = s.teacher?.user?.name || s.teacher?.personalInfo?.fullName || scT.tutorFallback || 'Tutor';
+    const text = `🌟 ${evT.subtitle || 'Session Evaluation'} 🌟\n`
+      + `👤 ${studentName || studentFirstName}\n`
+      + `🎓 ${tName}\n`
+      + (reportSurah ? `📖 ${evT.surahLabel || 'Surah:'} ${reportSurah} (${reportFromAyah || 1} - ${reportToAyah || '—'})\n` : '')
+      + `⭐ ${evT.memScore || 'Memorization'}: ${ev.memorization ?? '—'}/5 · ${evT.tajweedScore || 'Tajweed'}: ${ev.tajweed ?? '—'}/5\n`
+      + (reportNotes ? `💬 ${evT.notesLabel || 'Notes:'} ${reportNotes}\n` : '');
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const submitHomework = async (homeworkId, file, sessionId) => {
-    if (!file) return;
+    if (!file || uploadingHwId) return;
+    setUploadingHwId(homeworkId);
     try {
       const storageFile = await uploadFileDirect(file, 'homework');
       await api.post(`/api/homework/${homeworkId}/submit`, {
         storageFile,
         sessionId,
       }, { auth: true });
-      toast.success(locale === 'id' ? 'Tugas berhasil diunggah' : locale === 'ar' ? 'تم تسليم التلاوة للشيخ بنجاح' : 'Homework uploaded successfully');
-      load();
+      toast.success(hwT.uploadSuccess || 'Homework submitted successfully');
+      await load();
     } catch (e) {
-      toast.error(e.message || (locale === 'id' ? 'Gagal mengunggah tugas' : locale === 'ar' ? 'فشل رفع الواجب' : 'Failed to upload homework'));
+      toast.error(e.message || errT.homeworkUploadFailed || hwT.uploadError || 'Could not upload homework file.');
+    } finally {
+      setUploadingHwId('');
     }
   };
 
@@ -844,7 +850,7 @@ export default function StudentDashboard() {
         });
       }, 1000);
     } catch {
-      toast.error('يرجى السماح بالوصول إلى الميكروفون لتسجيل تلاوتك');
+      toast.error(st.voiceFeedback?.micError || 'Please allow microphone access to record.');
     }
   };
 
@@ -867,7 +873,7 @@ export default function StudentDashboard() {
   };
 
   const sendVoiceRecording = async () => {
-    if (!audioBlob || !recordModalHw) return;
+    if (!audioBlob || !recordModalHw || submittingVoice) return;
     setSubmittingVoice(true);
     const mime = audioBlob.type || 'audio/webm';
     const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
@@ -887,7 +893,8 @@ export default function StudentDashboard() {
   };
 
   const submitReview = async () => {
-    if (!reviewModal) return;
+    if (!reviewModal || submittingReview) return;
+    setSubmittingReview(true);
     try {
       await api.post('/api/reviews', {
         teacherId: reviewModal.teacher?._id,
@@ -900,17 +907,20 @@ export default function StudentDashboard() {
         comment: reviewForm.comment,
         wouldContinue: reviewForm.wouldContinue,
       }, { auth: true });
-      toast.success(locale === 'id' ? 'Ulasan Anda berhasil dikirim' : locale === 'ar' ? 'تم إرسال تقييمك' : 'Review submitted successfully');
+      toast.success(modT.reviewSubmitted || 'Thank you for your review!');
       setReviewModal(null);
-      load();
+      await load();
     } catch (e) {
-      toast.error(e.message || (locale === 'id' ? 'Gagal mengirim ulasan' : locale === 'ar' ? 'فشل إرسال التقييم' : 'Failed to submit review'));
+      toast.error(e.message || errT.reviewSubmitFailed || 'Could not submit review.');
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
   const openBook = async (teacher) => {
     setBookModal(teacher);
     setBookForm(emptyBook);
+    setBookError('');
     setBookAvailability({
       loading: true,
       configured: false,
@@ -938,7 +948,12 @@ export default function StudentDashboard() {
 
   const bookRegular = async (e) => {
     e.preventDefault();
-    if (!bookModal || !bookForm.date || !bookForm.time) return;
+    if (!bookModal || booking) return;
+    if (!bookForm.date || !bookForm.time) {
+      setBookError(psT.validationRequired || 'Please select both date and time.');
+      return;
+    }
+    setBookError('');
     setBooking(true);
     try {
       const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -952,11 +967,11 @@ export default function StudentDashboard() {
         timezone: localTimezone,
         notes: bookForm.notes,
       }, { auth: true });
-      toast.success(locale === 'id' ? 'Permintaan sesi berhasil dikirim ke guru' : locale === 'ar' ? 'تم إرسال طلب الحصة للمعلم' : 'Session request sent to tutor');
+      toast.success(t?.student?.booking?.submitSuccess || 'Session request sent to tutor');
       setBookModal(null);
-      load();
+      await load();
     } catch (err) {
-      toast.error(err.message || (locale === 'id' ? 'Gagal memesan sesi' : locale === 'ar' ? 'فشل الحجز' : 'Failed to book session'));
+      toast.error(err.message || t?.student?.booking?.submitError || 'Failed to book session');
     } finally {
       setBooking(false);
     }
@@ -974,48 +989,53 @@ export default function StudentDashboard() {
 
   const submitGuardianInvitation = async (event) => {
     event.preventDefault();
-    if (!guardianInviteForm.guardianPhone.trim()) return;
+    if (savingGuardianInvite) return;
+    const cleanPhone = guardianInviteForm.guardianPhone.trim();
+    if (!cleanPhone) {
+      setGuardianPhoneError(psT.validationRequired || 'Please enter guardian phone number.');
+      return;
+    }
 
+    setGuardianPhoneError('');
     setSavingGuardianInvite(true);
     try {
       await api.post('/api/students/dashboard/guardian-invitations', {
-        guardianPhone: guardianInviteForm.guardianPhone.trim(),
+        guardianPhone: cleanPhone,
         relationship: guardianInviteForm.relationship,
       }, { auth: true });
 
-      toast.success(locale === 'ar'
-        ? 'تم إنشاء طلب الربط. سيظهر لولي الأمر عند تسجيل الدخول بنفس الرقم.'
-        : 'Guardian invitation created.');
+      toast.success(modT.guardianInviteSuccess || 'Guardian link request created');
       setGuardianInviteForm((current) => ({ ...current, guardianPhone: '' }));
       await refreshGuardianLinks();
     } catch (error) {
-      toast.error(error.message || (locale === 'ar' ? 'تعذر إنشاء طلب الربط' : 'Could not create guardian invitation'));
+      toast.error(error.message || errT.guardianInviteFailed || 'Could not create guardian invitation.');
     } finally {
       setSavingGuardianInvite(false);
     }
   };
 
   const cancelGuardianInvitation = async (invitationId) => {
+    if (!invitationId || cancellingInviteId) return;
+    setCancellingInviteId(invitationId);
     try {
       await api.delete(`/api/students/dashboard/guardian-invitations/${invitationId}`, { auth: true });
-      toast.success(locale === 'ar' ? 'تم إلغاء طلب الربط' : 'Guardian invitation cancelled');
+      toast.success(modT.guardianCancelSuccess || 'Link request cancelled');
+      setCancelInviteModal(null);
       await refreshGuardianLinks();
     } catch (error) {
-      toast.error(error.message || (locale === 'ar' ? 'تعذر إلغاء طلب الربط' : 'Could not cancel invitation'));
+      toast.error(error.message || errT.guardianCancelFailed || 'Could not cancel link request.');
+    } finally {
+      setCancellingInviteId('');
     }
   };
 
   const copyInvitationCode = async (code) => {
-    if (!code) return;
-    await navigator.clipboard?.writeText(code);
-    toast.success(locale === 'ar' ? 'تم نسخ كود الربط' : 'Link code copied');
+    await copyTextSafely(code, common.copied || 'Copied');
   };
 
   const copyGuardianLinkCode = async () => {
     const code = profile?.user?.guardianLinkCode;
-    if (!code) return;
-    await navigator.clipboard?.writeText(code);
-    toast.success(locale === 'ar' ? 'تم نسخ كود ربط ولي الأمر' : 'Guardian link code copied');
+    await copyTextSafely(code, common.copied || 'Copied');
   };
 
   const _rotateGuardianLinkCode = async () => {
@@ -1023,11 +1043,11 @@ export default function StudentDashboard() {
       const result = await api.post('/api/students/dashboard/guardian-link-code/rotate', {}, { auth: true });
       setProfile((current) => ({
         ...current,
-        user: { ...current?.user, guardianLinkCode: result.guardianLinkCode }
+        user: { ...current?.user, guardianLinkCode: result.guardianLinkCode },
       }));
-      toast.success(locale === 'ar' ? 'تم إنشاء كود ربط جديد وإلغاء الكود السابق' : 'A new guardian link code was created');
+      toast.success(common.copied || 'Updated');
     } catch (error) {
-      toast.error(error.message || (locale === 'ar' ? 'تعذر تغيير كود الربط' : 'Could not rotate link code'));
+      toast.error(error.message || errT.guardianInviteFailed || 'Could not rotate link code');
     }
   };
 
@@ -1052,61 +1072,66 @@ export default function StudentDashboard() {
     : [];
 
   const primaryNavItems = [
-    { id: 'overview', label: locale === 'id' ? 'Beranda' : locale === 'ar' ? 'الرئيسية' : 'Overview', icon: Sparkles },
-    { id: 'discover', label: locale === 'id' ? 'Cari Guru' : locale === 'ar' ? 'اختر معلمك' : 'Find a Tutor', icon: BookOpen },
-    { id: 'trials', label: locale === 'id' ? 'Uji Coba' : locale === 'ar' ? 'التجريبية' : 'Trials', icon: Clock, badge: pendingTrials.length + upcomingTrials.length },
-    { id: 'sessions', label: locale === 'id' ? 'Sesi' : locale === 'ar' ? 'حصصي' : 'Sessions', icon: Calendar, badge: upcomingSessions.length + pendingSessions.length },
-    { id: 'homework', label: locale === 'id' ? 'Tugas' : locale === 'ar' ? 'واجباتي' : 'Homework', icon: FileText, badge: stats.homeworkPending || 0 },
+    { id: 'overview', label: tabsT.overview || 'Overview', icon: Sparkles },
+    { id: 'discover', label: tabsT.discover || 'Discover Tutors', icon: BookOpen },
+    { id: 'trials', label: tabsT.trials || 'Trial Sessions', icon: Clock, badge: pendingTrials.length + upcomingTrials.length },
+    { id: 'sessions', label: tabsT.sessions || 'Sessions', icon: Calendar, badge: upcomingSessions.length + pendingSessions.length },
+    { id: 'homework', label: tabsT.homework || 'Homework', icon: FileText, badge: stats.homeworkPending || 0 },
   ].filter((item) => !(teacherLock && item.id === 'discover'));
 
   const secondaryNavItems = [
     {
       id: 'teacher-updates',
-      label: locale === 'ar' ? 'رسائل المعلم' : 'Tutor updates',
+      label: tabsT.teacherUpdates || 'Tutor Updates',
       icon: Megaphone,
       badge: teacherUpdates.length,
-      description: locale === 'ar' ? 'فيديوهات وكلمات من معلمك' : 'Video messages from your tutor',
+      description: updT.subtitle || 'Messages from your tutor',
     },
     {
       id: 'evaluations',
-      label: locale === 'id' ? 'Evaluasi' : locale === 'ar' ? 'التقييمات' : 'Evaluations',
+      label: tabsT.evaluations || 'Evaluations',
       icon: Star,
-      description: locale === 'ar' ? 'ملاحظات المعلم وتقييماتك' : 'Tutor feedback and evaluations',
+      description: evT.subtitle || 'Tutor evaluations',
     },
     {
       id: 'recordings',
-      label: locale === 'id' ? 'Rekaman' : locale === 'ar' ? 'التسجيلات' : 'Recordings',
+      label: tabsT.recordings || 'Recordings',
       icon: Mic,
-      description: locale === 'ar' ? 'تسجيلات الحصص والتلاوة' : 'Session and recitation recordings',
+      description: recT.subtitle || 'Session recordings',
     },
     {
       id: 'certificates',
-      label: locale === 'id' ? 'Sertifikat' : locale === 'ar' ? 'الشهادات' : 'Certificates',
+      label: tabsT.certificates || 'Certificates',
       icon: Award,
-      description: locale === 'ar' ? 'شهاداتك المعتمدة' : 'Your earned certificates',
+      description: certT.subtitle || 'Your earned certificates',
     },
     {
       id: 'achievements',
-      label: locale === 'id' ? 'Pencapaian' : locale === 'ar' ? 'الإنجازات' : 'Achievements',
+      label: tabsT.achievements || 'Achievements',
       icon: Trophy,
-      description: locale === 'ar' ? 'النقاط والشارات والتقدم' : 'Points, badges, and progress',
+      description: achT.badgesTitle || 'Points and badges',
     },
     {
       id: 'referral',
-      label: locale === 'id' ? 'Afiliasi' : locale === 'ar' ? 'السفراء' : 'Referral',
+      label: tabsT.referral || 'Referrals',
       icon: Gift,
-      description: locale === 'ar' ? 'شارك الخير واكسب نقاطاً' : 'Invite friends and earn points',
+      description: refT.subtitle || 'Invite friends and earn points',
     },
     {
       id: 'account',
-      label: locale === 'id' ? 'Akun' : locale === 'ar' ? 'حسابي' : 'Account',
+      label: tabsT.account || 'Account',
       icon: UserRound,
-      description: locale === 'ar' ? 'بياناتك ومعلموك ودوراتك' : 'Profile, tutors, and courses',
+      description: acc.editProfile || 'Profile and tutors',
     },
-    { id: 'support', label: locale === 'ar' ? 'تواصل مع الإدارة' : 'Support', icon: Send, description: locale === 'ar' ? 'رسائلك مع إدارة الأكاديمية' : 'Messages with the academy' },
+    {
+      id: 'support',
+      label: tabsT.support || 'Support',
+      icon: Send,
+      description: ov.contactSupport || 'Contact academy support',
+    },
   ];
 
-  const dailyDua = getDailyQuranicDua(locale);
+  const dailyDua = getDailyQuranicDua(locale, qwT);
   const hasAnyTrialActivity = pendingTrials.length > 0 || upcomingTrials.length > 0 || completedTrials.length > 0;
   const hasCompletedTrial = completedTrials.length > 0;
   const isBrandNewStudent = !currentSubscription
@@ -1117,33 +1142,31 @@ export default function StudentDashboard() {
     {
       key: 'account',
       done: true,
-      title: locale === 'ar' ? 'إنشاء الحساب' : 'Create account',
-      subtitle: locale === 'ar' ? 'تم تفعيل حسابك بنجاح' : 'Your account is active',
+      title: t?.student?.journey?.steps?.account || 'Account',
+      subtitle: ov.activeSubscriptionBadge || 'Active',
     },
     {
       key: 'tutor',
       done: hasAnyTrialActivity,
-      title: locale === 'ar' ? 'اختيار معلم وحجز تجريبية' : 'Choose a tutor & book trial',
-      subtitle: hasAnyTrialActivity
-        ? (locale === 'ar' ? 'تم اختيار المعلم وطلب الحصة' : 'Tutor selected & trial requested')
-        : (locale === 'ar' ? `لديك ${trialRemaining || 3} حصص تجريبية مجانية` : `${trialRemaining || 3} free trial sessions available`),
+      title: ov.findTutor || 'Find your tutor',
+      subtitle: `${trialRemaining || 3} ${(ov.trialsRemainingStat || 'تجريبيات متبقية')}`,
     },
     {
       key: 'trial',
       done: hasCompletedTrial,
-      title: locale === 'ar' ? 'الحصة التجريبية والاشتراك' : 'Complete trial & subscribe',
+      title: ov.subscribeContinue || 'Subscribe & continue',
       subtitle: hasCompletedTrial
-        ? (locale === 'ar' ? 'أكملت التجريبية — اختر باقتك' : 'Trial completed — choose your plan')
-        : (locale === 'ar' ? 'تقييم مستواك وتحديد الخطة مع المعلم' : 'Level assessment with your tutor'),
+        ? (ov.trialCompleteTitle || 'Your trial session is complete')
+        : (ov.trialCompleteDesc || 'Subscribe to continue with your tutor'),
     },
   ];
   const completedOnboardingCount = onboardingSteps.filter((step) => step.done).length;
 
   return (
-    <DashboardLayout title={locale === 'id' ? 'Dasbor Siswa' : locale === 'ar' ? 'لوحة الطالب' : 'Student Dashboard'} user={user} onLogout={logout}>
+    <DashboardLayout title={st.dashboardTitle || 'Student Dashboard'} user={user} onLogout={logout}>
       {loading ? (
         <div className="space-y-4 py-6" role="status" aria-live="polite">
-          <span className="sr-only">{locale === 'ar' ? 'جاري تحميل لوحة الطالب...' : 'Loading student dashboard...'}</span>
+          <span className="sr-only">{st.loading || 'Loading student data…'}</span>
           <Skeleton className="h-36 w-full rounded-2xl" />
           <div className="grid gap-4 md:grid-cols-4">
             <Skeleton className="h-24 w-full rounded-2xl" />
@@ -1171,32 +1194,26 @@ export default function StudentDashboard() {
           {subscriptionsLoaded && !currentSubscription && tab === 'overview' && <section className="wn-student-welcome">
             <div className="wn-student-welcome__content">
               <span className="wn-student-welcome__eyebrow">
-                <Sparkles size={15} />
-                {locale === 'id' ? 'Perjalanan Quran Anda' : locale === 'ar' ? 'رحلتك مع القرآن' : 'Your Quran journey'}
+                <Sparkles size={15} aria-hidden="true" />
+                {qwT.blessedJourney || 'Blessed Quran journey'}
               </span>
               <h2 className="wn-student-welcome__title">
-                {locale === 'ar' ? `السلام عليكم، ${studentFirstName}` : locale === 'id' ? `Assalamu’alaikum, ${studentFirstName}` : `Assalamu alaikum, ${studentFirstName}`}
+                {acc.welcome || 'Welcome,'} {studentFirstName}
               </h2>
               <p className="wn-student-welcome__lead">
                 {nextActiveSession
-                  ? (locale === 'ar'
-                    ? `حلقتك القادمة مع ${nextSessionTeacherName}. كل ما تحتاجه للحصة والمتابعة موجود هنا.`
-                    : `Your next session is with ${nextSessionTeacherName}. Everything you need is here.`)
+                  ? `${ov.withTutorPrefix || 'With tutor'} ${nextSessionTeacherName}`
                   : pendingTrials.length
-                    ? (locale === 'ar' ? 'طلبك التجريبي قيد المراجعة من المعلم. سننبهك فور الرد.' : 'Your trial request is waiting for tutor confirmation.')
+                    ? (ov.pendingTrialStep || 'Your trial request is awaiting a response')
                     : postTrialSession
-                      ? (locale === 'ar'
-                        ? (trialRemaining > 0
-                          ? `أكملت التجريبية. اشترك للاستمرار مع معلمك، أو لديك ${trialRemaining} تجريبية متبقية لاختيار معلم آخر.`
-                          : 'أكملت التجريبيات المتاحة. اشترك الآن للاستمرار مع معلمك.')
-                        : (trialRemaining > 0
-                          ? `Your trial is complete. Subscribe to continue, or use ${trialRemaining} remaining trial(s).`
-                          : 'Your trials are complete. Subscribe to continue with your tutor.'))
-                      : (locale === 'ar' ? 'ابدأ بخطوة واضحة: اختر المعلم المناسب واحجز حصتك التجريبية.' : 'Start with one clear step: choose a tutor and book your trial.')}
+                      ? (trialRemaining > 0
+                        ? (ov.trialCompleteDesc || 'Subscribe to continue with your tutor, or use your remaining free trial sessions.')
+                        : (ov.allTrialsUsed || 'All three trials have been used'))
+                      : (ov.noUpcomingDiscover || 'Choose an approved tutor and start with a trial.')}
               </p>
 
               <blockquote className="my-3 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2.5 text-xs text-emerald-50/95">
-                <p className="font-arabic text-sm font-bold leading-relaxed text-white">{dailyDua.text}</p>
+                <p className={`${locale === 'ar' ? 'font-arabic ' : ''}text-sm font-bold leading-relaxed text-white`}>{dailyDua.text}</p>
                 <footer className="mt-0.5 text-[11px] font-semibold text-amber-200/90">{dailyDua.source}</footer>
               </blockquote>
 
@@ -1219,21 +1236,19 @@ export default function StudentDashboard() {
                   className="wn-student-primary-action"
                 >
                   {nextActiveSession
-                    ? (locale === 'ar' ? 'عرض الحصة القادمة' : 'View next session')
+                    ? (ov.viewNextSession || 'View next session')
                     : currentSubscription
                       ? (currentSubscription.status === 'pending_payment'
-                          ? (locale === 'ar' ? 'إكمال التحويل' : 'Complete transfer')
-                          : (locale === 'ar' ? 'متابعة الاشتراك' : 'Track subscription'))
+                          ? (ov.completeTransfer || 'Complete transfer')
+                          : (ov.trackSubscription || 'Track subscription'))
                       : postTrialSession
-                        ? (locale === 'ar' ? 'اشتراك والاستمرار' : 'Subscribe & continue')
-                        : (locale === 'ar' ? 'اختر معلمك' : 'Find your tutor')}
+                        ? (ov.subscribeContinue || 'Subscribe & continue')
+                        : (ov.findTutor || 'Find your tutor')}
                 </button>
                 {((stats.homeworkPending || 0) > 0 || (stats.completedSessions || 0) > 0) && (
                   <button type="button" onClick={() => setTab('homework')} className="wn-student-secondary-action">
-                    <FileText size={16} />
-                    {locale === 'ar'
-                      ? `واجباتي${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`
-                      : `Homework${stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}`}
+                    <FileText size={16} aria-hidden="true" />
+                    {ov.homework || 'Homework'}{stats.homeworkPending ? ` (${stats.homeworkPending})` : ''}
                   </button>
                 )}
               </div>
@@ -1241,17 +1256,17 @@ export default function StudentDashboard() {
 
             <div className="wn-student-welcome__summary" data-testid="student-onboarding-checklist">
               <div className="mb-1 flex items-center justify-between text-xs font-bold text-emerald-100">
-                <span>{locale === 'ar' ? 'خطوات البداية' : 'Getting started'}</span>
+                <span>{ov.gettingStarted || 'Getting started'}</span>
                 <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] text-amber-200">
-                  {completedOnboardingCount} / 3 {locale === 'ar' ? 'مكتمل' : 'done'}
+                  {completedOnboardingCount} / 3 {ov.doneOfThree || 'done'}
                 </span>
               </div>
               {onboardingSteps.map((step) => (
                 <div key={step.key} className="wn-student-welcome__metric">
                   {step.done ? (
-                    <CheckCircle size={18} className="text-emerald-300 shrink-0" />
+                    <CheckCircle size={18} className="text-emerald-300 shrink-0" aria-hidden="true" />
                   ) : (
-                    <Clock size={18} className="text-amber-200/80 shrink-0" />
+                    <Clock size={18} className="text-amber-200/80 shrink-0" aria-hidden="true" />
                   )}
                   <div>
                     <strong className="block text-sm">{step.title}</strong>
@@ -1263,66 +1278,80 @@ export default function StudentDashboard() {
           </section>}
 
           {!subscriptionsLoaded && <section className="wn-dashboard-surface" role="status">
-            <p>{locale === 'ar' ? 'تعذر تأكيد حالة اشتراكك. أعد المحاولة لعرض باقتك.' : 'Could not confirm your subscription. Retry to load your package.'}</p>
-            <button className="wn-btn wn-btn--secondary mt-3" onClick={refreshSubscriptions}>{locale === 'ar' ? 'إعادة المحاولة' : 'Retry'}</button>
+            <p className="text-[var(--wn-text-primary)]">{errT.subscriptionLoadFailed || 'Could not confirm your subscription. Retry to load your package.'}</p>
+            <button type="button" className="wn-btn wn-btn--secondary mt-3 min-h-[44px]" onClick={refreshSubscriptions}>
+              {sd.retry || common.retry || 'Try again'}
+            </button>
           </section>}
 
           {currentSubscription && (
-            <section className="wn-student-next-step wn-student-subscription" aria-label={locale === 'ar' ? 'حالة الاشتراك' : 'Subscription status'}>
+            <section className="wn-student-next-step wn-student-subscription" aria-label={ov.currentPackage || 'اشتراكك الحالي'}>
               <div>
                 <span className="wn-student-next-step__eyebrow">
-                  {locale === 'ar' ? 'اشتراكك الحالي' : 'Your current package'}
+                  {ov.currentPackage || 'اشتراكك الحالي'}
                 </span>
                 <h3>
                   {currentSubscription.pricingSnapshot?.nameAr
                     ? (locale === 'ar'
                         ? currentSubscription.pricingSnapshot.nameAr
                         : currentSubscription.pricingSnapshot.nameEn || currentSubscription.pricingSnapshot.nameAr)
-                    : (locale === 'ar' ? 'اشتراك الأكاديمية' : 'Academy subscription')}
+                    : (ov.academySubscription || 'Academy subscription')}
                 </h3>
-                <p>{locale === 'ar' ? subscriptionStatusCopy?.ar : subscriptionStatusCopy?.en}</p>
+                <p>{subStatusCopy}</p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-800">
-                    <CreditCard size={14} />
-                    {locale === 'ar'
-                      ? `الباقة: ${currentSubscription.sessionCount} حصص · المستخدم: ${currentSubscription.sessionsUsed || 0} · المتبقي: ${currentSubscription.sessionsRemaining}`
-                      : `Package: ${currentSubscription.sessionCount} sessions · Used: ${currentSubscription.sessionsUsed || 0} · Remaining: ${currentSubscription.sessionsRemaining}`}
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] px-3 py-1.5 text-[var(--wn-badge-emerald-text)]">
+                    <CreditCard size={14} aria-hidden="true" />
+                    {ov.packageLabel || 'Package:'} {currentSubscription.sessionCount} · {ov.usedLabel || 'Used:'} {currentSubscription.sessionsUsed || 0} · {ov.remainingLabel || 'Remaining:'} {currentSubscription.sessionsRemaining}
                   </span>
                   {currentSubscriptionTeacherName ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-slate-700">
-                      <UserRound size={14} />
-                      {locale === 'ar' ? `المعلم: ${currentSubscriptionTeacherName}` : `Tutor: ${currentSubscriptionTeacherName}`}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border)] bg-[var(--wn-surface)] px-3 py-1.5 text-[var(--wn-text-primary)]">
+                      <UserRound size={14} aria-hidden="true" />
+                      {ov.tutorPrefix || 'Tutor:'} {currentSubscriptionTeacherName}
                     </span>
                   ) : null}
                   {currentSubscription.circle?.name ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-800">
-                      <Users size={14} />
-                      {locale === 'ar' ? `الجروب: ${currentSubscription.circle.name}` : `Group: ${currentSubscription.circle.name}`}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-mint-soft)] px-3 py-1.5 text-[var(--wn-teal-dark)]">
+                      <Users size={14} aria-hidden="true" />
+                      {ov.groupPrefix || 'Group:'} {currentSubscription.circle.name}
                     </span>
                   ) : null}
                 </div>
                 {teacherLock ? (
-                  <p className="mt-3 text-xs font-semibold text-slate-600" data-testid="teacher-lock-note">
-                    {locale === 'ar'
-                      ? 'تم اعتماد معلمك لهذه الرحلة. لتغيير المعلم تواصل مع إدارة الأكاديمية.'
-                      : 'Your tutor is confirmed for this journey. To change tutor, contact the academy.'}
+                  <p className="mt-3 text-xs font-semibold text-[var(--wn-text-secondary)]" data-testid="teacher-lock-note">
+                    {ov.teacherLockNote || 'Your tutor is confirmed for this journey. To change tutor, contact academy support.'}
                     {' '}
-                    <button type="button" onClick={() => setTab('support')} className="font-bold text-emerald-700 underline">
-                      {locale === 'ar' ? 'تواصل مع الإدارة' : 'Contact support'}
+                    <button
+                      type="button"
+                      onClick={() => setTab('support')}
+                      className="min-h-[44px] inline-flex items-center font-bold text-[var(--wn-link)] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] rounded"
+                    >
+                      {ov.contactSupport || 'Contact support'}
                     </button>
                   </p>
                 ) : null}
               <div className="mt-4 space-y-3" data-testid="subscription-details">
-                <p className="text-sm font-semibold">{locale === 'ar' ? 'سعر الحصة:' : 'Price per lesson:'} {Number(currentSubscription.pricePerSessionMinor || 0) / 100} {currentSubscription.currency || 'EGP'}</p>
-                <progress className="w-full" value={currentSubscription.sessionsUsed || 0} max={currentSubscription.sessionCount} aria-label={locale === 'ar' ? 'الحصص المستخدمة' : 'Used sessions'} />
-                {currentSubscription.circle && <p className="text-sm">{locale === 'ar' ? 'طلاب المجموعة:' : 'Group learners:'} {currentSubscription.circle.students?.length || 0}/{currentSubscription.circle.capacity || '—'}</p>}
-                {(currentSubscription.circle?.schedule || []).length > 0 && <div className="text-sm">
-                  <strong>{locale === 'ar' ? 'جدول الحلقة' : 'Circle schedule'} — {currentSubscription.circle.timezone || 'Africa/Cairo'}</strong>
-                  {(currentSubscription.circle.schedule || []).map((row, index) => <p key={index}>{(locale === 'ar' ? { Saturday: 'السبت', Sunday: 'الأحد', Monday: 'الاثنين', Tuesday: 'الثلاثاء', Wednesday: 'الأربعاء', Thursday: 'الخميس', Friday: 'الجمعة' }[row.day] : row.day) || row.day}: {row.startTime}–{row.endTime}</p>)}
-                </div>}
-                {currentSubscription.status === 'active' && Number(currentSubscription.sessionsRemaining) <= 2 && !renewalSubscription && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" data-testid="low-balance-alert">
-                  {locale === 'ar' ? `متبقي لك ${currentSubscription.sessionsRemaining} حصة في باقتك. جدّد اشتراكك للاستمرار مع نفس المعلم والمجموعة.` : `You have ${currentSubscription.sessionsRemaining} lessons left. Renew to continue with the same tutor and group.`}
-                </div>}
+                <p className="text-sm font-semibold text-[var(--wn-text-primary)]">
+                  {ov.pricePerLesson || 'Price per lesson:'} {Number(currentSubscription.pricePerSessionMinor || 0) / 100} {currentSubscription.currency || 'EGP'}
+                </p>
+                <progress className="w-full" value={currentSubscription.sessionsUsed || 0} max={currentSubscription.sessionCount} aria-label={ov.usedSessionsAria || 'Used sessions'} />
+                {currentSubscription.circle && (
+                  <p className="text-sm text-[var(--wn-text-primary)]">
+                    {ov.groupLearners || 'Group learners:'} {currentSubscription.circle.students?.length || 0}/{currentSubscription.circle.capacity || '—'}
+                  </p>
+                )}
+                {(currentSubscription.circle?.schedule || []).length > 0 && (
+                  <div className="text-sm text-[var(--wn-text-primary)]">
+                    <strong>{ov.circleSchedule || 'Circle schedule'} — {currentSubscription.circle.timezone || 'Africa/Cairo'}</strong>
+                    {(currentSubscription.circle.schedule || []).map((row, index) => (
+                      <p key={index}>{row.day}: {row.startTime}–{row.endTime}</p>
+                    ))}
+                  </div>
+                )}
+                {currentSubscription.status === 'active' && Number(currentSubscription.sessionsRemaining) <= 2 && !renewalSubscription && (
+                  <div role="status" className="rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3 text-sm font-semibold text-[var(--wn-text-primary)]" data-testid="low-balance-alert">
+                    {ov.lowBalanceAlert || 'Your package balance is running low — renew to continue with the same tutor and group.'} ({currentSubscription.sessionsRemaining})
+                  </div>
+                )}
               </div>
               </div>
               <div className="wn-student-next-step__actions">
@@ -1332,23 +1361,23 @@ export default function StudentDashboard() {
                     onClick={() => navigate(lp('/payment/manual') + '?subscription=' + encodeURIComponent(currentSubscription._id))}
                     className="wn-student-primary-action"
                   >
-                    <CreditCard size={17} />
-                    {locale === 'ar' ? 'إكمال التحويل' : 'Complete transfer'}
+                    <CreditCard size={17} aria-hidden="true" />
+                    {ov.completeTransfer || 'Complete transfer'}
                   </button>
                 ) : null}
                 {currentSubscription.status === 'payment_review' ? (
-                  <span className="text-xs font-semibold text-amber-700">
-                    {locale === 'ar' ? 'بانتظار مراجعة الإدارة' : 'Waiting for admin review'}
+                  <span className="text-xs font-semibold text-[var(--wn-text-gold)]">
+                    {sd.subStatus?.payment_review || 'بانتظار مراجعة الإدارة'}
                   </span>
                 ) : null}
                 {currentSubscription.status === 'awaiting_placement' ? (
-                  <span className="text-xs font-semibold text-blue-700">
-                    {locale === 'ar' ? 'الدفع معتمد — بانتظار التسكين' : 'Payment approved — awaiting placement'}
+                  <span className="text-xs font-semibold text-[var(--wn-link)]">
+                    {sd.subStatus?.awaiting_placement || 'الدفع معتمد — بانتظار التسكين'}
                   </span>
                 ) : null}
                 {currentSubscription.status === 'placed' ? (
-                  <span className="text-xs font-semibold text-blue-700">
-                    {locale === 'ar' ? (currentSubscription.circle?.status === 'ready' ? 'اكتمل العدد — بانتظار تحديد المواعيد والبدء' : 'تم التسكين — الجروب قيد الاكتمال') : (currentSubscription.circle?.status === 'ready' ? 'Group ready — awaiting schedule and start' : 'Placed — group forming')}
+                  <span className="text-xs font-semibold text-[var(--wn-link)]">
+                    {sd.subStatus?.placed || 'تم التسكين — الجروب قيد الاكتمال'}
                   </span>
                 ) : null}
                 {currentSubscription.status === 'active' ? (
@@ -1357,8 +1386,8 @@ export default function StudentDashboard() {
                     onClick={() => setTab('sessions')}
                     className="wn-student-primary-action"
                   >
-                    <Calendar size={17} />
-                    {locale === 'ar' ? 'عرض حصصي' : 'View sessions'}
+                    <Calendar size={17} aria-hidden="true" />
+                    {ov.mySessions || 'My Sessions'}
                   </button>
                 ) : null}
 
@@ -1369,18 +1398,16 @@ export default function StudentDashboard() {
                       onClick={() => navigate(lp('/payment/manual') + '?subscription=' + encodeURIComponent(renewalSubscription._id))}
                       className="wn-student-primary-action"
                     >
-                      <CreditCard size={17} />
-                      {locale === 'ar' ? 'إكمال دفع التجديد' : 'Complete renewal payment'}
+                      <CreditCard size={17} aria-hidden="true" />
+                      {ov.completeRenewalPayment || 'Complete renewal payment'}
                     </button>
                   ) : renewalSubscription.status === 'payment_review' ? (
-                    <span className="text-xs font-semibold text-amber-700">
-                      {locale === 'ar' ? 'تجديدك قيد مراجعة التحويل' : 'Renewal payment under review'}
+                    <span className="text-xs font-semibold text-[var(--wn-text-gold)]">
+                      {ov.renewalUnderReview || 'Renewal payment under review'}
                     </span>
                   ) : (
-                    <span className="text-xs font-semibold text-emerald-700">
-                      {locale === 'ar'
-                        ? `التجديد مدفوع وجاهز: ${renewalSubscription.sessionCount} حصة تبدأ تلقائيًا بعد انتهاء الرصيد الحالي`
-                        : `Renewal paid and ready: ${renewalSubscription.sessionCount} sessions will activate automatically`}
+                    <span className="text-xs font-semibold text-[var(--wn-link)]">
+                      {ov.renewalPaidReady || 'Renewal paid and ready'} ({renewalSubscription.sessionCount})
                     </span>
                   )
                 ) : (
@@ -1390,11 +1417,11 @@ export default function StudentDashboard() {
                       <select
                         value={renewalSessionCount}
                         onChange={(event) => setRenewalSessionCount(Number(event.target.value))}
-                        className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-bold text-emerald-800"
-                        aria-label={locale === 'ar' ? 'عدد حصص التجديد' : 'Renewal sessions'}
+                        className="min-h-[44px] rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-3 py-2 text-sm font-bold text-[var(--wn-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                        aria-label={ov.renewalSessionsAria || 'Renewal sessions'}
                       >
                         {[4, 8, 12, 24].map((count) => (
-                          <option key={count} value={count}>{count} {locale === 'ar' ? 'حصص' : 'sessions'}</option>
+                          <option key={count} value={count}>{count} {qwT.sessionsUnit || 'sessions'}</option>
                         ))}
                       </select>
                       <button
@@ -1403,10 +1430,10 @@ export default function StudentDashboard() {
                         onClick={() => renewSubscription(currentSubscription)}
                         className="wn-student-primary-action"
                       >
-                        <RotateCcw size={17} />
+                        {renewingSubscription ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={17} aria-hidden="true" />}
                         {renewingSubscription
-                          ? (locale === 'ar' ? 'جاري إنشاء التجديد...' : 'Creating renewal...')
-                          : (locale === 'ar' ? 'تجديد الاشتراك' : 'Renew subscription')}
+                          ? (ov.renewing || 'Creating renewal…')
+                          : (ov.renewSubscription || 'تجديد الاشتراك')}
                       </button>
                     </div>
                   ) : null
@@ -1419,32 +1446,28 @@ export default function StudentDashboard() {
             <div className="space-y-4">
               <section className="wn-student-next-step">
                 <div>
-                  <span className="wn-student-next-step__eyebrow">{locale === 'ar' ? 'خطوتك التالية' : 'Next step'}</span>
-                  <h3>{locale === 'ar' ? 'أكملت الحصة التجريبية بنجاح' : 'Your trial session is complete'}</h3>
+                  <span className="wn-student-next-step__eyebrow">{ov.nextStepEyebrow || 'Next step'}</span>
+                  <h3>{ov.trialCompleteTitle || 'Your trial session is complete'}</h3>
                   <p>
-                    {locale === 'ar'
-                      ? `اشترك للاستمرار مع ${postTrialSession.teacher?.user?.name || postTrialSession.teacher?.personalInfo?.fullName || 'المعلم'}. لديك 3 حصص تجريبية إجمالاً، والمتبقي الآن ${trialRemaining}.`
-                      : `Subscribe to continue with this tutor. You have 3 trial sessions in total, with ${trialRemaining} remaining.`}
+                    {ov.trialCompleteDesc || 'Subscribe to continue with your tutor, or use your remaining free trial sessions.'} ({trialRemaining})
                   </p>
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800">
-                    <Clock size={14} />
-                    {locale === 'ar'
-                      ? `التجريبيات: ${trialAllowance.used || 0} مستخدمة من ${trialAllowance.limit || 3} · ${trialRemaining} متبقية`
-                      : `Trials: ${trialAllowance.used || 0} used of ${trialAllowance.limit || 3} · ${trialRemaining} remaining`}
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] px-3 py-1.5 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                    <Clock size={14} aria-hidden="true" />
+                    {trialAllowance.used || 0} / {trialAllowance.limit || 3} · {trialRemaining} {ov.trialsRemainingStat || 'تجريبيات متبقية'}
                   </div>
                 </div>
                 <div className="wn-student-next-step__actions">
                   <button type="button" onClick={() => navigate(lp('/plans'))} className="wn-student-primary-action">
-                    <CreditCard size={17} />
-                    {locale === 'ar' ? 'اشتراك' : 'Subscribe'}
+                    <CreditCard size={17} aria-hidden="true" />
+                    {ov.subscribe || 'اشتراك'}
                   </button>
                   {trialRemaining > 0 ? (
                     <button type="button" onClick={() => setTab('discover')} className="wn-student-secondary-action">
-                      {locale === 'ar' ? 'استخدم تجريبية أخرى' : 'Use another trial'}
+                      {ov.useAnotherTrial || 'Use another trial'}
                     </button>
                   ) : (
-                    <span className="text-xs font-semibold text-slate-500">
-                      {locale === 'ar' ? 'استخدمت الحصص التجريبية الثلاث' : 'All three trials have been used'}
+                    <span className="text-xs font-semibold text-[var(--wn-text-secondary)]">
+                      {ov.allTrialsUsed || 'All three trials have been used'}
                     </span>
                   )}
                 </div>
@@ -1472,30 +1495,30 @@ export default function StudentDashboard() {
             {tab === 'overview' && subscriptionsLoaded && (
               <div className="wn-student-overview">
                 {currentSubscription && (
-                  <section className="wn-student-active-subscription-card rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/40 p-5 shadow-sm mb-6">
+                  <section className="wn-student-active-subscription-card rounded-2xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-5 shadow-sm mb-6">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 text-white text-xs font-bold px-3 py-1">
-                            <Sparkles size={13} />
-                            {locale === 'ar' ? 'اشتراك نشط' : 'Active Subscription'}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] text-xs font-bold px-3 py-1">
+                            <Sparkles size={13} aria-hidden="true" />
+                            {ov.activeSubscriptionBadge || 'Active Subscription'}
                           </span>
-                          <span className="rounded-full bg-emerald-100/80 text-emerald-900 text-xs font-semibold px-2.5 py-0.5">
-                            {locale === 'ar' ? subscriptionStatusCopy?.ar : subscriptionStatusCopy?.en}
+                          <span className="rounded-full bg-[var(--wn-surface)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)] text-xs font-semibold px-2.5 py-0.5">
+                            {subStatusCopy}
                           </span>
                         </div>
-                        <h3 className="mt-2 text-xl font-black text-slate-900">
+                        <h3 className="mt-2 text-xl font-black text-[var(--wn-heading)]">
                           {currentSubscription.pricingSnapshot?.nameAr
                             ? (locale === 'ar'
                                 ? currentSubscription.pricingSnapshot.nameAr
                                 : currentSubscription.pricingSnapshot.nameEn || currentSubscription.pricingSnapshot.nameAr)
-                            : (locale === 'ar' ? 'باقة الأكاديمية' : 'Academy Package')}
+                            : (ov.academyPackage || 'Academy Package')}
                         </h3>
-                        <p className="mt-1 text-sm text-slate-600">
+                        <p className="mt-1 text-sm text-[var(--wn-text-secondary)]">
                           {currentSubscriptionTeacherName
-                            ? (locale === 'ar' ? `مع المعلم ${currentSubscriptionTeacherName}` : `With tutor ${currentSubscriptionTeacherName}`)
-                            : (locale === 'ar' ? 'معلم معتمد من الأكاديمية' : 'Approved Academy tutor')}
-                          {currentSubscription.circle?.name ? ` · ${locale === 'ar' ? 'حلقة:' : 'Circle:'} ${currentSubscription.circle.name}` : ''}
+                            ? `${ov.withTutorPrefix || 'With tutor'} ${currentSubscriptionTeacherName}`
+                            : (ov.approvedTutorFallback || 'Approved Academy tutor')}
+                          {currentSubscription.circle?.name ? ` · ${ov.circlePrefix || 'Circle:'} ${currentSubscription.circle.name}` : ''}
                         </p>
                       </div>
 
@@ -1505,61 +1528,61 @@ export default function StudentDashboard() {
                           onClick={() => setTab('sessions')}
                           className="wn-student-primary-action text-sm"
                         >
-                          <Calendar size={16} />
-                          {locale === 'ar' ? 'عرض حصصي' : 'My Sessions'}
+                          <Calendar size={16} aria-hidden="true" />
+                          {ov.mySessions || 'My Sessions'}
                         </button>
                         <button
                           type="button"
                           onClick={() => setTab('homework')}
                           className="wn-student-secondary-action text-sm"
                         >
-                          <FileText size={16} />
-                          {locale === 'ar' ? 'الواجبات' : 'Homework'}
+                          <FileText size={16} aria-hidden="true" />
+                          {ov.homework || 'Homework'}
                         </button>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-4 border-t border-emerald-100/80 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
-                        <span className="text-xs text-slate-500 block mb-1">
-                          {locale === 'ar' ? 'الحصص المتبقية' : 'Remaining Sessions'}
+                    <div className="mt-4 pt-4 border-t border-[var(--wn-border-mint)] grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl bg-[var(--wn-surface)] p-3 border border-[var(--wn-border)]">
+                        <span className="text-xs text-[var(--wn-text-secondary)] block mb-1">
+                          {ov.remainingSessions || 'Remaining Sessions'}
                         </span>
                         <div className="flex items-baseline gap-1.5">
-                          <strong className="text-2xl font-black text-emerald-800">
+                          <strong className="text-2xl font-black text-[var(--wn-link)]">
                             {currentSubscription.sessionsRemaining}
                           </strong>
-                          <span className="text-xs text-slate-500">
-                            / {currentSubscription.sessionCount} {locale === 'ar' ? 'حصة' : 'sessions'}
+                          <span className="text-xs text-[var(--wn-text-secondary)]">
+                            / {currentSubscription.sessionCount} {qwT.sessionsUnit || 'sessions'}
                           </span>
                         </div>
                       </div>
 
-                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
-                        <span className="text-xs text-slate-500 block mb-1">
-                          {locale === 'ar' ? 'الحصص المنجزة' : 'Completed Sessions'}
+                      <div className="rounded-xl bg-[var(--wn-surface)] p-3 border border-[var(--wn-border)]">
+                        <span className="text-xs text-[var(--wn-text-secondary)] block mb-1">
+                          {ov.completedSessions || 'Completed Sessions'}
                         </span>
                         <div className="flex items-baseline gap-1.5">
-                          <strong className="text-2xl font-black text-slate-800">
+                          <strong className="text-2xl font-black text-[var(--wn-text-primary)]">
                             {currentSubscription.sessionsUsed || 0}
                           </strong>
-                          <span className="text-xs text-slate-500">
-                            {locale === 'ar' ? 'حصة مستخدمة' : 'used'}
+                          <span className="text-xs text-[var(--wn-text-secondary)]">
+                            {ov.usedUnit || 'used'}
                           </span>
                         </div>
                       </div>
 
-                      <div className="rounded-xl bg-white/80 p-3 border border-emerald-100">
-                        <span className="text-xs text-slate-500 block mb-1">
-                          {locale === 'ar' ? 'نسبة الاستهلاك' : 'Progress'}
+                      <div className="rounded-xl bg-[var(--wn-surface)] p-3 border border-[var(--wn-border)]">
+                        <span className="text-xs text-[var(--wn-text-secondary)] block mb-1">
+                          {ov.progress || 'Progress'}
                         </span>
                         <div className="flex flex-col justify-center h-full">
                           <progress
-                            className="w-full h-2.5 rounded-full overflow-hidden accent-emerald-600"
+                            className="w-full h-2.5 rounded-full overflow-hidden accent-[var(--wn-emerald)]"
                             value={currentSubscription.sessionsUsed || 0}
                             max={currentSubscription.sessionCount || 1}
-                            aria-label={locale === 'ar' ? 'الحصص المستخدمة' : 'Used sessions'}
+                            aria-label={ov.usedSessionsAria || 'Used sessions'}
                           />
-                          <span className="text-[11px] text-slate-500 mt-1 font-semibold text-end">
+                          <span className="text-[11px] text-[var(--wn-text-secondary)] mt-1 font-semibold text-end">
                             {Math.round(((currentSubscription.sessionsUsed || 0) / (currentSubscription.sessionCount || 1)) * 100)}%
                           </span>
                         </div>
@@ -1567,11 +1590,9 @@ export default function StudentDashboard() {
                     </div>
 
                     {currentSubscription.status === 'active' && Number(currentSubscription.sessionsRemaining) <= 2 && !renewalSubscription && (
-                      <div role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs sm:text-sm font-semibold text-amber-900 flex items-center justify-between flex-wrap gap-2" data-testid="low-balance-alert-overview">
+                      <div role="status" className="mt-3 rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3 text-xs sm:text-sm font-semibold text-[var(--wn-text-primary)] flex items-center justify-between flex-wrap gap-2" data-testid="low-balance-alert-overview">
                         <span>
-                          {locale === 'ar'
-                            ? `متبقي لك ${currentSubscription.sessionsRemaining} حصة فقط في باقتك. جدّد الآن لضمان استمرار الحلقات دون انقطاع.`
-                            : `You only have ${currentSubscription.sessionsRemaining} lessons left. Renew now to ensure uninterrupted learning.`}
+                          {ov.lowBalanceAlert || 'Your package balance is running low — renew to continue with the same tutor and group.'} ({currentSubscription.sessionsRemaining})
                         </span>
                         <button
                           type="button"
@@ -1579,8 +1600,8 @@ export default function StudentDashboard() {
                           disabled={renewingSubscription}
                           className="wn-student-primary-action text-xs py-1.5 px-3"
                         >
-                          <RotateCcw size={14} />
-                          {renewingSubscription ? (locale === 'ar' ? 'جاري التجديد...' : 'Renewing...') : (locale === 'ar' ? 'تجديد الاشتراك' : 'Renew')}
+                          {renewingSubscription ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={14} aria-hidden="true" />}
+                          {renewingSubscription ? (ov.renewing || 'Creating renewal…') : (ov.renewSubscription || 'Renew subscription')}
                         </button>
                       </div>
                     )}
@@ -1591,8 +1612,8 @@ export default function StudentDashboard() {
                   <section className="wn-student-session-panel">
                     <div className="wn-student-section-heading">
                       <div>
-                        <span>{locale === 'ar' ? 'الأولوية الآن' : 'Up next'}</span>
-                        <h3>{locale === 'ar' ? 'الحصة القادمة' : 'Your next session'}</h3>
+                        <span>{ov.upNext || 'Up next'}</span>
+                        <h3>{ov.nextSession || 'Your next session'}</h3>
                       </div>
                       {nextActiveSession ? (
                         <button
@@ -1600,7 +1621,7 @@ export default function StudentDashboard() {
                           onClick={() => setTab(nextActiveSession.type === 'trial' ? 'trials' : 'sessions')}
                           className="wn-student-text-action"
                         >
-                          {locale === 'ar' ? 'كل الحصص' : 'All sessions'}
+                          {ov.allSessions || 'All sessions'}
                         </button>
                       ) : null}
                     </div>
@@ -1618,21 +1639,21 @@ export default function StudentDashboard() {
                       return (
                         <div className="wn-student-session-panel__body">
                           <div className="wn-student-session-panel__date">
-                            <strong>{nextSessionDate?.toLocaleDateString(dateLocale, { day: '2-digit' })}</strong>
-                            <span>{nextSessionDate?.toLocaleDateString(dateLocale, { month: 'short' })}</span>
+                            <strong>{nextSessionDate?.toLocaleDateString(intlLocale, { day: '2-digit' })}</strong>
+                            <span>{nextSessionDate?.toLocaleDateString(intlLocale, { month: 'short' })}</span>
                           </div>
                           <div className="wn-student-session-panel__details">
                             <span className="wn-student-session-type">
                               {nextActiveSession.type === 'trial'
-                                ? (locale === 'ar' ? 'حصة تجريبية' : 'Trial session')
+                                ? (ov.trialSession || 'Trial session')
                                 : isGroupNext
-                                  ? (locale === 'ar' ? 'حلقة جماعية' : 'Group circle')
-                                  : (locale === 'ar' ? 'حصة منتظمة' : 'Regular session')}
+                                  ? (ov.groupCircle || 'حلقة جماعية')
+                                  : (ov.regularSession || 'Regular session')}
                             </span>
                             <h4>{isGroupNext ? (nextActiveSession.circle?.name || nextSessionTeacherName) : nextSessionTeacherName}</h4>
                             <p>
-                              <Clock size={15} />
-                              {nextSessionDate?.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextActiveSession)}
+                              <Clock size={15} aria-hidden="true" />
+                              {nextSessionDate?.toLocaleTimeString(intlLocale, { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextActiveSession)}
                             </p>
                           </div>
                           {canJoinNext ? (
@@ -1640,28 +1661,28 @@ export default function StudentDashboard() {
                               to={localizedPath(getSessionLiveRoomPath(nextActiveSession), locale)}
                               className="wn-student-join-action"
                             >
-                              <Video size={17} />
-                              {locale === 'ar' ? 'دخول الحصة' : 'Join session'}
+                              <Video size={17} aria-hidden="true" />
+                              {ov.joinSession || 'Join session'}
                             </Link>
                           ) : (
                             <div className="flex flex-col items-end gap-1.5">
-                              <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                              <span className="rounded-lg bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] px-3 py-1.5 text-xs font-semibold text-[var(--wn-text-secondary)]">
                                 {nextJoinWindow?.phase === 'early'
-                                  ? (locale === 'ar' ? 'يفتح الدخول قبل الموعد بـ 30 دقيقة' : 'Join opens 30m before')
-                                  : (locale === 'ar' ? 'انتهى وقت الدخول' : 'Join window ended')}
+                                  ? (ov.joinOpensEarly || 'Join opens 30m before')
+                                  : (ov.joinWindowEnded || 'Join window ended')}
                               </span>
                               {nextAttendance?.status === 'confirmed' ? (
-                                <span className="text-xs font-bold text-emerald-700">
-                                  {locale === 'ar' ? '✓ تم تأكيد حضورك' : '✓ Confirmed'}
+                                <span className="text-xs font-bold text-[var(--wn-link)]">
+                                  {ov.confirmedBadge || '✓ Confirmed'}
                                 </span>
                               ) : nextAttendance?.status !== 'excused' && nextJoinWindow?.phase === 'early' ? (
                                 <button
                                   type="button"
                                   disabled={submittingRsvp}
                                   onClick={() => handleStudentRsvp(nextActiveSession._id, 'confirmed')}
-                                  className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                                  className="min-h-[44px] inline-flex items-center rounded-lg bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] px-3.5 py-2 text-xs font-bold text-[var(--wn-text-inverse)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-50"
                                 >
-                                  {locale === 'ar' ? 'تأكيد الحضور' : 'Confirm attendance'}
+                                  {ov.confirmAttendance || 'Confirm attendance'}
                                 </button>
                               ) : null}
                             </div>
@@ -1670,19 +1691,15 @@ export default function StudentDashboard() {
                       );
                     })() : (
                       <div className="wn-student-empty-session">
-                        <BookOpen size={28} />
+                        <BookOpen size={28} aria-hidden="true" />
                         <div>
-                          <h4>{locale === 'ar' ? 'لا توجد حصة قادمة' : 'No upcoming session'}</h4>
+                          <h4>{ov.noUpcomingSession || 'No upcoming session'}</h4>
                           <p>
                             {currentSubscription
-                              ? (locale === 'ar'
-                                ? 'سيقوم معلمك أو إدارة الأكاديمية بجدولة حصصك القادمة قريباً.'
-                                : 'Your tutor or academy administration will schedule your upcoming sessions soon.')
+                              ? (ov.noUpcomingSub || 'Your tutor or academy administration will schedule your upcoming sessions soon.')
                               : postTrialSession
-                              ? (locale === 'ar'
-                                ? (trialRemaining > 0 ? `اشترك للاستمرار، أو استخدم واحدة من ${trialRemaining} تجريبية متبقية.` : 'اشترك للاستمرار مع معلمك.')
-                                : (trialRemaining > 0 ? `Subscribe to continue, or use one of ${trialRemaining} remaining trials.` : 'Subscribe to continue with your tutor.'))
-                              : (locale === 'ar' ? 'اختر معلماً معتمداً وابدأ بحصة تجريبية.' : 'Choose an approved tutor and start with a trial.')}
+                                ? (ov.noUpcomingTrial || 'Subscribe to continue with your tutor or use a remaining trial.')
+                                : (ov.noUpcomingDiscover || 'Choose an approved tutor and start with a trial.')}
                           </p>
                         </div>
                         <button
@@ -1691,10 +1708,10 @@ export default function StudentDashboard() {
                           className="wn-student-primary-action"
                         >
                           {currentSubscription
-                            ? (locale === 'ar' ? 'عرض جدول الحصص' : 'View session schedule')
+                            ? (ov.viewSchedule || 'View session schedule')
                             : postTrialSession
-                            ? (locale === 'ar' ? 'اشتراك' : 'Subscribe')
-                            : (locale === 'ar' ? 'اختر معلمك' : 'Find a tutor')}
+                              ? (ov.subscribe || 'Subscribe')
+                              : (ov.findTutor || 'Find a tutor')}
                         </button>
                       </div>
                     )}
@@ -1703,31 +1720,31 @@ export default function StudentDashboard() {
                   <aside className="wn-student-quick-panel">
                     <div className="wn-student-section-heading">
                       <div>
-                        <span>{locale === 'ar' ? 'وصول سريع' : 'Quick access'}</span>
-                        <h3>{locale === 'ar' ? 'ماذا تريد أن تفعل؟' : 'What do you need?'}</h3>
+                        <span>{ov.quickAccess || 'Quick access'}</span>
+                        <h3>{ov.whatToDo || 'What do you need?'}</h3>
                       </div>
                     </div>
                     <div className="wn-student-quick-grid">
                       {!teacherLock && (
                         <button type="button" onClick={() => setTab('discover')} className="wn-student-quick-card">
-                          <Users size={20} />
-                          <span>{locale === 'ar' ? 'اختر معلمك' : 'Find tutor'}</span>
+                          <Users size={20} aria-hidden="true" />
+                          <span>{ov.findTutor || 'Find tutor'}</span>
                         </button>
                       )}
                       <button type="button" onClick={() => setTab('sessions')} className="wn-student-quick-card">
-                        <Calendar size={20} />
-                        <span>{locale === 'ar' ? 'حصصي' : 'My sessions'}</span>
+                        <Calendar size={20} aria-hidden="true" />
+                        <span>{ov.mySessions || 'My sessions'}</span>
                       </button>
                       <button type="button" onClick={() => setTab('homework')} className="wn-student-quick-card">
-                        <FileText size={20} />
-                        <span>{locale === 'ar' ? 'واجباتي' : 'Homework'}</span>
+                        <FileText size={20} aria-hidden="true" />
+                        <span>{ov.homework || 'Homework'}</span>
                       </button>
                       <button type="button" onClick={() => setTab(teacherUpdates.length ? 'teacher-updates' : 'achievements')} className="wn-student-quick-card">
-                        {teacherUpdates.length ? <Megaphone size={20} /> : <Trophy size={20} />}
+                        {teacherUpdates.length ? <Megaphone size={20} aria-hidden="true" /> : <Trophy size={20} aria-hidden="true" />}
                         <span>
                           {teacherUpdates.length
-                            ? (locale === 'ar' ? 'رسائل المعلم' : 'Tutor updates')
-                            : (locale === 'ar' ? 'إنجازاتي' : 'Achievements')}
+                            ? (tabsT.teacherUpdates || 'Tutor updates')
+                            : (tabsT.achievements || 'Achievements')}
                         </span>
                       </button>
                     </div>
@@ -1736,31 +1753,31 @@ export default function StudentDashboard() {
 
                 {!isBrandNewStudent && (
                   <div className="wn-student-stat-grid">
-                    <StatCard label={locale === 'ar' ? 'حصص قادمة' : 'Upcoming sessions'} value={stats.upcomingSessions || 0} icon={Calendar} />
+                    <StatCard label={ov.upcomingStat || 'Upcoming sessions'} value={stats.upcomingSessions || 0} icon={Calendar} />
                     {currentSubscription ? (
                       <StatCard
-                        label={locale === 'ar' ? 'حصص متبقية بالباقة' : 'Remaining package sessions'}
+                        label={ov.remainingStat || 'Remaining package sessions'}
                         value={currentSubscription.sessionsRemaining ?? 0}
                         icon={Clock}
                       />
                     ) : (
-                      <StatCard label={locale === 'ar' ? 'تجريبيات متبقية' : 'Trials remaining'} value={trialRemaining} icon={Clock} />
+                      <StatCard label={ov.trialsRemainingStat || 'تجريبيات متبقية'} value={trialRemaining} icon={Clock} />
                     )}
-                    <StatCard label={locale === 'ar' ? 'حصص مكتملة' : 'Completed sessions'} value={stats.completedSessions || 0} icon={CheckCircle} />
-                    <StatCard label={locale === 'ar' ? 'واجبات تم تسليمها' : 'Homework submitted'} value={stats.homeworkSubmitted || 0} icon={FileText} />
+                    <StatCard label={ov.completedStat || 'Completed sessions'} value={stats.completedSessions || 0} icon={CheckCircle} />
+                    <StatCard label={ov.homeworkStat || 'Homework submitted'} value={stats.homeworkSubmitted || 0} icon={FileText} />
                   </div>
                 )}
 
                 {teacherUpdates[0] && (
                   <section className="wn-student-teacher-update-preview">
-                    <span className="wn-student-teacher-update-preview__icon"><Megaphone size={20} /></span>
+                    <span className="wn-student-teacher-update-preview__icon"><Megaphone size={20} aria-hidden="true" /></span>
                     <div>
-                      <span>{locale === 'ar' ? 'رسالة جديدة من معلمك' : 'New tutor update'}</span>
+                      <span>{ov.newTutorUpdate || 'New tutor update'}</span>
                       <h3>{teacherUpdates[0].title}</h3>
-                      <p>{teacherUpdates[0].message || (locale === 'ar' ? 'أرسل لك معلمك فيديو جديدًا.' : 'Your tutor shared a new video.')}</p>
+                      <p>{teacherUpdates[0].message || (ov.newTutorVideoFallback || 'Your tutor shared a new video.')}</p>
                     </div>
                     <button type="button" onClick={() => setTab('teacher-updates')} className="wn-student-primary-action">
-                      {locale === 'ar' ? 'مشاهدة الرسالة' : 'View update'}
+                      {ov.viewUpdate || 'View update'}
                     </button>
                   </section>
                 )}
@@ -1770,25 +1787,25 @@ export default function StudentDashboard() {
                     <section className="wn-student-journey-card">
                       <div className="wn-student-section-heading">
                         <div>
-                          <span>{locale === 'ar' ? 'ملخص رحلتك' : 'Journey snapshot'}</span>
-                          <h3>{locale === 'ar' ? 'تقدمك في مكان واحد' : 'Your progress in one place'}</h3>
+                          <span>{ov.journeySnapshot || 'Journey snapshot'}</span>
+                          <h3>{ov.progressInOnePlace || 'Your progress in one place'}</h3>
                         </div>
                       </div>
                       <div className="wn-student-journey-list">
                         <button type="button" onClick={() => setTab('sessions')}>
-                          <span>{locale === 'ar' ? 'الحصص المكتملة' : 'Completed sessions'}</span>
+                          <span>{ov.completedStat || 'Completed sessions'}</span>
                           <strong>{stats.completedSessions || 0}</strong>
                         </button>
                         <button type="button" onClick={() => setTab('homework')}>
-                          <span>{locale === 'ar' ? 'الواجبات المسلمة' : 'Submitted homework'}</span>
+                          <span>{ov.submittedHwStat || 'Submitted homework'}</span>
                           <strong>{stats.homeworkSubmitted || 0}</strong>
                         </button>
                         <button type="button" onClick={() => setTab('account')}>
-                          <span>{locale === 'ar' ? 'الدورات المسجلة' : 'Enrolled courses'}</span>
+                          <span>{ov.enrolledCoursesStat || 'Enrolled courses'}</span>
                           <strong>{courses.length}</strong>
                         </button>
                         <button type="button" onClick={() => setTab('account')}>
-                          <span>{locale === 'ar' ? 'المعلمون في رحلتك' : 'Your tutors'}</span>
+                          <span>{ov.yourTutorsStat || 'Your tutors'}</span>
                           <strong>{myTeachers.length}</strong>
                         </button>
                       </div>
@@ -1797,46 +1814,43 @@ export default function StudentDashboard() {
 
                   {referral?.code ? (
                     <section className="wn-student-referral-card">
-                      <Gift size={24} />
-                      <span>{locale === 'ar' ? 'برنامج السفراء' : 'Referral program'}</span>
-                      <h3>{locale === 'ar' ? 'شارك الخير واكسب نقاطاً' : 'Invite a friend and earn points'}</h3>
-                      <p>{locale === 'ar' ? `جمعت ${referral.stats?.totalPoints || 0} نقطة حتى الآن.` : `You have earned ${referral.stats?.totalPoints || 0} points so far.`}</p>
+                      <Gift size={24} aria-hidden="true" />
+                      <span>{ov.referralProgram || 'Referral program'}</span>
+                      <h3>{ov.inviteEarnTitle || 'Invite a friend and earn points'}</h3>
+                      <p>{referral.stats?.totalPoints || 0} {acc.pointsUnit || 'points'}</p>
                       <div className="wn-student-referral-card__code">
                         <code>{referral.code}</code>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(referral.link || referral.code);
-                            toast.success(locale === 'ar' ? 'تم نسخ رابط الإحالة' : 'Referral link copied');
-                          }}
+                          onClick={() => copyTextSafely(referral.link || referral.code, refT.copiedSuccess || 'Referral link copied')}
                         >
-                          <Copy size={15} />
-                          {locale === 'ar' ? 'نسخ' : 'Copy'}
+                          <Copy size={15} aria-hidden="true" />
+                          {common.copy || 'Copy'}
                         </button>
                       </div>
                       <button type="button" onClick={() => setTab('referral')} className="wn-student-text-action">
-                        {locale === 'ar' ? 'عرض التفاصيل' : 'View details'}
+                        {ov.viewDetails || 'View details'}
                       </button>
                     </section>
                   ) : (
                     <section className="wn-student-referral-card is-muted">
-                      <Sparkles size={24} />
-                      <span>{locale === 'ar' ? 'خطوة مقترحة' : 'Suggested next step'}</span>
+                      <Sparkles size={24} aria-hidden="true" />
+                      <span>{ov.suggestedNextStep || 'Suggested next step'}</span>
                       <h3>
                         {pendingTrials.length
-                          ? (locale === 'ar' ? 'طلبك التجريبي في انتظار رد المعلم' : 'Your trial request is awaiting a response')
+                          ? (ov.pendingTrialStep || 'Your trial request is awaiting a response')
                           : stats.homeworkPending
-                            ? (locale === 'ar' ? 'لديك واجب يحتاج إلى التسليم' : 'You have homework waiting')
+                            ? (ov.homeworkWaitingStep || 'You have homework waiting')
                             : teacherLock
-                              ? (locale === 'ar' ? 'تابع حصصك مع معلمك' : 'Follow your sessions with your tutor')
-                              : (locale === 'ar' ? 'استكشف المعلمين واختر الأنسب لك' : 'Explore tutors and find your match')}
+                              ? (ov.followTutorStep || 'Follow your sessions with your tutor')
+                              : (ov.exploreTutorsStep || 'Explore tutors and find your match')}
                       </h3>
                       <button
                         type="button"
                         onClick={() => setTab(pendingTrials.length ? 'trials' : stats.homeworkPending ? 'homework' : teacherLock ? 'sessions' : 'discover')}
                         className="wn-student-primary-action"
                       >
-                        {locale === 'ar' ? 'ابدأ الآن' : 'Continue'}
+                        {ov.continueBtn || 'Continue'}
                       </button>
                     </section>
                   )}
@@ -1850,98 +1864,132 @@ export default function StudentDashboard() {
 
             {tab === 'account' && (
               <div className="space-y-6">
-                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
-                  <h3 className="font-bold mb-3">{locale === 'id' ? 'Selamat datang,' : locale === 'ar' ? 'مرحباً،' : 'Welcome,'} {profile?.user?.name || user?.name}</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                    <InfoRow label={locale === 'id' ? 'Email' : locale === 'ar' ? 'البريد' : 'Email'} value={profile?.user?.email || user?.email} />
-                    <InfoRow label={locale === 'id' ? 'Telepon' : locale === 'ar' ? 'الهاتف' : 'Phone'} value={profile?.user?.phone} />
-                    <InfoRow label={locale === 'id' ? 'Sesi Selesai' : locale === 'ar' ? 'حصص مكتملة' : 'Completed Sessions'} value={profile?.summary?.completedSessions || 0} />
-                    <InfoRow label={locale === 'ar' ? 'مستواي المبدئي' : 'My starting level'} value={learnerLevelLabel(profile?.user?.currentLevel || user?.currentLevel, locale)} />
-                    <InfoRow label={locale === 'ar' ? 'المسار التعليمي' : 'Learning track'} value={(profile?.user?.onboarding?.trackSelected || user?.onboarding?.trackSelected) ? learnerTrackLabel(profile?.user?.preferredTrack || user?.preferredTrack, locale) : (locale === 'ar' ? 'لم يتم الاختيار' : 'Not selected')} />
+                <div className="bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl p-5">
+                  <h3 className="font-bold text-[var(--wn-heading)] mb-3">
+                    {acc.welcome || 'Welcome,'} {profile?.user?.name || user?.name}
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                    <InfoRow label={acc.email || 'Email'} value={profile?.user?.email || user?.email} />
+                    <InfoRow label={acc.phone || 'Phone'} value={profile?.user?.phone} />
+                    <InfoRow label={acc.completedSessions || 'Completed Sessions'} value={profile?.summary?.completedSessions || 0} />
+                    <InfoRow label={acc.startingLevel || 'My starting level'} value={learnerLevelLabel(profile?.user?.currentLevel || user?.currentLevel, psT, acc)} />
+                    <InfoRow
+                      label={acc.learningTrack || 'Learning track'}
+                      value={(profile?.user?.onboarding?.trackSelected || user?.onboarding?.trackSelected)
+                        ? learnerTrackLabel(profile?.user?.preferredTrack || user?.preferredTrack, psT, acc)
+                        : (acc.notSelected || 'Not selected')}
+                    />
                   </div>
-                  <p className="mt-3 text-xs text-slate-600">{locale === 'ar' ? 'المستوى مبدئي، ويتأكد المعلم منه داخل الحصة التجريبية.' : 'Your tutor verifies your level during the trial lesson.'}</p>
-                  <Link className="mt-3 inline-flex min-h-11 items-center rounded-lg border border-emerald-700 px-4 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100" to={lp('/profile/setup')}>{locale === 'ar' ? 'تعديل بياناتي ومستواي' : 'Edit my profile and level'}</Link>
+                  <p className="mt-3 text-xs text-[var(--wn-text-secondary)]">
+                    {acc.levelNote || 'Your tutor verifies your level during the trial lesson.'}
+                  </p>
+                  <Link
+                    className="mt-3 inline-flex min-h-[44px] items-center rounded-lg border border-[var(--wn-emerald)] px-4 py-2 text-sm font-bold text-[var(--wn-link)] hover:bg-[var(--wn-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    to={lp('/profile/setup')}
+                  >
+                    {acc.editProfile || 'Edit my profile and level'}
+                  </Link>
                 </div>
 
                 <section className="wn-student-guardian-link">
                   <div className="wn-student-guardian-link__heading">
                     <div>
-                      <span>{locale === 'ar' ? 'ولي الأمر' : 'Guardian'}</span>
-                      <h3>{locale === 'ar' ? 'ربط حساب ولي الأمر' : 'Guardian account linking'}</h3>
+                      <span>{acc.guardianEyebrow || 'Guardian'}</span>
+                      <h3>{acc.guardianTitle || 'Guardian account linking'}</h3>
                       <p>
-                        {locale === 'ar'
-                          ? 'الربط لا يتم تلقائيًا بمجرد كتابة الرقم. ولي الأمر يجب أن يوافق من حسابه، أو يستخدم كود الربط.'
-                          : 'Entering a phone number never links an account automatically. The guardian must confirm or use the link code.'}
+                        {acc.guardianDesc || 'Entering a phone number never links an account automatically. The guardian must confirm or use the link code.'}
                       </p>
                     </div>
-                    <Users size={24} />
+                    <Users size={24} aria-hidden="true" />
                   </div>
 
                   {linkedGuardians.length > 0 && (
                     <div className="wn-student-guardian-linked">
                       {linkedGuardians.map((guardian) => (
                         <div key={guardian.id}>
-                          <span className="wn-student-guardian-avatar">{guardian.name?.slice(0, 1) || 'و'}</span>
+                          <span className="wn-student-guardian-avatar">{guardian.name?.slice(0, 1) || 'G'}</span>
                           <span>
                             <strong>{guardian.name}</strong>
-                            <small>{guardianRelationshipLabel(guardian.relationship, locale)} · {locale === 'ar' ? 'مرتبط' : 'Linked'}</small>
+                            <small>{guardianRelationshipLabel(guardian.relationship, sd)} · {acc.linkedBadge || 'Linked'}</small>
                           </span>
-                          <CheckCircle size={18} />
+                          <CheckCircle size={18} aria-hidden="true" />
                         </div>
                       ))}
                     </div>
                   )}
 
-                  <form onSubmit={submitGuardianInvitation} className="wn-student-guardian-form">
+                  <form onSubmit={submitGuardianInvitation} className="wn-student-guardian-form" noValidate>
                     <div>
-                      <label>{locale === 'ar' ? 'رقم ولي الأمر' : 'Guardian phone'}</label>
+                      <label htmlFor="guardian-invite-phone">{acc.guardianPhone || 'Guardian phone'}</label>
                       <input
+                        id="guardian-invite-phone"
                         type="tel"
-                        className="input-field w-full"
+                        className="input-field w-full min-h-[44px]"
                         placeholder="+20 10 0000 0000"
                         value={guardianInviteForm.guardianPhone}
-                        onChange={(event) => setGuardianInviteForm((current) => ({ ...current, guardianPhone: event.target.value }))}
+                        aria-invalid={Boolean(guardianPhoneError)}
+                        aria-describedby={guardianPhoneError ? 'guardian-invite-phone-err' : undefined}
+                        onChange={(event) => {
+                          if (guardianPhoneError) setGuardianPhoneError('');
+                          setGuardianInviteForm((current) => ({ ...current, guardianPhone: event.target.value }));
+                        }}
                       />
+                      {guardianPhoneError && (
+                        <p id="guardian-invite-phone-err" role="alert" className="mt-1 text-xs font-semibold text-[var(--wn-text-danger)]">
+                          {guardianPhoneError}
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <label>{locale === 'ar' ? 'صلة القرابة' : 'Relationship'}</label>
+                      <label htmlFor="guardian-invite-rel">{acc.relationship || 'Relationship'}</label>
                       <select
-                        className="input-field w-full"
+                        id="guardian-invite-rel"
+                        className="input-field w-full min-h-[44px]"
                         value={guardianInviteForm.relationship}
                         onChange={(event) => setGuardianInviteForm((current) => ({ ...current, relationship: event.target.value }))}
                       >
-                        <option value="father">{locale === 'ar' ? 'أب' : 'Father'}</option>
-                        <option value="mother">{locale === 'ar' ? 'أم' : 'Mother'}</option>
-                        <option value="guardian">{locale === 'ar' ? 'ولي أمر / وصي' : 'Guardian'}</option>
-                        <option value="other">{locale === 'ar' ? 'صلة أخرى' : 'Other'}</option>
+                        <option value="father">{sd.guardianRel?.father || 'Father'}</option>
+                        <option value="mother">{sd.guardianRel?.mother || 'Mother'}</option>
+                        <option value="guardian">{sd.guardianRel?.guardian || 'Guardian'}</option>
+                        <option value="other">{sd.guardianRel?.other || 'Other'}</option>
                       </select>
                     </div>
                     <button type="submit" disabled={savingGuardianInvite || !guardianInviteForm.guardianPhone.trim()}>
-                      {savingGuardianInvite
-                        ? (locale === 'ar' ? 'جاري الحفظ...' : 'Saving...')
-                        : (locale === 'ar' ? 'إنشاء طلب ربط' : 'Create invitation')}
+                      {savingGuardianInvite ? (acc.saving || 'Saving…') : (acc.createInvite || 'Create invitation')}
                     </button>
                   </form>
 
                   {guardianInvitations.length > 0 && (
                     <div className="wn-student-guardian-invitations">
-                      <h4>{locale === 'ar' ? 'طلبات الربط' : 'Link requests'}</h4>
+                      <h4>{acc.linkRequests || 'Link requests'}</h4>
                       {guardianInvitations.slice(0, 8).map((invitation) => (
                         <div key={invitation._id} className={`is-${invitation.status}`}>
                           <span>
-                            <strong>{guardianRelationshipLabel(invitation.relationship, locale)}</strong>
+                            <strong>{guardianRelationshipLabel(invitation.relationship, sd)}</strong>
                             <small>
-                              {invitation.phoneMasked || '—'} · {guardianInvitationStatus(invitation.status, locale)}
+                              {invitation.phoneMasked || '—'} · {guardianInvitationStatus(invitation.status, sd)}
                             </small>
                           </span>
                           {invitation.status === 'pending' && (
-                            <div>
-                              <button type="button" onClick={() => copyInvitationCode(invitation.linkCode)}>
-                                <Copy size={14} />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => copyInvitationCode(invitation.linkCode)}
+                                className="min-h-[44px]"
+                              >
+                                <Copy size={14} aria-hidden="true" />
                                 {invitation.linkCode}
                               </button>
-                              <button type="button" onClick={() => cancelGuardianInvitation(invitation._id)}>
-                                <X size={14} />
+                              <button
+                                type="button"
+                                disabled={cancellingInviteId === invitation._id}
+                                aria-label={common.cancel || 'Cancel'}
+                                onClick={() => setCancelInviteModal(invitation)}
+                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                              >
+                                {cancellingInviteId === invitation._id
+                                  ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                                  : <X size={14} aria-hidden="true" />}
                               </button>
                             </div>
                           )}
@@ -1952,9 +2000,9 @@ export default function StudentDashboard() {
 
                   {guardianInvitations.every((invitation) => invitation.status !== 'pending') && profile?.user?.guardianLinkCode && (
                     <div className="wn-student-guardian-fallback">
-                      <span>{locale === 'ar' ? 'كود احتياطي قديم' : 'Legacy fallback code'}</span>
-                      <button type="button" onClick={copyGuardianLinkCode}>
-                        <Copy size={14} />
+                      <span>{acc.legacyCode || 'Backup link code'}</span>
+                      <button type="button" onClick={copyGuardianLinkCode} className="min-h-[44px]">
+                        <Copy size={14} aria-hidden="true" />
                         {profile.user.guardianLinkCode}
                       </button>
                     </div>
@@ -1962,58 +2010,103 @@ export default function StudentDashboard() {
                 </section>
 
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-5">
-                    <Trophy className="text-emerald-600 mb-2" size={28} />
-                    <p className="text-2xl font-bold text-emerald-700">{gameStats?.points?.total || 0} {locale === 'id' ? 'poin' : locale === 'ar' ? 'نقطة' : 'points'}</p>
-                    <p className="text-sm text-slate-600">
-                      {locale === 'id' ? `Level ${gameStats?.points?.level || 1}` : locale === 'ar' ? `المستوى ${gameStats?.points?.level || 1}` : `Level ${gameStats?.points?.level || 1}`} — 🔥 {gameStats?.streaks?.current || 0} {locale === 'id' ? 'hari' : locale === 'ar' ? 'يوم' : 'days'}
+                  <div className="bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl p-5">
+                    <Trophy className="text-[var(--wn-link)] mb-2" size={28} aria-hidden="true" />
+                    <p className="text-2xl font-bold text-[var(--wn-heading)]">
+                      {gameStats?.points?.total || 0} {acc.pointsUnit || 'points'}
+                    </p>
+                    <p className="text-sm text-[var(--wn-text-secondary)]">
+                      {acc.levelLabel || 'Level'} {gameStats?.points?.level || 1} — {gameStats?.streaks?.current || 0} {acc.daysUnit || 'days'}
                     </p>
                     {(badges.unlocked || []).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {badges.unlocked.slice(0, 4).map((b) => (
-                          <span key={b._id} className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">
-                            {b.badge?.name?.ar || b.badge?.code}
+                          <span key={b._id} className="text-xs bg-[var(--wn-gold-soft)] text-[var(--wn-text-gold)] border border-[var(--wn-border-strong)] px-2 py-0.5 rounded-full">
+                            {pickLocalizedTitle(b.badge?.name, locale, b.badge?.code)}
                           </span>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div className="border rounded-xl p-5">
-                    <h3 className="font-bold text-sm mb-2 flex items-center gap-2"><BookOpen size={16} /> {locale === 'id' ? 'Kursus Saya' : locale === 'ar' ? 'دوراتي' : 'My Courses'} ({courses.length})</h3>
-                    {courses.length === 0 ? (
-                      <Link to={lp('/courses')} className="text-sm text-emerald-600 hover:underline">{locale === 'id' ? 'Cari Kursus' : locale === 'ar' ? 'تصفح الدورات' : 'Browse Courses'}</Link>
+                  <div className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-xl p-5">
+                    <h3 className="font-bold text-sm text-[var(--wn-heading)] mb-2 flex items-center gap-2">
+                      <BookOpen size={16} aria-hidden="true" /> {acc.myCourses || 'My Courses'} ({courses.length})
+                    </h3>
+                    {loadErrors.courses ? (
+                      <div role="alert" className="text-xs text-[var(--wn-text-danger)] space-y-2">
+                        <p>{errT.loadFailed || 'Could not load data.'}</p>
+                        <button type="button" onClick={load} className="min-h-[44px] inline-flex items-center gap-1 underline font-bold">
+                          <RefreshCw size={13} aria-hidden="true" /> {common.retry || 'Try again'}
+                        </button>
+                      </div>
+                    ) : courses.length === 0 ? (
+                      <Link
+                        to={lp('/courses')}
+                        className="inline-flex min-h-[44px] items-center text-sm font-semibold text-[var(--wn-link)] hover:underline"
+                      >
+                        {acc.browseCourses || 'Browse Courses'}
+                      </Link>
                     ) : courses.slice(0, 3).map((e) => (
-                      <div key={e._id} className="flex justify-between items-center text-sm py-1.5 border-b last:border-0">
-                        <span>{locale === 'id' ? (e.course?.title?.id || e.course?.title?.en) : (e.course?.title?.ar || 'دورة')}</span>
-                        <button onClick={() => navigate(lp(`/courses/${e.course?.slug}/learn`))} className="text-emerald-600 text-xs">{locale === 'id' ? 'Lanjutkan' : locale === 'ar' ? 'متابعة' : 'Continue'}</button>
+                      <div key={e._id} className="flex justify-between items-center gap-2 text-sm py-1.5 border-b border-[var(--wn-border)] last:border-0">
+                        <span className="text-[var(--wn-text-primary)]">{pickLocalizedTitle(e.course?.title, locale, certT.certFallback || 'Course')}</span>
+                        <button
+                          type="button"
+                          onClick={() => navigate(lp(`/courses/${e.course?.slug}/learn`))}
+                          className="min-h-[44px] px-2 text-[var(--wn-link)] text-xs font-bold hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] rounded"
+                        >
+                          {acc.continueBtn || 'Continue'}
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold flex items-center gap-2"><Users size={18} /> {locale === 'id' ? 'Guru Saya' : locale === 'ar' ? 'معلمي' : 'My Tutors'} ({myTeachers.length})</h3>
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+                    <h3 className="font-bold text-[var(--wn-heading)] flex items-center gap-2">
+                      <Users size={18} aria-hidden="true" /> {acc.myTutors || 'My Tutors'} ({myTeachers.length})
+                    </h3>
                     {!teacherLock && (
-                      <Link to={lp('/teachers')} className="text-sm text-emerald-600 hover:underline">{locale === 'id' ? 'Cari Guru' : locale === 'ar' ? 'ابحث عن معلم' : 'Find a Tutor'}</Link>
+                      <Link
+                        to={lp('/teachers')}
+                        className="inline-flex min-h-[44px] items-center text-sm font-semibold text-[var(--wn-link)] hover:underline"
+                      >
+                        {acc.findTutor || 'Find a Tutor'}
+                      </Link>
                     )}
                   </div>
                   {myTeachers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-6">{locale === 'id' ? 'Pesan sesi uji coba gratis dari halaman guru' : locale === 'ar' ? 'احجز حصة تجريبية من صفحة المعلمين' : 'Book a trial session from the teachers page'}</p>
-                  ) : myTeachers.map((t) => (
-                    <div key={t._id} className="border rounded-lg p-4 mb-2 flex flex-wrap justify-between items-center gap-3">
+                    <EmptyState
+                      icon={Users}
+                      title={acc.noTutorsNote || 'Book a trial session from the teachers page'}
+                    />
+                  ) : myTeachers.map((tutorItem) => (
+                    <div key={tutorItem._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4 mb-2 flex flex-wrap justify-between items-center gap-3">
                       <div>
-                        <h4 className="font-bold">{t.name}</h4>
-                        <p className="text-xs text-gray-500">
-                          {t.country} — {t.sessionCount} {locale === 'id' ? 'sesi' : locale === 'ar' ? 'حصة' : 'sessions'} — ⭐ {Number(t.ratingCount || 0) > 0
-                            ? Number(t.rating || 0).toFixed(1)
-                            : (locale === 'ar' ? 'بدون تقييم بعد' : 'No ratings yet')}
+                        <h4 className="font-bold text-[var(--wn-text-primary)]">{tutorItem.name}</h4>
+                        <p className="text-xs text-[var(--wn-text-secondary)]">
+                          {tutorItem.country} — {tutorItem.sessionCount} {acc.sessionsUnit || 'sessions'} — ⭐{' '}
+                          {Number(tutorItem.ratingCount || 0) > 0
+                            ? Number(tutorItem.rating || 0).toFixed(1)
+                            : (acc.noRatingsYet || 'No ratings yet')}
                         </p>
                       </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => navigate(lp(`/teachers/${t._id}`))} className="px-3 py-1.5 border rounded-lg text-sm">{locale === 'id' ? 'Profil' : locale === 'ar' ? 'الملف' : 'Profile'}</button>
-                        {t.canBookRegular && (
-                          <button onClick={() => openBook(t)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm">{locale === 'id' ? 'Pesan Sesi' : locale === 'ar' ? 'حجز حصة' : 'Book Session'}</button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(lp(`/teachers/${tutorItem._id}`))}
+                          className="min-h-[44px] px-3.5 py-2 border border-[var(--wn-border)] text-[var(--wn-text-primary)] rounded-lg text-sm font-semibold hover:bg-[var(--wn-surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                        >
+                          {acc.profileBtn || 'Profile'}
+                        </button>
+                        {tutorItem.canBookRegular && (
+                          <button
+                            type="button"
+                            onClick={() => openBook(tutorItem)}
+                            className="min-h-[44px] px-3.5 py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                          >
+                            {acc.bookSessionBtn || 'Book Session'}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -2025,26 +2118,29 @@ export default function StudentDashboard() {
             {tab === 'trials' && (
               <div className="space-y-3">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-slate-600">{locale === 'id' ? 'Permintaan sesi uji coba dengan guru' : locale === 'ar' ? 'طلبات الحصة التجريبية مع المعلمين' : 'Trial session requests with tutors'}</p>
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
-                    {locale === 'ar'
-                      ? `${trialRemaining} من 3 تجريبيات متبقية`
-                      : `${trialRemaining} of 3 trials remaining`}
+                  <p className="text-sm text-[var(--wn-text-secondary)]">{trT.subtitle || 'Trial session requests with tutors'}</p>
+                  <span className="rounded-full bg-[var(--wn-emerald-soft)] px-3 py-1 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                    {trialRemaining} / {trialAllowance.limit || 3} {ov.trialsRemainingStat || 'تجريبيات متبقية'}
                   </span>
                 </div>
                 {trials.length === 0 && loadErrors.trials ? (
-                  <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 px-4 py-6 text-center">
-                    <p className="font-bold text-red-800">{locale === 'ar' ? 'تعذر تحميل طلباتك التجريبية' : 'We could not load your trial requests'}</p>
-                    <p className="mt-1 text-sm text-red-700">{locale === 'ar' ? 'قد تكون لديك طلبات بالفعل. أعد المحاولة بعد لحظات.' : 'You may already have requests. Please try again in a moment.'}</p>
-                    <button type="button" onClick={load} className="btn-primary mt-3 inline-block text-sm">{locale === 'ar' ? 'إعادة المحاولة' : 'Try again'}</button>
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{trT.loadErrorTitle || errT.trialsLoadFailed || 'We could not load your trial requests'}</p>
+                    <p className="text-sm text-[var(--wn-text-secondary)]">{trT.loadErrorDesc || 'Please try again in a moment.'}</p>
+                    <button type="button" onClick={load} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
                   </div>
                 ) : trials.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 mb-3">{locale === 'id' ? 'Tidak ada permintaan uji coba' : locale === 'ar' ? 'لم تحجز حصة تجريبية بعد' : 'You have not booked a trial yet'}</p>
-                    {!teacherLock && (
-                      <button type="button" onClick={() => setTab('discover')} className="btn-primary inline-block text-sm">{locale === 'id' ? 'Pesan Sesi Uji Coba' : locale === 'ar' ? 'اختر معلمًا واحجز تجريبيتك' : 'Choose a tutor and book a trial'}</button>
-                    )}
-                  </div>
+                  <EmptyState
+                    icon={Calendar}
+                    title={trT.empty || 'You have not booked a trial yet'}
+                    action={!teacherLock ? (
+                      <button type="button" onClick={() => setTab('discover')} className="btn-primary min-h-[44px] inline-flex items-center text-sm">
+                        {trT.bookTrialCta || 'Choose a tutor and book a trial'}
+                      </button>
+                    ) : undefined}
+                  />
                 ) : trials.map((s) => (
                   <SessionCard
                     key={s._id}
@@ -2052,10 +2148,11 @@ export default function StudentDashboard() {
                     onReview={openReview}
                     hasReviewed={hasReviewed(s._id)}
                     onChat={openSessionChat}
-                    onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
+                    onRsvp={(sess, rsvpSt) => rsvpSt === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
                     onAcceptReschedule={acceptRescheduledSession}
                     onCancelPending={setCancelPendingModal}
                     busySessionId={actionSessionId}
+                    submittingRsvp={submittingRsvp}
                     hasUnreadChat={unreadChatSessionIds.has(String(s._id))}
                     currentUserId={user?._id || user?.id}
                   />
@@ -2065,9 +2162,23 @@ export default function StudentDashboard() {
 
             {tab === 'sessions' && (
               <div className="space-y-3">
-                <p className="text-sm text-slate-600 mb-2">{locale === 'id' ? 'Sesi kelas reguler Anda setelah guru menyetujui' : locale === 'ar' ? (currentSubscription ? 'حصص اشتراكك ومواعيد حلقتك' : 'حصصك المنتظمة بعد الموافقة على المعلم') : 'Your regular sessions after tutor approval'}</p>
-                {sessions.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Tidak ada sesi reguler — Selesaikan kelas uji coba terlebih dahulu, lalu pesan dari menu akun' : locale === 'ar' ? (currentSubscription ? (currentSubscription.status === 'active' ? 'لا توجد حصص مجدولة حتى الآن. ستظهر هنا بعد جدولة الإدارة أو المعلم.' : subscriptionStatusCopy?.ar) : 'لا حصص منتظمة — أكمل تجريبية ثم احجز من «حسابي»') : (currentSubscription ? (currentSubscription.status === 'active' ? 'No lessons scheduled yet. They will appear after your tutor or administration schedules them.' : subscriptionStatusCopy?.en) : 'No regular sessions — complete a trial first, then book from your account tab')}</p>
+                <p className="text-sm text-[var(--wn-text-secondary)] mb-2">
+                  {sessT.subtitle || 'Your regular and subscription sessions'}
+                </p>
+                {sessions.length === 0 && loadErrors.sessions ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={load} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <EmptyState
+                    icon={Calendar}
+                    title={currentSubscription
+                      ? (currentSubscription.status === 'active' ? (sessT.activeEmpty || 'No lessons scheduled yet.') : subStatusCopy)
+                      : (sessT.noSubEmpty || 'No regular sessions — complete a trial first, then subscribe from your account')}
+                  />
                 ) : sessions.map((s) => (
                   <SessionCard
                     key={s._id}
@@ -2075,10 +2186,11 @@ export default function StudentDashboard() {
                     onReview={openReview}
                     hasReviewed={hasReviewed(s._id)}
                     onChat={openSessionChat}
-                    onRsvp={(sess, st) => st === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
+                    onRsvp={(sess, rsvpSt) => rsvpSt === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
                     onAcceptReschedule={acceptRescheduledSession}
                     onCancelPending={setCancelPendingModal}
                     busySessionId={actionSessionId}
+                    submittingRsvp={submittingRsvp}
                     hasUnreadChat={unreadChatSessionIds.has(String(s._id))}
                     currentUserId={user?._id || user?.id}
                   />
@@ -2088,28 +2200,41 @@ export default function StudentDashboard() {
 
             {tab === 'homework' && (
               <div className="space-y-3">
-                <p className="text-sm text-slate-600 mb-2">{locale === 'id' ? 'Tugas hafalan, murajaah, dan rekaman audio' : locale === 'ar' ? 'واجبات الحفظ والمراجعة والتسجيل الصوتي' : 'Memorization, revision, and audio assignments'}</p>
-                {homework.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Tidak ada tugas saat ini' : locale === 'ar' ? 'لا واجبات حالياً' : 'No assignments currently'}</p>
+                <p className="text-sm text-[var(--wn-text-secondary)] mb-2">{hwT.subtitle || 'Memorization, revision, and audio assignments'}</p>
+                {homework.length === 0 && loadErrors.homework ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={load} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
+                  </div>
+                ) : homework.length === 0 ? (
+                  <EmptyState icon={FileText} title={hwT.empty || 'No assignments currently'} />
                 ) : homework.map((hw) => {
-                  const st = getHwStatus(hw.status, locale);
+                  const hwSt = getHwStatus(hw.status, sd);
+                  const isUploadingThis = uploadingHwId === hw._id;
+                  const isDeletingThis = deletingHwId === hw._id;
                   return (
-                    <div key={hw._id} className="border rounded-lg p-4 flex flex-wrap justify-between items-start gap-3">
-                      <div>
+                    <div key={hw._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4 flex flex-wrap justify-between items-start gap-3">
+                      <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <FileText size={16} className="text-emerald-600" />
-                          <h3 className="font-bold">{hw.title}</h3>
+                          <FileText size={16} className="text-[var(--wn-link)] shrink-0" aria-hidden="true" />
+                          <h3 className="font-bold text-[var(--wn-text-primary)]">{hw.title}</h3>
                           {hw.type && (
-                            <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">{taskTypeLabel(hw.type)}</span>
+                            <span className="text-xs bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] text-[var(--wn-text-secondary)] px-2 py-0.5 rounded">
+                              {taskTypeLabel(hw.type)}
+                            </span>
                           )}
                           {hw.circleName && (
-                            <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-semibold">{hw.circleName}</span>
+                            <span className="text-xs bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)] px-2 py-0.5 rounded font-semibold">
+                              {hw.circleName}
+                            </span>
                           )}
                         </div>
-                        {hw.description && <p className="text-sm text-gray-600 mt-1">{hw.description}</p>}
+                        {hw.description && <p className="text-sm text-[var(--wn-text-secondary)] mt-1">{hw.description}</p>}
                         {hw.teacherFeedback && (
-                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                            <strong>{locale === 'ar' ? 'ملاحظة المعلم:' : 'Tutor feedback:'}</strong> {hw.teacherFeedback}
+                          <div className="mt-2 rounded-lg border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] px-3 py-2 text-xs text-[var(--wn-text-primary)]">
+                            <strong>{hwT.tutorFeedback || 'Tutor feedback:'}</strong> {hw.teacherFeedback}
                           </div>
                         )}
                         {hw.hasTeacherFeedbackAudio && (
@@ -2120,40 +2245,58 @@ export default function StudentDashboard() {
                           />
                         )}
                         {hw.dueDate && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            {locale === 'id' ? `Batas waktu: ${new Date(hw.dueDate).toLocaleDateString('id-ID')}` : locale === 'ar' ? `موعد: ${new Date(hw.dueDate).toLocaleDateString('ar-EG')}` : `Due: ${new Date(hw.dueDate).toLocaleDateString('en-US')}`}
+                          <p className="text-xs text-[var(--wn-text-tertiary)] mt-1">
+                            {hwT.duePrefix || 'Due:'} {new Date(hw.dueDate).toLocaleDateString(intlLocale)}
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded ${st.cls}`}>{st.label}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`text-xs px-2.5 py-1 rounded font-semibold ${hwSt.cls}`}>{hwSt.label}</span>
                         {hw.status === 'submitted' && (
                           <button
                             type="button"
-                            onClick={() => deleteHomeworkSubmission(hw)}
-                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 font-semibold transition"
+                            disabled={isDeletingThis}
+                            onClick={() => setDeleteHwModal(hw)}
+                            className="min-h-[44px] inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] text-[var(--wn-text-gold)] hover:opacity-90 font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-55"
                           >
-                            <RotateCcw size={13} />
-                            <span>{locale === 'ar' ? 'إعادة التسليم / استبدال الملف' : 'Replace submission'}</span>
+                            {isDeletingThis ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={13} aria-hidden="true" />}
+                            <span>{hwT.replaceSubmission || 'Replace submission'}</span>
                           </button>
                         )}
                         {hw.status === 'pending' && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
+                              disabled={Boolean(uploadingHwId)}
                               onClick={() => {
                                 resetVoiceRecording();
                                 setRecordModalHw(hw);
                               }}
-                              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-sm active:scale-95"
+                              className="min-h-[44px] px-3.5 py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-55"
                             >
-                              <Mic size={14} className="text-amber-300" />
-                              <span>{locale === 'id' ? 'Rekam Suara 🎙️' : locale === 'ar' ? 'سجّل تلاوتك الآن 🎙️' : 'Record Audio 🎙️'}</span>
+                              <Mic size={14} className="text-[var(--wn-gold)]" aria-hidden="true" />
+                              <span>{hwT.recordAudio || 'Record Audio'}</span>
                             </button>
-                            <input type="file" accept="audio/*,application/pdf,image/jpeg,image/png,image/webp" className="hidden" id={`hw-${hw._id}`}
-                              onChange={(e) => submitHomework(hw._id, e.target.files?.[0], hw.sessionId)} />
-                            <label htmlFor={`hw-${hw._id}`} className="cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg">
-                              <Upload size={13} /> {locale === 'id' ? 'Unggah File' : locale === 'ar' ? 'رفع ملف' : 'Upload File'}
+                            <input
+                              type="file"
+                              accept="audio/*,application/pdf,image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              id={`hw-${hw._id}`}
+                              disabled={Boolean(uploadingHwId)}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (file) submitHomework(hw._id, file, hw.sessionId);
+                              }}
+                            />
+                            <label
+                              htmlFor={`hw-${hw._id}`}
+                              className={`min-h-[44px] inline-flex items-center gap-1.5 text-xs px-3.5 py-2 border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] hover:bg-[var(--wn-surface-soft)] rounded-lg font-semibold ${
+                                isUploadingThis || uploadingHwId ? 'pointer-events-none opacity-55' : 'cursor-pointer'
+                              }`}
+                            >
+                              {isUploadingThis ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Upload size={13} aria-hidden="true" />}
+                              <span>{isUploadingThis ? (hwT.uploadProgress || common.uploading || 'Uploading…') : (hwT.uploadFile || 'Upload File')}</span>
                             </label>
                           </div>
                         )}
@@ -2167,29 +2310,47 @@ export default function StudentDashboard() {
             {tab === 'certificates' && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center flex-wrap gap-2 mb-2">
-                  <p className="text-sm text-slate-600">{locale === 'id' ? 'Sertifikat kelulusan setelah menyelesaikan kursus' : locale === 'ar' ? 'شهاداتك بعد إكمال الدورات' : 'Your certificates after completing courses'}</p>
+                  <p className="text-sm text-[var(--wn-text-secondary)]">{certT.subtitle || 'Your certificates after completing courses'}</p>
                   {certificates.length > 0 && (
-                    <button onClick={downloadAllCertificates}
-                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700">
-                      <Award size={14} /> {locale === 'id' ? 'Unduh Semua PDF' : locale === 'ar' ? 'تحميل الكل PDF' : 'Download All PDFs'}
+                    <button
+                      type="button"
+                      disabled={downloadingAll}
+                      onClick={downloadAllCertificates}
+                      className="btn-primary min-h-[44px] text-xs px-3.5 py-2 inline-flex items-center gap-1.5 disabled:opacity-55"
+                    >
+                      {downloadingAll ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Award size={14} aria-hidden="true" />}
+                      <span>{downloadingAll ? (certT.downloadingAll || common.downloading || 'Preparing…') : (certT.downloadAll || 'Download All PDFs')}</span>
                     </button>
                   )}
                 </div>
-                {certificates.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Award className="mx-auto text-gray-300 mb-3" size={48} />
-                    <p className="text-gray-500">{locale === 'id' ? 'Belum ada sertifikat' : locale === 'ar' ? 'لا شهادات بعد' : 'No certificates yet'}</p>
-                    <RouterLink to={lp('/courses')} className="text-sm text-emerald-600 hover:underline mt-2 inline-block">{locale === 'id' ? 'Mulai Belajar' : locale === 'ar' ? 'ابدأ دورة' : 'Start a Course'}</RouterLink>
+                {certificates.length === 0 && loadErrors.certificates ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={loadCertificatesTab} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
                   </div>
+                ) : certificates.length === 0 ? (
+                  <EmptyState
+                    icon={Award}
+                    title={certT.empty || 'No certificates yet'}
+                    action={
+                      <RouterLink to={lp('/courses')} className="btn-primary min-h-[44px] inline-flex items-center text-sm">
+                        {certT.startCourse || 'Start a Course'}
+                      </RouterLink>
+                    }
+                  />
                 ) : certificates.map((c) => (
-                  <div key={c._id} className="border rounded-lg p-4 flex flex-wrap justify-between items-center gap-3">
+                  <div key={c._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3">
                     <div>
-                      <h3 className="font-bold">{locale === 'id' ? (c.course?.title?.id || c.course?.title?.en) : (c.course?.title?.ar || c.course?.title?.en || 'شهادة')}</h3>
-                      <p className="text-xs text-gray-500">{c.issuedAt ? new Date(c.issuedAt).toLocaleDateString(locale === 'id' ? 'id-ID' : 'ar-EG') : ''}</p>
+                      <h3 className="font-bold text-[var(--wn-text-primary)]">{pickLocalizedTitle(c.course?.title, locale, certT.certFallback || 'Certificate')}</h3>
+                      <p className="text-xs text-[var(--wn-text-secondary)]">{c.issuedAt ? new Date(c.issuedAt).toLocaleDateString(intlLocale) : ''}</p>
                     </div>
-                    <RouterLink to={lp(`/verify-certificate/${c.certificateId || c._id}`)}
-                      className="btn-primary text-sm px-4 py-2">
-                      {locale === 'id' ? 'Lihat / Unduh' : locale === 'ar' ? 'عرض / تحميل' : 'View / Download'}
+                    <RouterLink
+                      to={lp(`/verify-certificate/${c.certificateId || c._id}`)}
+                      className="btn-primary min-h-[44px] inline-flex items-center text-sm px-4 py-2"
+                    >
+                      {certT.viewDownload || 'View / Download'}
                     </RouterLink>
                   </div>
                 ))}
@@ -2198,22 +2359,33 @@ export default function StudentDashboard() {
 
             {tab === 'recordings' && (
               <div className="space-y-3">
-                <p className="text-sm text-slate-600">{locale === 'id' ? 'Sesi kelas yang selesai beserta rekamannya' : locale === 'ar' ? 'حصصك المكتملة وتسجيلاتها' : 'Your completed sessions and recordings'}</p>
-                {recordings.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Belum ada rekaman' : locale === 'ar' ? 'لا تسجيلات بعد' : 'No recordings yet'}</p>
+                <p className="text-sm text-[var(--wn-text-secondary)]">{recT.subtitle || 'Your completed sessions and recordings'}</p>
+                {recordings.length === 0 && loadErrors.recordings ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={loadRecordingsTab} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
+                  </div>
+                ) : recordings.length === 0 ? (
+                  <EmptyState icon={Video} title={recT.empty || 'No recordings yet'} />
                 ) : recordings.map((s) => (
-                  <div key={s._id} className="border rounded-lg p-4 flex flex-wrap justify-between items-center gap-3">
+                  <div key={s._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4 flex flex-wrap justify-between items-center gap-3">
                     <div>
-                      <h3 className="font-bold">{s.teacher?.user?.name || 'المعلم'}</h3>
-                      <p className="text-sm text-gray-600">{new Date(s.scheduledAt).toLocaleString(locale === 'id' ? 'id-ID' : 'ar-EG')}</p>
+                      <h3 className="font-bold text-[var(--wn-text-primary)]">{s.teacher?.user?.name || recT.tutorFallback || 'Tutor'}</h3>
+                      <p className="text-sm text-[var(--wn-text-secondary)]">{new Date(s.scheduledAt).toLocaleString(intlLocale)}</p>
                     </div>
                     {(/^https:\/\//i.test(String(s.recordingUrl || '').trim()) || String(s.recordingUrl || '').trim().startsWith('/api/')) ? (
-                      <a href={String(s.recordingUrl).trim()} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-sm text-emerald-600 font-semibold">
-                        <Video size={16} /> {locale === 'id' ? 'Tonton' : locale === 'ar' ? 'مشاهدة' : 'Watch'}
+                      <a
+                        href={String(s.recordingUrl).trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-[44px] inline-flex items-center gap-1.5 px-3 text-sm text-[var(--wn-link)] font-semibold hover:underline"
+                      >
+                        <Video size={16} aria-hidden="true" /> {recT.watch || 'Watch'}
                       </a>
                     ) : (
-                      <span className="text-xs text-gray-400">{locale === 'id' ? 'Rekaman tidak tersedia' : locale === 'ar' ? 'لا تسجيل متاح' : 'No recording available'}</span>
+                      <span className="text-xs text-[var(--wn-text-tertiary)]">{recT.unavailable || 'No recording available'}</span>
                     )}
                   </div>
                 ))}
@@ -2222,49 +2394,55 @@ export default function StudentDashboard() {
 
             {tab === 'achievements' && (
               <div className="space-y-4">
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-6 text-center">
-                  <Trophy className="mx-auto text-emerald-600 mb-2" size={40} />
-                  <p className="text-3xl font-bold text-emerald-700">{gameStats?.points?.total || 0}</p>
-                  <p className="text-sm text-slate-600">{locale === 'id' ? 'poin' : locale === 'ar' ? 'نقطة' : 'points'} — {locale === 'id' ? `Level ${gameStats?.points?.level || 1}` : locale === 'ar' ? `المستوى ${gameStats?.points?.level || 1}` : `Level ${gameStats?.points?.level || 1}`}</p>
-                  <p className="text-sm mt-1">{locale === 'id' ? `Streak harian ${gameStats?.streaks?.current || 0} hari` : locale === 'ar' ? `سلسلة ${gameStats?.streaks?.current || 0} يوم` : `Streak ${gameStats?.streaks?.current || 0} days`}</p>
-                  <Link to={lp('/leaderboard')} className="inline-block mt-3 text-sm text-emerald-700 font-medium hover:underline">{locale === 'id' ? '🏆 Papan Peringkat' : locale === 'ar' ? '🏆 لوحة المتصدرين' : '🏆 Leaderboard'}</Link>
+                <div className="bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl p-6 text-center">
+                  <Trophy className="mx-auto text-[var(--wn-link)] mb-2" size={40} aria-hidden="true" />
+                  <p className="text-3xl font-bold text-[var(--wn-heading)]">{gameStats?.points?.total || 0}</p>
+                  <p className="text-sm text-[var(--wn-text-secondary)]">
+                    {achT.pointsLabel || 'points'} — {achT.levelLabel || 'Level'} {gameStats?.points?.level || 1}
+                  </p>
+                  <p className="text-sm text-[var(--wn-text-primary)] mt-1">
+                    {achT.streakLabel || 'Streak'} {gameStats?.streaks?.current || 0} {achT.daysUnit || 'days'}
+                  </p>
+                  <Link
+                    to={lp('/leaderboard')}
+                    className="inline-flex min-h-[44px] items-center mt-2 px-3 text-sm text-[var(--wn-link)] font-bold hover:underline"
+                  >
+                    🏆 {achT.leaderboardLink || 'Leaderboard'}
+                  </Link>
                 </div>
-                <h3 className="font-bold text-sm">{locale === 'id' ? 'Lencana' : locale === 'ar' ? 'الأوسمة' : 'Badges'}</h3>
+                <h3 className="font-bold text-sm text-[var(--wn-heading)]">{achT.badgesTitle || 'Badges'}</h3>
                 {(badges.unlocked || []).length === 0 ? (
-                  <p className="text-gray-500 text-center py-6">{locale === 'id' ? 'Selesaikan kelas dan kursus untuk mendapatkan lencana' : locale === 'ar' ? 'أكمل حصصاً ودورات لكسب الأوسمة' : 'Complete sessions and courses to earn badges'}</p>
+                  <EmptyState icon={Award} title={achT.noBadges || 'Complete sessions and courses to earn badges'} />
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {badges.unlocked.map((b) => (
-                      <div key={b._id} className="border rounded-xl p-4 text-center bg-yellow-50">
-                        <Award className="mx-auto text-yellow-600 mb-2" size={28} />
-                        <p className="font-bold text-sm">{b.badge?.name?.ar || b.badge?.code}</p>
+                      <div key={b._id} className="border border-[var(--wn-border-strong)] rounded-xl p-4 text-center bg-[var(--wn-gold-soft)]">
+                        <Award className="mx-auto text-[var(--wn-text-gold)] mb-2" size={28} aria-hidden="true" />
+                        <p className="font-bold text-sm text-[var(--wn-text-primary)]">{pickLocalizedTitle(b.badge?.name, locale, b.badge?.code)}</p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* ═══ بطاقة مسابقة الأثر النصف سنوية والجوائز ═══ */}
-                <div className="mt-6 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-300 rounded-2xl p-6">
+                <div className="mt-6 bg-[var(--wn-gold-soft)] border border-[var(--wn-border-strong)] rounded-2xl p-6">
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="space-y-1 text-center md:text-right">
-                      <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-200/60 px-3 py-1 rounded-full">
-                        <Trophy size={14} />
-                        <span>{locale === 'ar' ? 'مسابقة براعم وحي ونماء النصف سنوية (كل 6 أشهر)' : 'Semi-Annual Kids Contest'}</span>
+                    <div className="space-y-1 text-center md:text-start">
+                      <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--wn-text-gold)] bg-[var(--wn-surface)] border border-[var(--wn-border-strong)] px-3 py-1 rounded-full">
+                        <Trophy size={14} aria-hidden="true" />
+                        <span>{achT.contestBadge || 'Semi-Annual Kids Contest'}</span>
                       </div>
-                      <h4 className="text-lg font-bold text-slate-900">
-                        {locale === 'ar' ? 'لوحة شرف الأبطال والجوائز الكبرى' : 'Little Champions Hall of Fame & Grand Prizes'}
+                      <h4 className="text-lg font-bold text-[var(--wn-heading)]">
+                        {achT.contestTitle || 'Little Champions Hall of Fame & Grand Prizes'}
                       </h4>
-                      <p className="text-xs text-slate-600 max-w-xl">
-                        {locale === 'ar'
-                          ? 'جوائز قيمة: حقيبة طالب القرآن، المصحف الإلكتروني الناطق، درع بطل الأثر الصغير، وتاج الوقار للأبوين.'
-                          : 'Prizes: Elite Quran backpack, speaking audio Mushaf, hero trophy, and Crown of Dignity for parents.'}
+                      <p className="text-xs text-[var(--wn-text-secondary)] max-w-xl">
+                        {achT.contestDesc || 'Motivating prizes and recognition for top learners in memorization and recitation.'}
                       </p>
                     </div>
                     <Link
                       to={lp('/programs/kids')}
-                      className="shrink-0 px-5 py-2.5 rounded-xl font-bold text-xs bg-amber-600 text-white shadow-md hover:bg-amber-700 transition"
+                      className="shrink-0 min-h-[44px] inline-flex items-center px-5 py-2.5 rounded-xl font-bold text-xs bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] shadow-md transition"
                     >
-                      {locale === 'ar' ? 'استعراض المسابقة والتسجيل' : 'View Contest & Register'}
+                      {achT.contestCta || 'View Contest & Register'}
                     </Link>
                   </div>
                 </div>
@@ -2273,48 +2451,70 @@ export default function StudentDashboard() {
 
             {tab === 'referral' && (
               <div className="space-y-6">
-                <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-6 text-center">
-                  <Gift className="mx-auto text-orange-600 mb-3" size={40} />
-                  <h3 className="font-bold text-lg mb-2">{locale === 'id' ? 'Program Afiliasi' : locale === 'ar' ? 'نظام السفراء' : 'Referral Program'}</h3>
-                  <p className="text-sm text-slate-600 mb-4">{locale === 'id' ? 'Undang teman Anda dan dapatkan 50 poin untuk setiap pendaftaran' : locale === 'ar' ? 'ادعُ أصدقاءك واحصل على 50 نقطة لكل تسجيل' : 'Invite your friends and get 50 points for each registration'}</p>
-                  {referral?.code && (
-                    <div className="flex items-center justify-center gap-2 flex-wrap">
-                      <code className="bg-white px-4 py-2 rounded-lg font-mono text-lg border">{referral.code}</code>
-                      <button type="button" onClick={() => { navigator.clipboard?.writeText(referral.link || referral.code); toast.success(locale === 'id' ? 'Berhasil disalin' : locale === 'ar' ? 'تم النسخ' : 'Copied'); }}
-                        className="flex items-center gap-1 text-sm text-orange-700 hover:underline">
-                        <Copy size={14} /> {locale === 'id' ? 'Salin Tautan' : locale === 'ar' ? 'نسخ الرابط' : 'Copy Link'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-white border rounded-xl p-4">
-                    <p className="text-2xl font-bold text-orange-600">{referral?.stats?.totalInvites || 0}</p>
-                    <p className="text-xs text-gray-500">{locale === 'id' ? 'Undangan' : locale === 'ar' ? 'دعوات' : 'Invites'}</p>
-                  </div>
-                  <div className="bg-white border rounded-xl p-4">
-                    <p className="text-2xl font-bold text-emerald-600">{referral?.stats?.active || 0}</p>
-                    <p className="text-xs text-gray-500">{locale === 'id' ? 'Aktif' : locale === 'ar' ? 'نشطة' : 'Active'}</p>
-                  </div>
-                  <div className="bg-white border rounded-xl p-4">
-                    <p className="text-2xl font-bold text-blue-600">{referral?.stats?.totalPoints || 0}</p>
-                    <p className="text-xs text-gray-500">{locale === 'id' ? 'Poin Bonus' : locale === 'ar' ? 'نقاط مكافأة' : 'Bonus Points'}</p>
-                  </div>
-                </div>
-                {(referral?.referrals || []).length > 0 ? (
-                  <div className="space-y-2">
-                    <h4 className="font-bold text-sm">{locale === 'id' ? 'Undangan Terbaru' : locale === 'ar' ? 'آخر الدعوات' : 'Recent Referrals'}</h4>
-                    {referral.referrals.slice(0, 10).map((r) => (
-                      <div key={r._id} className="flex justify-between items-center border rounded-lg px-4 py-3 text-sm">
-                        <span>{r.referee?.name || '—'}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs ${r.status === 'rewarded' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {r.status === 'rewarded' ? (locale === 'id' ? 'Diberi Poin' : 'مكافأ') : r.status === 'active' ? (locale === 'id' ? 'Aktif' : 'نشط') : (locale === 'id' ? 'Tertunda' : 'معلق')}
-                        </span>
-                      </div>
-                    ))}
+                {loadErrors.referral && !referral?.code ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={loadReferralTab} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
                   </div>
                 ) : (
-                  <p className="text-center text-gray-500 py-4">{locale === 'id' ? 'Bagikan tautan Anda dengan teman-teman untuk mulai mendapatkan poin' : locale === 'ar' ? 'شارك رابطك مع أصدقائك لبدء كسب النقاط' : 'Share your link with friends to start earning points'}</p>
+                  <>
+                    <div className="bg-[var(--wn-gold-soft)] border border-[var(--wn-border-strong)] rounded-xl p-6 text-center">
+                      <Gift className="mx-auto text-[var(--wn-text-gold)] mb-3" size={40} aria-hidden="true" />
+                      <h3 className="font-bold text-lg text-[var(--wn-heading)] mb-2">{refT.title || 'Referral Program'}</h3>
+                      <p className="text-sm text-[var(--wn-text-secondary)] mb-4">{refT.subtitle || 'Invite your friends and earn 50 points per registration'}</p>
+                      {referral?.code && (
+                        <div className="flex items-center justify-center gap-2 flex-wrap">
+                          <code className="bg-[var(--wn-surface)] text-[var(--wn-text-primary)] px-4 py-2 rounded-lg font-mono text-lg border border-[var(--wn-border)]">{referral.code}</code>
+                          <button
+                            type="button"
+                            onClick={() => copyTextSafely(referral.link || referral.code, refT.copiedSuccess || 'Referral link copied')}
+                            className="min-h-[44px] px-3 inline-flex items-center gap-1.5 rounded-lg text-sm font-bold text-[var(--wn-link)] hover:bg-[var(--wn-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                          >
+                            <Copy size={14} aria-hidden="true" /> {refT.copyLink || 'Copy Link'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                      <div className="bg-[var(--wn-surface)] border border-[var(--wn-border)] rounded-xl p-4">
+                        <p className="text-2xl font-bold text-[var(--wn-text-gold)]">{referral?.stats?.totalInvites || 0}</p>
+                        <p className="text-xs text-[var(--wn-text-secondary)]">{refT.invitesStat || 'Invites'}</p>
+                      </div>
+                      <div className="bg-[var(--wn-surface)] border border-[var(--wn-border)] rounded-xl p-4">
+                        <p className="text-2xl font-bold text-[var(--wn-link)]">{referral?.stats?.active || 0}</p>
+                        <p className="text-xs text-[var(--wn-text-secondary)]">{refT.activeStat || 'Active'}</p>
+                      </div>
+                      <div className="bg-[var(--wn-surface)] border border-[var(--wn-border)] rounded-xl p-4">
+                        <p className="text-2xl font-bold text-[var(--wn-heading)]">{referral?.stats?.totalPoints || 0}</p>
+                        <p className="text-xs text-[var(--wn-text-secondary)]">{refT.bonusPointsStat || 'Bonus Points'}</p>
+                      </div>
+                    </div>
+                    {(referral?.referrals || []).length > 0 ? (
+                      <div className="space-y-2">
+                        <h4 className="font-bold text-sm text-[var(--wn-heading)]">{refT.recentReferrals || 'Recent Referrals'}</h4>
+                        {referral.referrals.slice(0, 10).map((r) => (
+                          <div key={r._id} className="flex justify-between items-center border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg px-4 py-3 text-sm">
+                            <span className="text-[var(--wn-text-primary)]">{r.referee?.name || '—'}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                              r.status === 'rewarded'
+                                ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)]'
+                                : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-secondary)]'
+                            }`}>
+                              {r.status === 'rewarded'
+                                ? (refT.statusRewarded || 'Rewarded')
+                                : r.status === 'active'
+                                  ? (refT.statusActive || 'Active')
+                                  : (refT.statusPending || 'Pending')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={Gift} title={refT.emptyHint || 'Share your link with friends to start earning points'} />
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -2323,27 +2523,32 @@ export default function StudentDashboard() {
               <div className="wn-student-teacher-updates">
                 <div className="wn-student-teacher-updates__intro">
                   <div>
-                    <span>{locale === 'ar' ? 'من معلمك' : 'From your tutor'}</span>
-                    <h3>{locale === 'ar' ? 'رسائل وفيديوهات تعليمية' : 'Tutor messages and videos'}</h3>
-                    <p>{locale === 'ar' ? 'كلمات قصيرة، توجيهات، أو مراجعات ينشرها معلمك لك داخل الأكاديمية.' : 'Short messages, guidance, and review videos shared by your tutor.'}</p>
+                    <span>{updT.eyebrow || 'From your tutor'}</span>
+                    <h3>{updT.title || 'Tutor messages and videos'}</h3>
+                    <p>{updT.subtitle || 'Short messages, guidance, and review videos shared by your tutor.'}</p>
                   </div>
-                  <Megaphone size={28} />
+                  <Megaphone size={28} aria-hidden="true" />
                 </div>
 
-                {teacherUpdates.length === 0 ? (
-                  <div className="wn-student-empty-session">
-                    <Megaphone size={28} />
-                    <div>
-                      <h4>{locale === 'ar' ? 'لا توجد رسائل جديدة' : 'No tutor updates yet'}</h4>
-                      <p>{locale === 'ar' ? 'عندما ينشر معلمك رسالة أو فيديو ستظهر هنا.' : 'New tutor messages will appear here.'}</p>
-                    </div>
+                {teacherUpdates.length === 0 && loadErrors.teacherUpdates ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={load} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
                   </div>
+                ) : teacherUpdates.length === 0 ? (
+                  <EmptyState
+                    icon={Megaphone}
+                    title={updT.emptyTitle || 'No tutor updates yet'}
+                    description={updT.emptyDesc || 'New tutor messages will appear here.'}
+                  />
                 ) : (
                   <div className="wn-student-teacher-update-list">
                     {teacherUpdates.map((update) => {
                       const teacherName = update.teacher?.personalInfo?.fullName
                         || update.teacher?.user?.name
-                        || (locale === 'ar' ? 'المعلم' : 'Tutor');
+                        || (scT.tutorFallback || 'Tutor');
 
                       return (
                         <article key={update._id}>
@@ -2352,7 +2557,7 @@ export default function StudentDashboard() {
                             <div>
                               <span>{teacherName}</span>
                               <h4>{update.title}</h4>
-                              <small>{new Date(update.publishedAt || update.createdAt).toLocaleString(dateLocale)}</small>
+                              <small>{new Date(update.publishedAt || update.createdAt).toLocaleString(intlLocale)}</small>
                             </div>
                           </div>
                           {update.message ? <p className="wn-student-teacher-update-list__message">{update.message}</p> : null}
@@ -2364,11 +2569,11 @@ export default function StudentDashboard() {
                                   {teacherUpdateVideoUrls[key] ? (
                                     <video src={teacherUpdateVideoUrls[key]} controls preload="metadata" />
                                   ) : (
-                                    <button type="button" onClick={() => loadTeacherUpdateVideo(update._id, index)}>
-                                      <Video size={22} />
+                                    <button type="button" onClick={() => loadTeacherUpdateVideo(update._id, index)} className="min-h-[44px]">
+                                      <Video size={22} aria-hidden="true" />
                                       <span>
-                                        <strong>{locale === 'ar' ? `تشغيل الفيديو ${index + 1}` : `Play video ${index + 1}`}</strong>
-                                        <small>{video.name || (locale === 'ar' ? 'فيديو المعلم' : 'Tutor video')}</small>
+                                        <strong>{updT.playVideo || 'Play video'} {index + 1}</strong>
+                                        <small>{video.name || updT.videoFallback || 'Lesson video'}</small>
                                       </span>
                                     </button>
                                   )}
@@ -2386,12 +2591,19 @@ export default function StudentDashboard() {
 
             {tab === 'evaluations' && (
               <div className="space-y-4">
-                <p className="text-sm text-slate-600">{locale === 'id' ? 'Evaluasi dari guru setelah setiap kelas selesai' : locale === 'ar' ? 'تقييمات معلمك بعد كل حصة مكتملة' : 'Tutor evaluations after each completed session'}</p>
+                <p className="text-sm text-[var(--wn-text-secondary)]">{evT.subtitle || 'Tutor evaluations of your session performance'}</p>
                 {evaluations.length > 0 && (
                   <QuranProgressSummary evaluations={evaluations} locale={locale} variant="student" />
                 )}
-                {evaluations.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">{locale === 'id' ? 'Belum ada evaluasi — akan muncul setelah kelas selesai' : locale === 'ar' ? 'لا تقييمات بعد — ستظهر بعد إكمال حصة' : 'No evaluations yet — they will appear after completing a session'}</p>
+                {evaluations.length === 0 && loadErrors.evaluations ? (
+                  <div role="alert" className="rounded-2xl border border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-4 py-6 text-center space-y-2">
+                    <p className="font-bold text-[var(--wn-text-danger)]">{errT.loadFailed || 'Could not load data. Please try again.'}</p>
+                    <button type="button" onClick={load} className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                      <RefreshCw size={14} aria-hidden="true" /> {common.retry || 'Try again'}
+                    </button>
+                  </div>
+                ) : evaluations.length === 0 ? (
+                  <EmptyState icon={Star} title={evT.empty || 'No evaluations recorded yet'} />
                 ) : evaluations.map((s) => {
                   const ev = s.teacherEvaluation || {};
                   const legacyReport = (s.studentReports || []).find((report) => (
@@ -2403,77 +2615,79 @@ export default function StudentDashboard() {
                   const reportNextHomework = ev.nextHomework || legacyReport.nextHomework;
                   const reportNotes = ev.overallNotes || legacyReport.notes;
                   return (
-                    <div key={s._id} className="border rounded-xl p-5">
-                      <div className="flex justify-between items-start mb-3">
+                    <div key={s._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-xl p-5">
+                      <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-bold">{s.teacher?.user?.name || 'المعلم'}</h3>
+                            <h3 className="font-bold text-[var(--wn-text-primary)]">{s.teacher?.user?.name || scT.tutorFallback || 'Tutor'}</h3>
                             {(s.type === 'group_circle' || s.circle?.name) && (
-                              <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
-                                {s.circle?.name || (locale === 'ar' ? 'حلقة جماعية' : 'Group circle')}
+                              <span className="text-xs bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)] px-2 py-0.5 rounded-full font-semibold">
+                                {s.circle?.name || scT.circleBadge || 'Group circle'}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500">
-                            {formatSessionDateTime(
-                              s,
-                              locale === 'id' ? 'id-ID' : locale === 'ar' ? 'ar-EG' : 'en-US',
-                              { dateStyle: 'medium', timeStyle: 'short' },
-                            )} · {sessionTimeZone(s)}
+                          <p className="text-xs text-[var(--wn-text-secondary)]">
+                            {formatSessionDateTime(s, intlLocale, { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(s)}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => shareStudentEvaluationViaWhatsApp(s, reportSurah, reportFromAyah, reportToAyah, ev, reportNotes)}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold hover:bg-emerald-100 transition"
+                            className="min-h-[44px] inline-flex items-center text-xs px-3 py-2 rounded-lg bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)] font-bold hover:opacity-90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
                           >
-                            {locale === 'ar' ? 'مشاركة التقييم 📲' : 'Share 📲'}
+                            {evT.shareWhatsApp || 'Share on WhatsApp'}
                           </button>
                           {!hasReviewed(s._id) && (
-                            <button onClick={() => openReview(s)} className="text-sm text-orange-600 hover:underline">{locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}</button>
+                            <button
+                              type="button"
+                              onClick={() => openReview(s)}
+                              className="min-h-[44px] inline-flex items-center px-3 py-2 text-sm font-bold text-[var(--wn-text-gold)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] rounded-lg"
+                            >
+                              {evT.rateTeacher || 'Rate Tutor'}
+                            </button>
                           )}
                         </div>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                         {[
-                          ['attendance', locale === 'id' ? 'Kehadiran' : locale === 'ar' ? 'الحضور' : 'Attendance'],
-                          ['memorization', locale === 'id' ? 'Hafalan' : locale === 'ar' ? 'الحفظ' : 'Memorization'],
-                          ['tajweed', locale === 'id' ? 'Tajwid' : locale === 'ar' ? 'التجويد' : 'Tajweed'],
-                          ['behavior', locale === 'id' ? 'Sikap' : locale === 'ar' ? 'السلوك' : 'Behavior'],
-                          ['commitment', locale === 'id' ? 'Komitmen' : locale === 'ar' ? 'الالتزام' : 'Commitment'],
+                          ['attendance', scT.confirmed || 'Attendance'],
+                          ['memorization', evT.memScore || 'Memorization'],
+                          ['tajweed', evT.tajweedScore || 'Tajweed'],
+                          ['behavior', achT.levelLabel || 'Behavior'],
+                          ['commitment', achT.streakLabel || 'Commitment'],
                         ].map(([k, label]) => (
-                          <div key={k} className="bg-slate-50 rounded-lg p-2 text-center">
-                            <p className="text-xs text-slate-500">{label}</p>
-                            <p className="font-bold text-emerald-700">{ev[k] ?? '—'}/5</p>
+                          <div key={k} className="bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] rounded-lg p-2 text-center">
+                            <p className="text-xs text-[var(--wn-text-secondary)]">{label}</p>
+                            <p className="font-bold text-[var(--wn-link)]">{ev[k] ?? '—'}/5</p>
                           </div>
                         ))}
                       </div>
                       {(reportSurah || reportFromAyah || reportToAyah || reportNextHomework || reportNotes) && (
-                        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 text-sm text-slate-700">
-                          <p className="mb-2 font-bold text-emerald-900">{locale === 'ar' ? 'تقرير الحصة' : 'Session report'}</p>
+                        <div className="mt-3 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-4 text-sm text-[var(--wn-text-primary)] space-y-1">
+                          <p className="mb-2 font-bold text-[var(--wn-heading)]">{qwT.generalEvaluation || 'Session report'}</p>
                           {reportSurah ? (
-                            <p><strong>{locale === 'ar' ? 'السورة / المقطع:' : 'Surah / passage:'}</strong> {reportSurah}</p>
+                            <p><strong>{evT.surahLabel || 'Surah / passage:'}</strong> {reportSurah}</p>
                           ) : null}
                           {(reportFromAyah || reportToAyah) ? (
                             <p>
-                              <strong>{locale === 'ar' ? 'الآيات:' : 'Ayahs:'}</strong>{' '}
-                              {reportFromAyah || '—'} {locale === 'ar' ? 'إلى' : 'to'} {reportToAyah || '—'}
+                              <strong>{evT.surahLabel || 'Ayahs:'}</strong>{' '}
+                              {reportFromAyah || '—'} – {reportToAyah || '—'}
                             </p>
                           ) : null}
                           {reportNextHomework ? (
-                            <p><strong>{locale === 'ar' ? 'الهدف / الواجب القادم:' : 'Next goal / homework:'}</strong> {reportNextHomework}</p>
+                            <p><strong>{evT.homeworkLabel || 'Next homework:'}</strong> {reportNextHomework}</p>
                           ) : null}
                           {reportNotes ? (
-                            <p><strong>{locale === 'ar' ? 'ملاحظات المعلم:' : 'Tutor notes:'}</strong> {reportNotes}</p>
+                            <p><strong>{evT.notesLabel || 'Notes:'}</strong> {reportNotes}</p>
                           ) : null}
                         </div>
                       )}
                       {ev.assignedHomework?.length > 0 && (
                         <div className="mt-3">
-                          <p className="text-xs font-semibold text-slate-500 mb-1">{locale === 'id' ? 'Tugas dari Sesi:' : locale === 'ar' ? 'واجبات من الحصة:' : 'Assigned homework from session:'}</p>
+                          <p className="text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">{ov.homework || 'Homework'}</p>
                           {ev.assignedHomework.map((h, i) => (
-                            <p key={i} className="text-sm text-gray-600">• {h.description}</p>
+                            <p key={i} className="text-sm text-[var(--wn-text-secondary)]">• {h.description}</p>
                           ))}
                         </div>
                       )}
@@ -2483,16 +2697,18 @@ export default function StudentDashboard() {
 
                 {reviews.length > 0 && (
                   <div className="mt-6">
-                    <h3 className="font-bold mb-3 flex items-center gap-2"><Star size={18} /> {locale === 'id' ? 'Evaluasi Anda untuk Guru' : locale === 'ar' ? 'تقييماتك للمعلمين' : 'Your Tutor Reviews'}</h3>
+                    <h3 className="font-bold text-[var(--wn-heading)] mb-3 flex items-center gap-2">
+                      <Star size={18} aria-hidden="true" /> {evT.rateTeacher || 'Your Tutor Reviews'}
+                    </h3>
                     {reviews.map((r) => (
-                      <div key={r._id} className="border rounded-lg p-3 mb-2">
-                        <p className="font-semibold text-sm">{r.teacher?.personalInfo?.fullName || r.teacher?.user?.name || 'معلم'}</p>
+                      <div key={r._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-3 mb-2">
+                        <p className="font-semibold text-sm text-[var(--wn-text-primary)]">{r.teacher?.personalInfo?.fullName || r.teacher?.user?.name || scT.tutorFallback || 'Tutor'}</p>
                         <div className="flex gap-0.5 my-1">
                           {Array.from({ length: 5 }).map((_, i) => (
-                            <Star key={i} size={12} className={i < r.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'} />
+                            <Star key={i} size={12} className={i < r.rating ? 'text-[var(--wn-gold)] fill-current' : 'text-[var(--wn-text-tertiary)]'} aria-hidden="true" />
                           ))}
                         </div>
-                        {r.comment && <p className="text-xs text-gray-600">{r.comment}</p>}
+                        {r.comment && <p className="text-xs text-[var(--wn-text-secondary)]">{r.comment}</p>}
                       </div>
                     ))}
                   </div>
@@ -2523,57 +2739,103 @@ export default function StudentDashboard() {
         />
       )}
 
-      {reviewModal && (
-        <Modal title={locale === 'id' ? `Evaluasi ${reviewModal.teacher?.user?.name || 'Guru'}` : locale === 'ar' ? `تقييم ${reviewModal.teacher?.user?.name || 'المعلم'}` : `Rate ${reviewModal.teacher?.user?.name || 'Tutor'}`} onClose={() => setReviewModal(null)}>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">{locale === 'id' ? 'Penilaian (1-5)' : locale === 'ar' ? 'التقييم (1-5)' : 'Rating (1-5)'}</label>
-              <input type="range" min={1} max={5} value={reviewForm.rating}
-                onChange={(e) => setReviewForm((p) => ({ ...p, rating: Number(e.target.value) }))}
-                className="w-full" />
-              <span className="text-emerald-600 font-bold">{reviewForm.rating}</span>
-            </div>
-            <div>
-              <label className="text-sm font-medium">{locale === 'id' ? 'Komentar Anda' : locale === 'ar' ? 'تعليقك' : 'Your Comment'}</label>
-              <textarea className="input-field w-full mt-1" rows={3} value={reviewForm.comment}
-                onChange={(e) => setReviewForm((p) => ({ ...p, comment: e.target.value }))} />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={reviewForm.wouldContinue}
-                onChange={(e) => setReviewForm((p) => ({ ...p, wouldContinue: e.target.checked }))} />
-              {locale === 'id' ? 'Saya ingin melanjutkan kelas dengan guru ini' : locale === 'ar' ? 'أرغب في الاستمرار مع هذا المعلم' : 'I want to continue learning with this tutor'}
+      <Modal
+        isOpen={Boolean(reviewModal)}
+        disableClose={submittingReview}
+        title={`${modT.reviewTitle || 'Rate Session & Tutor'} — ${reviewModal?.teacher?.user?.name || scT.tutorFallback || ''}`}
+        onClose={() => { if (!submittingReview) setReviewModal(null); }}
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="review-rating" className="block text-sm font-medium text-[var(--wn-text-primary)] mb-1">
+              {modT.ratingLabel || 'Overall rating'}
             </label>
-            <button onClick={submitReview} className="btn-primary w-full">{locale === 'id' ? 'Kirim Evaluasi' : locale === 'ar' ? 'إرسال التقييم' : 'Submit Review'}</button>
+            <input
+              id="review-rating"
+              type="range"
+              min={1}
+              max={5}
+              disabled={submittingReview}
+              value={reviewForm.rating}
+              onChange={(e) => setReviewForm((p) => ({ ...p, rating: Number(e.target.value) }))}
+              className="w-full accent-[var(--wn-emerald)]"
+            />
+            <span className="text-[var(--wn-link)] font-bold">{reviewForm.rating} / 5</span>
           </div>
-        </Modal>
-      )}
+          <div>
+            <label htmlFor="review-comment" className="block text-sm font-medium text-[var(--wn-text-primary)] mb-1">
+              {modT.commentLabel || 'Your comment (optional)'}
+            </label>
+            <textarea
+              id="review-comment"
+              className="input-field w-full mt-1"
+              rows={3}
+              disabled={submittingReview}
+              placeholder={modT.commentPlaceholder || 'Share your feedback about the session…'}
+              value={reviewForm.comment}
+              onChange={(e) => setReviewForm((p) => ({ ...p, comment: e.target.value }))}
+            />
+          </div>
+          <label htmlFor="review-continue" className="flex items-center gap-2 text-sm text-[var(--wn-text-primary)] min-h-[44px] cursor-pointer">
+            <input
+              id="review-continue"
+              type="checkbox"
+              disabled={submittingReview}
+              checked={reviewForm.wouldContinue}
+              onChange={(e) => setReviewForm((p) => ({ ...p, wouldContinue: e.target.checked }))}
+              className="h-4 w-4 accent-[var(--wn-emerald)]"
+            />
+            <span>{modT.wouldContinue || 'I would like to continue with this tutor'}</span>
+          </label>
+          <button
+            type="button"
+            disabled={submittingReview}
+            onClick={submitReview}
+            className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-55"
+          >
+            {submittingReview && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+            <span>{submittingReview ? (modT.submitting || 'Submitting…') : (modT.submitReview || 'Submit Review')}</span>
+          </button>
+        </div>
+      </Modal>
 
-      {bookModal && (
-        <Modal title={locale === 'id' ? `Pesan Sesi Kelas — ${bookModal.name}` : locale === 'ar' ? `حجز حصة — ${bookModal.name}` : `Book Session — ${bookModal.name}`} onClose={() => setBookModal(null)}>
-          <form onSubmit={bookRegular} className="space-y-3">
-            {bookAvailability.loading ? (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
-                {locale === 'ar' ? 'جاري تحميل مواعيد المعلم المتاحة...' : 'Loading tutor availability...'}
+      <Modal
+        isOpen={Boolean(bookModal)}
+        disableClose={booking}
+        title={`${acc.bookSessionBtn || 'Book Session'} — ${bookModal?.name || ''}`}
+        onClose={() => { if (!booking) setBookModal(null); }}
+      >
+        <form onSubmit={bookRegular} className="space-y-3" noValidate>
+          {bookAvailability.loading ? (
+            <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-3 text-sm text-[var(--wn-text-primary)]">
+              {t?.student?.booking?.loadingSlots || 'Loading booking slots…'}
+            </div>
+          ) : bookAvailability.configured ? (
+            <>
+              <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-3 text-xs text-[var(--wn-text-primary)]">
+                {t?.student?.booking?.availabilityFromSchedule || 'These slots come directly from the tutor schedule.'} ({bookingTimezone})
               </div>
-            ) : bookAvailability.configured ? (
-              <>
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-900">
-                  {locale === 'ar'
-                    ? `المواعيد التالية متاحة فعليًا في جدول المعلم، وتظهر بتوقيت جهازك (${bookingTimezone}).`
-                    : `These slots are currently available and shown in your timezone (${bookingTimezone}).`}
-                </div>
+              <div>
+                <label htmlFor="book-modal-date" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+                  {t?.student?.booking?.dateLabel || 'Date'}
+                </label>
                 <select
+                  id="book-modal-date"
                   required
-                  className="input-field w-full"
+                  className="input-field w-full min-h-[44px]"
                   value={bookForm.date}
-                  onChange={(event) => setBookForm((current) => ({ ...current, date: event.target.value, time: '' }))}
+                  aria-invalid={Boolean(bookError && !bookForm.date)}
+                  onChange={(event) => {
+                    if (bookError) setBookError('');
+                    setBookForm((current) => ({ ...current, date: event.target.value, time: '' }));
+                  }}
                 >
-                  <option value="">{locale === 'ar' ? 'اختر اليوم' : 'Choose a date'}</option>
+                  <option value="">{t?.student?.booking?.chooseDate || 'Choose a date'}</option>
                   {bookAvailableDates.map((date) => {
                     const representative = bookAvailability.slots.find((slot) => bookingDateKey(slot.startsAt) === date);
                     return (
                       <option key={date} value={date}>
-                        {new Date(representative.startsAt).toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en', {
+                        {new Date(representative.startsAt).toLocaleDateString(intlLocale, {
                           timeZone: bookingTimezone,
                           weekday: 'long',
                           day: 'numeric',
@@ -2583,17 +2845,27 @@ export default function StudentDashboard() {
                     );
                   })}
                 </select>
+              </div>
+              <div>
+                <label htmlFor="book-modal-time" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+                  {t?.student?.booking?.timeLabel || 'Time'}
+                </label>
                 <select
+                  id="book-modal-time"
                   required
                   disabled={!bookForm.date}
-                  className="input-field w-full"
+                  className="input-field w-full min-h-[44px]"
                   value={bookForm.time}
-                  onChange={(event) => setBookForm((current) => ({ ...current, time: event.target.value }))}
+                  aria-invalid={Boolean(bookError && !bookForm.time)}
+                  onChange={(event) => {
+                    if (bookError) setBookError('');
+                    setBookForm((current) => ({ ...current, time: event.target.value }));
+                  }}
                 >
-                  <option value="">{locale === 'ar' ? 'اختر الوقت' : 'Choose a time'}</option>
+                  <option value="">{t?.student?.booking?.chooseTime || 'Choose a time'}</option>
                   {bookSlotsForDate.map((slot) => (
                     <option key={slot.startsAt} value={slot.startsAt}>
-                      {new Date(slot.startsAt).toLocaleTimeString(locale === 'ar' ? 'ar-EG' : 'en', {
+                      {new Date(slot.startsAt).toLocaleTimeString(intlLocale, {
                         timeZone: bookingTimezone,
                         hour: '2-digit',
                         minute: '2-digit',
@@ -2601,203 +2873,310 @@ export default function StudentDashboard() {
                     </option>
                   ))}
                 </select>
-              </>
-            ) : (
-              <>
-                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900">
-                  {locale === 'ar'
-                    ? 'المعلم لم يحدد جدول توفر بعد؛ أرسل موعدًا مقترحًا وسيؤكده أو يقترح بديلًا.'
-                    : 'The tutor has not configured availability yet. Send a preferred time for confirmation.'}
-                </div>
-                <input type="date" required className="input-field w-full" value={bookForm.date}
-                  onChange={(e) => setBookForm((p) => ({ ...p, date: e.target.value }))} />
-                <input type="time" required className="input-field w-full" value={bookForm.time}
-                  onChange={(e) => setBookForm((p) => ({ ...p, time: e.target.value }))} />
-              </>
-            )}
-            <textarea className="input-field w-full" rows={2} placeholder={locale === 'id' ? 'Catatan (opsional)' : locale === 'ar' ? 'ملاحظات (اختياري)' : 'Notes (optional)'}
-              value={bookForm.notes} onChange={(e) => setBookForm((p) => ({ ...p, notes: e.target.value }))} />
-            <button type="submit" disabled={booking} className="btn-primary w-full">
-              {booking ? (locale === 'id' ? 'Mengirim...' : 'جاري الإرسال...') : (locale === 'id' ? 'Kirim Permintaan Sesi' : locale === 'ar' ? 'إرسال طلب الحصة' : 'Send Session Request')}
-            </button>
-          </form>
-        </Modal>
-      )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3 text-xs text-[var(--wn-text-primary)]">
+                {t?.student?.booking?.availabilityPending || 'The tutor has not configured availability yet.'}
+              </div>
+              <div>
+                <label htmlFor="book-modal-date-raw" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+                  {t?.student?.booking?.dateLabel || 'Date'}
+                </label>
+                <input
+                  id="book-modal-date-raw"
+                  type="date"
+                  required
+                  className="input-field w-full min-h-[44px]"
+                  value={bookForm.date}
+                  onChange={(e) => {
+                    if (bookError) setBookError('');
+                    setBookForm((p) => ({ ...p, date: e.target.value }));
+                  }}
+                />
+              </div>
+              <div>
+                <label htmlFor="book-modal-time-raw" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+                  {t?.student?.booking?.timeLabel || 'Time'}
+                </label>
+                <input
+                  id="book-modal-time-raw"
+                  type="time"
+                  required
+                  className="input-field w-full min-h-[44px]"
+                  value={bookForm.time}
+                  onChange={(e) => {
+                    if (bookError) setBookError('');
+                    setBookForm((p) => ({ ...p, time: e.target.value }));
+                  }}
+                />
+              </div>
+            </>
+          )}
+          <div>
+            <label htmlFor="book-modal-notes" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+              {t?.student?.booking?.notesLabel || 'Notes for the teacher (optional)'}
+            </label>
+            <textarea
+              id="book-modal-notes"
+              className="input-field w-full"
+              rows={2}
+              placeholder={t?.student?.booking?.notesPlaceholder || 'Notes'}
+              value={bookForm.notes}
+              onChange={(e) => setBookForm((p) => ({ ...p, notes: e.target.value }))}
+            />
+          </div>
+          {bookError && (
+            <p role="alert" className="text-xs font-semibold text-[var(--wn-text-danger)]">{bookError}</p>
+          )}
+          <button
+            type="submit"
+            disabled={booking}
+            className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-55"
+          >
+            {booking && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+            <span>{booking ? (t?.student?.booking?.sending || 'Sending…') : (t?.student?.booking?.confirmBtn || 'Confirm request')}</span>
+          </button>
+        </form>
+      </Modal>
 
-      {/* IN-BROWSER AUDIO RECORDER MODAL */}
-      {recordModalHw && (
-        <Modal 
-          title={locale === 'id' ? 'Studio Rekaman Suara Al-Quran 🎙️' : locale === 'ar' ? 'استوديو التسميع الصوتي المباشر 🎙️' : 'Live Quran Recitation Studio 🎙️'} 
-          onClose={() => { resetVoiceRecording(); setRecordModalHw(null); }}
-        >
-          <div className="space-y-4 font-arabic">
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 text-sm text-emerald-900">
-              <p className="font-bold">{recordModalHw.title}</p>
-              {recordModalHw.description && <p className="text-xs text-emerald-700 mt-1">{recordModalHw.description}</p>}
+      <Modal
+        isOpen={Boolean(recordModalHw)}
+        disableClose={submittingVoice}
+        title={modT.recordTitle || 'Live Quran Recitation Recording'}
+        onClose={() => { if (!submittingVoice) { resetVoiceRecording(); setRecordModalHw(null); } }}
+      >
+        <div className="space-y-4">
+          <div className="bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl p-3.5 text-sm text-[var(--wn-text-primary)]">
+            <p className="font-bold">{recordModalHw?.title}</p>
+            {recordModalHw?.description && <p className="text-xs text-[var(--wn-text-secondary)] mt-1">{recordModalHw.description}</p>}
+          </div>
+
+          <div className="bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] rounded-2xl p-6 text-center space-y-4">
+            <div className="flex justify-center items-center">
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
+                isRecording
+                  ? 'bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] animate-pulse'
+                  : audioBlob
+                    ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                    : 'bg-[var(--wn-emerald-soft)] text-[var(--wn-link)]'
+              }`}>
+                <Mic size={36} aria-hidden="true" />
+              </div>
             </div>
 
-            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-6 text-center space-y-4">
-              <div className="flex justify-center items-center">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-                  isRecording 
-                    ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' 
-                    : audioBlob 
-                    ? 'bg-emerald-600 text-white' 
-                    : 'bg-emerald-100 text-emerald-700'
-                }`}>
-                  <Mic size={36} />
-                </div>
-              </div>
+            <div>
+              <p className="text-3xl font-black font-mono text-[var(--wn-text-primary)]">
+                {Math.floor(recordSeconds / 60).toString().padStart(2, '0')}:{(recordSeconds % 60).toString().padStart(2, '0')}
+              </p>
+              <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+                {isRecording
+                  ? (modT.recordingLive || 'Recording your recitation…')
+                  : audioBlob
+                    ? (modT.recordingDone || 'Recording complete — preview before sending to your tutor')
+                    : (modT.recordingIdle || 'Click start below to record your recitation directly')}
+              </p>
+            </div>
 
-              {/* Timer & Status */}
-              <div>
-                <p className="text-3xl font-black font-mono text-stone-800">
-                  {Math.floor(recordSeconds / 60).toString().padStart(2, '0')}:{(recordSeconds % 60).toString().padStart(2, '0')}
-                </p>
-                <p className="text-xs text-stone-500 mt-1">
-                  {isRecording 
-                    ? (locale === 'id' ? 'Sedang merekam bacaan Anda...' : locale === 'ar' ? 'جاري تسجيل تلاوتك بصوت نقي... رتّل بهدوء ومراعاة للأحكام' : 'Recording your recitation clearly...') 
-                    : audioBlob 
-                    ? (locale === 'id' ? 'Rekaman selesai — Dengarkan sebelum mengirim' : locale === 'ar' ? 'تم إنهاء التسجيل — استمع لتلاوتك قبل إرسالها للشيخ' : 'Recording finished — listen before sending') 
-                    : (locale === 'id' ? 'Klik tombol di bawah untuk mulai merekam' : locale === 'ar' ? 'انقر على زر البدء لتسجيل تلاوتك مباشرة من جهازك' : 'Click start to record directly from your mic')}
-                </p>
+            {audioUrl && (
+              <div className="pt-2">
+                <audio src={audioUrl} controls className="w-full rounded-lg" />
               </div>
+            )}
 
-              {/* Audio Playback Preview */}
-              {audioUrl && (
-                <div className="pt-2">
-                  <audio src={audioUrl} controls className="w-full rounded-lg" />
-                </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              {!isRecording && !audioBlob && (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className="min-h-[44px] px-6 py-2.5 bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] font-bold rounded-xl text-sm transition inline-flex items-center gap-2 shadow-sm"
+                >
+                  <Mic size={16} aria-hidden="true" />
+                  <span>{modT.startRec || 'Start Recording'}</span>
+                </button>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-center gap-3 pt-2">
-                {!isRecording && !audioBlob && (
+              {isRecording && (
+                <button
+                  type="button"
+                  onClick={stopVoiceRecording}
+                  className="min-h-[44px] px-6 py-2.5 bg-[var(--wn-emerald-deep)] text-[var(--wn-text-inverse)] font-bold rounded-xl text-sm transition inline-flex items-center gap-2 shadow-sm"
+                >
+                  <Square size={16} aria-hidden="true" />
+                  <span>{modT.stopRec || 'Stop & Preview'}</span>
+                </button>
+              )}
+
+              {audioBlob && !isRecording && (
+                <>
                   <button
                     type="button"
-                    onClick={startVoiceRecording}
-                    className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition flex items-center gap-2 shadow-sm active:scale-95"
+                    disabled={submittingVoice}
+                    onClick={resetVoiceRecording}
+                    className="min-h-[44px] px-4 py-2.5 border border-[var(--wn-border)] text-[var(--wn-text-primary)] hover:bg-[var(--wn-surface)] font-bold rounded-xl text-sm transition inline-flex items-center gap-1.5"
                   >
-                    <Mic size={16} />
-                    <span>{locale === 'id' ? 'Mulai Rekam' : locale === 'ar' ? 'ابدأ تسجيل التلاوة' : 'Start Recording'}</span>
+                    <RotateCcw size={16} aria-hidden="true" />
+                    <span>{modT.rerecord || 'Re-record'}</span>
                   </button>
-                )}
 
-                {isRecording && (
                   <button
                     type="button"
-                    onClick={stopVoiceRecording}
-                    className="px-6 py-2.5 bg-stone-900 hover:bg-black text-white font-bold rounded-xl text-sm transition flex items-center gap-2 shadow-sm active:scale-95"
+                    disabled={submittingVoice}
+                    onClick={sendVoiceRecording}
+                    className="min-h-[44px] px-6 py-2.5 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] font-bold rounded-xl text-sm transition inline-flex items-center gap-2 shadow-md disabled:opacity-55"
                   >
-                    <Square size={16} />
-                    <span>{locale === 'id' ? 'Hentikan & Simpan' : locale === 'ar' ? 'إيقاف التسجيل وتثبيته' : 'Stop & Preview'}</span>
+                    {submittingVoice ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+                    <span>{submittingVoice ? (modT.sending || 'Sending…') : (modT.sendToTutor || 'Send to Tutor')}</span>
                   </button>
-                )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
 
-                {audioBlob && !isRecording && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={resetVoiceRecording}
-                      className="px-4 py-2.5 border border-stone-300 text-stone-700 hover:bg-stone-100 font-bold rounded-xl text-sm transition flex items-center gap-1.5"
-                    >
-                      <RotateCcw size={16} />
-                      <span>{locale === 'id' ? 'Ulangi' : locale === 'ar' ? 'إعادة التسجيل' : 'Re-record'}</span>
-                    </button>
+      <Modal
+        isOpen={Boolean(studentExcuseModal)}
+        disableClose={submittingRsvp}
+        title={modT.excuseTitle || 'Advance Session Excuse'}
+        onClose={() => { if (!submittingRsvp) { setStudentExcuseModal(null); setStudentExcuseReason(''); } }}
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3 text-xs text-[var(--wn-text-primary)]">
+            {modT.excusePolicy || 'Submitting an excuse at least 6 hours before the session preserves your balance for a make-up session.'}
+          </div>
+          <div>
+            <label htmlFor="student-excuse-reason" className="block text-xs font-bold text-[var(--wn-text-secondary)] mb-1">
+              {modT.excuseLabel || 'Excuse reason (optional)'}
+            </label>
+            <textarea
+              id="student-excuse-reason"
+              rows={3}
+              disabled={submittingRsvp}
+              value={studentExcuseReason}
+              onChange={(e) => setStudentExcuseReason(e.target.value)}
+              placeholder={modT.excusePlaceholder || 'e.g., Emergency, exam, travel…'}
+              className="input-field w-full"
+            />
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={submittingRsvp}
+              onClick={() => { setStudentExcuseModal(null); setStudentExcuseReason(''); }}
+              className="min-h-[44px] px-4 py-2 border border-[var(--wn-border)] rounded-lg text-sm font-semibold text-[var(--wn-text-secondary)]"
+            >
+              {modT.cancel || common.cancel || 'Cancel'}
+            </button>
+            <button
+              type="button"
+              disabled={submittingRsvp}
+              onClick={() => handleStudentRsvp(studentExcuseModal._id, 'excused', studentExcuseReason)}
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold disabled:opacity-55"
+            >
+              {submittingRsvp && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              <span>{submittingRsvp ? (modT.saving || 'Saving…') : (modT.confirmExcuse || 'Confirm Excuse')}</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
 
-                    <button
-                      type="button"
-                      disabled={submittingVoice}
-                      onClick={sendVoiceRecording}
-                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition flex items-center gap-2 shadow-md shadow-emerald-700/20 disabled:opacity-50 active:scale-95"
-                    >
-                      <Send size={16} />
-                      <span>{submittingVoice ? (locale === 'id' ? 'Mengirim...' : 'جاري الإرسال...') : (locale === 'id' ? 'Kirim ke Guru 🚀' : locale === 'ar' ? 'إرسال التلاوة للشيخ 🚀' : 'Send to Tutor 🚀')}</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+      <Modal
+        isOpen={Boolean(cancelPendingModal)}
+        disableClose={Boolean(actionSessionId)}
+        title={modT.cancelReqTitle || 'Confirm Cancel Request'}
+        onClose={() => { if (!actionSessionId) setCancelPendingModal(null); }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--wn-text-secondary)]">
+            {modT.cancelReqDesc || 'Do you want to cancel this pending request? You can book another time whenever you like.'}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={Boolean(actionSessionId)}
+              onClick={() => setCancelPendingModal(null)}
+              className="min-h-[44px] px-4 py-2 border border-[var(--wn-border)] rounded-lg text-sm font-semibold text-[var(--wn-text-secondary)]"
+            >
+              {modT.keepRequest || 'Keep request'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(actionSessionId)}
+              onClick={confirmCancelPendingRequest}
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold disabled:opacity-55"
+            >
+              {actionSessionId && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              <span>{actionSessionId ? (modT.cancelling || 'Cancelling…') : (modT.confirmCancelReq || 'Cancel request')}</span>
+            </button>
           </div>
-        </Modal>
-      )}
-      {studentExcuseModal && (
-        <Modal
-          title={locale === 'ar' ? 'الاعتذار المسبق عن حضور الحصة' : 'Advance Session Excuse'}
-          onClose={() => { setStudentExcuseModal(null); setStudentExcuseReason(''); }}
-        >
-          <div className="space-y-4">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              {locale === 'ar'
-                ? 'تقديم الاعتذار قبل موعد الحصة بـ 6 ساعات على الأقل يحفظ حقك في حصة تعويضية مجانية دون خصم من رصيدك.'
-                : 'Submitting an excuse at least 6 hours before the session preserves your free makeup session.'}
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                {locale === 'ar' ? 'سبب الاعتذار (اختياري)' : 'Excuse reason (optional)'}
-              </label>
-              <textarea
-                rows={3}
-                value={studentExcuseReason}
-                onChange={(e) => setStudentExcuseReason(e.target.value)}
-                placeholder={locale === 'ar' ? 'مثال: ظرف طارئ، اختبار، سفر...' : 'Reason...'}
-                className="input-field w-full"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { setStudentExcuseModal(null); setStudentExcuseReason(''); }}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600"
-              >
-                {locale === 'ar' ? 'تراجع' : 'Cancel'}
-              </button>
-              <button
-                type="button"
-                disabled={submittingRsvp}
-                onClick={() => handleStudentRsvp(studentExcuseModal._id, 'excused', studentExcuseReason)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submittingRsvp ? (locale === 'ar' ? 'جاري التسجيل...' : 'Saving...') : (locale === 'ar' ? 'تأكيد الاعتذار' : 'Confirm Excuse')}
-              </button>
-            </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(deleteHwModal)}
+        disableClose={Boolean(deletingHwId)}
+        title={hwT.deleteConfirmTitle || actT.deleteHomework || 'Confirm Resetting Submission'}
+        onClose={() => { if (!deletingHwId) setDeleteHwModal(null); }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--wn-text-secondary)]">
+            {hwT.deleteConfirmDesc || actT.confirmDeleteHomework || 'Are you sure you want to remove this submission so you can re-upload?'}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={Boolean(deletingHwId)}
+              onClick={() => setDeleteHwModal(null)}
+              className="min-h-[44px] px-4 py-2 border border-[var(--wn-border)] rounded-lg text-sm font-semibold text-[var(--wn-text-secondary)]"
+            >
+              {common.cancel || 'Cancel'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(deletingHwId)}
+              onClick={() => deleteHomeworkSubmission(deleteHwModal)}
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold disabled:opacity-55"
+            >
+              {deletingHwId && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              <span>{deletingHwId ? (common.deleting || 'Deleting…') : (actT.confirmDeleteHomeworkBtn || 'Confirm Delete')}</span>
+            </button>
           </div>
-        </Modal>
-      )}
-      {cancelPendingModal && (
-        <Modal
-          title={locale === 'ar' ? 'تأكيد إلغاء طلب الحصة' : 'Confirm Cancel Request'}
-          onClose={() => { if (!actionSessionId) setCancelPendingModal(null); }}
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              {locale === 'ar'
-                ? 'هل تريد إلغاء هذا الطلب المعلّق؟ يمكنك الحجز في وقت آخر متى شئت.'
-                : 'Are you sure you want to cancel this pending session request?'}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={Boolean(actionSessionId)}
-                onClick={() => setCancelPendingModal(null)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600"
-              >
-                {locale === 'ar' ? 'تراجع' : 'Keep request'}
-              </button>
-              <button
-                type="button"
-                disabled={actionSessionId === cancelPendingModal._id}
-                onClick={confirmCancelPendingRequest}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {actionSessionId === cancelPendingModal._id
-                  ? (locale === 'ar' ? 'جاري الإلغاء...' : 'Cancelling...')
-                  : (locale === 'ar' ? 'تأكيد إلغاء الطلب' : 'Cancel request')}
-              </button>
-            </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(cancelInviteModal)}
+        disableClose={Boolean(cancellingInviteId)}
+        title={modT.cancelInviteConfirmTitle || 'Confirm Cancelling Guardian Link Request'}
+        onClose={() => { if (!cancellingInviteId) setCancelInviteModal(null); }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--wn-text-secondary)]">
+            {modT.cancelInviteConfirmDesc || 'Are you sure you want to cancel this pending link request?'}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              disabled={Boolean(cancellingInviteId)}
+              onClick={() => setCancelInviteModal(null)}
+              className="min-h-[44px] px-4 py-2 border border-[var(--wn-border)] rounded-lg text-sm font-semibold text-[var(--wn-text-secondary)]"
+            >
+              {modT.keepRequest || 'Keep request'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(cancellingInviteId)}
+              onClick={() => cancelGuardianInvitation(cancelInviteModal._id)}
+              className="min-h-[44px] inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold disabled:opacity-55"
+            >
+              {cancellingInviteId && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              <span>{cancellingInviteId ? (modT.cancelling || 'Cancelling…') : (modT.confirmCancelReq || 'Cancel request')}</span>
+            </button>
           </div>
-        </Modal>
-      )}
+        </div>
+      </Modal>
     </DashboardLayout>
   );
 }
@@ -2811,6 +3190,7 @@ function SessionCard({
   onAcceptReschedule,
   onCancelPending,
   busySessionId = '',
+  submittingRsvp = false,
   hasUnreadChat = false,
   currentUserId,
 }) {
@@ -2818,16 +3198,23 @@ function SessionCard({
     (entry) => String(entry.student?._id || entry.student || '') === String(currentUserId || '')
   );
   const studentRsvpStatus = studentAttendanceEntry?.status || '';
-  const { locale } = useI18n();
-  const teacherName = session.teacher?.user?.name || session.teacher?.personalInfo?.fullName || (locale === 'id' ? 'Guru' : locale === 'ar' ? 'المعلم' : 'Tutor');
+  const { locale, t } = useI18n();
+  const sd = t?.student?.dashboard || {};
+  const scT = sd.sessionCard || {};
+  const intlLocale = resolveIntlLocale(locale);
+
+  const teacherName = session.teacher?.user?.name || session.teacher?.personalInfo?.fullName || scT.tutorFallback || 'Quran Tutor';
   const isTrial = session.type === 'trial';
   const isGroup = session.type === 'group_circle';
   const isBusy = busySessionId === session._id;
-  const dateLocale = locale === 'id' ? 'id-ID' : locale === 'ar' ? 'ar-EG' : 'en-US';
   const durationMinutes = Number(session.duration || 60);
-  const durationLabel = locale === 'ar'
-    ? (durationMinutes === 120 ? 'ساعتان' : durationMinutes === 90 ? 'ساعة ونصف' : durationMinutes === 60 ? 'ساعة' : durationMinutes + ' دقيقة')
-    : (durationMinutes === 60 ? '1 hour' : durationMinutes + ' minutes');
+  const durationLabel = durationMinutes === 120
+    ? (scT.durationTwoHours || '2 hours')
+    : durationMinutes === 90
+      ? (scT.durationHourHalf || '1.5 hours')
+      : durationMinutes === 60
+        ? (scT.durationHour || '1 hour')
+        : `${durationMinutes} ${scT.durationMinutesUnit || 'min'}`;
   const joinWindow = session.status === 'accepted'
     ? (session.lifecycle
       ? { phase: session.lifecycle.joinPhase, within: session.lifecycle.joinOpen }
@@ -2837,43 +3224,44 @@ function SessionCard({
   const acceptedEarly = joinWindow?.phase === 'early';
   const canJoin = Boolean((session.meetingLink || session.roomId || session._id) && session.status === 'accepted' && (session.lifecycle?.joinOpen ?? joinWindow?.within));
   const statusText = acceptedExpired
-    ? (locale === 'ar' ? 'انتهى موعد الدخول — بانتظار التقرير' : locale === 'id' ? 'Waktu masuk selesai — menunggu laporan' : 'Join window ended — awaiting report')
-    : getStatusLabel(session.status, locale);
+    ? (scT.joinWindowEnded || 'Join window ended — awaiting report')
+    : getStatusLabel(session.status, sd);
 
   return (
-    <div className="border rounded-lg p-4 flex flex-wrap justify-between items-start gap-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <h3 className="font-bold">{isGroup ? (session.circle?.name || teacherName) : teacherName}</h3>
-          <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">
+    <div className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4 flex flex-wrap justify-between items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-bold text-[var(--wn-text-primary)]">{isGroup ? (session.circle?.name || teacherName) : teacherName}</h3>
+          <span className="text-xs bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] text-[var(--wn-text-secondary)] px-2 py-0.5 rounded">
             {isTrial
-              ? (locale === 'id' ? 'Uji Coba' : 'تجريبية')
+              ? (scT.trialBadge || 'Trial')
               : isGroup
-                ? (locale === 'ar' ? 'حلقة جماعية' : 'Group circle')
-                : (locale === 'id' ? 'Reguler' : 'منتظمة')}
+                ? (scT.circleBadge || 'Group circle')
+                : (scT.regularBadge || 'Regular')}
           </span>
         </div>
-        <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
-          <Clock size={14} /> {formatSessionDateTime(session, dateLocale, { dateStyle: 'medium', timeStyle: 'short' })} — {durationLabel} · {sessionTimeZone(session)}
+        <p className="text-sm text-[var(--wn-text-secondary)] flex items-center gap-1 mt-1">
+          <Clock size={14} aria-hidden="true" /> {formatSessionDateTime(session, intlLocale, { dateStyle: 'medium', timeStyle: 'short' })} — {durationLabel} · {sessionTimeZone(session)}
         </p>
-        <span className={`text-xs px-2 py-0.5 rounded mt-1 inline-block ${
-          session.status === 'accepted' ? 'bg-green-100 text-green-700'
-            : session.status === 'pending' ? 'bg-yellow-100 text-yellow-700'
-            : session.status === 'completed' ? 'bg-blue-100 text-blue-700'
-            : 'bg-gray-100 text-gray-600'
+        <span className={`text-xs px-2 py-0.5 rounded mt-1 inline-block font-semibold ${
+          session.status === 'accepted'
+            ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)]'
+            : session.status === 'pending'
+              ? 'bg-[var(--wn-gold-soft)] text-[var(--wn-text-gold)]'
+              : session.status === 'completed'
+                ? 'bg-[var(--wn-mint-soft)] text-[var(--wn-teal-dark)]'
+                : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-secondary)]'
         }`}>
           {statusText}
         </span>
         {session.status === 'pending' && session.rescheduledFrom && (
-          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2 max-w-md">
+          <div className="mt-2 rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3 text-xs text-[var(--wn-text-primary)] space-y-2 max-w-md">
             <p className="font-bold">
-              {locale === 'ar'
-                ? 'اقترح المعلم هذا الموعد الجديد لحصتك'
-                : 'Your tutor proposed this new time'}
+              {scT.rescheduledNotice || 'Your tutor proposed this new time for your session'}
             </p>
-            <p className="text-amber-800">
-              {locale === 'ar' ? 'الموعد السابق:' : 'Previous time:'}{' '}
-              {new Date(session.rescheduledFrom).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' })}
+            <p className="text-[var(--wn-text-secondary)]">
+              {scT.previousTime || 'Previous time:'}{' '}
+              {new Date(session.rescheduledFrom).toLocaleString(intlLocale, { dateStyle: 'medium', timeStyle: 'short' })}
             </p>
             <div className="flex flex-wrap gap-2">
               {onAcceptReschedule && (
@@ -2881,11 +3269,9 @@ function SessionCard({
                   type="button"
                   disabled={isBusy}
                   onClick={() => onAcceptReschedule(session)}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50"
+                  className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] font-bold disabled:opacity-50"
                 >
-                  {isBusy
-                    ? (locale === 'ar' ? 'جاري التأكيد...' : 'Confirming...')
-                    : (locale === 'ar' ? 'قبول الموعد الجديد' : 'Accept new time')}
+                  {isBusy ? (scT.confirming || 'Confirming…') : (scT.acceptNewTime || 'Accept new time')}
                 </button>
               )}
               {onCancelPending && (
@@ -2893,9 +3279,9 @@ function SessionCard({
                   type="button"
                   disabled={isBusy}
                   onClick={() => onCancelPending(session)}
-                  className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-rose-700 hover:bg-rose-50 font-semibold disabled:opacity-50"
+                  className="min-h-[44px] px-3.5 py-2 rounded-lg border border-[var(--wn-danger)] bg-[var(--wn-surface)] text-[var(--wn-text-danger)] hover:bg-[var(--wn-danger-soft)] font-semibold disabled:opacity-50"
                 >
-                  {locale === 'ar' ? 'إلغاء الطلب' : 'Cancel request'}
+                  {scT.cancelRequest || 'Cancel request'}
                 </button>
               )}
             </div>
@@ -2903,51 +3289,53 @@ function SessionCard({
         )}
         {session.status === 'pending' && !session.rescheduledFrom && (
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <p className="text-xs text-amber-600">{locale === 'id' ? 'Menunggu persetujuan guru' : locale === 'ar' ? 'بانتظار موافقة المعلم' : 'Awaiting teacher approval'}</p>
+            <p className="text-xs text-[var(--wn-text-gold)]">{scT.awaitingTutor || 'Awaiting tutor approval'}</p>
             {onCancelPending && (
               <button
                 type="button"
                 disabled={isBusy}
                 onClick={() => onCancelPending(session)}
-                className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-50"
+                className="min-h-[44px] inline-flex items-center px-2 text-xs font-semibold text-[var(--wn-text-danger)] hover:underline disabled:opacity-50"
               >
-                {locale === 'ar' ? 'إلغاء الطلب' : 'Cancel request'}
+                {scT.cancelRequest || 'Cancel request'}
               </button>
             )}
           </div>
         )}
         {acceptedEarly && (
-          <p className="text-xs text-slate-500 mt-1">
-            {locale === 'ar' ? 'يفتح الدخول قبل الموعد بـ 30 دقيقة.' : locale === 'id' ? 'Akses dibuka 30 menit sebelum sesi.' : 'Joining opens 30 minutes before the session.'}
+          <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+            {scT.joinOpensEarly || 'Joining opens 30 minutes before start.'}
           </p>
         )}
         {acceptedExpired && (
-          <p className="text-xs text-rose-700 mt-1">
-            {locale === 'ar' ? 'انتهى وقت الدخول لهذه الحصة. سيظهر التقرير بعد أن يغلق المعلم الحصة.' : locale === 'id' ? 'Waktu masuk sesi telah berakhir.' : 'The join window has ended. The report will appear after the tutor closes the session.'}
+          <p className="text-xs text-[var(--wn-text-danger)] mt-1">
+            {scT.joinWindowClosedDetail || 'Join window ended. The report will appear after your tutor closes the session.'}
           </p>
         )}
         {canJoin && (
           <div className="flex flex-wrap gap-2 mt-2">
             <a
               href={localizedPath(getSessionLiveRoomPath(session), locale)}
-              className="text-sm text-emerald-600 font-semibold hover:underline inline-flex items-center gap-1"
+              className="min-h-[44px] inline-flex items-center gap-1 px-2 text-sm text-[var(--wn-link)] font-semibold hover:underline"
             >
-              <Video size={15} />
-              {locale === 'id' ? 'Masuk Kelas' : locale === 'ar' ? 'انضم للحصة' : 'Join Session'}
+              <Video size={15} aria-hidden="true" />
+              {scT.joinSession || 'Join Session'}
             </a>
             {session.meetingLink && /^https?:\/\//i.test(session.meetingLink) ? (
               <a
                 href={localizeInternalHref(session.meetingLink, locale)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-slate-600 font-semibold hover:underline inline-flex items-center gap-1"
+                className="min-h-[44px] inline-flex items-center gap-1 px-2 text-xs text-[var(--wn-text-secondary)] font-semibold hover:underline"
               >
-                {locale === 'ar' ? 'الرابط الخارجي الاحتياطي' : 'External fallback link'}
+                {scT.externalFallback || 'External fallback link'}
               </a>
             ) : null}
-            <Link to={localizedPath(`/meeting/${session._id}`, locale)}
-              className="text-sm text-purple-600 font-semibold hover:underline flex items-center gap-1">
-              🌐 {locale === 'id' ? 'Dengan Terjemahan' : locale === 'ar' ? 'مع ترجمة' : 'With Translation'}
+            <Link
+              to={localizedPath(`/meeting/${session._id}`, locale)}
+              className="min-h-[44px] inline-flex items-center gap-1 px-2 text-sm text-[var(--wn-link)] font-semibold hover:underline"
+            >
+              🌐 {scT.withTranslation || 'With Translation'}
             </Link>
           </div>
         )}
@@ -2956,29 +3344,31 @@ function SessionCard({
         {session.status === 'accepted' && !acceptedExpired && onRsvp && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {studentRsvpStatus === 'confirmed' ? (
-              <span className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold">
-                {locale === 'ar' ? '✓ مؤكد الحضور' : '✓ Confirmed'}
+              <span className="min-h-[44px] inline-flex items-center px-3 py-1.5 rounded-lg bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] border border-[var(--wn-border-mint)] text-xs font-bold">
+                {scT.confirmed || '✓ Confirmed'}
               </span>
             ) : (
               <button
                 type="button"
+                disabled={submittingRsvp || isBusy}
                 onClick={() => onRsvp(session, 'confirmed')}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                className="min-h-[44px] px-3.5 py-2 rounded-lg bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] text-xs font-bold transition disabled:opacity-55 disabled:cursor-not-allowed"
               >
-                {locale === 'ar' ? 'تأكيد الحضور' : 'Confirm Attendance'}
+                {scT.confirmAttendance || 'Confirm Attendance'}
               </button>
             )}
             {studentRsvpStatus === 'excused' ? (
-              <span className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                {locale === 'ar' ? 'معتذر عن الحصة' : 'Excused'}
+              <span className="min-h-[44px] inline-flex items-center px-3 py-1.5 rounded-lg bg-[var(--wn-gold-soft)] text-[var(--wn-text-gold)] border border-[var(--wn-border-strong)] text-xs font-bold">
+                {scT.excused || 'Excused'}
               </span>
             ) : (
               <button
                 type="button"
+                disabled={submittingRsvp || isBusy}
                 onClick={() => onRsvp(session, 'excused')}
-                className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold transition"
+                className="min-h-[44px] px-3.5 py-2 rounded-lg border border-[var(--wn-danger)] text-[var(--wn-text-danger)] hover:bg-[var(--wn-danger-soft)] text-xs font-semibold transition disabled:opacity-55 disabled:cursor-not-allowed"
               >
-                {locale === 'ar' ? 'اعتذار مسبق' : 'Advance Excuse'}
+                {scT.advanceExcuse || 'Advance Excuse'}
               </button>
             )}
           </div>
@@ -2987,38 +3377,23 @@ function SessionCard({
           <button
             type="button"
             onClick={() => onChat?.(session)}
-            className="relative px-4 py-2 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-50 inline-flex items-center gap-1.5"
+            className="relative min-h-[44px] px-4 py-2 border border-[var(--wn-border-mint)] text-[var(--wn-link)] rounded-lg text-sm font-semibold hover:bg-[var(--wn-emerald-soft)] inline-flex items-center gap-1.5"
           >
-            {locale === 'id' ? 'Chat' : locale === 'ar' ? 'محادثة' : 'Chat'}
+            {scT.chat || 'Chat'}
             {hasUnreadChat ? (
-              <span className="inline-block h-2 w-2 rounded-full bg-rose-500" aria-label={locale === 'ar' ? 'رسالة غير مقروءة' : 'Unread message'} />
+              <span className="inline-block h-2 w-2 rounded-full bg-[var(--wn-danger)]" aria-label={scT.unreadMessage || 'Unread message'} />
             ) : null}
           </button>
         )}
         {session.status === 'completed' && !hasReviewed && (
-          <button onClick={() => onReview(session)} className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm">
-            {locale === 'id' ? 'Beri Nilai Guru' : locale === 'ar' ? 'قيّم المعلم' : 'Rate Teacher'}
+          <button
+            type="button"
+            onClick={() => onReview(session)}
+            className="min-h-[44px] px-4 py-2 bg-[var(--wn-gold)] text-[var(--wn-text-primary)] font-bold rounded-lg text-sm hover:opacity-90"
+          >
+            {scT.rateTeacher || 'Rate Teacher'}
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function Modal({ title, onClose, children }) {
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') onClose?.();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 dark:border dark:border-slate-700 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative">
-        <button onClick={onClose} className="absolute left-4 top-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        <h3 className="text-lg font-bold mb-4">{title}</h3>
-        {children}
       </div>
     </div>
   );
@@ -3026,8 +3401,8 @@ function Modal({ title, onClose, children }) {
 
 function InfoRow({ label, value }) {
   return (
-    <div className="bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg p-3">
-      <span className="text-slate-500 text-xs">{label}</span>
+    <div className="bg-[var(--wn-surface)] text-[var(--wn-text-primary)] border border-[var(--wn-border)] rounded-lg p-3">
+      <span className="text-[var(--wn-text-secondary)] text-xs">{label}</span>
       <p className="font-semibold">{value || '—'}</p>
     </div>
   );
@@ -3036,5 +3411,6 @@ function InfoRow({ label, value }) {
 function taskTypeLabel(t) {
   return TASK_TYPES.find((x) => x.id === t)?.label || t;
 }
+
 
 

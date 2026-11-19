@@ -1,4 +1,5 @@
 import { BookOpen, Sparkles, Target } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 function deriveProgress(evaluations = [], quranSummary = null) {
   if (quranSummary) {
@@ -74,10 +75,11 @@ function deriveProgress(evaluations = [], quranSummary = null) {
 export default function QuranProgressSummary({
   evaluations = [],
   quranSummary = null,
-  locale = 'ar',
   variant = 'student',
 }) {
-  const isAr = locale === 'ar';
+  const { t } = useI18n();
+  const qw = t?.student?.quranWidgets || {};
+
   const summary = deriveProgress(evaluations, quranSummary);
   const { recitedSurahs, lastRecitation, avgMemorizationOutOf5, avgTajweedOutOf5 } = summary;
   const hasAnyData = Boolean(
@@ -90,10 +92,8 @@ export default function QuranProgressSummary({
   if (!hasAnyData) {
     if (variant !== 'teacher') return null;
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-xs text-slate-600">
-        {isAr
-          ? 'لم تُسجل مقاطع أو سور لهذا الطالب بعد. ستظهر هنا خريطة التحضير تلقائياً بعد أول تقييم.'
-          : 'No recorded Surah recitations yet for this learner.'}
+      <div className="rounded-xl border border-dashed border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-4 text-xs text-[var(--wn-text-secondary)]">
+        {qw.noRecitationsYet || 'No recorded Surah recitations yet for this learner.'}
       </div>
     );
   }
@@ -103,57 +103,57 @@ export default function QuranProgressSummary({
 
   return (
     <section
-      className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/70 via-white to-amber-50/40 p-4 sm:p-5 space-y-4"
-      aria-label={isAr ? 'ملخص التقدم القرآني' : 'Quran progress summary'}
+      className="rounded-2xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-4 sm:p-5 space-y-4"
+      aria-label={qw.summaryAria || 'Quran progress summary'}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white">
-            <BookOpen size={16} />
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]">
+            <BookOpen size={16} aria-hidden="true" />
           </span>
           <div>
-            <span className="block text-[11px] font-bold text-emerald-700">
+            <span className="block text-[11px] font-bold text-[var(--wn-link)]">
               {variant === 'teacher'
-                ? (isAr ? 'التحضير السريع قبل الحصة' : 'Pre-session prep card')
-                : (isAr ? 'خريطة مسيرتك القرآنية' : 'Your Quran journey map')}
+                ? (qw.teacherPrepCard || 'Pre-session prep card')
+                : (qw.studentJourneyMap || 'Your Quran journey map')}
             </span>
-            <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
-              {isAr ? 'آخر ما تم تسميعه ومستوى الإتقان' : 'Latest recitation & mastery'}
+            <h4 className="text-sm sm:text-base font-extrabold text-[var(--wn-heading)]">
+              {qw.latestMastery || 'Latest recitation & mastery'}
             </h4>
           </div>
         </div>
         {recitedSurahs.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-800">
-            <Sparkles size={13} />
-            {isAr ? `${recitedSurahs.length} سورة / مقطع مسجل` : `${recitedSurahs.length} Surahs logged`}
+          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-3 py-1 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+            <Sparkles size={13} aria-hidden="true" />
+            {recitedSurahs.length} {qw.surahsLogged || 'Surahs logged'}
           </span>
         )}
       </div>
 
       {lastRecitation && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-emerald-100 bg-white p-3">
-            <span className="block text-[11px] font-bold text-slate-500">
-              {isAr ? 'آخر ما تم تسميعه' : 'Last recited passage'}
+          <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-3">
+            <span className="block text-[11px] font-bold text-[var(--wn-text-secondary)]">
+              {qw.lastRecited || 'Last recited passage'}
             </span>
-            <strong className="mt-0.5 block text-sm font-extrabold text-emerald-950">
-              {lastRecitation.surahRecited || (isAr ? 'تقييم عام للحصة' : 'General session evaluation')}
+            <strong className="mt-0.5 block text-sm font-extrabold text-[var(--wn-heading)]">
+              {lastRecitation.surahRecited || (qw.generalEvaluation || 'General session evaluation')}
               {(lastRecitation.fromAyah || lastRecitation.toAyah)
                 ? ` (${lastRecitation.fromAyah || '—'} – ${lastRecitation.toAyah || '—'})`
                 : ''}
             </strong>
             {lastRecitation.notes ? (
-              <p className="mt-1 text-xs text-slate-600 line-clamp-2">{lastRecitation.notes}</p>
+              <p className="mt-1 text-xs text-[var(--wn-text-secondary)] line-clamp-2">{lastRecitation.notes}</p>
             ) : null}
           </div>
 
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 p-3">
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800">
-              <Target size={12} />
-              {isAr ? 'الهدف / الورد القادم' : 'Next target / homework'}
+          <div className="rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-3">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--wn-text-gold)]">
+              <Target size={12} aria-hidden="true" />
+              {qw.nextTarget || 'Next target / homework'}
             </span>
-            <p className="mt-0.5 text-sm font-bold text-slate-900">
-              {lastRecitation.nextHomework || (isAr ? 'مواصلة الحفظ والمراجعة وفق الخطة' : 'Continue along your plan')}
+            <p className="mt-0.5 text-sm font-bold text-[var(--wn-text-primary)]">
+              {lastRecitation.nextHomework || (qw.continuePlan || 'Continue along your plan')}
             </p>
           </div>
         </div>
@@ -162,24 +162,24 @@ export default function QuranProgressSummary({
       {(avgMemorizationOutOf5 !== null || avgTajweedOutOf5 !== null) && (
         <div className="grid gap-3 sm:grid-cols-2">
           {avgMemorizationOutOf5 !== null && (
-            <div className="rounded-xl border border-slate-100 bg-white p-3">
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-3">
               <div className="flex items-center justify-between text-xs font-bold mb-1.5">
-                <span className="text-slate-600">{isAr ? 'متوسط إتقان الحفظ' : 'Memorization avg'}</span>
-                <span className="text-emerald-800">{avgMemorizationOutOf5} / 5</span>
+                <span className="text-[var(--wn-text-secondary)]">{qw.memAvg || 'Memorization avg'}</span>
+                <span className="text-[var(--wn-link)]">{avgMemorizationOutOf5} / 5</span>
               </div>
-              <div className="h-2 w-full rounded-full bg-emerald-100 overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-700 transition-all" style={{ width: `${memPct}%` }} />
+              <div className="h-2 w-full rounded-full bg-[var(--wn-emerald-soft)] overflow-hidden">
+                <div className="h-full rounded-full bg-[var(--wn-emerald)] transition-all" style={{ width: `${memPct}%` }} />
               </div>
             </div>
           )}
           {avgTajweedOutOf5 !== null && (
-            <div className="rounded-xl border border-slate-100 bg-white p-3">
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-3">
               <div className="flex items-center justify-between text-xs font-bold mb-1.5">
-                <span className="text-slate-600">{isAr ? 'متوسط إتقان التجويد' : 'Tajweed avg'}</span>
-                <span className="text-amber-800">{avgTajweedOutOf5} / 5</span>
+                <span className="text-[var(--wn-text-secondary)]">{qw.tajweedAvg || 'Tajweed avg'}</span>
+                <span className="text-[var(--wn-text-gold)]">{avgTajweedOutOf5} / 5</span>
               </div>
-              <div className="h-2 w-full rounded-full bg-amber-100 overflow-hidden">
-                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${tajPct}%` }} />
+              <div className="h-2 w-full rounded-full bg-[var(--wn-gold-soft)] overflow-hidden">
+                <div className="h-full rounded-full bg-[var(--wn-gold)] transition-all" style={{ width: `${tajPct}%` }} />
               </div>
             </div>
           )}
@@ -188,20 +188,20 @@ export default function QuranProgressSummary({
 
       {recitedSurahs.length > 0 && (
         <div>
-          <span className="block text-[11px] font-bold text-slate-500 mb-1.5">
-            {isAr ? 'السور والمقاطع المنجزة:' : 'Covered Surahs / passages:'}
+          <span className="block text-[11px] font-bold text-[var(--wn-text-secondary)] mb-1.5">
+            {qw.coveredSurahs || 'Covered Surahs / passages:'}
           </span>
           <div className="flex flex-wrap gap-1.5">
             {recitedSurahs.slice(0, 12).map((surah) => (
               <span
                 key={surah}
-                className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 text-xs font-semibold text-emerald-900"
+                className="rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-2.5 py-0.5 text-xs font-semibold text-[var(--wn-text-primary)]"
               >
                 {surah}
               </span>
             ))}
             {recitedSurahs.length > 12 && (
-              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+              <span className="rounded-full bg-[var(--wn-surface)] border border-[var(--wn-border)] px-2.5 py-0.5 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
                 +{recitedSurahs.length - 12}
               </span>
             )}
@@ -211,3 +211,4 @@ export default function QuranProgressSummary({
     </section>
   );
 }
+

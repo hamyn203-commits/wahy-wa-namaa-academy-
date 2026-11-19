@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Globe, AlertCircle, Sparkles, ShieldCheck, Loader2, RefreshCw, UserRound } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
+import EmptyState from '../../components/shared/EmptyState';
 import Skeleton from '../../components/shared/Skeleton';
 import TeacherAvatar from '../../components/shared/TeacherAvatar';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import api from '../../lib/api';
 import { teacherPublicImage } from '../../lib/teacherMedia';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -27,11 +28,18 @@ export default function BookSession() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, dir, t } = useI18n();
   const toast = useToast();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+
+  const bk = t?.student?.booking || {};
+  const bkSteps = bk.steps || {};
+  const bkTz = bk.timezones || {};
+  const common = t?.common || {};
+  const intlLocale = resolveIntlLocale(locale);
+
   const [teacher, setTeacher] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => String(searchParams.get('date') || '').slice(0, 10));
   const [selectedTime, setSelectedTime] = useState(() => String(searchParams.get('time') || ''));
   const [timezone, setTimezone] = useState(DEVICE_TIMEZONE);
@@ -42,27 +50,9 @@ export default function BookSession() {
   const [existingTrial, setExistingTrial] = useState(null);
   const [availabilityData, setAvailabilityData] = useState({ configured: false, teacherTimezone: '', slots: [] });
 
-  useEffect(() => {
-    if (authLoading) return;
-
-    if (!isAuthenticated) {
-      navigate(localizedPath('/login', locale) + '?redirect=' + encodeURIComponent('/book-trial/' + teacherId));
-      return;
-    }
-
-    if (user?.role !== 'student') {
-      navigate(localizedPath('/journey', locale), { replace: true });
-      return;
-    }
-    if (!user?.name?.trim() || !user?.phone?.trim() || (user?.onboarding?.required && !user?.onboarding?.completed)) {
-      navigate(localizedPath('/profile/setup', locale) + '?next=' + encodeURIComponent(localizedPath('/journey', locale)), { replace: true });
-      return;
-    }
-    if (user?.onboarding?.trackSelected !== true) {
-      navigate(localizedPath('/journey', locale), { replace: true });
-      return;
-    }
-
+  const loadBookingData = useCallback(() => {
+    setLoading(true);
+    setLoadFailed(false);
     Promise.all([
       api.get('/api/teachers/' + teacherId),
       api.get('/api/sessions/my-sessions?type=trial&limit=100', { auth: true }).catch(() => ({ sessions: [] })),
@@ -85,9 +75,36 @@ export default function BookSession() {
         });
         setExistingTrial(active || null);
       })
-      .catch(() => setTeacher(null))
+      .catch(() => {
+        setTeacher(null);
+        setLoadFailed(true);
+      })
       .finally(() => setLoading(false));
-  }, [teacherId, navigate, locale, authLoading, isAuthenticated, user]);
+  }, [teacherId]);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated) {
+      navigate(localizedPath('/login', locale) + '?redirect=' + encodeURIComponent('/book-trial/' + teacherId));
+      return;
+    }
+
+    if (user?.role !== 'student') {
+      navigate(localizedPath('/journey', locale), { replace: true });
+      return;
+    }
+    if (!user?.name?.trim() || !user?.phone?.trim() || (user?.onboarding?.required && !user?.onboarding?.completed)) {
+      navigate(localizedPath('/profile/setup', locale) + '?next=' + encodeURIComponent(localizedPath('/journey', locale)), { replace: true });
+      return;
+    }
+    if (user?.onboarding?.trackSelected !== true) {
+      navigate(localizedPath('/journey', locale), { replace: true });
+      return;
+    }
+
+    loadBookingData();
+  }, [teacherId, navigate, locale, authLoading, isAuthenticated, user, loadBookingData]);
 
   const dateKeyInTimezone = (value, zone) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -123,23 +140,24 @@ export default function BookSession() {
     : [];
 
   const baseTimezones = [
-    ['Africa/Cairo', isAr ? 'القاهرة' : 'Cairo'],
-    ['Asia/Riyadh', isAr ? 'الرياض' : 'Riyadh'],
-    ['Asia/Dubai', isAr ? 'دبي' : 'Dubai'],
-    ['Asia/Kuwait', isAr ? 'الكويت' : 'Kuwait'],
-    ['Asia/Qatar', isAr ? 'قطر' : 'Qatar'],
-    ['Asia/Amman', isAr ? 'عمّان' : 'Amman'],
-    ['Asia/Beirut', isAr ? 'بيروت' : 'Beirut'],
-    ['Europe/London', 'London'],
-    ['Europe/Paris', 'Paris'],
-    ['America/New_York', 'New York'],
+    ['Africa/Cairo', bkTz.cairo || 'Cairo'],
+    ['Asia/Riyadh', bkTz.riyadh || 'Riyadh'],
+    ['Asia/Dubai', bkTz.dubai || 'Dubai'],
+    ['Asia/Kuwait', bkTz.kuwait || 'Kuwait'],
+    ['Asia/Qatar', bkTz.qatar || 'Qatar'],
+    ['Asia/Amman', bkTz.amman || 'Amman'],
+    ['Asia/Beirut', bkTz.beirut || 'Beirut'],
+    ['Europe/London', bkTz.london || 'London'],
+    ['Europe/Paris', bkTz.paris || 'Paris'],
+    ['America/New_York', bkTz.newYork || 'New York'],
   ];
   const timezones = baseTimezones.some(([value]) => value === DEVICE_TIMEZONE)
     ? baseTimezones
-    : [[DEVICE_TIMEZONE, isAr ? 'توقيت جهازك' : 'Your device timezone'], ...baseTimezones];
+    : [[DEVICE_TIMEZONE, bk.yourDeviceTimezone || 'Your device timezone'], ...baseTimezones];
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submitting) return;
     if (!showConfirmation) {
       setShowConfirmation(true);
       return;
@@ -158,18 +176,14 @@ export default function BookSession() {
         notes,
       }, { auth: true });
 
-      toast.success(
-        isAr
-          ? 'تم إرسال طلب الحصة التجريبية بنجاح!'
-          : 'Your trial session request has been submitted!',
-      );
+      toast.success(bk.submitSuccess || 'Your trial session request has been submitted!');
       navigate(localizedPath('/student/dashboard', locale));
     } catch (err) {
       if (err.code === 'TRIAL_ALREADY_EXISTS' && err.data?.existingSession) {
         setExistingTrial(err.data.existingSession);
         setShowConfirmation(false);
       } else {
-        toast.error(err.message || (isAr ? 'تعذر إرسال طلب الحجز' : 'Unable to send booking request'));
+        toast.error(err.message || bk.submitError || 'Unable to send booking request');
       }
     } finally {
       setSubmitting(false);
@@ -180,7 +194,7 @@ export default function BookSession() {
     return (
       <>
         <GlobalHeader />
-        <main className="wn-session-shell">
+        <main className="wn-session-shell" dir={dir}>
           <div className="wn-booking-wrap" aria-hidden="true">
             <section className="wn-booking-card">
               <div className="wn-booking-head">
@@ -205,7 +219,7 @@ export default function BookSession() {
             </section>
           </div>
           <p className="sr-only" role="status">
-            {isAr ? 'جاري تحميل مواعيد الحجز...' : 'Loading booking slots...'}
+            {bk.loadingSlots || 'Loading booking slots…'}
           </p>
         </main>
         <GlobalFooter />
@@ -217,32 +231,50 @@ export default function BookSession() {
     return (
       <>
         <GlobalHeader />
-        <main className="wn-session-shell min-h-[70vh] grid place-items-center px-4">
-          <div className="wn-public-empty max-w-xl w-full"><h3>{isAr ? 'ملف المعلم غير متاح' : 'Teacher profile unavailable'}</h3></div>
+        <main className="wn-session-shell min-h-[70vh] grid place-items-center px-4" dir={dir}>
+          <div className="max-w-xl w-full">
+            <EmptyState
+              icon={UserRound}
+              title={bk.teacherUnavailable || 'Teacher profile unavailable'}
+              description={loadFailed ? (t?.student?.errors?.loadFailed || 'Could not load data. Please try again.') : undefined}
+              action={
+                loadFailed ? (
+                  <button
+                    type="button"
+                    onClick={loadBookingData}
+                    className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                  >
+                    <RefreshCw size={15} aria-hidden="true" />
+                    <span>{common.retry || 'Try again'}</span>
+                  </button>
+                ) : undefined
+              }
+            />
+          </div>
         </main>
         <GlobalFooter />
       </>
     );
   }
 
-  const name = teacher.user?.name || teacher.personalInfo?.fullName || (isAr ? 'معلم قرآن' : 'Quran teacher');
+  const name = teacher.user?.name || teacher.personalInfo?.fullName || (bk.quranTeacher || 'Quran teacher');
   const photo = teacherPublicImage(teacher.media?.profilePhoto || teacher.user?.avatar);
   const currentStep = showConfirmation ? 2 : selectedDate && selectedTime ? 1.5 : 1;
 
   return (
     <>
-      <SEOHead page={{ title: isAr ? 'حجز جلسة تجريبية' : 'Book a trial session', url: '/book-trial/' + teacherId, noindex: true }} />
+      <SEOHead page={{ title: bk.seoTitle || 'Book a trial session', url: '/book-trial/' + teacherId, noindex: true }} />
       <GlobalHeader />
-      <main className="wn-session-shell">
+      <main className="wn-session-shell" dir={dir}>
         <div className="wn-booking-wrap">
           <section className="wn-booking-card">
             <div className="wn-booking-head">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="wn-auth-visual__eyebrow">
-                  <Sparkles size={14} /> {isAr ? 'حجز جلسة تعريفية مجانية' : 'BOOK A FREE INTRODUCTORY SESSION'}
+                  <Sparkles size={14} aria-hidden="true" /> {bk.eyebrow || 'BOOK A FREE INTRODUCTORY SESSION'}
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[#efd28e]">
-                  <ShieldCheck size={14} /> {isAr ? 'مجانية 100% — بدون بطاقة بنكية' : '100% Free — No card required'}
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-[var(--wn-gold)]">
+                  <ShieldCheck size={14} aria-hidden="true" /> {bk.freeBadge || '100% Free — No card required'}
                 </span>
               </div>
 
@@ -256,53 +288,53 @@ export default function BookSession() {
                   className="h-20 w-20 rounded-2xl shrink-0"
                 />
                 <div>
-                  <h1>{isAr ? 'اختر موعدًا مناسبًا' : 'Choose a suitable time'}</h1>
-                  <p>{isAr ? 'مع ' + name : 'With ' + name}</p>
+                  <h1>{bk.title || 'Choose a suitable time'}</h1>
+                  <p>{bk.withTeacher || 'With'} {name}</p>
                 </div>
               </div>
 
               {/* 3-Step Visual Progress Indicator */}
-              <div className="wn-booking-steps" aria-label={isAr ? 'خطوات الحجز' : 'Booking steps'}>
+              <div className="wn-booking-steps" aria-label={bk.stepsAria || 'Booking steps'}>
                 <div className={currentStep >= 1 ? 'wn-booking-step is-active' : 'wn-booking-step'}>
                   <span className="wn-booking-step__num">1</span>
-                  <span>{isAr ? 'اختيار اليوم والوقت' : 'Pick date & time'}</span>
+                  <span>{bkSteps.pickDateTime || 'Pick date & time'}</span>
                 </div>
                 <div className="wn-booking-step__line" />
                 <div className={currentStep >= 2 ? 'wn-booking-step is-active' : 'wn-booking-step'}>
                   <span className="wn-booking-step__num">2</span>
-                  <span>{isAr ? 'مراجعة التفاصيل' : 'Review details'}</span>
+                  <span>{bkSteps.reviewDetails || 'Review details'}</span>
                 </div>
                 <div className="wn-booking-step__line" />
                 <div className="wn-booking-step">
                   <span className="wn-booking-step__num">3</span>
-                  <span>{isAr ? 'تأكيد الموعد' : 'Confirm session'}</span>
+                  <span>{bkSteps.confirmSession || 'Confirm session'}</span>
                 </div>
               </div>
             </div>
 
             <form onSubmit={submit} className="wn-booking-form">
               {existingTrial && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                <div className="rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-4 text-[var(--wn-text-primary)]">
                   <div className="flex items-start gap-2">
-                    <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                    <AlertCircle size={18} className="mt-0.5 shrink-0 text-[var(--wn-text-gold)]" aria-hidden="true" />
                     <div>
                       <strong className="block">
                         {existingTrial.status === 'accepted'
-                          ? (isAr ? 'لديك حصة تجريبية مقبولة بالفعل مع هذا المعلم' : 'You already have an accepted trial with this teacher')
-                          : (isAr ? 'لديك طلب حصة تجريبية قيد انتظار هذا المعلم' : 'You already have a pending trial request with this teacher')}
+                          ? (bk.existingAccepted || 'You already have an accepted trial with this teacher')
+                          : (bk.existingPending || 'You already have a pending trial request with this teacher')}
                       </strong>
                       {existingTrial.scheduledAt && (
-                        <p className="text-sm mt-1">
-                          {isAr ? 'الموعد: ' : 'Time: '}
-                          {formatSessionDateTime(existingTrial, isAr ? 'ar-EG' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })} ({sessionTimeZone(existingTrial)})
+                        <p className="text-sm mt-1 text-[var(--wn-text-secondary)]">
+                          {bk.existingTime || 'Time:'}{' '}
+                          {formatSessionDateTime(existingTrial, intlLocale, { dateStyle: 'medium', timeStyle: 'short' })} ({sessionTimeZone(existingTrial)})
                         </p>
                       )}
                       <button
                         type="button"
                         onClick={() => navigate(localizedPath('/student/dashboard', locale))}
-                        className="mt-3 text-sm font-bold underline"
+                        className="mt-2 min-h-[44px] inline-flex items-center text-sm font-bold text-[var(--wn-link)] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] rounded"
                       >
-                        {isAr ? 'عرض حالة الطلب في لوحة الطالب' : 'View request status in student dashboard'}
+                        {bk.viewRequestStatus || 'View request status in student dashboard'}
                       </button>
                     </div>
                   </div>
@@ -311,19 +343,15 @@ export default function BookSession() {
 
               <div className="wn-booking-note">
                 {availabilityData.configured
-                  ? (isAr
-                    ? `المواعيد التالية مأخوذة مباشرة من جدول المعلم (${availabilityData.teacherTimezone || 'توقيت المعلم'})، وتظهر لك حسب المنطقة الزمنية التي تختارها.`
-                    : `These times come directly from the tutor schedule (${availabilityData.teacherTimezone || 'tutor timezone'}) and are shown in your selected timezone.`)
-                  : (isAr
-                    ? 'لم يحدد المعلم جدول توفر بعد؛ أرسل الوقت المقترح وسيقوم المعلم بتأكيده أو اقتراح بديل.'
-                    : 'The tutor has not configured availability yet; send a preferred time for confirmation.')}
+                  ? `${bk.availabilityFromSchedule || 'These slots come directly from the tutor schedule and are displayed in your selected timezone.'}${availabilityData.teacherTimezone ? ` (${availabilityData.teacherTimezone})` : ''}`
+                  : (bk.availabilityPending || 'The tutor has not configured availability yet; send a preferred time for confirmation.')}
               </div>
 
               {/* Interactive Visual Date Strip */}
               {availableDates.length > 0 && (
                 <div className="wn-booking-visual-group">
                   <span className="wn-booking-visual-title">
-                    <Calendar size={15} /> {isAr ? 'اختر اليوم المناسب سريعًا:' : 'Quickly pick a day:'}
+                    <Calendar size={15} aria-hidden="true" /> {bk.pickDay || 'Quickly pick a day:'}
                   </span>
                   <div className="wn-booking-date-strip">
                     {availableDates.slice(0, 7).map((date) => {
@@ -331,15 +359,15 @@ export default function BookSession() {
                         ? availabilityData.slots.find((slot) => dateKeyInTimezone(slot.startsAt, timezone) === date)?.startsAt
                         : date + 'T12:00:00';
                       const dObj = new Date(representative);
-                      const weekday = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                      const weekday = dObj.toLocaleDateString(intlLocale, {
                         timeZone: availabilityData.configured ? timezone : undefined,
                         weekday: 'short',
                       });
-                      const dayNum = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                      const dayNum = dObj.toLocaleDateString(intlLocale, {
                         timeZone: availabilityData.configured ? timezone : undefined,
                         day: 'numeric',
                       });
-                      const monthShort = dObj.toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                      const monthShort = dObj.toLocaleDateString(intlLocale, {
                         timeZone: availabilityData.configured ? timezone : undefined,
                         month: 'short',
                       });
@@ -353,7 +381,9 @@ export default function BookSession() {
                             setSelectedTime('');
                             setShowConfirmation(false);
                           }}
-                          className={isSelected ? 'wn-booking-date-chip is-selected' : 'wn-booking-date-chip'}
+                          className={`min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+                            isSelected ? 'wn-booking-date-chip is-selected' : 'wn-booking-date-chip'
+                          }`}
                         >
                           <small>{weekday}</small>
                           <strong>{dayNum}</strong>
@@ -369,13 +399,13 @@ export default function BookSession() {
               {selectedDate && (
                 <div className="wn-booking-visual-group">
                   <span className="wn-booking-visual-title">
-                    <Clock size={15} /> {isAr ? 'اختر الفترة الزمنية:' : 'Pick a time slot:'}
+                    <Clock size={15} aria-hidden="true" /> {bk.pickSlot || 'Pick a time slot:'}
                   </span>
                   <div className="wn-booking-time-pills">
                     {(availabilityData.configured
                       ? slotsForSelectedDate.map((slot) => ({
                           value: slot.startsAt,
-                          label: new Date(slot.startsAt).toLocaleTimeString(isAr ? 'ar-EG' : 'en', {
+                          label: new Date(slot.startsAt).toLocaleTimeString(intlLocale, {
                             timeZone: timezone,
                             hour: '2-digit',
                             minute: '2-digit',
@@ -390,7 +420,9 @@ export default function BookSession() {
                           setSelectedTime(item.value);
                           setShowConfirmation(false);
                         }}
-                        className={selectedTime === item.value ? 'wn-booking-time-pill is-selected' : 'wn-booking-time-pill'}
+                        className={`min-h-[44px] inline-flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+                          selectedTime === item.value ? 'wn-booking-time-pill is-selected' : 'wn-booking-time-pill'
+                        }`}
                       >
                         {item.label}
                       </button>
@@ -401,19 +433,27 @@ export default function BookSession() {
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="wn-booking-field">
-                  <label><Calendar size={15} className="inline ml-1" /> {isAr ? 'التاريخ' : 'Date'}</label>
-                  <select value={selectedDate} onChange={(event) => {
-                    setSelectedDate(event.target.value);
-                    setSelectedTime('');
-                  }} required>
-                    <option value="">{isAr ? 'اختر تاريخًا' : 'Choose a date'}</option>
+                  <label htmlFor="book-date">
+                    <Calendar size={15} className="inline me-1" aria-hidden="true" /> {bk.dateLabel || 'Date'}
+                  </label>
+                  <select
+                    id="book-date"
+                    value={selectedDate}
+                    onChange={(event) => {
+                      setSelectedDate(event.target.value);
+                      setSelectedTime('');
+                    }}
+                    required
+                    className="min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                  >
+                    <option value="">{bk.chooseDate || 'Choose a date'}</option>
                     {availableDates.map((date) => {
                       const representative = availabilityData.configured
                         ? availabilityData.slots.find((slot) => dateKeyInTimezone(slot.startsAt, timezone) === date)?.startsAt
                         : date + 'T12:00:00';
                       return (
                         <option key={date} value={date}>
-                          {new Date(representative).toLocaleDateString(isAr ? 'ar-EG' : 'en', {
+                          {new Date(representative).toLocaleDateString(intlLocale, {
                             timeZone: availabilityData.configured ? timezone : undefined,
                             weekday: 'long',
                             month: 'long',
@@ -426,13 +466,22 @@ export default function BookSession() {
                 </div>
 
                 <div className="wn-booking-field">
-                  <label><Clock size={15} className="inline ml-1" /> {isAr ? 'الوقت' : 'Time'}</label>
-                  <select value={selectedTime} onChange={(event) => setSelectedTime(event.target.value)} required disabled={!selectedDate}>
-                    <option value="">{isAr ? 'اختر وقتًا' : 'Choose a time'}</option>
+                  <label htmlFor="book-time">
+                    <Clock size={15} className="inline me-1" aria-hidden="true" /> {bk.timeLabel || 'Time'}
+                  </label>
+                  <select
+                    id="book-time"
+                    value={selectedTime}
+                    onChange={(event) => setSelectedTime(event.target.value)}
+                    required
+                    disabled={!selectedDate}
+                    className="min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                  >
+                    <option value="">{bk.chooseTime || 'Choose a time'}</option>
                     {availabilityData.configured
                       ? slotsForSelectedDate.map((slot) => (
                           <option key={slot.startsAt} value={slot.startsAt}>
-                            {new Date(slot.startsAt).toLocaleTimeString(isAr ? 'ar-EG' : 'en', {
+                            {new Date(slot.startsAt).toLocaleTimeString(intlLocale, {
                               timeZone: timezone,
                               hour: '2-digit',
                               minute: '2-digit',
@@ -445,66 +494,95 @@ export default function BookSession() {
               </div>
 
               <div className="wn-booking-field">
-                <label><Globe size={15} className="inline ml-1" /> {isAr ? 'المنطقة الزمنية' : 'Timezone'}</label>
-                <select value={timezone} onChange={(event) => {
-                  setTimezone(event.target.value);
-                  setSelectedDate('');
-                  setSelectedTime('');
-                }} required>
-                  {timezones.map(([value,label]) => <option key={value} value={value}>{label} — {value}</option>)}
+                <label htmlFor="book-timezone">
+                  <Globe size={15} className="inline me-1" aria-hidden="true" /> {bk.timezoneLabel || 'Timezone'}
+                </label>
+                <select
+                  id="book-timezone"
+                  value={timezone}
+                  onChange={(event) => {
+                    setTimezone(event.target.value);
+                    setSelectedDate('');
+                    setSelectedTime('');
+                  }}
+                  required
+                  className="min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                >
+                  {timezones.map(([value, label]) => <option key={value} value={value}>{label} — {value}</option>)}
                 </select>
               </div>
 
               <div className="wn-booking-field">
-                <label>{isAr ? 'ملاحظات للمعلم (اختياري)' : 'Notes for the teacher (optional)'}</label>
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder={isAr ? 'مثال: أريد التركيز على التجويد أو تحديد المستوى.' : 'Example: I want to focus on Tajweed or assess my level.'} />
+                <label htmlFor="book-notes">{bk.notesLabel || 'Notes for the teacher (optional)'}</label>
+                <textarea
+                  id="book-notes"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={4}
+                  placeholder={bk.notesPlaceholder || 'Example: I want to focus on Tajweed or assess my level.'}
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                />
               </div>
 
               {existingTrial ? (
                 <button
                   type="button"
                   onClick={() => navigate(localizedPath('/student/dashboard', locale))}
-                  className="wn-btn wn-btn--secondary wn-btn--lg wn-btn--block"
+                  className="wn-btn wn-btn--secondary wn-btn--lg wn-btn--block min-h-[44px]"
                 >
-                  {isAr ? 'اذهب إلى طلبك الحالي' : 'Go to your existing request'}
+                  {bk.goToExisting || 'Go to your existing request'}
                 </button>
               ) : showConfirmation ? (
                 <div className="wn-booking-confirm">
                   <div className="flex items-start gap-2">
-                    <AlertCircle size={19} className="text-[var(--wn-gold-dark)] mt-0.5" />
+                    <AlertCircle size={19} className="text-[var(--wn-text-gold)] mt-0.5 shrink-0" aria-hidden="true" />
                     <div className="flex-1">
-                      <strong className="text-[var(--wn-emerald-deep)]">{isAr ? 'راجع طلبك قبل الإرسال' : 'Review your request'}</strong>
+                      <strong className="text-[var(--wn-heading)]">{bk.reviewHeading || 'Review your request'}</strong>
                       <div className="wn-booking-summary">
-                        <span><b>{isAr ? 'المعلم:' : 'Teacher:'}</b> {name}</span>
+                        <span><b>{bk.teacherField || 'Teacher:'}</b> {name}</span>
                         <span>
-                          <b>{isAr ? 'التاريخ:' : 'Date:'}</b>{' '}
+                          <b>{bk.dateField || 'Date:'}</b>{' '}
                           {availabilityData.configured && selectedTime
-                            ? new Date(selectedTime).toLocaleDateString(isAr ? 'ar-EG' : 'en', { timeZone: timezone })
+                            ? new Date(selectedTime).toLocaleDateString(intlLocale, { timeZone: timezone })
                             : selectedDate}
                         </span>
                         <span>
-                          <b>{isAr ? 'الوقت:' : 'Time:'}</b>{' '}
+                          <b>{bk.timeField || 'Time:'}</b>{' '}
                           {availabilityData.configured && selectedTime
-                            ? new Date(selectedTime).toLocaleTimeString(isAr ? 'ar-EG' : 'en', {
+                            ? new Date(selectedTime).toLocaleTimeString(intlLocale, {
                                 timeZone: timezone,
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })
                             : selectedTime}
                         </span>
-                        <span><b>{isAr ? 'المنطقة:' : 'Timezone:'}</b> {timezone}</span>
+                        <span><b>{bk.timezoneField || 'Timezone:'}</b> {timezone}</span>
                       </div>
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-2 mt-4">
-                    <button type="button" onClick={() => setShowConfirmation(false)} className="wn-btn wn-btn--secondary wn-btn--block">{isAr ? 'تعديل' : 'Edit'}</button>
-                    <button type="submit" disabled={submitting} className="wn-btn wn-btn--primary wn-btn--block disabled:opacity-60">
-                      <CheckCircle size={16} /> {submitting ? (isAr ? 'جاري الإرسال...' : 'Sending...') : (isAr ? 'تأكيد الطلب' : 'Confirm request')}
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => setShowConfirmation(false)}
+                      className="wn-btn wn-btn--secondary wn-btn--block min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    >
+                      {bk.editBtn || 'Edit'}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="wn-btn wn-btn--primary wn-btn--block min-h-[44px] inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <CheckCircle size={16} aria-hidden="true" />}
+                      <span>{submitting ? (bk.sending || 'Sending…') : (bk.confirmBtn || 'Confirm request')}</span>
                     </button>
                   </div>
                 </div>
               ) : (
-                <button type="submit" className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block">{isAr ? 'مراجعة الحجز' : 'Review booking'}</button>
+                <button type="submit" className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block min-h-[44px]">
+                  {bk.reviewBtn || 'Review booking'}
+                </button>
               )}
             </form>
           </section>
@@ -514,3 +592,4 @@ export default function BookSession() {
     </>
   );
 }
+

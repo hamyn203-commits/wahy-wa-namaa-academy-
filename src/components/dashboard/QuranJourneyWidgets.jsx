@@ -1,6 +1,17 @@
 import { Flame, Sparkles, Trophy, BookOpen, CheckCircle2 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
-const DAILY_DUAS = [
+const DAILY_DUA_KEYS = [
+  ['d1', 's1'],
+  ['d2', 's2'],
+  ['d3', 's3'],
+  ['d4', 's4'],
+  ['d5', 's5'],
+  ['d6', 's6'],
+  ['d7', 's7'],
+];
+
+const DAILY_DUAS_FALLBACK = [
   {
     ar: '﴿وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا﴾ — اللهم اجعل القرآن العظيم ربيع قلوبنا ونور صدورنا.',
     en: '“And recite the Quran with measured recitation.” — O Allah, make the Quran the spring of our hearts.',
@@ -45,8 +56,13 @@ const DAILY_DUAS = [
   },
 ];
 
-function getTimeGreeting(locale) {
+function getTimeGreeting(locale, qw) {
   const hour = new Date().getHours();
+  if (qw) {
+    if (hour < 12) return qw.morningGreeting || 'Blessed morning';
+    if (hour < 17) return qw.afternoonGreeting || 'Peaceful afternoon';
+    return qw.eveningGreeting || 'Blessed evening';
+  }
   if (locale === 'ar') {
     if (hour < 12) return 'صباح النور والبركة';
     if (hour < 17) return 'طاب يومك بذكر الله';
@@ -71,7 +87,7 @@ export function ProgressRing({ percent = 0, size = 76, strokeWidth = 7, label })
           cy={size / 2}
           r={radius}
           fill="transparent"
-          stroke="rgba(15, 107, 79, 0.12)"
+          stroke="var(--wn-emerald-soft)"
           strokeWidth={strokeWidth}
         />
         <circle
@@ -79,7 +95,7 @@ export function ProgressRing({ percent = 0, size = 76, strokeWidth = 7, label })
           cy={size / 2}
           r={radius}
           fill="transparent"
-          stroke="#0f6b4f"
+          stroke="var(--wn-emerald)"
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
@@ -87,27 +103,29 @@ export function ProgressRing({ percent = 0, size = 76, strokeWidth = 7, label })
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <strong className="text-sm font-black text-emerald-950">{clamped}%</strong>
-        {label ? <span className="text-[10px] font-bold text-emerald-700">{label}</span> : null}
+        <strong className="text-sm font-black text-[var(--wn-heading)]">{clamped}%</strong>
+        {label ? <span className="text-[10px] font-bold text-[var(--wn-link)]">{label}</span> : null}
       </div>
     </div>
   );
 }
 
-export function getDailyQuranicDua(locale = 'ar') {
+export function getDailyQuranicDua(locale = 'ar', qw = null) {
   const isAr = locale === 'ar';
   const dayIndex = new Date().getDay();
-  const dua = DAILY_DUAS[dayIndex % DAILY_DUAS.length];
+  const idx = dayIndex % DAILY_DUA_KEYS.length;
+  const [textKey, sourceKey] = DAILY_DUA_KEYS[idx];
+  const fallback = DAILY_DUAS_FALLBACK[idx];
   return {
-    text: isAr ? dua.ar : dua.en,
-    source: isAr ? dua.sourceAr : dua.sourceEn,
-    greeting: getTimeGreeting(locale),
+    text: qw?.duas?.[textKey] || (isAr ? fallback.ar : fallback.en),
+    source: qw?.duas?.[sourceKey] || (isAr ? fallback.sourceAr : fallback.sourceEn),
+    greeting: getTimeGreeting(locale, qw),
   };
 }
 
 export function StudentInspirationStrip({
   studentFirstName,
-  locale = 'ar',
+  locale: propLocale,
   streak = 0,
   totalPoints = 0,
   completedSessions = 0,
@@ -115,10 +133,10 @@ export function StudentInspirationStrip({
   homeworkPending = 0,
   subscription = null,
 }) {
-  const isAr = locale === 'ar';
-  const dayIndex = new Date().getDay();
-  const dua = DAILY_DUAS[dayIndex % DAILY_DUAS.length];
-  const greeting = getTimeGreeting(locale);
+  const { locale: ctxLocale, t } = useI18n();
+  const activeLocale = propLocale || ctxLocale || 'ar';
+  const qw = t?.student?.quranWidgets || {};
+  const dua = getDailyQuranicDua(activeLocale, qw);
 
   const sessionTarget = subscription?.sessionCount || 8;
   const sessionsUsed = subscription ? Number(subscription.sessionsUsed || 0) : Number(completedSessions || 0);
@@ -130,89 +148,89 @@ export function StudentInspirationStrip({
   return (
     <section
       className="mb-5 grid gap-4 lg:grid-cols-12"
-      aria-label={isAr ? 'إشراقة اليوم ومؤشر التقدم' : 'Daily inspiration and progress'}
+      aria-label={qw.stripAria || 'Daily inspiration and progress'}
     >
       {/* Daily Greeting & Quranic Dua Card */}
-      <div className="lg:col-span-7 flex flex-col justify-between rounded-2xl border border-amber-200/70 bg-gradient-to-br from-[#fffdf7] via-[#fbf5e6] to-[#eef7f2] p-5 shadow-sm">
+      <div className="lg:col-span-7 flex flex-col justify-between rounded-2xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-900/90 px-3 py-1 text-xs font-bold text-[#efd28e]">
-            <Sparkles size={13} />
-            {greeting}، {studentFirstName}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-emerald-deep)] px-3 py-1 text-xs font-bold text-[var(--wn-gold)]">
+            <Sparkles size={13} aria-hidden="true" />
+            {dua.greeting}{studentFirstName ? `، ${studentFirstName}` : ''}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {Number(streak) > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-extrabold text-amber-800">
-                <Flame size={13} className="text-amber-600" />
-                {streak} {isAr ? 'يوم استمرارية' : 'day streak'}
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-strong)] bg-[var(--wn-surface)] px-2.5 py-1 text-xs font-extrabold text-[var(--wn-text-gold)]">
+                <Flame size={13} className="text-[var(--wn-text-gold)]" aria-hidden="true" />
+                {streak} {qw.dayStreak || 'day streak'}
               </span>
             )}
             {Number(totalPoints) > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-extrabold text-emerald-800">
-                <Trophy size={13} className="text-emerald-600" />
-                {totalPoints} {isAr ? 'نقطة' : 'pts'}
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-2.5 py-1 text-xs font-extrabold text-[var(--wn-badge-emerald-text)]">
+                <Trophy size={13} className="text-[var(--wn-link)]" aria-hidden="true" />
+                {totalPoints} {qw.ptsUnit || 'pts'}
               </span>
             )}
             {Number(streak) === 0 && Number(totalPoints) === 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-white/90 px-2.5 py-1 text-xs font-bold text-emerald-800">
-                <BookOpen size={13} className="text-emerald-600" />
-                {isAr ? 'رحلة قرآنية مباركة' : 'Blessed Quran journey'}
+              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-2.5 py-1 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                <BookOpen size={13} className="text-[var(--wn-link)]" aria-hidden="true" />
+                {qw.blessedJourney || 'Blessed Quran journey'}
               </span>
             )}
           </div>
         </div>
 
-        <blockquote className="my-3.5 border-s-4 border-emerald-700 ps-3.5">
-          <p className="font-arabic text-base font-bold leading-relaxed text-emerald-950">
-            {isAr ? dua.ar : dua.en}
+        <blockquote className="my-3.5 border-s-4 border-[var(--wn-emerald)] ps-3.5">
+          <p className={`${activeLocale === 'ar' ? 'font-arabic ' : ''}text-base font-bold leading-relaxed text-[var(--wn-text-primary)]`}>
+            {dua.text}
           </p>
-          <footer className="mt-1 text-xs font-semibold text-emerald-700/80">
-            {isAr ? dua.sourceAr : dua.sourceEn}
+          <footer className="mt-1 text-xs font-semibold text-[var(--wn-text-secondary)]">
+            {dua.source}
           </footer>
         </blockquote>
       </div>
 
       {/* Visual Progress Ring & Homework Mastery Card */}
-      <div className="lg:col-span-5 flex items-center gap-4 rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+      <div className="lg:col-span-5 flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-5 shadow-sm">
         <ProgressRing
           percent={ringPercent}
           size={82}
           strokeWidth={8}
-          label={isAr ? 'الإنجاز' : 'Goal'}
+          label={qw.goalLabel || 'Goal'}
         />
-        <div className="flex-1 min-w-0 space-y-2.5">
+        <div className="flex-1 w-full min-w-0 space-y-2.5">
           <div>
-            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-bold text-[var(--wn-text-secondary)]">
               <span className="inline-flex items-center gap-1">
-                <BookOpen size={13} className="text-emerald-700" />
+                <BookOpen size={13} className="text-[var(--wn-link)]" aria-hidden="true" />
                 {subscription
-                  ? (isAr ? 'تقدم باقة الحصص' : 'Package sessions')
-                  : (isAr ? 'الحصص المنجزة' : 'Completed sessions')}
+                  ? (qw.packageSessions || 'Package sessions')
+                  : (qw.completedSessions || 'Completed sessions')}
               </span>
-              <span className="text-emerald-800">
+              <span className="text-[var(--wn-heading)]">
                 {subscription
-                  ? `${sessionsUsed} / ${sessionTarget} ${isAr ? 'حصص' : 'sessions'}`
-                  : `${sessionsUsed} ${isAr ? 'حصة مكتملة' : 'completed'}`}
+                  ? `${sessionsUsed} / ${sessionTarget} ${qw.sessionsUnit || 'sessions'}`
+                  : `${sessionsUsed} ${qw.completedUnit || 'completed'}`}
               </span>
             </div>
-            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--wn-emerald-soft)]">
               <div
-                className="h-full rounded-full bg-emerald-700 transition-all duration-500"
+                className="h-full rounded-full bg-[var(--wn-emerald)] transition-all duration-500"
                 style={{ width: `${ringPercent}%` }}
               />
             </div>
           </div>
 
           <div>
-            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-bold text-[var(--wn-text-secondary)]">
               <span className="inline-flex items-center gap-1">
-                <CheckCircle2 size={13} className="text-amber-600" />
-                {isAr ? 'إنجاز الواجبات' : 'Homework completion'}
+                <CheckCircle2 size={13} className="text-[var(--wn-text-gold)]" aria-hidden="true" />
+                {qw.homeworkCompletion || 'Homework completion'}
               </span>
-              <span className="text-amber-800">{hwPercent}%</span>
+              <span className="text-[var(--wn-text-gold)]">{hwPercent}%</span>
             </div>
-            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-amber-100">
+            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--wn-gold-soft)]">
               <div
-                className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                className="h-full rounded-full bg-[var(--wn-gold)] transition-all duration-500"
                 style={{ width: `${hwPercent}%` }}
               />
             </div>
@@ -222,3 +240,4 @@ export function StudentInspirationStrip({
     </section>
   );
 }
+
