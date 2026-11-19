@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BadgeCheck, BookOpenCheck, Check, Clock3,
-  Crown, Heart, ShieldCheck, Sparkles, Users, UserRound
+  Crown, Heart, ShieldCheck, Sparkles, Users, UserRound, Video
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -15,6 +15,18 @@ import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { localizedPath } from '../../lib/locale';
 import './plans.css';
+
+const LIVE_ONLINE_LABEL = {
+  ar: 'مباشر أونلاين',
+  en: 'Live Online',
+  fr: 'En direct en ligne',
+  de: 'Live online',
+  tr: 'Canlı Çevrimiçi',
+  ur: 'لائیو آن لائن',
+  id: 'Online Langsung',
+  ms: 'Dalam Talian Langsung',
+  ku: 'ڕاستەوخۆ ئۆنلاین',
+};
 
 const PLAN_DEFS = [
   {
@@ -612,12 +624,17 @@ export default function PlansPage() {
 
             <div className="wn-plans-hero__visual">
               <img
-                src={audience === 'women' ? '/images/plans/women-group.jpg' : '/images/plans/men-group.jpg'}
+                src={audience === 'women' ? '/images/plans/women-mini.jpg' : '/images/plans/men-community.jpg'}
                 decoding="async"
                 alt={isRTL
-                  ? (audience === 'women' ? 'حلقة قرآن لقسم السيدات' : 'طلاب في حلقة قرآن جماعية')
-                  : (audience === 'women' ? 'Women Quran learning circle' : 'Students in a group Quran circle')}
+                  ? (audience === 'women' ? 'حصة قرآن مباشرة أونلاين لقسم السيدات من البيت' : 'حلقة قرآن مباشرة أونلاين لقسم الرجال والأطفال من البيت')
+                  : (audience === 'women' ? 'Live online women Quran class from home' : 'Live online group Quran class from home')}
               />
+              <span className="wn-plan-card__live-tag wn-plan-card__live-tag--hero">
+                <span className="wn-plan-card__live-dot" aria-hidden="true" />
+                <Video size={13} aria-hidden="true" />
+                <span>{LIVE_ONLINE_LABEL[locale] || (isRTL ? LIVE_ONLINE_LABEL.ar : LIVE_ONLINE_LABEL.en)}</span>
+              </span>
               <div className="wn-plans-hero__price">
                 <small>{copy.startAt}</small>
                 <strong>10 <em>{copy.currencyLong}</em></strong>
@@ -764,6 +781,11 @@ export default function PlansPage() {
                       decoding="async"
                     />
                     <span className="wn-plan-card__badge">{isRTL ? plan.badgeAr : plan.badgeEn}</span>
+                    <span className="wn-plan-card__live-tag">
+                      <span className="wn-plan-card__live-dot" aria-hidden="true" />
+                      <Video size={12} aria-hidden="true" />
+                      <span>{LIVE_ONLINE_LABEL[locale] || (isRTL ? LIVE_ONLINE_LABEL.ar : LIVE_ONLINE_LABEL.en)}</span>
+                    </span>
                   </div>
 
                   <div className="wn-plan-card__body">

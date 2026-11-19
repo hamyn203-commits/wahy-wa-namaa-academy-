@@ -370,6 +370,41 @@
 }
 [dir="rtl"] .wn-plan-card__badge { inset: 14px 14px auto auto; }
 
+.wn-plan-card__live-tag {
+  position: absolute;
+  top: 0.875rem;
+  inset-inline-end: 0.875rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--wn-radius-pill);
+  background: color-mix(in srgb, var(--wn-emerald-deep) 88%, transparent);
+  color: var(--wn-text-inverse);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 45%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.wn-plan-card__live-tag--hero {
+  top: 1rem;
+  inset-inline-start: 1rem;
+  inset-inline-end: auto;
+  padding: 0.45rem 0.8rem;
+  font-size: var(--wn-text-xs);
+}
+
+.wn-plan-card__live-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold);
+  flex-shrink: 0;
+}
+
 .wn-plan-card__body {
   flex: 1;
   display: flex;
