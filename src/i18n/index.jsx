@@ -1,21 +1,47 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import ar from './ar';
-import en from './en';
-import fr from './fr';
-import de from './de';
-import tr from './tr';
-import ur from './ur';
-import id from './id';
-import ms from './ms';
-import ku from './ku';
-import { detectBrowserLocale } from '../lib/locale';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import ar from './ar.js';
+import { detectBrowserLocale, isValidLocale, RTL_LOCALES } from '../lib/locale';
 
 const I18nContext = createContext();
 
-const translations = { ar, en, fr, de, tr, ur, id, ms, ku };
+const localeLoaders = {
+  en: () => import('./en.js'),
+  fr: () => import('./fr.js'),
+  de: () => import('./de.js'),
+  tr: () => import('./tr.js'),
+  ur: () => import('./ur.js'),
+  id: () => import('./id.js'),
+  ms: () => import('./ms.js'),
+  ku: () => import('./ku.js'),
+};
 
-// اللغات التي تكتب من اليمين لليسار
-const rtlLanguages = ['ar', 'ur', 'ku'];
+const loadedDictionaries = { ar };
+const inflightLoads = new Map();
+
+function loadLocaleDictionary(localeCode) {
+  if (loadedDictionaries[localeCode]) {
+    return Promise.resolve(loadedDictionaries[localeCode]);
+  }
+  const loader = localeLoaders[localeCode];
+  if (!loader) {
+    return Promise.resolve(ar);
+  }
+  if (!inflightLoads.has(localeCode)) {
+    const promise = loader()
+      .then((mod) => {
+        const dict = mod?.default || ar;
+        loadedDictionaries[localeCode] = dict;
+        inflightLoads.delete(localeCode);
+        return dict;
+      })
+      .catch((err) => {
+        inflightLoads.delete(localeCode);
+        throw err;
+      });
+    inflightLoads.set(localeCode, promise);
+  }
+  return inflightLoads.get(localeCode);
+}
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -39,39 +65,66 @@ function mergeTwoDicts(primary, secondary) {
   return result;
 }
 
-export function deepFallback(activeDict, fallbackEn = en, fallbackAr = ar) {
+export function deepFallback(activeDict, fallbackEn = loadedDictionaries.en || ar, fallbackAr = ar) {
   const baseWithAr = mergeTwoDicts(fallbackEn, fallbackAr);
   return mergeTwoDicts(activeDict, baseWithAr);
 }
 
 export function I18nProvider({ children }) {
   const [locale, setLocale] = useState(() => {
-    const saved = localStorage.getItem('locale');
-    if (saved && translations[saved]) return saved;
+    const saved = typeof window !== 'undefined' ? window.localStorage?.getItem('locale') : null;
+    if (saved && isValidLocale(saved)) return saved;
     return detectBrowserLocale();
   });
 
+  const [dictionaries, setDictionaries] = useState(() => ({ ...loadedDictionaries }));
+
   useEffect(() => {
     localStorage.setItem('locale', locale);
-    document.documentElement.dir = rtlLanguages.includes(locale) ? 'rtl' : 'ltr';
+    document.documentElement.dir = RTL_LOCALES.includes(locale) ? 'rtl' : 'ltr';
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const isRTL = rtlLanguages.includes(locale);
+  useEffect(() => {
+    const cached = loadedDictionaries[locale];
+    if (cached) {
+      setDictionaries((prev) => (prev[locale] === cached ? prev : { ...prev, [locale]: cached }));
+      return undefined;
+    }
+
+    let cancelled = false;
+    loadLocaleDictionary(locale)
+      .then((dict) => {
+        if (!cancelled && dict) {
+          setDictionaries((prev) => (prev[locale] === dict ? prev : { ...prev, [locale]: dict }));
+        }
+      })
+      .catch(() => {
+        // Keep synchronous base dictionary (`ar`) active if dynamic locale chunk fails to load.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
+
+  const isRTL = RTL_LOCALES.includes(locale);
   const dir = isRTL ? 'rtl' : 'ltr';
 
   const t = useMemo(() => {
-    const active = translations[locale] || ar;
-    if (locale === 'ar') return mergeTwoDicts(ar, en);
-    if (isRTL) return deepFallback(active, ar, en);
-    return deepFallback(active, en, ar);
-  }, [locale, isRTL]);
+    const fallbackEn = dictionaries.en || ar;
+    if (locale === 'ar') return mergeTwoDicts(ar, fallbackEn);
+    const active = dictionaries[locale] || (!isRTL ? fallbackEn : ar);
+    if (isRTL) return deepFallback(active, ar, fallbackEn);
+    return deepFallback(active, fallbackEn, ar);
+  }, [locale, isRTL, dictionaries]);
 
-  const changeLocale = (newLocale) => {
-    if (translations[newLocale]) {
+  const changeLocale = useCallback((newLocale) => {
+    if (isValidLocale(newLocale)) {
+      loadLocaleDictionary(newLocale).catch(() => {});
       setLocale(newLocale);
     }
-  };
+  }, []);
 
   return (
     <I18nContext.Provider value={{ locale, t, changeLocale, isRTL, dir }}>
