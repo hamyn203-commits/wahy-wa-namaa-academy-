@@ -2,7 +2,7 @@ import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth.jsx';
 import { ToastProvider } from './context/ToastProvider';
-import { I18nProvider } from './i18n';
+import { I18nProvider, useI18n } from './i18n';
 import { MarketProvider } from './context/MarketProvider';
 import LocaleLayout from './components/LocaleLayout';
 import { StudentLegacyRedirect, TeacherLegacyRedirect, GuardianLegacyRedirect, AdminLegacyRedirect, AuthenticatedLanding } from './components/DashboardRedirect';
@@ -69,11 +69,14 @@ const SessionRsvp = lazy(() => import('./pages/SessionRsvp'));
 const PlansPage = lazy(() => import('./pages/Plans'));
 
 function PageLoader() {
+  const { t } = useI18n();
   return (
-    <div className="loading-overlay">
+    <div className="loading-overlay" role="status" aria-live="polite">
       <BrandLogo size={58} />
-      <div className="spinner spinner-lg" />
-      <span style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem' }}>جاري التحميل...</span>
+      <div className="spinner spinner-lg" aria-hidden="true" />
+      <span style={{ color: 'var(--wn-text-secondary)', fontWeight: 600, fontSize: '0.9rem' }}>
+        {t?.common?.loading || 'Loading…'}
+      </span>
     </div>
   );
 }
@@ -98,8 +101,8 @@ function pageRoutes() {
       <Route path="terms" element={<StudentShell><Terms /></StudentShell>} />
       <Route path="courses" element={<StudentShell><Courses /></StudentShell>} />
       <Route path="courses/:slug" element={<StudentShell><CourseDetail /></StudentShell>} />
-      <Route path="courses/:slug/learn" element={<CourseLearn />} />
-      <Route path="courses/:slug/learn/:lessonId" element={<CourseLearn />} />
+      <Route path="courses/:slug/learn" element={<ProtectedRoute roles={['student', 'teacher', 'admin']}><CourseLearn /></ProtectedRoute>} />
+      <Route path="courses/:slug/learn/:lessonId" element={<ProtectedRoute roles={['student', 'teacher', 'admin']}><CourseLearn /></ProtectedRoute>} />
       <Route path="blog" element={<StudentPublicRedirect><Blog /></StudentPublicRedirect>} />
       <Route path="blog/:slug" element={<StudentPublicRedirect><BlogDetail /></StudentPublicRedirect>} />
       <Route path="contact" element={<StudentPublicRedirect tab="support"><Contact /></StudentPublicRedirect>} />

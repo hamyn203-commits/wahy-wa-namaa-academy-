@@ -1,6 +1,29 @@
 export const LOCALES = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'];
 export const DEFAULT_LOCALE = 'ar';
 export const RTL_LOCALES = ['ar', 'ur', 'ku'];
+export const INTL_LOCALES = {
+  ar: 'ar-EG',
+  en: 'en-US',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  tr: 'tr-TR',
+  ur: 'ur-PK',
+  id: 'id-ID',
+  ms: 'ms-MY',
+  ku: 'ckb-IQ',
+};
+
+export function resolveIntlLocale(locale = DEFAULT_LOCALE) {
+  const raw = String(locale || DEFAULT_LOCALE).trim();
+  if (!raw) return INTL_LOCALES[DEFAULT_LOCALE];
+  const lower = raw.toLowerCase();
+  if (INTL_LOCALES[lower]) return INTL_LOCALES[lower];
+  if (raw.includes('-')) {
+    const base = lower.split('-')[0];
+    if (INTL_LOCALES[base] || base === 'ckb') return raw;
+  }
+  return INTL_LOCALES[DEFAULT_LOCALE];
+}
 
 export function isValidLocale(locale) {
   return LOCALES.includes(locale);

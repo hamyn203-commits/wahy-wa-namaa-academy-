@@ -1,3 +1,5 @@
+import { resolveIntlLocale } from './locale.js';
+
 export const SESSION_JOIN_EARLY_MINUTES = 30;
 export const SESSION_JOIN_LATE_MINUTES = 60;
 
@@ -39,10 +41,10 @@ export function sessionTimeZone(session, fallback = 'Africa/Cairo') {
   }
 }
 
-export function formatSessionDateTime(session, locale = 'ar-EG', options = {}) {
+export function formatSessionDateTime(session, locale = 'ar', options = {}) {
   const date = new Date(session?.scheduledAt || 0);
   if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat(locale, {
+  return new Intl.DateTimeFormat(resolveIntlLocale(locale), {
     timeZone: sessionTimeZone(session),
     ...options,
   }).format(date);
