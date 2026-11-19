@@ -149,7 +149,33 @@
   /* ── Z-index ──────────────────────────────────────────────────── */
   --wn-z-header: 50;
   --wn-z-overlay: 60;
-  --wn-z-modal: 70;
+  --wn-z-modal: 200;
+
+  /* ── Chart & Status tokens ────────────────────────────────────── */
+  --wn-chart-1: #d3a33c;
+  --wn-chart-2: #0f6b4f;
+  --wn-chart-3: #2563eb;
+  --wn-chart-4: #16a56f;
+  --wn-chart-5: #7c3aed;
+  --wn-chart-6: #e87928;
+  --wn-chart-7: #d64545;
+  --wn-chart-grid: rgba(12, 39, 73, 0.08);
+  --wn-chart-axis: #5b6678;
+  --wn-chart-tooltip-bg: #071a33;
+  --wn-chart-tooltip-text: #ffffff;
+
+  --wn-status-success-bg: #e7f3ee;
+  --wn-status-success-text: #0a4a37;
+  --wn-status-success-border: #b7decb;
+  --wn-status-warn-bg: #fff6de;
+  --wn-status-warn-text: #8f5b0d;
+  --wn-status-warn-border: #edd08c;
+  --wn-status-danger-bg: #fdecea;
+  --wn-status-danger-text: #b42318;
+  --wn-status-danger-border: #f5b7b1;
+  --wn-status-info-bg: #edf4ff;
+  --wn-status-info-text: #1d4ed8;
+  --wn-status-info-border: #bfd6fe;
 
   /* ── Mobile chrome ────────────────────────────────────────────── */
   --wn-mobile-bar-h: 72px;        /* sticky bar height incl. padding */
@@ -256,4 +282,27 @@
   --wn-shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
   --wn-shadow-md: 0 10px 28px -12px rgba(0, 0, 0, 0.6);
   --wn-shadow-lg: 0 24px 56px -24px rgba(0, 0, 0, 0.7);
+  --wn-chart-1: #e5be5e;
+  --wn-chart-2: #56b3a6;
+  --wn-chart-3: #60a5fa;
+  --wn-chart-4: #34d399;
+  --wn-chart-5: #a78bfa;
+  --wn-chart-6: #fb923c;
+  --wn-chart-7: #f87171;
+  --wn-chart-grid: rgba(233, 239, 233, 0.12);
+  --wn-chart-axis: #a9b8b0;
+  --wn-chart-tooltip-bg: #0f1f19;
+  --wn-chart-tooltip-text: #e9efe9;
+  --wn-status-success-bg: #173a2e;
+  --wn-status-success-text: #a7dfd0;
+  --wn-status-success-border: #2a5948;
+  --wn-status-warn-bg: #2e2412;
+  --wn-status-warn-text: #f3cd68;
+  --wn-status-warn-border: #5c461e;
+  --wn-status-danger-bg: #3b1619;
+  --wn-status-danger-text: #fca5a5;
+  --wn-status-danger-border: #6e2930;
+  --wn-status-info-bg: #13253b;
+  --wn-status-info-text: #93c5fd;
+  --wn-status-info-border: #284b76;
 }

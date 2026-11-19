@@ -205,6 +205,10 @@
   .wn-badge--gold { background: var(--wn-gold-soft); color: var(--wn-badge-gold-text); border-color: color-mix(in srgb, var(--wn-gold) 40%, transparent); }
   .wn-badge--neutral { background: var(--wn-surface-sunken); color: var(--wn-text-secondary); border-color: var(--wn-border); }
   .wn-badge--onDark { background: color-mix(in srgb, var(--wn-white) 10%, transparent); color: var(--wn-sand); border-color: color-mix(in srgb, var(--wn-gold) 35%, transparent); }
+  .wn-badge--success { background: var(--wn-status-success-bg); color: var(--wn-status-success-text); border-color: var(--wn-status-success-border); }
+  .wn-badge--warn { background: var(--wn-status-warn-bg); color: var(--wn-status-warn-text); border-color: var(--wn-status-warn-border); }
+  .wn-badge--danger { background: var(--wn-status-danger-bg); color: var(--wn-status-danger-text); border-color: var(--wn-status-danger-border); }
+  .wn-badge--info { background: var(--wn-status-info-bg); color: var(--wn-status-info-text); border-color: var(--wn-status-info-border); }
 
   /* ── Icon box ──────────────────────────────────────────────────── */
   .wn-icon-box {
