@@ -298,7 +298,7 @@ export default function AdminDashboard() {
   const review = async (id, action, note = '') => {
     if (['request-changes', 'reject'].includes(action) && !note) {
       setReviewPromptModal({ kind: 'teacher-review', id, action, note: '' });
-      return;
+      return false;
     }
 
     try {
@@ -311,8 +311,10 @@ export default function AdminDashboard() {
       toast.success(labels[action] || tt.teacherUpdated);
       setTeacherDossier(null);
       await loadCore();
+      return true;
     } catch (error) {
       toast.error(error.message || tt.teacherCreateFailed);
+      return false;
     }
   };
 
@@ -340,8 +342,10 @@ export default function AdminDashboard() {
       toast.success(status === 'approved' ? tt.checklistApproved : tt.checklistUpdated);
       await openTeacherDossier(teacherId);
       await loadPendingTeachers();
+      return true;
     } catch (error) {
       toast.error(error.message || tt.checklistFailed);
+      return false;
     }
   };
 
@@ -456,7 +460,7 @@ export default function AdminDashboard() {
   const reviewTeacherProfileChange = async (teacherId, action, suppliedNote = '') => {
     if (action === 'reject' && !suppliedNote) {
       setReviewPromptModal({ kind: 'profile-change', id: teacherId, action, note: '' });
-      return;
+      return false;
     }
 
     try {
@@ -469,8 +473,10 @@ export default function AdminDashboard() {
       setPendingProfileChanges((current) => current.filter((item) => String(item.teacher?._id || item.teacher) !== String(teacherId)));
       await openTeacherDossier(teacherId);
       await loadCore();
+      return true;
     } catch (error) {
       toast.error(error.message || tt.profileChangeFailed);
+      return false;
     }
   };
 
@@ -935,7 +941,7 @@ export default function AdminDashboard() {
                           >
                             <div>
                               <strong className="block text-[var(--wn-heading)]">
-                                {teacher.personalInfo?.fullName || teacher.user?.name || ta.reviewQueue.teacherFallback}
+                                {teacher.personalInfo?.fullName || teacher.user?.name || ta.dossiers.reviewQueue.teacherFallback}
                               </strong>
                               <small className="block text-[var(--wn-text-secondary)]">{teacher.user?.email || ''}</small>
                               <small className="block text-[var(--wn-text-secondary)] mt-1">
@@ -1097,7 +1103,7 @@ export default function AdminDashboard() {
                         {filteredApprovedTeachers.map((teacher) => (
                           <article key={teacher._id} className="wn-admin-teachers-list__row">
                             <div>
-                              <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.reviewQueue.teacherFallback}</strong>
+                              <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback}</strong>
                               <small>
                                 {[teacher.personalInfo?.country, teacher.personalInfo?.city].filter(Boolean).join(', ') || tTeachers.locationMissing}
                                 {' · '}
@@ -1114,7 +1120,7 @@ export default function AdminDashboard() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || ta.reviewQueue.teacherFallback)}
+                                onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback)}
                                 className="min-h-[44px] px-3 py-1.5 rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] text-xs font-bold inline-flex items-center gap-1"
                                 title={tTeachers.deleteTitle}
                               >
@@ -1252,7 +1258,7 @@ export default function AdminDashboard() {
               <div className="space-y-1.5">
                 <p className="text-xs text-[var(--wn-text-secondary)]">
                   {formatMsg(twModal.summary, {
-                    name: payoutModal.withdrawal.teacher?.user?.name || payoutModal.withdrawal.teacher?.personalInfo?.fullName || ta.reviewQueue.teacherFallback,
+                    name: payoutModal.withdrawal.teacher?.user?.name || payoutModal.withdrawal.teacher?.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback,
                     amount: payoutModal.withdrawal.amount,
                     currency: payoutModal.withdrawal.currency || 'EGP',
                     method: payoutModal.withdrawal.method,
@@ -1387,12 +1393,12 @@ export default function AdminDashboard() {
                 if (!noteVal || submittingReviewPrompt) return;
                 setSubmittingReviewPrompt(true);
                 try {
-                  if (reviewPromptModal.kind === 'teacher-review') {
-                    await review(reviewPromptModal.id, reviewPromptModal.action, noteVal);
-                  } else {
-                    await reviewTeacherProfileChange(reviewPromptModal.id, reviewPromptModal.action, noteVal);
+                  const ok = reviewPromptModal.kind === 'teacher-review'
+                    ? await review(reviewPromptModal.id, reviewPromptModal.action, noteVal)
+                    : await reviewTeacherProfileChange(reviewPromptModal.id, reviewPromptModal.action, noteVal);
+                  if (ok) {
+                    setReviewPromptModal(null);
                   }
-                  setReviewPromptModal(null);
                 } finally {
                   setSubmittingReviewPrompt(false);
                 }

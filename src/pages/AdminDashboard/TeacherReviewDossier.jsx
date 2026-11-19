@@ -262,8 +262,8 @@ export default function TeacherReviewDossier({
     if (submittingAction) return false;
     setSubmittingAction(true);
     try {
-      await fn();
-      return true;
+      const result = await fn();
+      return result !== false;
     } finally {
       setSubmittingAction(false);
     }
@@ -278,8 +278,8 @@ export default function TeacherReviewDossier({
       isDanger: false,
       onConfirm: async (note) => {
         if (!note.trim()) return;
-        await runAction(() => onChecklist(teacher._id, item.key, 'changes-requested', note.trim()));
-        setPromptModal(null);
+        const ok = await runAction(() => onChecklist(teacher._id, item.key, 'changes-requested', note.trim()));
+        if (ok) setPromptModal(null);
       },
     });
   };
@@ -300,8 +300,8 @@ export default function TeacherReviewDossier({
       isDanger: isReject,
       onConfirm: async (note) => {
         if (!note.trim()) return;
-        await runAction(() => onReview(teacher._id, action, note.trim()));
-        setPromptModal(null);
+        const ok = await runAction(() => onReview(teacher._id, action, note.trim()));
+        if (ok) setPromptModal(null);
       },
     });
   };
@@ -470,8 +470,8 @@ export default function TeacherReviewDossier({
                           message: t360.profileChange.approveModalBody,
                           confirmText: t360.profileChange.approveModalConfirm,
                           onConfirm: async () => {
-                            await runAction(() => onProfileChangeReview?.(teacher._id, 'approve', t360.profileChange.approveDefaultNote));
-                            setConfirmModal(null);
+                            const ok = await runAction(() => onProfileChangeReview?.(teacher._id, 'approve', t360.profileChange.approveDefaultNote));
+                            if (ok) setConfirmModal(null);
                           },
                         });
                       }}
@@ -491,8 +491,8 @@ export default function TeacherReviewDossier({
                           isDanger: true,
                           onConfirm: async (note) => {
                             if (!note.trim()) return;
-                            await runAction(() => onProfileChangeReview?.(teacher._id, 'reject', note.trim()));
-                            setPromptModal(null);
+                            const ok = await runAction(() => onProfileChangeReview?.(teacher._id, 'reject', note.trim()));
+                            if (ok) setPromptModal(null);
                           },
                         });
                       }}

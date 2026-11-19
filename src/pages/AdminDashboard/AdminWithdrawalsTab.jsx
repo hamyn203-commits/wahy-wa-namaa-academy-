@@ -33,7 +33,7 @@ export default function AdminWithdrawalsTab({ withdrawals, onReviewWithdraw }) {
   return (
     <div className="space-y-3">
       {withdrawals.map((w) => {
-        const teacherName = w.teacher?.user?.name || w.teacher?.personalInfo?.fullName || t.adminPortal.reviewQueue.teacherFallback;
+        const teacherName = w.teacher?.user?.name || w.teacher?.personalInfo?.fullName || t.adminPortal.dossiers.reviewQueue.teacherFallback;
         const statusText = ['approved', 'completed'].includes(w.status)
           ? tw.statuses.approved
           : w.status === 'rejected'
