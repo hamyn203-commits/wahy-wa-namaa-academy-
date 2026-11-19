@@ -1,4 +1,5 @@
-import { Clock, Loader2, Plus, X } from 'lucide-react';
+import { AlertTriangle, Clock, Loader2, Plus, RefreshCw, X } from 'lucide-react';
+import Skeleton from '../../components/shared/Skeleton';
 
 function formatMsg(template, vars = {}) {
   return Object.entries(vars).reduce(
@@ -9,6 +10,10 @@ function formatMsg(template, vars = {}) {
 
 export default function TeacherSchedulePanel({
   schedule,
+  scheduleLoading,
+  scheduleError,
+  scheduleLoaded,
+  onRetrySchedule,
   savingSchedule,
   saveSchedule,
   addScheduleSlot,
@@ -18,7 +23,51 @@ export default function TeacherSchedulePanel({
 }) {
   const tp = t?.teacherPortal || {};
   const sc = tp.schedule || {};
+  const errDict = tp.errors || {};
+  const an = tp.analytics || {};
   const weekdays = tp.weekdays || {};
+
+  if (scheduleError && !scheduleLoaded) {
+    return (
+      <div className="wn-teacher-schedule">
+        <div
+          role="alert"
+          className="rounded-2xl border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] p-6 text-center space-y-3"
+        >
+          <AlertTriangle size={28} className="mx-auto text-[var(--wn-text-danger)]" aria-hidden="true" />
+          <h3 className="text-base font-bold text-[var(--wn-heading)]">
+            {errDict.dashboardLoadFailed || 'تعذر تحميل الجدول الأسبوعي'}
+          </h3>
+          <p className="text-sm text-[var(--wn-text-secondary)]">
+            {an.errorDesc || 'تحقق من الاتصال ثم أعد المحاولة.'}
+          </p>
+          <button
+            type="button"
+            onClick={onRetrySchedule}
+            className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2"
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            <span>{errDict.retry || 'إعادة المحاولة'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (scheduleLoading && !scheduleLoaded) {
+    return (
+      <div className="wn-teacher-schedule space-y-4" role="status" aria-live="polite">
+        <span className="sr-only">{sc.title || 'جدولك الأسبوعي'}</span>
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="wn-teacher-schedule">
@@ -31,8 +80,8 @@ export default function TeacherSchedulePanel({
         <button
           type="button"
           onClick={saveSchedule}
-          disabled={savingSchedule}
-          className="wn-teacher-primary-action min-h-[44px] inline-flex items-center justify-center gap-2"
+          disabled={savingSchedule || scheduleError || scheduleLoading || !scheduleLoaded}
+          className="wn-teacher-primary-action min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {savingSchedule && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
           <span>{savingSchedule ? (sc.savingBtn || 'جاري الحفظ…') : (sc.saveBtn || 'حفظ التوفر')}</span>

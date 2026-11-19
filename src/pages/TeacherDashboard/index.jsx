@@ -165,6 +165,9 @@ export default function TeacherDashboard() {
   const [reviewsError, setReviewsError] = useState(false);
 
   const [schedule, setSchedule] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState(false);
+  const [scheduleLoaded, setScheduleLoaded] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
 
   const [aiModal, setAiModal] = useState(false);
@@ -211,6 +214,7 @@ export default function TeacherDashboard() {
   const analyticsLoadFailedMsg = errDict.analyticsLoadFailed || 'تعذر تحميل بيانات الأداء';
   const reviewsLoadFailedMsg = errDict.reviewsLoadFailed || 'تعذر تحميل التقييمات';
   const homeworkSubmittedMsg = toastsDict.homeworkSubmittedNotif || 'وصل تسليم واجب صوتي جديد من أحد طلابك';
+  const trialAssessWarnMsg = toastsDict.trialAssessWarn || toastsDict.genericError || 'تعذر تحميل توصية الحصة التجريبية';
 
   const statusLabel = (s) => tp.statusLabels?.[s] || s;
   const financeStatusLabel = (status) => tp.financeStatus?.[status] || status;
@@ -331,6 +335,21 @@ export default function TeacherDashboard() {
       setReviewsLoading(false);
     }
   }, [toast, reviewsLoadFailedMsg]);
+
+  const fetchSchedule = useCallback(async () => {
+    setScheduleLoading(true);
+    setScheduleError(false);
+    try {
+      const d = await api.get('/api/teachers/dashboard/availability', { auth: true });
+      setSchedule(mergeSchedule(d?.availability, tp.weekdays));
+      setScheduleLoaded(true);
+    } catch {
+      setScheduleError(true);
+      toast.error(dashboardLoadFailedMsg);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, [tp.weekdays, toast, dashboardLoadFailedMsg]);
 
   useEffect(() => {
     const teacher = profile?.teacher;
@@ -459,7 +478,11 @@ export default function TeacherDashboard() {
             }));
           }
         })
-        .catch(() => {});
+        .catch((error) => {
+          if (error?.status !== 404) {
+            toast.info(trialAssessWarnMsg);
+          }
+        });
     }
     setHomeworkList([]);
   };
@@ -566,12 +589,16 @@ export default function TeacherDashboard() {
                   }));
                 }
               })
-              .catch(() => {});
+              .catch((error) => {
+                if (error?.status !== 404) {
+                  toast.info(trialAssessWarnMsg);
+                }
+              });
           }
         }
       }
     }
-  }, [searchParams, trials, pendingRegular, sessions, completedSessions]);
+  }, [searchParams, trials, pendingRegular, sessions, completedSessions, toast, trialAssessWarnMsg]);
 
   useEffect(() => {
     if (!ready) return;
@@ -581,15 +608,13 @@ export default function TeacherDashboard() {
     if (tab === 'reviews' && !reviewsData.reviews.length && !reviewsLoading && !reviewsError) {
       fetchReviews();
     }
-    if (tab === 'schedule' && !schedule.length) {
-      api.get('/api/teachers/dashboard/availability', { auth: true })
-        .then((d) => setSchedule(mergeSchedule(d.availability, tp.weekdays)))
-        .catch(() => setSchedule(mergeSchedule([], tp.weekdays)));
+    if (tab === 'schedule' && !scheduleLoaded && !scheduleLoading && !scheduleError) {
+      fetchSchedule();
     }
   }, [
     tab, ready, analytics, analyticsLoading, analyticsError, fetchAnalytics,
     reviewsData.reviews.length, reviewsLoading, reviewsError, fetchReviews,
-    schedule.length, tp.weekdays,
+    scheduleLoaded, scheduleLoading, scheduleError, fetchSchedule,
   ]);
 
   if (!ready) return null;
@@ -1142,7 +1167,7 @@ export default function TeacherDashboard() {
     try {
       const res = await api.post(
         '/api/ai/homework-generate',
-        { topic: aiTopic || tp.evalCriteria?.tajweed || 'التجويد', level: 'intermediate', count: 5, locale },
+        { topic: aiTopic || tp.sessions?.evalCriteria?.tajweed || 'التجويد', level: 'intermediate', count: 5, locale },
         { auth: true }
       );
       setAiResult(res);
@@ -1155,7 +1180,7 @@ export default function TeacherDashboard() {
   };
 
   const saveSchedule = async () => {
-    if (savingSchedule) return;
+    if (savingSchedule || scheduleError || scheduleLoading || !scheduleLoaded) return;
     setSavingSchedule(true);
     try {
       const availability = schedule
@@ -1657,6 +1682,10 @@ export default function TeacherDashboard() {
             {tab === 'schedule' && (
               <TeacherSchedulePanel
                 schedule={schedule}
+                scheduleLoading={scheduleLoading}
+                scheduleError={scheduleError}
+                scheduleLoaded={scheduleLoaded}
+                onRetrySchedule={fetchSchedule}
                 savingSchedule={savingSchedule}
                 saveSchedule={saveSchedule}
                 addScheduleSlot={addScheduleSlot}
@@ -3187,6 +3216,7 @@ export default function TeacherDashboard() {
             onClose={() => setAiModal(false)}
             title={mod.aiAssistant?.title || 'مساعد المعلم الذكي'}
             maxWidth="520px"
+            disableClose={aiLoading || Boolean(assigningAiId)}
           >
             <div className="space-y-3">
               <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-3 space-y-2">

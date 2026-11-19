@@ -930,9 +930,16 @@ router.post('/application-status', async (req, res) => {
     }
 
     if (isMockMode && !isDBConnected()) {
+      const mockUser = findMockUserById(payload.userId);
+      if (!mockUser || mockUser.isActive === false || mockUser.role !== 'teacher') {
+        return res.status(403).json({ error: 'Account is inactive or unavailable' });
+      }
       const teacher = findMockTeacherByUserId(payload.userId);
       if (!teacher || String(teacher._id) !== String(payload.teacherId)) {
         return res.status(404).json({ error: 'Teacher application not found' });
+      }
+      if (teacher.status === 'suspended') {
+        return res.status(403).json({ error: 'Account is inactive or unavailable' });
       }
       return res.json({
         applicationStatus: teacher.status || 'pending',
@@ -949,6 +956,10 @@ router.post('/application-status', async (req, res) => {
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher application not found' });
+    }
+
+    if (teacher.status === 'suspended') {
+      return res.status(403).json({ error: 'Account is inactive or unavailable' });
     }
 
     return res.json({

@@ -276,3 +276,79 @@ test('POST /api/teachers/application-status keeps polling after admin request-ch
     AdminAuditLog.create = originals.auditCreate;
   }
 });
+
+test('POST /api/teachers/application-status fails closed (403) when teacher status is suspended even if user is active', async () => {
+  const teacherUserId = '507f1f77bcf86cd799439012';
+  const teacherId = '507f1f77bcf86cd799439013';
+
+  const originalReadyState = mongoose.connection.readyState;
+  const originals = {
+    userFindById: User.findById,
+    teacherFindOne: Teacher.findOne,
+  };
+
+  Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+  User.findById = (id) => {
+    if (String(id) === teacherUserId) {
+      return chainable({
+        _id: teacherUserId,
+        email: 'suspended.teacher@wahy.test',
+        role: 'teacher',
+        isActive: true,
+        refreshTokenVersion: 1,
+        sessionsRevokedAt: new Date(),
+      });
+    }
+    return chainable(null);
+  };
+
+  Teacher.findOne = (query) => {
+    if (
+      query &&
+      String(query._id) === teacherId &&
+      String(query.user) === teacherUserId
+    ) {
+      return chainable({
+        _id: teacherId,
+        user: teacherUserId,
+        status: 'suspended',
+        isVerified: false,
+        updatedAt: new Date('2026-11-19T08:00:00Z'),
+        reviewNotes: [{ note: 'ملاحظة إيقاف داخلية سرية', createdAt: new Date() }],
+        reviewChecklist: [],
+      });
+    }
+    return chainable(null);
+  };
+
+  const applicationStatusToken = jwt.sign(
+    {
+      purpose: 'teacher-application-status',
+      userId: teacherUserId,
+      teacherId,
+      email: 'suspended.teacher@wahy.test',
+    },
+    getAccessSecret(),
+    { expiresIn: '7d' }
+  );
+
+  const server = app.listen(0);
+  try {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/api/teachers/application-status',
+      { token: applicationStatusToken }
+    );
+    assert.equal(res.status, 403);
+    assert.equal(res.body?.error, 'Account is inactive or unavailable');
+    assert.equal(res.body?.reviewNote, undefined);
+    assert.equal(res.body?.applicationStatus, undefined);
+  } finally {
+    server.close();
+    Object.defineProperty(mongoose.connection, 'readyState', { value: originalReadyState, configurable: true });
+    User.findById = originals.userFindById;
+    Teacher.findOne = originals.teacherFindOne;
+  }
+});
