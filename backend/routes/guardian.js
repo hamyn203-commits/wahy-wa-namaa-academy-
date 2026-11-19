@@ -39,6 +39,13 @@ function isWithinGuardianJoinWindow(sess, now = new Date()) {
   return nowMs >= startMs - 30 * 60 * 1000 && nowMs <= startMs + durationMs + 60 * 60 * 1000;
 }
 
+function resolveGuardianSessionMeetingLink(sess, liveRoomId, now = new Date()) {
+  if (!liveRoomId || !isWithinGuardianJoinWindow(sess, now)) {
+    return null;
+  }
+  return `/live/${liveRoomId}`;
+}
+
 async function countGuardianPhoneDuplicates(guardianUser, normalizedPhone) {
   const duplicateCandidates = await User.find({
     role: 'guardian',
@@ -1045,9 +1052,7 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
           instanceKey: `${sess._id}:${child._id}`,
           scheduledAt: sess.scheduledAt,
           duration: sess.duration,
-          meetingLink: (liveRoomBySession.get(String(sess._id)) && isWithinGuardianJoinWindow(sess, now))
-            ? `/live/${liveRoomBySession.get(String(sess._id))}`
-            : null,
+          meetingLink: resolveGuardianSessionMeetingLink(sess, liveRoomBySession.get(String(sess._id)), now),
           type: sess.type,
           status: sess.status,
           circleName: sess.circle?.name || (sess.type === 'trial' ? 'حصة تجريبية مجانية' : 'حلقة فردية'),
@@ -1074,4 +1079,7 @@ router.get('/upcoming-sessions', protect, authorize('guardian'), async (req, res
 });
 
 module.exports = router;
+module.exports.isWithinGuardianJoinWindow = isWithinGuardianJoinWindow;
+module.exports.resolveGuardianSessionMeetingLink = resolveGuardianSessionMeetingLink;
+module.exports.verifyPhoneInvitationCodeRequirement = verifyPhoneInvitationCodeRequirement;
 
