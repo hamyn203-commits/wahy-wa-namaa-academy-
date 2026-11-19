@@ -10120,9 +10120,32 @@
   background: color-mix(in srgb, var(--wn-bg) 78%, transparent);
 }
 
+[data-theme="dark"] .wn-admin-dossier-backdrop .wn-admin-dossier {
+  background: var(--wn-surface-canvas);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-gate,
+[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__section {
+  background: var(--wn-surface);
+  border-color: color-mix(in srgb, var(--wn-gold) 16%, transparent);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-review-checklist > article,
+[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__value {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__value span {
+  color: var(--wn-text-secondary);
+}
+
 [data-theme="dark"] .wn-admin-dossier__header > button,
 [data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__header-actions button[aria-label="إغلاق"],
-[data-theme="dark"] .wn-admin-dossier .wn-admin-dossier__close {
+[data-theme="dark"] .wn-admin-dossier-backdrop .wn-admin-dossier .wn-admin-dossier__close {
   background: var(--wn-surface-soft);
   color: var(--wn-heading);
 }
