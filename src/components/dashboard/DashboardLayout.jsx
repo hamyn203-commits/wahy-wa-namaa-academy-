@@ -3,6 +3,7 @@ import { Home, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import BrandLogo from '../BrandLogo';
 import NotificationBell from '../NotificationBell';
+import ThemeToggle from '../shared/ThemeToggle';
 import { useI18n } from '../../i18n';
 import { dashboardPathForRole } from '../../lib/navigation';
 import '../../styles/dashboard-experience.css';
@@ -106,6 +107,18 @@ const LOGOUT_FALLBACKS = {
   ku: 'چوونەدەرەوە',
 };
 
+const TAB_NAV_FALLBACKS = {
+  ar: 'التنقل داخل لوحة التحكم',
+  en: 'Dashboard navigation',
+  fr: 'Navigation du tableau de bord',
+  de: 'Dashboard-Navigation',
+  tr: 'Panel gezinmesi',
+  ur: 'ڈیش بورڈ نیویگیشن',
+  id: 'Navigasi dasbor',
+  ms: 'Navigasi papan pemuka',
+  ku: 'ڕێنیشاندەری داشبۆرد',
+};
+
 export default function DashboardLayout({ title, user, onLogout, children }) {
   const { locale, dir, isRTL, t } = useI18n();
   const roleHomeHref = dashboardPathForRole(user?.role, locale);
@@ -151,7 +164,8 @@ export default function DashboardLayout({ title, user, onLogout, children }) {
             </div>
           </div>
 
-          <div className="wn-dashboard-actions">
+          <div className="wn-dashboard-actions shrink-0 max-w-full flex-wrap justify-end">
+            <ThemeToggle />
             <NotificationBell />
             <Link
               to={roleHomeHref}
@@ -198,7 +212,7 @@ export function StatCard({ label, value, icon: Icon }) {
 }
 
 export function TabBar({ tabs = [], active, onChange, onTabChange, ariaLabel }) {
-  const { isRTL, t } = useI18n();
+  const { locale, isRTL, t } = useI18n();
   const tabRefs = useRef([]);
   const handleSelect = onChange || onTabChange;
   const activeIndex = tabs.findIndex((tab) => tab.id === active);
@@ -234,7 +248,13 @@ export function TabBar({ tabs = [], active, onChange, onTabChange, ariaLabel }) 
         className="wn-dashboard-tabs__row"
         role="tablist"
         aria-orientation="horizontal"
-        aria-label={ariaLabel || t?.dashboard?.navigation || 'Dashboard sections'}
+        aria-label={
+          ariaLabel
+          || t?.dashboard?.navigation
+          || t?.common?.dashboardNavigation
+          || TAB_NAV_FALLBACKS[locale]
+          || TAB_NAV_FALLBACKS.en
+        }
       >
         {tabs.map((tab, index) => {
           const isSelected = active === tab.id;
