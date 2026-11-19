@@ -204,6 +204,7 @@ export default function TeacherRegistration() {
           title: tr.seo?.title || 'تسجيل معلم',
           description: tr.seo?.description || 'انضم كمعلم قرآن في أكاديمية وَحْيٌ وَنَمَاء',
           url: '/register/teacher',
+          noindex: true,
         }}
       />
       <GlobalHeader />

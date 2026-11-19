@@ -4,8 +4,10 @@
 User-agent: *
 Allow: /
 Allow: /api/seo/sitemap.xml
-Allow: /register/teacher
-Allow: /*/register/teacher
+Disallow: /register/teacher
+Disallow: /*/register/teacher
+Disallow: /teacher/register
+Disallow: /*/teacher/register
 Disallow: /admin
 Disallow: /*/admin
 Disallow: /api

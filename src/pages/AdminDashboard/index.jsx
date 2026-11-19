@@ -202,10 +202,13 @@ export default function AdminDashboard() {
         || '',
     }));
 
-    const legacy = (legacyResult.withdrawals || []).map((item) => ({
-      ...item,
-      source: 'legacy',
-    }));
+    const seenIds = new Set(ledger.map((item) => String(item._id || '')));
+    const legacy = (legacyResult.withdrawals || [])
+      .filter((item) => !seenIds.has(String(item._id || '')))
+      .map((item) => ({
+        ...item,
+        source: 'legacy',
+      }));
 
     setWithdrawals([...ledger, ...legacy].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
   }, []);

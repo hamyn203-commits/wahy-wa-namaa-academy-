@@ -16,9 +16,9 @@ import { emitStaticSeoAssets } from '../src/seo/staticHtmlGenerator.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-test('STATIC_SEO_ROUTES covers 29 public routes x 9 locales without any noindex collision', () => {
+test('STATIC_SEO_ROUTES covers 28 public routes x 9 locales without any noindex collision', () => {
   assert.equal(SEO_LOCALES.length, 9);
-  assert.equal(STATIC_SEO_ROUTES.length, 29);
+  assert.equal(STATIC_SEO_ROUTES.length, 28);
 
   for (const route of STATIC_SEO_ROUTES) {
     assert.ok(route.path.startsWith('/'), `Route path must start with /: ${route.path}`);
@@ -31,7 +31,7 @@ test('STATIC_SEO_ROUTES covers 29 public routes x 9 locales without any noindex 
   }
 });
 
-test('isNoIndexPath marks private/member routes noindex while keeping public teacher recruitment indexable', () => {
+test('isNoIndexPath marks private/member and private teacher registration routes noindex', () => {
   const privatePaths = [
     '/ar/login',
     '/en/register',
@@ -55,6 +55,8 @@ test('isNoIndexPath marks private/member routes noindex while keeping public tea
     '/ar/verify-certificate/CERT-001',
     '/en/book-trial/123',
     '/ar/courses/tajweed-101/learn',
+    '/fr/register/teacher',
+    '/ar/teacher/register',
   ];
 
   for (const pathname of privatePaths) {
@@ -67,7 +69,6 @@ test('isNoIndexPath marks private/member routes noindex while keeping public tea
     '/en/courses/tajweed-101',
     '/ar/teachers',
     '/ar/teachers/sheikh-ahmad',
-    '/fr/register/teacher',
     '/de/markets/europe',
     '/ar/free-trial',
     '/ar/plans',
@@ -78,21 +79,22 @@ test('isNoIndexPath marks private/member routes noindex while keeping public tea
   }
 });
 
-test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid JSON-LD, and hreflang sets', () => {
+test('emitStaticSeoAssets generates 252 localized HTML shells, sitemaps, valid JSON-LD, and hreflang sets', () => {
   const templateHtml = readFileSync(resolve(ROOT, 'index.html'), 'utf8');
   const distTmp = mkdtempSync(join(tmpdir(), 'wn-seo-static-'));
 
   try {
     const result = emitStaticSeoAssets(distTmp, templateHtml, 'https://wahywanamaa.com');
     assert.equal(result.baseUrl, 'https://wahywanamaa.com');
-    assert.equal(result.generatedPages, 261);
+    assert.equal(result.generatedPages, 252);
 
     const sitemapStatic = readFileSync(resolve(distTmp, 'sitemap-static.xml'), 'utf8');
     const sitemapIndex = readFileSync(resolve(distTmp, 'sitemap.xml'), 'utf8');
 
     assert.match(sitemapStatic, /<urlset\b/);
     const locMatches = sitemapStatic.match(/<loc>/g) || [];
-    assert.equal(locMatches.length, 261);
+    assert.equal(locMatches.length, 252);
+    assert.equal(sitemapStatic.includes('/register/teacher'), false);
     assert.match(sitemapStatic, /hreflang="x-default"/);
 
     assert.match(sitemapIndex, /<sitemapindex\b/);
@@ -104,7 +106,6 @@ test('emitStaticSeoAssets generates 261 localized HTML shells, sitemaps, valid J
       { file: 'ar.html', locale: 'ar', expectedUrl: 'https://wahywanamaa.com/ar', isHome: true },
       { file: 'en.html', locale: 'en', expectedUrl: 'https://wahywanamaa.com/en', isHome: true },
       { file: 'en/courses.html', locale: 'en', expectedUrl: 'https://wahywanamaa.com/en/courses', isHome: false },
-      { file: 'fr/register/teacher.html', locale: 'fr', expectedUrl: 'https://wahywanamaa.com/fr/register/teacher', isHome: false },
       { file: 'de/markets/europe.html', locale: 'de', expectedUrl: 'https://wahywanamaa.com/de/markets/europe', isHome: false },
     ];
 
@@ -222,7 +223,7 @@ test('vercel.json, manifest.json, and robots.txt satisfy launch SEO configuratio
     .map((h) => h.source);
   assert.ok(noindexSources.includes('/api/((?!seo/).*)'));
   assert.ok(!noindexSources.includes('/api/(.*)'));
-  assert.ok(!noindexSources.some((src) => src.includes('register/teacher')));
+  assert.ok(noindexSources.some((src) => src.includes('teacher/register')));
 
   const manifest = JSON.parse(readFileSync(resolve(ROOT, 'public/manifest.json'), 'utf8'));
   const iconPaths = [
@@ -237,7 +238,7 @@ test('vercel.json, manifest.json, and robots.txt satisfy launch SEO configuratio
 
   const robots = readFileSync(resolve(ROOT, 'public/robots.txt'), 'utf8');
   assert.match(robots, /Allow:\s*\/api\/seo\/sitemap\.xml/);
-  assert.match(robots, /Allow:\s*\/\*\/register\/teacher/);
+  assert.match(robots, /Disallow:\s*\/\*\/register\/teacher/);
   assert.match(robots, /Disallow:\s*\/register\$/);
   assert.match(robots, /User-agent:\s*OAI-SearchBot/);
   assert.match(robots, /User-agent:\s*PerplexityBot/);

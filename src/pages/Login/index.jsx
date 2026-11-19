@@ -38,9 +38,8 @@ const LOGIN_COPY = {
     rolePrompt: 'إذا لم يكن لديك حساب، اختر نوعه قبل الدخول بجوجل',
     roleGroupLabel: 'نوع الحساب',
     roleStudent: 'طالب',
-    roleTeacher: 'معلم',
     roleGuardian: 'ولي أمر',
-    roleHint: 'إذا كان لديك حساب بالفعل، سيتم فتح حسابك الحالي بنفس نوعه دون تغييره.',
+    roleHint: 'إذا كان لديك حساب بالفعل (طالب، معلم، ولي أمر، أو إدارة)، أدخل البريد وكلمة المرور بالأسفل وسيتم تحويلك مباشرة إلى لوحتك.',
     emailLabel: 'البريد الإلكتروني',
     passwordLabel: 'كلمة المرور',
     forgotPassword: 'نسيت كلمة المرور؟',
@@ -72,9 +71,8 @@ const LOGIN_COPY = {
     rolePrompt: 'New here? Choose your account type before continuing with Google',
     roleGroupLabel: 'Account type',
     roleStudent: 'Student',
-    roleTeacher: 'Teacher',
     roleGuardian: 'Guardian',
-    roleHint: 'Existing accounts retain their registered role.',
+    roleHint: 'Already have an account (student, teacher, guardian, or admin)? Sign in below with your email and password to go straight to your dashboard.',
     emailLabel: 'Email',
     passwordLabel: 'Password',
     forgotPassword: 'Forgot password?',
@@ -419,10 +417,9 @@ export default function Login() {
 
             <div className="mb-3">
               <p className="text-sm font-semibold mb-2 text-[var(--wn-text-primary)]">{copy.rolePrompt}</p>
-              <div className="grid grid-cols-3 gap-2" role="group" aria-label={copy.roleGroupLabel}>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={copy.roleGroupLabel}>
                 {[
                   ['student', copy.roleStudent],
-                  ['teacher', copy.roleTeacher],
                   ['guardian', copy.roleGuardian]
                 ].map(([value, label]) => (
                   <button

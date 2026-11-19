@@ -99,7 +99,13 @@
       ]
     },
     {
-      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/register/:role(student|guardian)",
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/register/:role(student|guardian|teacher)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/:locale(ar|en|fr|de|tr|ur|id|ms|ku)/teacher/register",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]

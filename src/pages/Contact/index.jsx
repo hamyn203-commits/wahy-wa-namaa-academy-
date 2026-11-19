@@ -10,12 +10,15 @@ import {
   Sparkles,
   Clock,
   ShieldCheck,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useSEO } from '../../hooks/useSEO';
 import { useToast } from '../../context/ToastProvider';
+import { CONTACT, SOCIAL_LINKS } from '../../config/social';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
 
@@ -683,6 +686,40 @@ export default function Contact() {
                   <span>{copy.asidePrivacy}</span>
                 </div>
               </div>
+
+              {(CONTACT.email || CONTACT.phone || SOCIAL_LINKS.whatsapp) && (
+                <div className="grid gap-2 pt-3 border-t border-white/15 text-sm">
+                  {CONTACT.email && (
+                    <a
+                      href={'mailto:' + CONTACT.email}
+                      className="min-h-[44px] inline-flex items-center gap-2.5 rounded-xl bg-white/10 px-3.5 py-2 text-white hover:bg-white/15 transition"
+                    >
+                      <Mail size={16} className="shrink-0 text-[var(--wn-gold)]" aria-hidden="true" />
+                      <span dir="ltr" className="break-all">{CONTACT.email}</span>
+                    </a>
+                  )}
+                  {SOCIAL_LINKS.whatsapp && (
+                    <a
+                      href={SOCIAL_LINKS.whatsapp}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-[44px] inline-flex items-center gap-2.5 rounded-xl bg-white/10 px-3.5 py-2 text-white hover:bg-white/15 transition"
+                    >
+                      <MessageCircle size={16} className="shrink-0 text-[var(--wn-gold)]" aria-hidden="true" />
+                      <span dir="ltr">{CONTACT.phone || '01557891330'}</span>
+                    </a>
+                  )}
+                  {CONTACT.phone && !SOCIAL_LINKS.whatsapp && (
+                    <a
+                      href={'tel:' + CONTACT.phone.replace(/\s/g, '')}
+                      className="min-h-[44px] inline-flex items-center gap-2.5 rounded-xl bg-white/10 px-3.5 py-2 text-white hover:bg-white/15 transition"
+                    >
+                      <Phone size={16} className="shrink-0 text-[var(--wn-gold)]" aria-hidden="true" />
+                      <span dir="ltr">{CONTACT.phone}</span>
+                    </a>
+                  )}
+                </div>
+              )}
             </aside>
           </div>
         </section>

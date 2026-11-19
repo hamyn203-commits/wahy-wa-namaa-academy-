@@ -212,13 +212,13 @@ function PublicGlobalFooter() {
                   {CONTACT.email ? (
                     <li className="wn-approved-footer__contact">
                       <Mail size={17} aria-hidden="true" />
-                      <a href={'mailto:' + CONTACT.email}>{CONTACT.email}</a>
+                      <a href={'mailto:' + CONTACT.email} dir="ltr">{CONTACT.email}</a>
                     </li>
                   ) : null}
                   {CONTACT.phone ? (
                     <li className="wn-approved-footer__contact">
                       <Phone size={17} aria-hidden="true" />
-                      <a href={'tel:' + CONTACT.phone.replace(/\s/g, '')}>{CONTACT.phone}</a>
+                      <a href={'tel:' + CONTACT.phone.replace(/\s/g, '')} dir="ltr">{CONTACT.phone}</a>
                     </li>
                   ) : null}
                   {CONTACT.address ? (

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { localizedPath, DEFAULT_LOCALE } from '../lib/locale';
-import { Menu, X, ArrowLeft, ArrowRight, Search, Compass } from 'lucide-react';
+import { Menu, X, ArrowLeft, ArrowRight, Search } from 'lucide-react';
 import LanguageSwitcher from './LanguageSwitcher';
 import NotificationBell from './NotificationBell';
 import UserMenu from './UserMenu';
@@ -258,11 +258,6 @@ function PublicGlobalHeader() {
 
   const lp = (path) => localizedPath(path, activeLocale);
   const inOnboarding = isOnboardingPath(location.pathname);
-  const isHome = (
-    location.pathname === '/'
-    || location.pathname === lp('/')
-    || location.pathname === `/${activeLocale}/`
-  );
 
   const navLinks = [
     { path: lp('/'), label: t.common?.home || copy.home },
@@ -276,15 +271,6 @@ function PublicGlobalHeader() {
   const mobileNavLinks = [
     ...navLinks,
     { path: lp('/blog'), label: copy.resources },
-  ];
-
-  const homeAnchors = [
-    { href: '#programs', label: copy.anchorPrograms },
-    { href: '#learning-tools', label: copy.anchorPreview },
-    { href: '#faculty', label: copy.anchorFaculty },
-    { href: '#azhar-heritage', label: copy.anchorHeritage },
-    { href: '#pricing-calculator', label: copy.anchorCalculator },
-    { href: '#faq', label: copy.anchorFaq },
   ];
 
   const isActive = (path) => {
@@ -385,27 +371,6 @@ function PublicGlobalHeader() {
               ))}
             </nav>
 
-            {isHome && (
-              <div className="wn-mobile-quick-jumps">
-                <span className="wn-mobile-quick-jumps__label">
-                  <Compass size={14} aria-hidden="true" />
-                  {copy.jumpLabel}
-                </span>
-                <div className="wn-mobile-quick-jumps__chips">
-                  {homeAnchors.map((anchor) => (
-                    <a
-                      key={anchor.href}
-                      href={anchor.href}
-                      onClick={() => setIsMenuOpen(false)}
-                      className="wn-mobile-quick-jumps__chip"
-                    >
-                      {anchor.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="wn-approved-mobile-menu__tools">
               <div className="flex items-center gap-2">
                 <ThemeToggle />
@@ -436,24 +401,6 @@ function PublicGlobalHeader() {
           </div>
         )}
       </div>
-
-      {isHome && (
-        <div className="wn-header-subnav">
-          <div className="page-container wn-header-subnav__inner">
-            <span className="wn-header-subnav__eyebrow">
-              <Compass size={13} aria-hidden="true" />
-              {copy.onThisPage}
-            </span>
-            <nav className="wn-header-subnav__links" aria-label={copy.pageSectionsNav}>
-              {homeAnchors.map((anchor) => (
-                <a key={anchor.href} href={anchor.href} className="wn-header-subnav__link">
-                  {anchor.label}
-                </a>
-              ))}
-            </nav>
-          </div>
-        </div>
-      )}
     </header>
   );
 }

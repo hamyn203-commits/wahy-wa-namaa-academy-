@@ -781,33 +781,6 @@ export const STATIC_SEO_ROUTES = [
     },
   },
   {
-    path: '/register/teacher',
-    priority: '0.65',
-    changefreq: 'monthly',
-    title: {
-      ar: 'التقديم كمعلم قرآن كريم | أكاديمية وَحْيٌ وَنَمَاء',
-      en: 'Apply as a Quran Teacher | Wahy Wa Namaa Academy',
-      fr: 'Postuler comme Enseignant de Coran | Académie WAHY WA NAMAA',
-      de: 'Als Koran-Lehrer bewerben | Wahy Wa Namaa Akademie',
-      tr: 'Kuran Öğretmeni Olarak Başvur | Wahy Wa Namaa Akademisi',
-      ur: 'بطور معلمِ قرآن درخواست دیں | اکیڈمی وحی و نماء',
-      id: 'Daftar Sebagai Guru Al-Quran | Akademi WAHY WA NAMAA',
-      ms: 'Mohon Sebagai Guru Al-Quran | Akademi WAHY WA NAMAA',
-      ku: 'پێشکەشکردن وەک مامۆستای قورئان | ئەکادیمیای وەحی و نەما',
-    },
-    description: {
-      ar: 'قدّم للانضمام كمعلم أو معلمة قرآن كريم وتجويد وإجازات في أكاديمية وحي ونماء.',
-      en: 'Submit your Quran teaching application and credentials to join Wahy Wa Namaa Academy.',
-      fr: 'Soumettez votre candidature et vos qualifications pour enseigner à l’Académie WAHY WA NAMAA.',
-      de: 'Reichen Sie Ihre Bewerbung und Ijazah-Nachweise ein, um an der Wahy Wa Namaa Akademie zu unterrichten.',
-      tr: 'Wahy Wa Namaa Akademisi bünyesinde Kuran ve Tecvid öğretmeni olmak için başvurunuzu gönderin.',
-      ur: 'اکیڈمی وحی و نماء میں قرآن و تجوید کی تدریس کے لیے اپنی اسناد کے ساتھ درخواست جمع کرائیں۔',
-      id: 'Ajukan lamaran dan sertifikat sanad Anda untuk mengajar di Akademi WAHY WA NAMAA.',
-      ms: 'Hantar permohonan dan tauliah anda untuk mengajar Al-Quran di Akademi WAHY WA NAMAA.',
-      ku: 'داواکاری پێشکەش بکە بۆ بوون بە مامۆستای قورئان و تەجوید لە ئەکادیمیای وەحی و نەما.',
-    },
-  },
-  {
     path: '/donate',
     priority: '0.6',
     changefreq: 'monthly',
@@ -918,7 +891,7 @@ export const STATIC_SEO_ROUTES = [
 ];
 
 const NOINDEX_SEGMENT_RE =
-  /^(?:\/(?:ar|en|fr|de|tr|ur|id|ms|ku))?\/(?:login|register(?:\/(?:student|guardian))?|forgot-password|reset-password|admin(?:\/.*)?|student(?:\/.*)?|teacher\/dashboard(?:\/.*)?|guardian(?:\/.*)?|live(?:\/.*)?|meeting(?:\/.*)?|payment(?:\/.*)?|profile(?:\/.*)?|notifications(?:\/.*)?|settings(?:\/.*)?|ai|journey|verify-certificate(?:\/.*)?|book-trial(?:\/.*)?|courses\/[^/]+\/learn(?:\/.*)?)$/i;
+  /^(?:\/(?:ar|en|fr|de|tr|ur|id|ms|ku))?\/(?:login|register(?:\/(?:student|guardian|teacher))?|forgot-password|reset-password|admin(?:\/.*)?|student(?:\/.*)?|teacher(?:\/(?:dashboard|register)(?:\/.*)?)?|guardian(?:\/.*)?|live(?:\/.*)?|meeting(?:\/.*)?|payment(?:\/.*)?|profile(?:\/.*)?|notifications(?:\/.*)?|settings(?:\/.*)?|ai|journey|verify-certificate(?:\/.*)?|book-trial(?:\/.*)?|courses\/[^/]+\/learn(?:\/.*)?)$/i;
 
 export function isNoIndexPath(pathname = '/') {
   const clean = String(pathname || '/').replace(/\/+$/, '') || '/';
