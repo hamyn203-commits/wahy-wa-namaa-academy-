@@ -65,17 +65,32 @@
 }
 
 .wn-tp-filter-pill {
+  cursor: pointer;
   border-radius: var(--wn-radius-pill);
   border: 1px solid var(--wn-border);
   background: var(--wn-surface);
   color: var(--wn-text-secondary);
   min-height: var(--wn-control-md);
-  transition: background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease), border-color var(--wn-dur-fast) var(--wn-ease);
+  transition: background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease), border-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
 }
 
-.wn-tp-filter-pill:hover {
+.wn-tp-filter-pill:hover:not(:disabled) {
   border-color: var(--wn-emerald);
-  color: var(--wn-emerald-dark);
+  color: var(--wn-badge-emerald-text);
+}
+
+.wn-tp-filter-pill:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-tp-filter-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
+.wn-tp-filter-pill:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .wn-tp-filter-pill.is-active {
@@ -85,6 +100,7 @@
 }
 
 .wn-tp-media-facade {
+  cursor: pointer;
   border-radius: var(--wn-radius-md);
   border: 1px solid var(--wn-border-mint);
   background:
@@ -94,23 +110,47 @@
   transition: transform var(--wn-dur-fast) var(--wn-ease), box-shadow var(--wn-dur-fast) var(--wn-ease);
 }
 
-.wn-tp-media-facade:hover {
+.wn-tp-media-facade:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--wn-shadow-md);
 }
 
+.wn-tp-media-facade:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-tp-media-facade:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
 .wn-tp-slot-chip {
+  cursor: pointer;
   border-radius: var(--wn-radius-sm);
   border: 1px solid var(--wn-border);
   background: var(--wn-surface);
   color: var(--wn-text-primary);
   min-height: var(--wn-control-md);
-  transition: border-color var(--wn-dur-fast) var(--wn-ease), background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease);
+  transition: border-color var(--wn-dur-fast) var(--wn-ease), background var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
 }
 
-.wn-tp-slot-chip:hover {
+.wn-tp-slot-chip:hover:not(:disabled) {
   border-color: var(--wn-emerald);
   background: var(--wn-emerald-soft);
+}
+
+.wn-tp-slot-chip:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-tp-slot-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
+.wn-tp-slot-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .wn-tp-slot-chip.is-selected {

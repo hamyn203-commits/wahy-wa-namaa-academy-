@@ -3,12 +3,34 @@ import { AlertTriangle, Clock } from 'lucide-react';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import Skeleton from '../../components/shared/Skeleton';
 import TeacherDashboard from './index';
 
 export default function TeacherDashboardGate() {
   const { user, ready, logout } = useRequireAuth(['teacher']);
-  const { locale } = useI18n();
-  if (!ready) return null;
+  const { locale, dir, t } = useI18n();
+  const gate = t?.teacherPortal?.gate || {};
+
+  if (!ready) {
+    return (
+      <main
+        className="min-h-screen bg-[var(--wn-bg)] p-4 sm:p-6 flex items-center justify-center"
+        dir={dir}
+        role="status"
+        aria-live="polite"
+      >
+        <span className="sr-only">{t?.teacherPortal?.loadingSr || 'جاري تحميل لوحة المعلم…'}</span>
+        <div className="max-w-xl w-full rounded-2xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-5 sm:p-8 space-y-4">
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-12 w-full rounded-xl" />
+        </div>
+      </main>
+    );
+  }
+
   if (user.teacherApproved === true) return <TeacherDashboard />;
 
   const status = user.teacherApprovalStatus || 'pending';
@@ -20,56 +42,59 @@ export default function TeacherDashboardGate() {
     || status === 'rejected'
     || requestedChanges.length > 0;
 
+  const statusText = status === 'under-review'
+    ? (gate.statusUnderReview || 'يحتاج استكمال / قيد المراجعة')
+    : status === 'rejected'
+      ? (gate.statusRejected || 'يحتاج مراجعة وتعديل')
+      : status === 'suspended'
+        ? (gate.statusSuspended || 'موقوف')
+        : (gate.statusPending || 'قيد انتظار مراجعة الإدارة');
+
   return (
-    <main className="min-h-screen bg-slate-50 p-6 flex items-center justify-center" dir="rtl">
-      <section className="max-w-xl w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+    <main className="min-h-screen bg-[var(--wn-bg)] p-4 sm:p-6 flex items-center justify-center" dir={dir}>
+      <section className="max-w-xl w-full bg-[var(--wn-surface)] rounded-2xl shadow-sm border border-[var(--wn-border)] p-5 sm:p-8">
         <div className="flex items-center gap-3 mb-4">
           {status === 'under-review' || status === 'rejected' ? (
-            <AlertTriangle className="text-amber-600 shrink-0" size={28} />
+            <AlertTriangle className="text-[var(--wn-warning)] shrink-0" size={28} aria-hidden="true" />
           ) : (
-            <Clock className="text-emerald-700 shrink-0" size={28} />
+            <Clock className="text-[var(--wn-emerald)] shrink-0" size={28} aria-hidden="true" />
           )}
-          <h1 className="text-2xl font-bold text-slate-900">حساب المعلم — وحي ونماء</h1>
+          <h1 className="text-2xl font-bold text-[var(--wn-heading)]">
+            {gate.title || 'حساب المعلم — وحي ونماء'}
+          </h1>
         </div>
 
-        <p className="text-slate-700 mb-4">
+        <p className="text-[var(--wn-text-primary)] mb-4">
           {hasSubmittedApplication
             ? (status === 'under-review' || requestedChanges.length > 0
-                ? 'راجعت الإدارة ملفك وطلبت استكمال أو تعديل بعض البيانات/المرفقات أدناه قبل الاعتماد.'
-                : 'طلبك قيد متابعة الإدارة. لا يمكنك التدريس أو الظهور للطلاب قبل الاعتماد.')
-            : 'تم إنشاء حسابك. الخطوة التالية هي استكمال ملف التقديم للمعلم.'}
+                ? (gate.descChanges || 'راجعت الإدارة ملفك وطلبت استكمال أو تعديل بعض البيانات/المرفقات أدناه قبل الاعتماد.')
+                : (gate.descPending || 'طلبك قيد متابعة الإدارة. لا يمكنك التدريس أو الظهور للطلاب قبل الاعتماد.'))
+            : (gate.descIncomplete || 'تم إنشاء حسابك. الخطوة التالية هي استكمال ملف التقديم للمعلم.')}
         </p>
 
-        <p className="text-sm text-slate-500 mb-5">
-          حالة الحساب:{' '}
-          <strong className="text-slate-800">
-            {status === 'under-review'
-              ? 'يحتاج استكمال / قيد المراجعة'
-              : status === 'rejected'
-                ? 'يحتاج مراجعة وتعديل'
-                : status === 'suspended'
-                  ? 'موقوف'
-                  : 'قيد انتظار مراجعة الإدارة'}
-          </strong>
+        <p className="text-sm text-[var(--wn-text-secondary)] mb-5">
+          {gate.statusLabel || 'حالة الحساب:'}{' '}
+          <strong className="text-[var(--wn-heading)]">{statusText}</strong>
         </p>
 
         {reviewNote ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-4 text-sm text-amber-950">
-            <strong className="block mb-1">ملاحظة المراجع الإداري:</strong>
+          <div className="rounded-xl border border-[var(--wn-gold)]/40 bg-[var(--wn-gold-soft)] p-4 mb-4 text-sm text-[var(--wn-badge-gold-text)]">
+            <strong className="block mb-1">{gate.reviewNoteTitle || 'ملاحظة المراجع الإداري:'}</strong>
             <p className="leading-relaxed">{reviewNote}</p>
           </div>
         ) : null}
 
         {requestedChanges.length > 0 ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-4 mb-5 text-sm text-rose-950">
+          <div className="rounded-xl border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] p-4 mb-5 text-sm text-[var(--wn-text-danger)]">
             <strong className="flex items-center gap-1.5 mb-2">
-              <AlertTriangle size={16} /> البنود المطلوب تعديلها أو إعادة رفعها:
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>{gate.requestedChangesTitle || 'البنود المطلوب تعديلها أو إعادة رفعها:'}</span>
             </strong>
             <ul className="space-y-1.5 text-xs">
               {requestedChanges.map((item) => (
                 <li key={item.key} className="flex items-start gap-1.5">
                   <span className="font-bold">• {item.label}:</span>
-                  <span>{item.note || 'يرجى مراجعة هذا البند وإعادة رفعه بوضوح'}</span>
+                  <span>{item.note || gate.defaultChangeNote || 'يرجى مراجعة هذا البند وإعادة رفعه بوضوح'}</span>
                 </li>
               ))}
             </ul>
@@ -77,25 +102,29 @@ export default function TeacherDashboardGate() {
         ) : null}
 
         <Link
-          className="block text-center bg-emerald-800 text-white py-3 rounded-xl font-bold mb-3 hover:bg-emerald-900 transition"
+          className="wn-btn wn-btn--primary wn-btn--block min-h-[44px] mb-3"
           to={localizedPath('/profile/setup', locale)}
         >
-          استكمال البيانات الأساسية
+          {gate.completeProfileBtn || 'استكمال البيانات الأساسية'}
         </Link>
 
         {canEditOrResubmit && (
           <Link
-            className="block text-center border border-emerald-800 text-emerald-900 py-3 rounded-xl font-bold mb-4 hover:bg-emerald-50 transition"
+            className="wn-btn wn-btn--secondary wn-btn--block min-h-[44px] mb-4"
             to={localizedPath('/register/teacher', locale)}
           >
             {hasSubmittedApplication
-              ? 'تعديل واستكمال طلب المعلم وإعادة رفع المرفقات'
-              : 'استكمال طلب المعلم ورفع المستندات والفيديوهات'}
+              ? (gate.editApplicationBtn || 'تعديل واستكمال طلب المعلم وإعادة رفع المرفقات')
+              : (gate.completeApplicationBtn || 'استكمال طلب المعلم ورفع المستندات والفيديوهات')}
           </Link>
         )}
 
-        <button className="w-full text-slate-600 underline text-sm mt-1" onClick={logout}>
-          تسجيل الخروج
+        <button
+          type="button"
+          onClick={logout}
+          className="w-full min-h-[44px] rounded-xl text-[var(--wn-text-secondary)] hover:text-[var(--wn-heading)] underline text-sm mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+        >
+          {gate.logoutBtn || 'تسجيل الخروج'}
         </button>
       </section>
     </main>

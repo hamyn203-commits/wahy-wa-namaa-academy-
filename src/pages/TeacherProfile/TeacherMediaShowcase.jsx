@@ -12,8 +12,8 @@ export default function TeacherMediaShowcase({
     return (
       <section id="teacher-media-showcase" className="wn-tp-card p-5 md:p-6">
         <div className="flex items-center gap-3 text-[var(--wn-text-secondary)]">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)]">
-            <Video size={20} />
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)]">
+            <Video size={20} aria-hidden="true" />
           </span>
           <div>
             <h2 className="text-base font-bold text-[var(--wn-heading)]">{copy.mediaTitle}</h2>
@@ -29,7 +29,7 @@ export default function TeacherMediaShowcase({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-extrabold text-[var(--wn-heading)] flex items-center gap-2">
-            <Video size={19} className="text-[var(--wn-emerald)]" />
+            <Video size={19} className="text-[var(--wn-emerald)]" aria-hidden="true" />
             <span>{copy.mediaTitle}</span>
           </h2>
           <p className="mt-1 text-xs text-[var(--wn-text-secondary)]">{copy.mediaSubtitle}</p>
@@ -57,7 +57,7 @@ export default function TeacherMediaShowcase({
                     </video>
                     <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-[var(--wn-heading)]">
                       <span className="flex items-center gap-1.5">
-                        {isRecitation ? <Volume2 size={14} /> : <Video size={14} />}
+                        {isRecitation ? <Volume2 size={14} aria-hidden="true" /> : <Video size={14} aria-hidden="true" />}
                         {item.title}
                       </span>
                     </div>
@@ -69,7 +69,7 @@ export default function TeacherMediaShowcase({
                     className="wn-tp-media-facade flex aspect-video w-full flex-col items-center justify-center gap-3 p-4 text-center"
                   >
                     <span className="grid h-14 w-14 place-items-center rounded-full border border-[var(--wn-gold)] bg-[var(--wn-gold)] text-[var(--wn-emerald-deep)] shadow-md">
-                      <Play size={22} fill="currentColor" />
+                      <Play size={22} fill="currentColor" aria-hidden="true" />
                     </span>
                     <div>
                       <strong className="block text-sm font-extrabold text-[var(--wn-white)]">{item.title}</strong>
@@ -86,7 +86,7 @@ export default function TeacherMediaShowcase({
       {audioItems.length > 0 && (
         <div className="space-y-2.5 pt-2">
           <h3 className="text-sm font-bold text-[var(--wn-heading)] flex items-center gap-2">
-            <Headphones size={16} className="text-[var(--wn-emerald)]" />
+            <Headphones size={16} className="text-[var(--wn-emerald)]" aria-hidden="true" />
             <span>{copy.audioTitle}</span>
           </h3>
           <div className="grid gap-3">
@@ -95,8 +95,8 @@ export default function TeacherMediaShowcase({
                 key={audio}
                 className="flex flex-col gap-2 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-3.5"
               >
-                <span className="text-xs font-bold text-[var(--wn-emerald-dark)]">
-                  {copy.isAr ? `تسجيل صوتي ${index + 1}` : `Audio clip ${index + 1}`}
+                <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                  {String(copy.audioClipLabel || 'Audio clip {index}').replace('{index}', String(index + 1))}
                 </span>
                 <audio controls preload="none" className="w-full">
                   <source src={audio} />

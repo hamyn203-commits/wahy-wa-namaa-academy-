@@ -923,26 +923,29 @@ router.post('/application-status', async (req, res) => {
     }
 
     if (isDBConnected()) {
-      const account = await User.findById(payload.userId).select('isActive role +sessionsRevokedAt').lean();
+      const account = await User.findById(payload.userId).select('isActive role').lean();
       if (!account || account.isActive === false || account.role !== 'teacher') {
         return res.status(403).json({ error: 'Account is inactive or unavailable' });
-      }
-      if (account.sessionsRevokedAt && payload.iat) {
-        const revokedMs = new Date(account.sessionsRevokedAt).getTime();
-        if (Number.isFinite(revokedMs) && payload.iat * 1000 < revokedMs - 1000) {
-          return res.status(401).json({ error: 'Application status token revoked' });
-        }
       }
     }
 
     if (isMockMode && !isDBConnected()) {
+      const mockUser = findMockUserById(payload.userId);
+      if (!mockUser || mockUser.isActive === false || mockUser.role !== 'teacher') {
+        return res.status(403).json({ error: 'Account is inactive or unavailable' });
+      }
       const teacher = findMockTeacherByUserId(payload.userId);
       if (!teacher || String(teacher._id) !== String(payload.teacherId)) {
         return res.status(404).json({ error: 'Teacher application not found' });
       }
+      if (teacher.status === 'suspended') {
+        return res.status(403).json({ error: 'Account is inactive or unavailable' });
+      }
       return res.json({
         applicationStatus: teacher.status || 'pending',
         approved: teacher.status === 'approved' && teacher.isVerified === true,
+        updatedAt: teacher.updatedAt || null,
+        ...extractReviewFeedback(teacher),
       });
     }
 
@@ -953,6 +956,10 @@ router.post('/application-status', async (req, res) => {
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher application not found' });
+    }
+
+    if (teacher.status === 'suspended') {
+      return res.status(403).json({ error: 'Account is inactive or unavailable' });
     }
 
     return res.json({

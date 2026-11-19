@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, CheckCircle2, Clock, ShieldCheck, Sparkles } from 'lucide-react';
 import Skeleton from '../../components/shared/Skeleton';
-import { localizedPath } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 
 const DEVICE_TIMEZONE = (() => {
   try {
@@ -34,6 +34,7 @@ export default function QuickBookingSidebar({
 }) {
   const [selectedDay, setSelectedDay] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
+  const intlLocale = resolveIntlLocale(locale);
 
   const groupedDays = useMemo(() => {
     if (!availability?.configured || !Array.isArray(availability.slots) || !availability.slots.length) {
@@ -68,17 +69,17 @@ export default function QuickBookingSidebar({
       <>
         <aside className="lg:sticky lg:top-24">
           <div className="wn-tp-card wn-tp-card--booking p-5 md:p-6 space-y-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-emerald-soft)] px-3 py-1 text-xs font-extrabold text-[var(--wn-emerald-dark)]">
-              <CheckCircle2 size={14} />
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-emerald-soft)] px-3 py-1 text-xs font-extrabold text-[var(--wn-badge-emerald-text)]">
+              <CheckCircle2 size={14} aria-hidden="true" />
               {copy.lockedTutorBadge}
             </span>
             <h2 className="text-lg font-extrabold text-[var(--wn-heading)]">{copy.lockedTutorTitle}</h2>
             <p className="text-sm leading-relaxed text-[var(--wn-text-secondary)]">{copy.lockedTutorDesc}</p>
             <Link
               to={localizedPath('/student/dashboard?tab=sessions', locale)}
-              className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block"
+              className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block min-h-[44px]"
             >
-              <Calendar size={17} />
+              <Calendar size={17} aria-hidden="true" />
               <span>{copy.goToMySessions}</span>
             </Link>
           </div>
@@ -87,9 +88,9 @@ export default function QuickBookingSidebar({
         <div className="wn-tp-mobile-bar px-4 pt-3 lg:hidden">
           <Link
             to={localizedPath('/student/dashboard?tab=sessions', locale)}
-            className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block"
+            className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block min-h-[44px]"
           >
-            <Calendar size={17} />
+            <Calendar size={17} aria-hidden="true" />
             <span>{copy.goToMySessions}</span>
           </Link>
         </div>
@@ -101,8 +102,8 @@ export default function QuickBookingSidebar({
     <>
       <aside className="lg:sticky lg:top-24">
         <div className="wn-tp-card wn-tp-card--booking p-5 md:p-6 space-y-4">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-gold-soft)] px-3 py-1 text-xs font-extrabold text-[var(--wn-gold-dark)]">
-            <Sparkles size={14} />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-gold-soft)] px-3 py-1 text-xs font-extrabold text-[var(--wn-badge-gold-text)]">
+            <Sparkles size={14} aria-hidden="true" />
             {copy.freeTrialBadge}
           </span>
 
@@ -114,12 +115,12 @@ export default function QuickBookingSidebar({
           {availabilityLoading ? (
             <div className="space-y-2.5" aria-hidden="true">
               <Skeleton className="h-4 w-32" />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <Skeleton className="h-11 rounded-lg" />
                 <Skeleton className="h-11 rounded-lg" />
                 <Skeleton className="h-11 rounded-lg" />
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <Skeleton className="h-11 rounded-lg" />
                 <Skeleton className="h-11 rounded-lg" />
                 <Skeleton className="h-11 rounded-lg" />
@@ -129,10 +130,10 @@ export default function QuickBookingSidebar({
             <div className="space-y-3">
               <div>
                 <p className="mb-2 text-xs font-bold text-[var(--wn-text-secondary)] flex items-center gap-1.5">
-                  <Calendar size={14} className="text-[var(--wn-emerald)]" />
+                  <Calendar size={14} className="text-[var(--wn-emerald)]" aria-hidden="true" />
                   <span>{copy.pickDayLabel}</span>
                 </p>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {groupedDays.map(({ dayKey, slots }) => {
                     const first = new Date(slots[0].startsAt);
                     const isSelected = dayKey === activeDayKey;
@@ -140,6 +141,7 @@ export default function QuickBookingSidebar({
                       <button
                         key={dayKey}
                         type="button"
+                        aria-pressed={isSelected}
                         onClick={() => {
                           setSelectedDay(dayKey);
                           setSelectedSlot('');
@@ -147,13 +149,13 @@ export default function QuickBookingSidebar({
                         className={`wn-tp-slot-chip px-2 py-2 text-center ${isSelected ? 'is-selected' : ''}`}
                       >
                         <small className="block text-[11px] opacity-80">
-                          {first.toLocaleDateString(copy.isAr ? 'ar-EG' : 'en', {
+                          {first.toLocaleDateString(intlLocale, {
                             timeZone: DEVICE_TIMEZONE,
                             weekday: 'short',
                           })}
                         </small>
                         <strong className="block text-xs font-extrabold">
-                          {first.toLocaleDateString(copy.isAr ? 'ar-EG' : 'en', {
+                          {first.toLocaleDateString(intlLocale, {
                             timeZone: DEVICE_TIMEZONE,
                             day: 'numeric',
                             month: 'short',
@@ -168,20 +170,21 @@ export default function QuickBookingSidebar({
               {activeDaySlots.length > 0 && (
                 <div>
                   <p className="mb-2 text-xs font-bold text-[var(--wn-text-secondary)] flex items-center gap-1.5">
-                    <Clock size={14} className="text-[var(--wn-emerald)]" />
+                    <Clock size={14} className="text-[var(--wn-emerald)]" aria-hidden="true" />
                     <span>{copy.pickTimeLabel}</span>
                   </p>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                     {activeDaySlots.map((slot) => {
                       const isPicked = selectedSlot === slot.startsAt;
                       return (
                         <button
                           key={slot.startsAt}
                           type="button"
+                          aria-pressed={isPicked}
                           onClick={() => setSelectedSlot(isPicked ? '' : slot.startsAt)}
                           className={`wn-tp-slot-chip px-2 py-2 text-xs font-bold ${isPicked ? 'is-selected' : ''}`}
                         >
-                          {new Date(slot.startsAt).toLocaleTimeString(copy.isAr ? 'ar-EG' : 'en', {
+                          {new Date(slot.startsAt).toLocaleTimeString(intlLocale, {
                             timeZone: DEVICE_TIMEZONE,
                             hour: '2-digit',
                             minute: '2-digit',
@@ -194,7 +197,7 @@ export default function QuickBookingSidebar({
               )}
             </div>
           ) : (
-            <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-3.5 text-xs leading-relaxed text-[var(--wn-emerald-dark)]">
+            <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-3.5 text-xs leading-relaxed text-[var(--wn-badge-emerald-text)]">
               {copy.noSlotsNotice}
             </div>
           )}
@@ -203,23 +206,23 @@ export default function QuickBookingSidebar({
             type="button"
             onClick={handleBookClick}
             data-teacher-id={teacherId}
-            className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block"
+            className="wn-btn wn-btn--primary wn-btn--lg wn-btn--block min-h-[44px]"
           >
-            <Calendar size={17} />
+            <Calendar size={17} aria-hidden="true" />
             <span>{selectedSlot ? copy.bookSelectedSlot : copy.bookTrialAction}</span>
           </button>
 
           <ul className="space-y-2 border-t border-[var(--wn-border)] pt-3 text-xs text-[var(--wn-text-secondary)]">
             <li className="flex items-center gap-2">
-              <CheckCircle2 size={14} className="shrink-0 text-[var(--wn-emerald)]" />
+              <CheckCircle2 size={14} className="shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
               <span>{copy.trustPoint1}</span>
             </li>
             <li className="flex items-center gap-2">
-              <Clock size={14} className="shrink-0 text-[var(--wn-emerald)]" />
+              <Clock size={14} className="shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
               <span>{copy.trustPoint2}</span>
             </li>
             <li className="flex items-center gap-2">
-              <ShieldCheck size={14} className="shrink-0 text-[var(--wn-emerald)]" />
+              <ShieldCheck size={14} className="shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
               <span>{copy.trustPoint3}</span>
             </li>
           </ul>
@@ -227,12 +230,12 @@ export default function QuickBookingSidebar({
       </aside>
 
       <div className="wn-tp-mobile-bar px-4 pt-3 lg:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <span className="block text-[11px] font-bold text-[var(--wn-gold-dark)]">{copy.freeTrialBadge}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="min-w-0 flex-1">
+            <span className="block text-[11px] font-bold text-[var(--wn-badge-gold-text)]">{copy.freeTrialBadge}</span>
             <strong className="block truncate text-sm font-extrabold text-[var(--wn-heading)]">
               {selectedSlot
-                ? new Date(selectedSlot).toLocaleString(copy.isAr ? 'ar-EG' : 'en', {
+                ? new Date(selectedSlot).toLocaleString(intlLocale, {
                     timeZone: DEVICE_TIMEZONE,
                     weekday: 'short',
                     hour: '2-digit',
@@ -244,7 +247,7 @@ export default function QuickBookingSidebar({
           <button
             type="button"
             onClick={handleBookClick}
-            className="wn-btn wn-btn--primary wn-btn--md shrink-0"
+            className="wn-btn wn-btn--primary wn-btn--md min-h-[44px] max-w-full whitespace-normal text-center shrink-0"
           >
             {selectedSlot ? copy.bookSelectedSlot : copy.bookTrialAction}
           </button>

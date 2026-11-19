@@ -8,6 +8,7 @@ import {
   Images,
   Trash2,
 } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 function fileExtension(name = '') {
   const index = String(name).lastIndexOf('.');
@@ -42,6 +43,13 @@ function ensureFilename(file, captureKind) {
   );
 }
 
+function formatMsg(template, vars = {}) {
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v ?? '')),
+    String(template || '')
+  );
+}
+
 export default function FileBox({
   id,
   label,
@@ -57,24 +65,38 @@ export default function FileBox({
   allowedExtensions,
   captureKind,
 }) {
+  const { t } = useI18n();
+  const fb = t?.teacherRegistration?.fileBox || {};
   const [error, setError] = useState('');
   const count = multiple ? (files?.length || 0) : (file ? 1 : 0);
 
   const validate = (item) => {
     if (maxBytes && item.size > maxBytes) {
-      return `حجم الملف "${item.name}" هو ${formatMb(item.size)} MB. الحد الأقصى ${formatMb(maxBytes)} MB.`;
+      return formatMsg(
+        fb.errTooLarge || 'حجم الملف "{name}" هو {mb} MB. الحد الأقصى {maxMb} MB.',
+        { name: item.name, mb: formatMb(item.size), maxMb: formatMb(maxBytes) }
+      );
     }
 
     if (item.size <= 0) {
-      return `الملف "${item.name}" فارغ أو غير صالح.`;
+      return formatMsg(
+        fb.errEmpty || 'الملف "{name}" فارغ أو غير صالح.',
+        { name: item.name }
+      );
     }
 
     if (allowedMimeTypes?.length && !allowedMimeTypes.includes(item.type)) {
-      return `نوع الملف "${item.name}" غير مدعوم.`;
+      return formatMsg(
+        fb.errUnsupportedType || 'نوع الملف "{name}" غير مدعوم.',
+        { name: item.name }
+      );
     }
 
     if (allowedExtensions?.length && !allowedExtensions.includes(fileExtension(item.name))) {
-      return `امتداد الملف "${item.name}" غير مدعوم.`;
+      return formatMsg(
+        fb.errUnsupportedExt || 'امتداد الملف "{name}" غير مدعوم.',
+        { name: item.name }
+      );
     }
 
     return '';
@@ -128,87 +150,86 @@ export default function FileBox({
   };
 
   const cameraLabel = captureKind === 'video'
-    ? 'تسجيل فيديو بالكاميرا'
-    : 'التقاط بالكاميرا';
+    ? (fb.recordVideo || 'تسجيل فيديو بالكاميرا')
+    : (fb.capturePhoto || 'التقاط بالكاميرا');
 
   const CameraIcon = captureKind === 'video' ? Video : Camera;
 
   return (
-    <div className="border-2 border-dashed border-slate-200 rounded-xl p-5 hover:border-emerald-300 transition bg-slate-50/50">
+    <div className="border-2 border-dashed border-[var(--wn-border)] rounded-xl p-5 hover:border-[var(--wn-emerald)] transition bg-[var(--wn-surface-soft)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold text-slate-800">{label}</p>
-          {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
+          <p className="font-semibold text-[var(--wn-heading)]">{label}</p>
+          {hint && <p className="text-xs text-[var(--wn-text-secondary)] mt-1">{hint}</p>}
           {maxBytes && (
-            <p className="text-xs text-slate-500 mt-1">
-              الحد الأقصى لكل ملف: {formatMb(maxBytes)} MB
+            <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+              {formatMsg(fb.maxSizeLabel || 'الحد الأقصى لكل ملف: {maxMb} MB', { maxMb: formatMb(maxBytes) })}
             </p>
           )}
         </div>
-        {count > 0 && <CheckCircle className="text-emerald-600 shrink-0" size={20} />}
+        {count > 0 && <CheckCircle className="text-[var(--wn-emerald)] shrink-0" size={20} aria-hidden="true" />}
       </div>
 
       {error && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
-          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+        <div
+          role="alert"
+          className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] px-3 py-2 text-xs text-[var(--wn-text-danger)]"
+        >
+          <AlertCircle size={16} className="shrink-0 mt-0.5" aria-hidden="true" />
           <span>{error}</span>
         </div>
-      )}
-
-      <input
-        type="file"
-        id={`${id}-library`}
-        accept={accept}
-        multiple={multiple}
-        className="hidden"
-        onChange={handleLibraryChange}
-      />
-
-      {captureKind && (
-        <input
-          type="file"
-          id={`${id}-camera`}
-          accept={captureKind === 'video' ? 'video/*' : 'image/*'}
-          capture="user"
-          className="hidden"
-          onChange={handleCaptureChange}
-        />
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
         {captureKind && (
           <label
             htmlFor={`${id}-camera`}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-emerald-800"
+            className="relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-hover)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2"
           >
-            <CameraIcon size={16} /> {cameraLabel}
+            <input
+              type="file"
+              id={`${id}-camera`}
+              accept={captureKind === 'video' ? 'video/*' : 'image/*'}
+              capture="user"
+              className="sr-only"
+              onChange={handleCaptureChange}
+            />
+            <CameraIcon size={16} aria-hidden="true" /> {cameraLabel}
           </label>
         )}
 
         <label
           htmlFor={`${id}-library`}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium cursor-pointer hover:bg-emerald-50 hover:border-emerald-200"
+          className="relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-surface)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-soft)] hover:border-[var(--wn-border-mint)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2"
         >
-          {captureKind ? <Images size={16} /> : <Upload size={16} />}
+          <input
+            type="file"
+            id={`${id}-library`}
+            accept={accept}
+            multiple={multiple}
+            className="sr-only"
+            onChange={handleLibraryChange}
+          />
+          {captureKind ? <Images size={16} aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}
           {captureKind
-            ? (multiple && count ? 'إضافة من الألبوم/الجهاز' : 'اختيار من الألبوم/الجهاز')
-            : (count ? `تم (${count}) — تغيير` : 'اختر ملف')}
+            ? (multiple && count ? (fb.addFromGallery || 'إضافة من الألبوم/الجهاز') : (fb.pickFromGallery || 'اختيار من الألبوم/الجهاز'))
+            : (count ? formatMsg(fb.selectedChange || 'تم ({count}) — تغيير', { count }) : (fb.pickFile || 'اختر ملف'))}
         </label>
 
         {count > 0 && (
           <button
             type="button"
             onClick={clearSelection}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+            className="inline-flex min-h-[44px] items-center gap-2 px-3 py-2 text-sm text-[var(--wn-text-danger)] hover:bg-[var(--wn-danger-soft)] rounded-lg"
           >
-            <Trash2 size={15} /> مسح الاختيار
+            <Trash2 size={15} aria-hidden="true" /> {fb.clearSelection || 'مسح الاختيار'}
           </button>
         )}
       </div>
 
       {multiple && count > 0 && (
-        <p className="mt-3 text-xs text-emerald-700">
-          تم اختيار {count} ملف/ملفات.
+        <p className="mt-3 text-xs text-[var(--wn-badge-emerald-text)]">
+          {formatMsg(fb.filesSelectedCount || 'تم اختيار {count} ملف/ملفات.', { count })}
         </p>
       )}
 
