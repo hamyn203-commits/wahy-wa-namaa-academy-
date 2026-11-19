@@ -624,7 +624,7 @@ export default function PlansPage() {
 
             <div className="wn-plans-hero__visual">
               <img
-                src={audience === 'women' ? '/images/plans/women-mini.jpg' : '/images/plans/men-community.jpg'}
+                src={audience === 'women' ? '/images/plans/women-community.jpg' : '/images/plans/men-community.jpg'}
                 decoding="async"
                 alt={isRTL
                   ? (audience === 'women' ? 'حصة قرآن مباشرة أونلاين لقسم السيدات من البيت' : 'حلقة قرآن مباشرة أونلاين لقسم الرجال والأطفال من البيت')
