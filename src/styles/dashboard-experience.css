@@ -49,7 +49,7 @@
 }
 
 .wn-dashboard-action {
-  min-height: 38px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -61,11 +61,42 @@
   color: var(--wn-text-secondary);
   font-size: .68rem;
   font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    transform var(--wn-dur-fast) var(--wn-ease);
 }
 
-.wn-dashboard-action:hover {
+.wn-dashboard-action:hover:not(:disabled) {
   border-color: rgba(212,175,107,.45);
   color: var(--wn-emerald-dark);
+}
+
+.wn-dashboard-action:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-dashboard-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-dashboard-action:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
+}
+
+.wn-dashboard-action--danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--wn-danger) 42%, transparent);
+  background: var(--wn-danger-soft);
+  color: var(--wn-text-danger);
+}
+
+.wn-dashboard-action--danger:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .wn-dashboard-main {
@@ -133,13 +164,34 @@
 }
 
 .wn-dashboard-tab {
-  min-height: 38px;
+  min-height: var(--wn-control-md);
   padding: .45rem .72rem;
   border-radius: 10px;
   color: var(--wn-text-secondary);
   font-size: .68rem;
   font-weight: 750;
-  transition: background .2s ease, color .2s ease;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease, transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-dashboard-tab:hover:not(:disabled):not(.is-active) {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-dashboard-tab:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-dashboard-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-dashboard-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-dashboard-tab.is-active {
@@ -169,7 +221,8 @@
   }
 
   .wn-dashboard-action {
-    width: 38px;
+    width: var(--wn-control-md);
+    height: var(--wn-control-md);
     padding: 0;
   }
 }
@@ -331,7 +384,7 @@
 .wn-student-primary-action,
 .wn-student-secondary-action,
 .wn-student-join-action {
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -340,7 +393,8 @@
   border-radius: 12px;
   font-size: .74rem;
   font-weight: 850;
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity var(--wn-dur-fast) var(--wn-ease);
 }
 
 .wn-student-primary-action {
@@ -356,10 +410,31 @@
   color: white;
 }
 
-.wn-student-primary-action:hover,
-.wn-student-secondary-action:hover,
-.wn-student-join-action:hover {
+.wn-student-primary-action:hover:not(:disabled),
+.wn-student-secondary-action:hover:not(:disabled),
+.wn-student-join-action:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+.wn-student-primary-action:active:not(:disabled),
+.wn-student-secondary-action:active:not(:disabled),
+.wn-student-join-action:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.wn-student-primary-action:disabled,
+.wn-student-secondary-action:disabled,
+.wn-student-join-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-primary-action:focus-visible,
+.wn-student-secondary-action:focus-visible,
+.wn-student-join-action:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-welcome__summary {
@@ -500,9 +575,36 @@
 }
 
 .wn-student-text-action {
+  min-height: var(--wn-control-md);
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding-inline: .35rem;
+  border-radius: var(--wn-radius-xs);
   color: var(--wn-emerald-dark);
   font-size: .68rem;
   font-weight: 800;
+  cursor: pointer;
+  transition: color var(--wn-dur-fast) var(--wn-ease), background-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-text-action:hover:not(:disabled) {
+  background: var(--wn-emerald-soft);
+}
+
+.wn-student-text-action:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-student-text-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-text-action:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-session-panel__body {
@@ -623,13 +725,29 @@
   color: var(--wn-emerald-dark);
   font-size: .7rem;
   font-weight: 800;
+  cursor: pointer;
   transition: border-color .18s ease, transform .18s ease, background .18s ease;
 }
 
-.wn-student-quick-card:hover {
+.wn-student-quick-card:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(184,138,57,.34);
   background: #fffdf7;
+}
+
+.wn-student-quick-card:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.wn-student-quick-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-quick-card:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-stat-grid {
@@ -655,6 +773,7 @@
 }
 
 .wn-student-journey-list button {
+  min-width: 0;
   min-height: 62px;
   display: flex;
   align-items: center;
@@ -666,7 +785,30 @@
   background: #fbfdfb;
   color: var(--wn-text-secondary);
   text-align: start;
+  overflow-wrap: anywhere;
   font-size: .68rem;
+  cursor: pointer;
+  transition: border-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease), background-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-journey-list button:hover:not(:disabled) {
+  border-color: var(--wn-border-mint);
+  background: var(--wn-emerald-soft);
+}
+
+.wn-student-journey-list button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-student-journey-list button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-journey-list button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-journey-list strong {
@@ -729,8 +871,10 @@
 }
 
 .wn-student-referral-card__code button {
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: .35rem;
   padding: .55rem .7rem;
   border-radius: 10px;
@@ -738,6 +882,27 @@
   color: white;
   font-size: .65rem;
   font-weight: 800;
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-referral-card__code button:hover:not(:disabled) {
+  background: var(--wn-emerald-dark);
+}
+
+.wn-student-referral-card__code button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-student-referral-card__code button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-referral-card__code button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-referral-card .wn-student-text-action,
@@ -909,6 +1074,7 @@
   border-radius: 14px;
   background: transparent;
   color: var(--wn-text-secondary);
+  cursor: pointer;
   transition:
     transform .18s ease,
     background .18s ease,
@@ -917,11 +1083,26 @@
     box-shadow .18s ease;
 }
 
-.wn-student-command__item:hover {
+.wn-student-command__item:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(15,107,79,.10);
   background: rgba(15,107,79,.045);
   color: var(--wn-emerald-dark);
+}
+
+.wn-student-command__item:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.wn-student-command__item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-command__item:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-command__item.is-active {
@@ -936,8 +1117,7 @@
 .wn-student-command__item.is-active::after {
   content: '';
   position: absolute;
-  left: 18%;
-  right: 18%;
+  inset-inline: 18%;
   bottom: 5px;
   height: 2px;
   border-radius: 999px;
@@ -1065,17 +1245,34 @@
 }
 
 .wn-student-command__more-heading button {
-  width: 30px;
-  height: 30px;
+  min-width: var(--wn-control-md);
+  min-height: var(--wn-control-md);
   display: grid;
   place-items: center;
   border-radius: 9px;
   color: var(--wn-text-tertiary);
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
 }
 
-.wn-student-command__more-heading button:hover {
+.wn-student-command__more-heading button:hover:not(:disabled) {
   background: rgba(15,107,79,.06);
   color: var(--wn-emerald-dark);
+}
+
+.wn-student-command__more-heading button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.wn-student-command__more-heading button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-command__more-heading button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-command__more-grid {
@@ -1097,13 +1294,29 @@
   background: #fbfdfb;
   color: var(--wn-text-secondary);
   text-align: start;
+  cursor: pointer;
   transition: transform .17s ease, border-color .17s ease, background .17s ease;
 }
 
-.wn-student-command__more-item:hover {
+.wn-student-command__more-item:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(184,138,57,.25);
   background: #fffdf7;
+}
+
+.wn-student-command__more-item:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.wn-student-command__more-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-command__more-item:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-command__more-item.is-active {
@@ -1217,8 +1430,7 @@
 
   .wn-student-command__more-panel {
     position: fixed;
-    left: .75rem;
-    right: .75rem;
+    inset-inline: .75rem;
     top: clamp(72px, 12vh, 130px);
     width: auto;
     max-height: min(78vh, calc(100dvh - 14vh - 20px));
@@ -3827,18 +4039,34 @@
 }
 
 .wn-student-guardian-form > button {
-  min-height: 42px;
+  min-height: var(--wn-control-md);
   padding: .6rem .8rem;
   border-radius: 10px;
   background: var(--wn-emerald-deep);
   color: #fff;
   font-size: .57rem;
   font-weight: 850;
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-guardian-form > button:hover:not(:disabled) {
+  background: var(--wn-emerald-dark);
+}
+
+.wn-student-guardian-form > button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .wn-student-guardian-form > button:disabled {
-  opacity: .5;
+  opacity: .55;
   cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-guardian-form > button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-guardian-invitations {
@@ -3876,6 +4104,7 @@
 .wn-student-guardian-invitations strong,
 .wn-student-guardian-invitations small {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .wn-student-guardian-invitations strong {
@@ -3895,9 +4124,10 @@
 }
 
 .wn-student-guardian-invitations button {
-  min-height: 30px;
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: .25rem;
   padding: .35rem .5rem;
   border-radius: 8px;
@@ -3905,6 +4135,27 @@
   color: var(--wn-emerald-dark);
   font-size: .5rem;
   font-weight: 800;
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-guardian-invitations button:hover:not(:disabled) {
+  background: var(--wn-emerald-soft);
+}
+
+.wn-student-guardian-invitations button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-student-guardian-invitations button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-guardian-invitations button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 .wn-student-guardian-invitations button:last-child {
@@ -3925,11 +4176,35 @@
 }
 
 .wn-student-guardian-fallback button {
+  min-height: var(--wn-control-md);
   display: inline-flex;
   align-items: center;
   gap: .25rem;
+  padding-inline: .35rem;
+  border-radius: var(--wn-radius-xs);
   color: var(--wn-emerald-dark);
   font-weight: 850;
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease), transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-student-guardian-fallback button:hover:not(:disabled) {
+  background: var(--wn-emerald-soft);
+}
+
+.wn-student-guardian-fallback button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.wn-student-guardian-fallback button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wn-student-guardian-fallback button:focus-visible {
+  outline: none;
+  box-shadow: var(--wn-focus-ring);
 }
 
 @media (max-width: 720px) {
@@ -3952,6 +4227,35 @@
   .wn-guardian-invitations__actions button {
     flex: 1;
     justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .wn-student-guardian-linked > div {
+    grid-template-columns: auto minmax(0,1fr);
+  }
+
+  .wn-student-guardian-linked > div > svg {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .wn-student-guardian-invitations > div {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .wn-student-guardian-invitations > div > div {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .wn-student-guardian-invitations > div > div button {
+    flex: 1 1 auto;
+  }
+
+  .wn-student-guardian-fallback {
+    flex-wrap: wrap;
   }
 }
 
@@ -8016,12 +8320,52 @@
   color: var(--wn-text-primary);
 }
 
+[data-theme="dark"] .wn-dashboard-header,
 [data-theme="dark"] .wn-teacher-topbar,
 [data-theme="dark"] .wn-student-topbar,
 [data-theme="dark"] .wn-admin-topbar,
 [data-theme="dark"] .wn-guardian-topbar {
-  background: color-mix(in srgb, var(--wn-surface-card) 88%, transparent);
+  background: color-mix(in srgb, var(--wn-surface) 88%, transparent);
   border-bottom-color: color-mix(in srgb, var(--wn-gold) 16%, transparent);
+}
+
+[data-theme="dark"] .wn-dashboard-title,
+[data-theme="dark"] .wn-stat-card__value {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-stat-card__icon {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-dashboard-action {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-dashboard-action:hover:not(:disabled) {
+  border-color: var(--wn-border-mint);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-dashboard-action--danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--wn-danger) 48%, transparent);
+  background: var(--wn-danger-soft);
+  color: var(--wn-text-danger);
+}
+
+[data-theme="dark"] .wn-dashboard-tabs,
+[data-theme="dark"] .wn-student-surface .wn-dashboard-tabs {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-dashboard-tab.is-active {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
 }
 
 [data-theme="dark"] .wn-dashboard-surface,
@@ -8038,10 +8382,202 @@
 [data-theme="dark"] .wn-student-stat-card,
 [data-theme="dark"] .wn-guardian-stat-card,
 [data-theme="dark"] .wn-admin-exec-metric,
-[data-theme="dark"] .wn-stat-card {
-  background: var(--wn-surface-card);
+[data-theme="dark"] .wn-stat-card,
+[data-theme="dark"] .wn-student-session-panel,
+[data-theme="dark"] .wn-student-quick-panel,
+[data-theme="dark"] .wn-student-journey-card,
+[data-theme="dark"] .wn-student-referral-card.is-muted,
+[data-theme="dark"] .wn-student-teacher-update-list > article,
+[data-theme="dark"] .wn-teacher-update-list > article,
+[data-theme="dark"] .wn-student-guardian-link,
+[data-theme="dark"] .wn-guardian-invitations {
+  background: var(--wn-surface);
   border-color: color-mix(in srgb, var(--wn-gold) 16%, transparent);
   color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-student-referral-card {
+  background: linear-gradient(145deg, var(--wn-gold-soft), var(--wn-surface));
+  border-color: color-mix(in srgb, var(--wn-gold) 22%, transparent);
+}
+
+[data-theme="dark"] .wn-student-command-shell {
+  background: color-mix(in srgb, var(--wn-surface-sunken) 90%, transparent);
+  border-color: var(--wn-border);
+  box-shadow: var(--wn-shadow-md);
+}
+
+[data-theme="dark"] .wn-student-command {
+  background: var(--wn-surface);
+}
+
+[data-theme="dark"] .wn-student-command__identity {
+  border-inline-end-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-student-command__identity-icon {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-student-command__item {
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-student-command__item:hover:not(:disabled) {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-student-command__item-icon {
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-student-command__item-copy small {
+  color: var(--wn-text-tertiary);
+}
+
+[data-theme="dark"] .wn-student-command__item.is-active .wn-student-command__item-copy small {
+  color: color-mix(in srgb, var(--wn-text-inverse) 78%, transparent);
+}
+
+[data-theme="dark"] .wn-student-command__more-button {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-student-command__more-panel {
+  background: var(--wn-surface);
+  border-color: var(--wn-border-strong);
+  box-shadow: var(--wn-shadow-lg);
+}
+
+[data-theme="dark"] .wn-student-command__more-heading button:hover:not(:disabled) {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-student-command__more-item {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+  color: var(--wn-text-secondary);
+}
+
+[data-theme="dark"] .wn-student-command__more-item:hover:not(:disabled) {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-student-command__more-item.is-active {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-student-command__more-icon {
+  background: var(--wn-surface);
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-student-next-step {
+  background: linear-gradient(135deg, var(--wn-gold-soft), var(--wn-surface-soft));
+  border-color: var(--wn-border-strong);
+}
+
+[data-theme="dark"] .wn-student-next-step .wn-student-secondary-action {
+  background: var(--wn-surface);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-student-session-panel__body,
+[data-theme="dark"] .wn-student-empty-session,
+[data-theme="dark"] .wn-student-quick-card,
+[data-theme="dark"] .wn-student-journey-list button,
+[data-theme="dark"] .wn-student-teacher-update-preview {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-student-quick-card {
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-student-quick-card:hover:not(:disabled),
+[data-theme="dark"] .wn-student-journey-list button:hover:not(:disabled) {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-student-session-type {
+  color: var(--wn-badge-emerald-text);
+}
+
+[data-theme="dark"] .wn-student-text-action {
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-student-text-action:hover:not(:disabled) {
+  background: var(--wn-emerald-soft);
+}
+
+[data-theme="dark"] .wn-student-referral-card__code code,
+[data-theme="dark"] .wn-student-teacher-update-videos > div,
+[data-theme="dark"] .wn-teacher-update-videos > div {
+  background: var(--wn-surface-sunken);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-student-teacher-update-videos button,
+[data-theme="dark"] .wn-teacher-update-videos button,
+[data-theme="dark"] .wn-student-guardian-link__heading > svg,
+[data-theme="dark"] .wn-student-guardian-linked > div > svg,
+[data-theme="dark"] .wn-student-guardian-fallback button {
+  color: var(--wn-text-accent);
+}
+
+[data-theme="dark"] .wn-student-next-step__eyebrow,
+[data-theme="dark"] .wn-student-referral-card > span,
+[data-theme="dark"] .wn-student-teacher-update-preview > div > span,
+[data-theme="dark"] .wn-student-teacher-update-list__head > div > span,
+[data-theme="dark"] .wn-student-guardian-link__heading span,
+[data-theme="dark"] .wn-guardian-invitations__heading span {
+  color: var(--wn-text-gold);
+}
+
+[data-theme="dark"] .wn-student-guardian-linked > div {
+  background: var(--wn-surface-mint);
+}
+
+[data-theme="dark"] .wn-student-guardian-invitations > div.is-pending {
+  background: var(--wn-gold-soft);
+  border-color: var(--wn-border-strong);
+}
+
+[data-theme="dark"] .wn-student-guardian-invitations > div.is-accepted {
+  background: var(--wn-surface-mint);
+  border-color: var(--wn-border-mint);
+}
+
+[data-theme="dark"] .wn-student-guardian-invitations button {
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
+}
+
+[data-theme="dark"] .wn-student-guardian-invitations button:hover:not(:disabled) {
+  background: var(--wn-emerald-soft);
+}
+
+[data-theme="dark"] .wn-student-guardian-invitations button:last-child {
+  color: var(--wn-text-danger);
+}
+
+[data-theme="dark"] .wn-student-guardian-fallback {
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-secondary);
 }
 
 [data-theme="dark"] .wn-admin-dossier {
@@ -8061,7 +8597,7 @@
 [data-theme="dark"] .wn-guardian-invitations__list > article,
 [data-theme="dark"] .wn-admin-exec-priority-list > button,
 [data-theme="dark"] .wn-admin-exec-quick-actions > button {
-  background: color-mix(in srgb, var(--wn-surface-elevated) 72%, transparent);
+  background: color-mix(in srgb, var(--wn-surface-soft) 72%, transparent);
   border-color: color-mix(in srgb, var(--wn-gold) 14%, transparent);
   color: var(--wn-text-primary);
 }
@@ -8078,8 +8614,21 @@
 [data-theme="dark"] .wn-student-panel h2,
 [data-theme="dark"] .wn-student-panel h3,
 [data-theme="dark"] .wn-guardian-panel h2,
-[data-theme="dark"] .wn-guardian-panel h3 {
-  color: var(--wn-text-primary);
+[data-theme="dark"] .wn-guardian-panel h3,
+[data-theme="dark"] .wn-student-next-step h3,
+[data-theme="dark"] .wn-student-section-heading h3,
+[data-theme="dark"] .wn-student-empty-session h4,
+[data-theme="dark"] .wn-student-journey-list strong,
+[data-theme="dark"] .wn-student-referral-card h3,
+[data-theme="dark"] .wn-student-command__identity strong,
+[data-theme="dark"] .wn-student-command__more-heading strong,
+[data-theme="dark"] .wn-student-command__more-item strong,
+[data-theme="dark"] .wn-student-teacher-update-preview h3,
+[data-theme="dark"] .wn-student-teacher-update-list__head h4,
+[data-theme="dark"] .wn-student-guardian-link__heading h3,
+[data-theme="dark"] .wn-student-guardian-linked strong,
+[data-theme="dark"] .wn-student-guardian-invitations > h4 {
+  color: var(--wn-heading);
 }
 
 [data-theme="dark"] .wn-admin-teachers-list__head p,
@@ -8103,7 +8652,7 @@
 
 [data-theme="dark"] .wn-admin-teachers-list__actions .is-secondary,
 [data-theme="dark"] .wn-admin-teacher-public-link {
-  background: color-mix(in srgb, var(--wn-surface-elevated) 90%, transparent);
+  background: color-mix(in srgb, var(--wn-surface-soft) 90%, transparent);
   border-color: color-mix(in srgb, var(--wn-gold) 25%, transparent);
   color: var(--wn-text-primary);
 }
