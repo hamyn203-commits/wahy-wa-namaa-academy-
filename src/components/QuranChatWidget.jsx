@@ -105,15 +105,21 @@ export default function QuranChatWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`wn-chat-launcher min-h-[44px] flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white px-4 py-3 rounded-full shadow-xl transition-all duration-300 active:scale-95 group border-2 border-emerald-300/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${fontClass}`}
+        title={t.live.quranWidget.launcherTitle}
+        className={`wn-chat-launcher relative w-[52px] h-[52px] min-w-[44px] min-h-[44px] flex items-center justify-center bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-white)] rounded-full shadow-lg transition-all duration-300 active:scale-95 group border border-[var(--wn-gold)]/45 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${fontClass}`}
         aria-label={t.live.quranWidget.launcherAria}
         aria-expanded={open}
       >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-full mb-2.5 end-0 whitespace-nowrap rounded-full bg-[var(--wn-emerald-deep)] px-3 py-1.5 text-xs font-semibold text-[var(--wn-text-inverse)] border border-[var(--wn-gold)]/35 shadow-md opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:translate-y-0 transition-all duration-200"
+        >
+          {t.live.quranWidget.launcherTitle}
+        </span>
         <div className="relative">
-          <MessageCircle size={22} className="animate-pulse" aria-hidden="true" />
-          <span className="absolute -top-1 -end-1 w-2.5 h-2.5 bg-amber-400 rounded-full ring-2 ring-white" />
+          <MessageCircle size={22} aria-hidden="true" />
+          <span className="absolute -top-1 -end-1 w-2.5 h-2.5 bg-[var(--wn-gold)] rounded-full ring-2 ring-[var(--wn-emerald)]" />
         </div>
-        <span className="text-sm font-bold hidden sm:inline">{t.live.quranWidget.launcherTitle}</span>
       </button>
 
       {open && (

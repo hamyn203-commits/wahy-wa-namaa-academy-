@@ -3,7 +3,7 @@
   "totals": {
     "important": 111,
     "hex": 1004,
-    "rgba": 965,
+    "rgba": 956,
     "fontSize": 774,
     "radiusPx": 447
   },
@@ -44,7 +44,7 @@
     },
     "src/pages/NewLandingPage/approved-homepage.css": {
       "hex": 48,
-      "rgba": 225,
+      "rgba": 216,
       "fontSize": 99,
       "radiusPx": 73,
       "important": 10

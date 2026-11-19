@@ -765,6 +765,18 @@
   background: var(--wn-gold-soft);
 }
 
+[data-theme="dark"] .wn-plan-card__media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wn-bg) 18%, transparent), color-mix(in srgb, var(--wn-surface) 42%, transparent));
+  pointer-events: none;
+}
+
+[data-theme="dark"] .wn-plan-card__media img {
+  filter: brightness(0.84) contrast(1.06) saturate(0.92);
+}
+
 [data-theme="dark"] .wn-plan-card__badge {
   background: var(--wn-surface);
   color: var(--wn-heading);

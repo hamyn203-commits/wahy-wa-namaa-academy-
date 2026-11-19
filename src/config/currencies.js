@@ -24,15 +24,21 @@ export const CURRENCY_LOCALE = {
 };
 
 export function convertPrice(amount, fromCurrency = 'USD', toCurrency = 'USD') {
-  const usd = amount / (FX_TO_USD[fromCurrency] || 1);
-  return Math.round(usd * (FX_TO_USD[toCurrency] || 1));
+  const numeric = Number(amount);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  const usd = numeric / (FX_TO_USD[fromCurrency] || 1);
+  const raw = usd * (FX_TO_USD[toCurrency] || 1);
+  if (raw < 1) return Math.max(0.01, Math.round(raw * 100) / 100);
+  return Math.round(raw);
 }
 
 export function formatPrice(amount, currency = 'USD', locale) {
   const loc = locale || CURRENCY_LOCALE[currency] || 'en-US';
+  const hasFraction = !Number.isInteger(amount) && amount > 0 && amount < 10;
   return new Intl.NumberFormat(loc, {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: hasFraction ? 2 : 0,
   }).format(amount);
 }

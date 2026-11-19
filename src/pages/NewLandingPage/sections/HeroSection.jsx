@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useI18n } from '../../../i18n';
 import { useMarket } from '../../../context/MarketProvider';
 import {
@@ -9,8 +8,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CirclePlay,
-  AudioLines,
-  Route,
   Sparkles,
   HeartHandshake,
   ShieldCheck,
@@ -26,7 +23,6 @@ export default function HeroSection() {
   const { locale, isRTL } = useI18n();
   const { displayPrice } = useMarket();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
-  const [activeLens, setActiveLens] = useState('recitation');
   const copy = pickLocale(HERO_COPY, locale, isRTL);
   const startingPrice = displayPrice(10, 'EGP');
   const ctaPrimaryLabel = locale === 'ar' ? 'ابدأ رحلتك الآن' : copy.ctaStart;
@@ -55,19 +51,6 @@ export default function HeroSection() {
       variant: 'women',
     },
   ];
-
-  const heroLenses = {
-    recitation: {
-      badge: copy.lensReciteBadge,
-      detail: copy.lensReciteDetail,
-    },
-    pathway: {
-      badge: copy.lensPathBadge,
-      detail: copy.lensPathDetail,
-    },
-  };
-
-  const activeLensData = heroLenses[activeLens] || heroLenses.recitation;
 
   return (
     <section className="wn-approved-hero">
@@ -159,39 +142,11 @@ export default function HeroSection() {
             <span>{copy.verseRef}</span>
           </aside>
 
-          <button
-            type="button"
-            onClick={() => setActiveLens('recitation')}
-            aria-pressed={activeLens === 'recitation'}
-            className={`wn-hero-live-card wn-hero-live-card--recitation wn-hero-live-card--interactive ${activeLens === 'recitation' ? 'is-focused' : ''}`}
-          >
-            <span className="wn-hero-live-card__icon" aria-hidden="true"><AudioLines size={16} /></span>
-            <div>
-              <strong>{copy.recitationCardTitle}</strong>
-              <div className="wn-mini-wave" aria-hidden="true" data-visual-mask>
-                <i /><i /><i /><i /><i /><i /><i />
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveLens('pathway')}
-            aria-pressed={activeLens === 'pathway'}
-            className={`wn-hero-live-card wn-hero-live-card--path wn-hero-live-card--interactive ${activeLens === 'pathway' ? 'is-focused' : ''}`}
-          >
-            <span className="wn-hero-live-card__icon" aria-hidden="true"><Route size={16} /></span>
-            <div>
-              <strong>{copy.pathCardTitle}</strong>
-              <small>{copy.pathCardSub}</small>
-            </div>
-          </button>
-
-          <div className="wn-hero-lens-bar" aria-live="polite">
+          <div className="wn-hero-lens-bar">
             <span className="wn-hero-lens-bar__dot" aria-hidden="true" />
             <div>
-              <strong>{activeLensData.badge}</strong>
-              <span>{activeLensData.detail}</span>
+              <strong>{copy.lensReciteBadge}</strong>
+              <span>{copy.lensReciteDetail}</span>
             </div>
           </div>
         </div>

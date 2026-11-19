@@ -312,7 +312,8 @@
 
 .wn-approved-verse-card {
   position: absolute;
-  inset-inline-end: clamp(.9rem, 3vw, 1.6rem);
+  left: clamp(.9rem, 3vw, 1.6rem);
+  right: auto;
   top: 50%;
   transform: translateY(-50%);
   width: min(13rem, 43%);
@@ -1923,11 +1924,9 @@
   transform: translateY(-50%);
   border-radius: 15rem 15rem 2rem 2rem;
   background:
-    linear-gradient(180deg, rgba(15,107,79,.98), rgba(7,53,40,.98)),
-    url('/images/hero-wahy-namaa.jpg') center / cover;
-  box-shadow:
-    -28px 32px 80px -54px rgba(7,53,40,.72),
-    inset 0 0 0 1px rgba(212,175,107,.16);
+    linear-gradient(180deg, var(--wn-emerald), var(--wn-emerald-deep));
+  opacity: .12;
+  pointer-events: none;
   z-index: -1;
 }
 
@@ -1938,18 +1937,18 @@
   height: 16rem;
   top: 12%;
   inset-inline-start: -8rem;
-  border: 1px solid rgba(212,175,107,.20);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 20%, transparent);
   transform: rotate(45deg);
+  pointer-events: none;
   z-index: -1;
 }
 
 .wn-approved-why-card {
   position: relative;
   overflow: hidden;
-  border-color: rgba(212,175,107,.24);
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.98), rgba(250,247,239,.94));
-  box-shadow: 0 20px 42px -36px rgba(7,53,40,.40);
+  border-color: color-mix(in srgb, var(--wn-gold) 24%, var(--wn-border));
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-sm);
   transition: transform .28s ease, box-shadow .28s ease, border-color .28s ease;
 }
 
@@ -4232,6 +4231,22 @@ html {
 [data-theme="dark"] .wn-approved-trust-bar {
   background: var(--wn-surface);
   border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-approved-program-card .wn-approved-program-card__visual,
+[data-theme="dark"] .wn-approved-program-card:nth-child(1) .wn-approved-program-card__visual,
+[data-theme="dark"] .wn-approved-program-card:nth-child(2) .wn-approved-program-card__visual,
+[data-theme="dark"] .wn-approved-program-card:nth-child(4) .wn-approved-program-card__visual {
+  background:
+    radial-gradient(circle at 26% 20%, color-mix(in srgb, var(--wn-gold) 18%, transparent), transparent 36%),
+    linear-gradient(140deg, var(--wn-surface-mint), var(--wn-surface-soft));
+  color: var(--wn-gold);
+}
+
+[data-theme="dark"] .wn-approved-program-card .wn-program-card-tag {
+  background: color-mix(in srgb, var(--wn-surface) 84%, transparent);
+  color: var(--wn-heading);
+  border-color: var(--wn-border-mint);
 }
 
 [data-theme="dark"] .wn-product-showcase__demo-label {
