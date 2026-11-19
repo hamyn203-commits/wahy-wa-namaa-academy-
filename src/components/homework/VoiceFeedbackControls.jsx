@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Headphones, Mic, RotateCcw, Square, Trash2 } from 'lucide-react';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
+import { useI18n } from '../../i18n';
 
 const MAX_FEEDBACK_SECONDS = 60;
 
@@ -62,6 +63,9 @@ export async function uploadTeacherFeedbackMultipart(taskId, prepared) {
 }
 
 export function TeacherVoiceFeedbackRecorder({ value, onChange, disabled = false }) {
+  const { t } = useI18n();
+  const vf = t?.student?.voiceFeedback || {};
+
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -149,54 +153,54 @@ export function TeacherVoiceFeedbackRecorder({ value, onChange, disabled = false
         setSeconds(secondsRef.current);
       }, 1000);
     } catch {
-      setError('يرجى السماح بالوصول إلى الميكروفون لتسجيل التوجيه الصوتي.');
+      setError(vf.micError || 'Please allow microphone access to record voice feedback.');
     }
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+    <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
-          <Mic size={14} className="text-emerald-700" />
-          تعليق صوتي للمراجعة (اختياري · حتى 60 ثانية)
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--wn-text-primary)]">
+          <Mic size={14} className="text-[var(--wn-link)]" aria-hidden="true" />
+          {vf.recorderLabel || 'Voice feedback note (optional · up to 60s)'}
         </span>
         {recording ? (
           <button
             type="button"
             onClick={stopRecording}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white"
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--wn-danger)] px-3.5 py-2 text-xs font-bold text-[var(--wn-text-inverse)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
           >
-            <Square size={12} />
-            إيقاف ({formatDuration(seconds)})
+            <Square size={12} aria-hidden="true" />
+            {vf.stopRecording || 'Stop'} ({formatDuration(seconds)})
           </button>
         ) : !value?.blob ? (
           <button
             type="button"
             disabled={disabled}
             onClick={startRecording}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-3.5 py-2 text-xs font-bold text-[var(--wn-link)] hover:bg-[var(--wn-emerald-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-50"
           >
-            <Mic size={13} />
-            تسجيل توجيه صوتي
+            <Mic size={13} aria-hidden="true" />
+            {vf.recordVoiceNote || 'Record voice note'}
           </button>
         ) : (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={startRecording}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="min-h-[44px] inline-flex items-center gap-1 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-3 py-2 text-xs font-semibold text-[var(--wn-text-primary)] hover:bg-[var(--wn-surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <RotateCcw size={12} />
-              إعادة
+              <RotateCcw size={12} aria-hidden="true" />
+              {vf.rerecord || 'Re-record'}
             </button>
             <button
               type="button"
               onClick={clearRecording}
-              aria-label="حذف التسجيل الصوتي"
-              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+              aria-label={vf.deleteAria || 'Delete voice recording'}
+              className="min-h-[44px] inline-flex items-center gap-1 rounded-lg border border-[var(--wn-danger)] bg-[var(--wn-surface)] px-3 py-2 text-xs font-semibold text-[var(--wn-text-danger)] hover:bg-[var(--wn-danger-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
             >
-              <Trash2 size={12} />
-              حذف
+              <Trash2 size={12} aria-hidden="true" />
+              {vf.deleteRecording || 'Delete'}
             </button>
           </div>
         )}
@@ -205,16 +209,18 @@ export function TeacherVoiceFeedbackRecorder({ value, onChange, disabled = false
       {value?.url ? (
         <audio src={value.url} controls preload="metadata" className="w-full h-9" />
       ) : null}
-      {error ? <p className="text-xs font-semibold text-rose-600">{error}</p> : null}
+      {error ? <p role="alert" className="text-xs font-semibold text-[var(--wn-text-danger)]">{error}</p> : null}
     </div>
   );
 }
 
-export function StudentVoiceFeedbackPlayer({ taskId, duration = 0, locale = 'ar' }) {
+export function StudentVoiceFeedbackPlayer({ taskId, duration = 0 }) {
+  const { t } = useI18n();
+  const vf = t?.student?.voiceFeedback || {};
+
   const [audioUrl, setAudioUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const isAr = locale === 'ar';
 
   useEffect(() => () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -232,7 +238,7 @@ export function StudentVoiceFeedbackPlayer({ taskId, duration = 0, locale = 'ar'
       const blob = await response.blob();
       setAudioUrl(URL.createObjectURL(blob));
     } catch (err) {
-      setError(err.message || (isAr ? 'تعذر تحميل التعليق الصوتي' : 'Could not load audio feedback'));
+      setError(err.message || vf.loadAudioError || 'Could not load audio feedback');
     } finally {
       setLoading(false);
     }
@@ -240,9 +246,9 @@ export function StudentVoiceFeedbackPlayer({ taskId, duration = 0, locale = 'ar'
 
   if (audioUrl) {
     return (
-      <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/70 p-2.5">
-        <span className="block text-[11px] font-bold text-emerald-900 mb-1">
-          {isAr ? 'توجيه صوتي من المعلم:' : 'Tutor voice feedback:'}
+      <div className="mt-2 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] p-2.5">
+        <span className="block text-[11px] font-bold text-[var(--wn-badge-emerald-text)] mb-1">
+          {vf.tutorVoiceFeedback || 'Tutor voice feedback:'}
         </span>
         <audio src={audioUrl} controls preload="metadata" className="w-full h-9" />
       </div>
@@ -255,18 +261,17 @@ export function StudentVoiceFeedbackPlayer({ taskId, duration = 0, locale = 'ar'
         type="button"
         onClick={loadAudio}
         disabled={loading}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+        className="min-h-[44px] inline-flex items-center gap-1.5 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] px-3.5 py-2 text-xs font-bold text-[var(--wn-badge-emerald-text)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-60"
       >
-        <Headphones size={14} />
+        <Headphones size={14} aria-hidden="true" />
         <span>
           {loading
-            ? (isAr ? 'جاري تحميل التوجيه الصوتي...' : 'Loading voice note...')
-            : (isAr
-                ? `استماع للتوجيه الصوتي من المعلم${duration ? ` (${formatDuration(duration)})` : ''}`
-                : `Listen to tutor voice feedback${duration ? ` (${formatDuration(duration)})` : ''}`)}
+            ? (vf.loadingVoiceNote || 'Loading voice note…')
+            : `${vf.listenFeedback || 'Listen to tutor voice feedback'}${duration ? ` (${formatDuration(duration)})` : ''}`}
         </span>
       </button>
-      {error ? <p className="mt-1 text-xs font-semibold text-rose-600">{error}</p> : null}
+      {error ? <p role="alert" className="mt-1 text-xs font-semibold text-[var(--wn-text-danger)]">{error}</p> : null}
     </div>
   );
 }
+
