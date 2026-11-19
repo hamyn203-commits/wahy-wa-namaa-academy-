@@ -379,12 +379,21 @@
     transition:
       background-color var(--wn-dur-fast) var(--wn-ease),
       border-color var(--wn-dur-fast) var(--wn-ease),
-      color var(--wn-dur-fast) var(--wn-ease);
+      color var(--wn-dur-fast) var(--wn-ease),
+      transform var(--wn-dur-fast) var(--wn-ease);
   }
-  .wn-modal__close:hover {
+  .wn-modal__close:hover:not(:disabled) {
     background: var(--wn-emerald-soft);
     border-color: var(--wn-border-mint);
     color: var(--wn-heading);
+  }
+  .wn-modal__close:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+  .wn-modal__close:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
   }
   .wn-modal__close:focus-visible {
     outline: none;

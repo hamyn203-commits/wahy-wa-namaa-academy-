@@ -43,6 +43,7 @@ export default function Modal({
   maxWidth = '560px',
   ariaLabel,
   ariaLabelledBy,
+  disableClose = false,
 }) {
   const { locale, t } = useI18n();
   const titleId = useId();
@@ -50,10 +51,15 @@ export default function Modal({
   const closeButtonRef = useRef(null);
   const previousFocusRef = useRef(null);
   const onCloseRef = useRef(onClose);
+  const disableCloseRef = useRef(disableClose);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    disableCloseRef.current = disableClose;
+  }, [disableClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -80,7 +86,9 @@ export default function Modal({
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onCloseRef.current?.();
+        if (!disableCloseRef.current) {
+          onCloseRef.current?.();
+        }
         return;
       }
       if (e.key !== 'Tab') return;
@@ -130,7 +138,7 @@ export default function Modal({
   const resolvedAriaLabel = ariaLabel || (!resolvedLabelledBy ? fallbackDialogLabel : undefined);
 
   return (
-    <div className="wn-modal-overlay" onClick={onClose}>
+    <div className="wn-modal-overlay" onClick={disableClose ? undefined : onClose}>
       <div
         ref={dialogRef}
         className="wn-modal"
@@ -165,7 +173,8 @@ export default function Modal({
             ref={closeButtonRef}
             type="button"
             className="wn-modal__close min-h-[44px] min-w-[44px]"
-            onClick={onClose}
+            onClick={disableClose ? undefined : onClose}
+            disabled={disableClose}
             aria-label={closeLabel}
           >
             <X size={20} aria-hidden="true" />
