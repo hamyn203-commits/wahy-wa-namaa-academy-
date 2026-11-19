@@ -1475,6 +1475,10 @@ router.post('/admin/:id/place', protect, authorize('admin'), async (req, res) =>
 
 router.get('/:id', protect, authorize('student', 'guardian', 'admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الاشتراك غير صالح', code: 'INVALID_SUBSCRIPTION_ID' });
+    }
+
     const subscription = await StudentSubscription.findById(req.params.id)
       .populate({
         path: 'preferredTeacher',

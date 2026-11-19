@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle, Clock3, XCircle, RefreshCw } from 'lucide-react';
+import { CheckCircle, Clock3, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import LocalizedLink from '../../components/LocalizedLink';
+import SEOHead from '../../components/SEOHead';
 import { useI18n } from '../../i18n';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
@@ -11,25 +12,35 @@ import '../../styles/public-experience.css';
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'refunded']);
 
 export default function PaymentReturn() {
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, dir, t } = useI18n();
+  const pr = t.payments.return;
   const [params] = useSearchParams();
   const paymentId = params.get('payment') || '';
   const courseSlug = params.get('course') || '';
   const [payment, setPayment] = useState(null);
-  const [error, setError] = useState('');
-  const [polling, setPolling] = useState(true);
+  const [errorType, setErrorType] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [polling, setPolling] = useState(Boolean(paymentId));
+  const [timedOut, setTimedOut] = useState(false);
+  const [retrySeq, setRetrySeq] = useState(0);
 
   useEffect(() => {
     if (!paymentId) {
-      setError(isAr ? 'مرجع الدفع غير موجود.' : 'Payment reference is missing.');
+      setErrorType('missing');
+      setErrorMessage('');
       setPolling(false);
+      setTimedOut(false);
       return undefined;
     }
 
     let cancelled = false;
     let attempts = 0;
     let timer;
+
+    setErrorType('');
+    setErrorMessage('');
+    setTimedOut(false);
+    setPolling(true);
 
     const load = async () => {
       attempts += 1;
@@ -39,18 +50,28 @@ export default function PaymentReturn() {
 
         const next = data?.payment || null;
         setPayment(next);
-        setError('');
+        setErrorType('');
+        setErrorMessage('');
 
-        if (TERMINAL.has(next?.status) || attempts >= 15) {
+        if (TERMINAL.has(next?.status)) {
           setPolling(false);
+          setTimedOut(false);
+          return;
+        }
+
+        if (attempts >= 15) {
+          setPolling(false);
+          setTimedOut(true);
           return;
         }
 
         timer = window.setTimeout(load, 2000);
       } catch (err) {
         if (cancelled) return;
-        setError(err.message || (isAr ? 'تعذر قراءة حالة الدفع.' : 'Unable to read payment status.'));
+        setErrorType('read');
+        setErrorMessage(err?.message || '');
         setPolling(false);
+        setTimedOut(false);
       }
     };
 
@@ -60,98 +81,132 @@ export default function PaymentReturn() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [paymentId, isAr]);
+  }, [paymentId, retrySeq]);
+
+  const resolvedError = errorType === 'missing'
+    ? pr.missingRef
+    : errorType === 'read'
+      ? (errorMessage || pr.readError)
+      : '';
 
   const status = payment?.status || (polling ? 'pending' : '');
   const view = useMemo(() => {
-    if (error) {
+    if (resolvedError) {
       return {
         Icon: XCircle,
-        title: isAr ? 'تعذر التحقق من الدفع' : 'Unable to verify payment',
-        text: error,
-        tone: 'text-rose-600',
+        title: pr.titles.error,
+        text: resolvedError,
+        tone: 'text-[var(--wn-text-danger)]',
       };
     }
 
     if (status === 'succeeded') {
       return {
         Icon: CheckCircle,
-        title: isAr ? 'تم تأكيد الدفع' : 'Payment confirmed',
-        text: isAr
-          ? 'تم تأكيد العملية من خادم الدفع، وأصبح التسجيل في الدورة متاحًا.'
-          : 'The payment was confirmed by the server and your course enrollment is now active.',
-        tone: 'text-emerald-600',
+        title: pr.titles.succeeded,
+        text: pr.messages.succeeded,
+        tone: 'text-[var(--wn-emerald)]',
       };
     }
 
     if (status === 'failed' || status === 'cancelled') {
       return {
         Icon: XCircle,
-        title: isAr ? 'لم تكتمل عملية الدفع' : 'Payment was not completed',
-        text: isAr
-          ? 'لم يتم تفعيل التسجيل. يمكنك المحاولة مرة أخرى من صفحة الدورة.'
-          : 'Enrollment was not activated. You can try again from the course page.',
-        tone: 'text-rose-600',
+        title: pr.titles.failed,
+        text: pr.messages.failed,
+        tone: 'text-[var(--wn-text-danger)]',
       };
     }
 
     if (status === 'refunded') {
       return {
         Icon: RefreshCw,
-        title: isAr ? 'تم رد المبلغ' : 'Payment refunded',
-        text: isAr
-          ? 'تم تسجيل رد المبلغ وإيقاف التسجيل المرتبط بهذه العملية.'
-          : 'The refund was recorded and the related enrollment has been disabled.',
-        tone: 'text-amber-600',
+        title: pr.titles.refunded,
+        text: pr.messages.refunded,
+        tone: 'text-[var(--wn-status-warn-text)]',
       };
     }
 
     return {
       Icon: Clock3,
-      title: isAr ? 'جارٍ التحقق من الدفع' : 'Verifying payment',
-      text: isAr
-        ? 'ننتظر تأكيد Paymob الآمن من الخادم. لا تغلق الصفحة إذا كنت قد أتممت الدفع للتو.'
-        : 'We are waiting for the secure server callback from Paymob. Keep this page open if you just paid.',
+      title: pr.titles.verifying,
+      text: pr.messages.verifying,
       tone: 'text-[var(--wn-emerald)]',
     };
-  }, [error, status, isAr]);
+  }, [resolvedError, status, pr]);
 
   const Icon = view.Icon;
+  const canRetry = Boolean(paymentId) && (errorType === 'read' || (timedOut && !TERMINAL.has(status)));
 
   return (
     <>
+      <SEOHead page={{ title: pr.seoTitle, description: pr.seoDesc, noindex: true, canonical: false }} />
       <GlobalHeader />
-      <main className="wn-public-shell min-h-[70vh]">
+      <main className="wn-public-shell min-h-[70vh]" dir={dir}>
         <section className="wn-utility-wrap">
           <div className="wn-utility-card max-w-xl mx-auto text-center">
-            <Icon size={52} className={'mx-auto ' + view.tone + (polling ? ' animate-pulse' : '')} />
-            <h1 className="mt-4 font-[var(--wn-font-display)] text-2xl text-[var(--wn-emerald-deep)]">
-              {view.title}
-            </h1>
-            <p className="mt-3 text-sm leading-7 text-[var(--wn-text-secondary)]">{view.text}</p>
+            <div role="status" aria-live="polite">
+              <Icon
+                size={52}
+                className={'mx-auto ' + view.tone + (polling ? ' animate-pulse' : '')}
+                aria-hidden="true"
+              />
+              <h1 className="mt-4 font-[var(--wn-font-display)] text-2xl text-[var(--wn-heading)]">
+                {view.title}
+              </h1>
+              <p className="mt-3 text-sm leading-7 text-[var(--wn-text-secondary)]">{view.text}</p>
+            </div>
 
             <div className="mt-6 grid gap-2">
+              {canRetry ? (
+                <button
+                  type="button"
+                  disabled={polling}
+                  onClick={() => setRetrySeq((n) => n + 1)}
+                  className="wn-btn wn-btn--primary wn-btn--block min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {polling ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+                      <span>{pr.checkingNow}</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={18} aria-hidden="true" />
+                      <span>{pr.retry}</span>
+                    </>
+                  )}
+                </button>
+              ) : null}
               {status === 'succeeded' && courseSlug ? (
-                <LocalizedLink to={'/courses/' + courseSlug} locale={locale} className="wn-btn wn-btn--primary wn-btn--block">
-                  {isAr ? 'الذهاب إلى الدورة' : 'Go to course'}
+                <LocalizedLink
+                  to={'/courses/' + courseSlug}
+                  locale={locale}
+                  className="wn-btn wn-btn--primary wn-btn--block min-h-[44px] inline-flex items-center justify-center"
+                >
+                  {pr.actions.goToCourse}
                 </LocalizedLink>
               ) : null}
               {courseSlug ? (
-                <LocalizedLink to={'/courses/' + courseSlug} locale={locale} className="wn-btn wn-btn--secondary wn-btn--block">
-                  {isAr ? 'العودة إلى صفحة الدورة' : 'Back to course'}
+                <LocalizedLink
+                  to={'/courses/' + courseSlug}
+                  locale={locale}
+                  className="wn-btn wn-btn--secondary wn-btn--block min-h-[44px] inline-flex items-center justify-center"
+                >
+                  {pr.actions.backToCourse}
                 </LocalizedLink>
               ) : (
-                <LocalizedLink to="/courses" locale={locale} className="wn-btn wn-btn--secondary wn-btn--block">
-                  {isAr ? 'عرض الدورات' : 'Browse courses'}
+                <LocalizedLink
+                  to="/courses"
+                  locale={locale}
+                  className="wn-btn wn-btn--secondary wn-btn--block min-h-[44px] inline-flex items-center justify-center"
+                >
+                  {pr.actions.browseCourses}
                 </LocalizedLink>
               )}
             </div>
 
-            <p className="mt-5 text-[11px] text-[var(--wn-text-tertiary)]">
-              {isAr
-                ? 'حالة التسجيل تعتمد على تأكيد الخادم الموقّع، وليس على بيانات صفحة الرجوع.'
-                : 'Enrollment depends on the signed server callback, not on redirect-page parameters.'}
-            </p>
+            <p className="mt-5 text-[11px] text-[var(--wn-text-tertiary)]">{pr.callbackNote}</p>
           </div>
         </section>
       </main>

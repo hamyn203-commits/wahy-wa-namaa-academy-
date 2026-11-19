@@ -1,27 +1,44 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle, Copy, CreditCard, GraduationCap, Upload } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle,
+  Copy,
+  CreditCard,
+  GraduationCap,
+  Loader2,
+  RefreshCw,
+  Upload,
+} from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import LocalizedLink from '../../components/LocalizedLink';
+import SEOHead from '../../components/SEOHead';
+import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
+import { resolveIntlLocale } from '../../lib/locale';
 
 function textValue(value, locale) {
   if (typeof value === 'string') return value;
   return value?.[locale] || value?.ar || value?.en || '';
 }
 
-function teacherName(teacher) {
-  return teacher?.personalInfo?.fullName || teacher?.user?.name || 'معلم';
+function teacherName(teacher, fallback) {
+  return teacher?.personalInfo?.fullName || teacher?.user?.name || fallback;
 }
 
 export default function ManualPayment() {
-  const { locale } = useI18n();
-  const isAr = locale === 'ar';
+  const { locale, dir, t } = useI18n();
+  const mp = t.payments.manual;
+  const mpRef = useRef(mp);
   const toast = useToast();
+
+  useEffect(() => {
+    mpRef.current = mp;
+  }, [mp]);
   const [params] = useSearchParams();
   const slug = params.get('course') || '';
   const subscriptionId = params.get('subscription') || '';
@@ -39,12 +56,24 @@ export default function ManualPayment() {
   const [submitting, setSubmitting] = useState(false);
   const [paymentId, setPaymentId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadSeq, setReloadSeq] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const teacherSelectId = useId();
+  const teacherErrorId = useId();
+  const methodSelectId = useId();
+  const methodErrorId = useId();
+  const transferRefId = useId();
+  const proofInputId = useId();
+  const proofErrorId = useId();
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
+      setLoadError(null);
       try {
         const paymentConfig = await api.get('/api/payments/config');
         if (cancelled) return;
@@ -89,14 +118,18 @@ export default function ManualPayment() {
         }
 
         if (!slug) {
-          throw new Error(isAr ? 'بيانات الدفع غير مكتملة' : 'Payment details are incomplete');
+          setLoadError({ kind: 'incomplete', message: '' });
+          toast.error(mpRef.current.incompleteError);
+          return;
         }
 
         const courseData = await api.get('/api/courses/' + encodeURIComponent(slug));
         if (!cancelled) setCourse(courseData);
       } catch (error) {
         if (!cancelled) {
-          toast.error(error.message || (isAr ? 'تعذر تحميل بيانات الدفع' : 'Unable to load payment details'));
+          const msg = error?.message || '';
+          setLoadError({ kind: 'failed', message: msg });
+          toast.error(msg || mpRef.current.loadingError);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -107,7 +140,7 @@ export default function ManualPayment() {
     return () => {
       cancelled = true;
     };
-  }, [slug, subscriptionId, isSubscription, toast, isAr]);
+  }, [slug, subscriptionId, isSubscription, reloadSeq, toast]);
 
   const selectedMethod = useMemo(
     () => config?.methods?.find((item) => item.id === method),
@@ -123,39 +156,59 @@ export default function ManualPayment() {
     ? Number(subscription?.totalAmountMinor || 0) / 100
     : Number(course?.price || 0);
 
+  const intlLocale = resolveIntlLocale(locale);
+  const formattedAmount = useMemo(
+    () => new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 2 }).format(amountDue),
+    [intlLocale, amountDue]
+  );
+
   const currency = isSubscription
     ? (subscription?.currency || 'EGP')
     : (course?.currency || 'EGP');
 
   const paymentTitle = isSubscription
-    ? (isAr
-      ? subscription?.pricingSnapshot?.nameAr || 'اشتراك الأكاديمية'
-      : subscription?.pricingSnapshot?.nameEn || 'Academy subscription')
+    ? (locale === 'ar'
+      ? subscription?.pricingSnapshot?.nameAr || mp.subscriptionDefault
+      : subscription?.pricingSnapshot?.nameEn || subscription?.pricingSnapshot?.nameAr || mp.subscriptionDefault)
     : textValue(course?.title, locale) || slug;
 
   const sectionLabel = subscription?.section === 'ladies'
-    ? (isAr ? 'قسم السيدات' : 'Women’s section')
-    : (isAr ? 'قسم الرجال والأطفال' : 'Men & children');
+    ? mp.sectionLadies
+    : mp.sectionMenChildren;
+
+  const resolvedLoadError = loadError
+    ? (loadError.message || (loadError.kind === 'incomplete' ? mp.incompleteError : mp.loadingError))
+    : '';
 
   const copyDestination = async () => {
     if (!selectedMethod?.destination) return;
-    await navigator.clipboard.writeText(selectedMethod.destination);
-    toast.success(isAr ? 'تم النسخ' : 'Copied');
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(selectedMethod.destination);
+      toast.success(mp.copied);
+    } catch {
+      toast.error(mp.copyFailed);
+    }
   };
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submitting) return;
 
-    if (!proof) {
-      return toast.error(isAr ? 'ارفع إثبات التحويل أولًا' : 'Upload the transfer proof first');
-    }
-    if (!method) {
-      return toast.error(isAr ? 'اختر طريقة التحويل' : 'Select a transfer method');
-    }
-    if (isSubscription && !preferredTeacherId) {
-      return toast.error(isAr ? 'اختر الشيخ أو المعلمة أولًا' : 'Choose your tutor first');
+    const nextErrors = {};
+    if (!proof) nextErrors.proof = mp.errors.noProof;
+    if (!method) nextErrors.method = mp.errors.noMethod;
+    if (isSubscription && !preferredTeacherId) nextErrors.preferredTeacherId = mp.errors.noTutor;
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      toast.error(nextErrors.proof || nextErrors.method || nextErrors.preferredTeacherId);
+      return;
     }
 
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const storageFile = await uploadFileDirect(proof, 'payment-proof');
@@ -184,12 +237,12 @@ export default function ManualPayment() {
           );
 
       setPaymentId(result.paymentId);
-      toast.success(isAr ? 'تم إرسال إثبات التحويل للمراجعة' : 'Transfer proof submitted for review');
+      toast.success(mp.success.submitted);
     } catch (error) {
       if (error.code === 'PAYMENT_REVIEW_PENDING' && error.data?.paymentId) {
         setPaymentId(error.data.paymentId);
       }
-      toast.error(error.message || (isAr ? 'تعذر إرسال إثبات التحويل' : 'Unable to submit transfer proof'));
+      toast.error(error.message || mp.errors.submitFailed);
     } finally {
       setSubmitting(false);
     }
@@ -198,43 +251,42 @@ export default function ManualPayment() {
   if (paymentId) {
     return (
       <>
+        <SEOHead page={{ title: mp.seoTitle, description: mp.seoDesc, noindex: true, canonical: false }} />
         <GlobalHeader />
-        <main className="wn-detail-shell min-h-[70vh] grid place-items-center px-4">
+        <main className="wn-detail-shell min-h-[70vh] grid place-items-center px-4" dir={dir}>
           <div className="wn-detail-card max-w-2xl w-full p-8 text-center">
-            <CheckCircle size={52} className="mx-auto text-emerald-600 mb-4" />
-            <h1 className="text-2xl font-bold mb-3">
-              {isAr ? 'التحويل قيد مراجعة الإدارة' : 'Transfer under admin review'}
+            <CheckCircle size={52} className="mx-auto text-[var(--wn-emerald)] mb-4" aria-hidden="true" />
+            <h1 className="text-2xl font-bold text-[var(--wn-heading)] mb-3">
+              {mp.success.reviewTitle}
             </h1>
 
             {isSubscription ? (
               <>
-                <p className="text-gray-600 mb-3">
-                  {isAr
-                    ? (subscription?.renewalOf
-                        ? 'بعد اعتماد التحويل، التجديد سيبقى جاهزًا ويبدأ تلقائيًا عند انتهاء رصيد الباقة الحالية مع نفس الجروب والمعلم.'
-                        : 'بعد تأكيد وصول المبلغ، سيتحول طلبك إلى مرحلة التسكين. الإدارة ستضعك في مجموعة مع الشيخ أو المعلمة التي اخترتها.')
-                    : (subscription?.renewalOf
-                        ? 'After approval, the renewal stays ready and activates automatically when your current package ends, with the same group and tutor.'
-                        : 'After the funds are verified, your request moves to placement. Administration will place you in a group with your selected tutor.')}
+                <p className="text-[var(--wn-text-secondary)] mb-3">
+                  {subscription?.renewalOf ? mp.success.renewMsg : mp.success.placementMsg}
                 </p>
                 {selectedTeacher ? (
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4 mb-4">
-                    <p className="text-xs text-gray-500">{isAr ? 'اختيارك' : 'Your preference'}</p>
-                    <strong className="text-emerald-800">{teacherName(selectedTeacher)}</strong>
+                  <div className="rounded-xl bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] p-4 mb-4">
+                    <p className="text-xs text-[var(--wn-text-secondary)]">{mp.success.preferenceLabel}</p>
+                    <strong className="text-[var(--wn-emerald-dark)]">
+                      {teacherName(selectedTeacher, mp.teacherFallback)}
+                    </strong>
                   </div>
                 ) : null}
               </>
             ) : (
-              <p className="text-gray-600 mb-3">
-                {isAr
-                  ? 'لن يتم تفعيل الدورة إلا بعد أن تتأكد الإدارة من وصول المبلغ فعليًا.'
-                  : 'The course will be activated only after administration verifies that the funds were received.'}
-              </p>
+              <p className="text-[var(--wn-text-secondary)] mb-3">{mp.success.courseMsg}</p>
             )}
 
-            <p className="text-xs text-gray-400 mb-6">Payment ID: {paymentId}</p>
-            <LocalizedLink to={studentIdParam ? '/guardian/dashboard' : '/student/dashboard'} locale={locale} className="wn-btn wn-btn--primary">
-              {studentIdParam ? (isAr ? 'العودة إلى لوحة ولي الأمر' : 'Back to guardian dashboard') : (isAr ? 'العودة إلى لوحة الطالب' : 'Back to student dashboard')}
+            <p className="text-xs text-[var(--wn-text-tertiary)] mb-6">
+              {mp.success.paymentIdLabel.replace('{id}', paymentId)}
+            </p>
+            <LocalizedLink
+              to={studentIdParam ? '/guardian/dashboard' : '/student/dashboard'}
+              locale={locale}
+              className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center justify-center"
+            >
+              {studentIdParam ? mp.success.backGuardian : mp.success.backStudent}
             </LocalizedLink>
           </div>
         </main>
@@ -245,163 +297,238 @@ export default function ManualPayment() {
 
   return (
     <>
+      <SEOHead page={{ title: mp.seoTitle, description: mp.seoDesc, noindex: true, canonical: false }} />
       <GlobalHeader />
-      <main className="wn-detail-shell">
+      <main className="wn-detail-shell" dir={dir}>
         <div className="page-container py-10 max-w-3xl">
           <div className="wn-detail-card p-6 md:p-8">
             <div className="flex items-center gap-3 mb-5">
-              <CreditCard className="text-emerald-700" />
+              <CreditCard className="text-[var(--wn-emerald)] shrink-0" aria-hidden="true" />
               <div>
-                <h1 className="text-2xl font-bold">
-                  {isAr ? 'إتمام الاشتراك والتحويل' : 'Complete subscription payment'}
-                </h1>
-                <p className="text-sm text-gray-500">{paymentTitle}</p>
+                <h1 className="text-2xl font-bold text-[var(--wn-heading)]">{mp.title}</h1>
+                <p className="text-sm text-[var(--wn-text-secondary)]">{paymentTitle}</p>
               </div>
             </div>
 
             {loading ? (
-              <div className="flex justify-center py-14"><div className="spinner spinner-lg" /></div>
+              <div className="space-y-4 py-4" role="status" aria-live="polite" aria-label={mp.title}>
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-28 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-xl" />
+              </div>
+            ) : loadError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] p-5 text-sm text-[var(--wn-status-danger-text)] space-y-4"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle size={20} className="shrink-0 mt-0.5" aria-hidden="true" />
+                  <p className="font-medium leading-6">{resolvedLoadError}</p>
+                </div>
+                <button
+                  id="retry"
+                  type="button"
+                  onClick={() => setReloadSeq((n) => n + 1)}
+                  className="wn-btn wn-btn--secondary min-h-[44px] inline-flex items-center gap-2"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                  <span>{mp.retry}</span>
+                </button>
+              </div>
             ) : !config?.configured ? (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-                {isAr ? 'طرق التحويل لم يتم تفعيلها بعد.' : 'Transfer methods are not configured yet.'}
+              <div className="rounded-xl bg-[var(--wn-status-warn-bg)] border border-[var(--wn-status-warn-border)] p-4 text-sm text-[var(--wn-status-warn-text)]">
+                {mp.notConfigured}
               </div>
             ) : (
-              <form onSubmit={submit} className="space-y-5">
-                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
-                  <p className="text-sm text-gray-600">{isAr ? 'المبلغ المطلوب' : 'Amount due'}</p>
-                  <p className="text-2xl font-bold text-emerald-800">
-                    {amountDue} {currency}
+              <form onSubmit={submit} noValidate className="space-y-5">
+                <div className="rounded-xl bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] p-4">
+                  <p className="text-sm text-[var(--wn-text-secondary)]">{mp.amountDue}</p>
+                  <p className="text-2xl font-bold text-[var(--wn-emerald-dark)]">
+                    {formattedAmount} {currency}
                   </p>
                   {isSubscription ? (
-                    <div className="mt-2 text-xs text-gray-600 space-y-1">
-                      <p>{isAr ? 'القسم: ' : 'Section: '}<strong>{sectionLabel}</strong></p>
+                    <div className="mt-2 text-xs text-[var(--wn-text-secondary)] space-y-1">
+                      <p>{mp.sectionLabel}: <strong>{sectionLabel}</strong></p>
                       <p>
-                        {isAr ? 'عدد الحصص: ' : 'Sessions: '}
+                        {mp.sessionsCount}:{' '}
                         <strong>{subscription?.sessionCount || '—'}</strong>
                       </p>
                     </div>
                   ) : null}
                   {config.recipientName ? (
-                    <p className="text-xs text-gray-500 mt-2">
-                      {isAr ? 'اسم المستلم: ' : 'Recipient: '}{config.recipientName}
+                    <p className="text-xs text-[var(--wn-text-secondary)] mt-2">
+                      {mp.recipient}: {config.recipientName}
                     </p>
                   ) : null}
                 </div>
 
                 {isSubscription ? (
-                  <label className="block">
-                    <span className="text-sm font-semibold flex items-center gap-2">
-                      <GraduationCap size={17} className="text-emerald-700" />
-                      {subscription?.renewalOf
-                        ? (isAr ? 'التجديد مع نفس المعلم' : 'Renew with the same tutor')
-                        : (isAr ? 'عايز تدرس مع مين؟' : 'Who would you like to study with?')}
-                    </span>
-                    <select
-                      required
-                      aria-label={isAr ? 'اختيار الشيخ أو المعلمة' : 'Choose tutor'}
-                      value={preferredTeacherId}
-                      onChange={(event) => setPreferredTeacherId(event.target.value)}
-                      disabled={Boolean(subscription?.renewalOf)}
-                      className="mt-2 w-full border rounded-xl px-3 py-3 disabled:bg-slate-100 disabled:text-slate-600"
+                  <div>
+                    <label
+                      htmlFor={teacherSelectId}
+                      className="text-sm font-semibold text-[var(--wn-text-primary)] flex items-center gap-2"
                     >
-                      <option value="">{isAr ? 'اختر الشيخ أو المعلمة' : 'Choose a tutor'}</option>
+                      <GraduationCap size={17} className="text-[var(--wn-emerald)] shrink-0" aria-hidden="true" />
+                      <span>
+                        {subscription?.renewalOf ? mp.renewSameTutor : mp.tutorQuestion}
+                      </span>
+                    </label>
+                    <select
+                      id={teacherSelectId}
+                      required
+                      aria-label={mp.chooseTutorAria}
+                      aria-invalid={Boolean(fieldErrors.preferredTeacherId)}
+                      aria-describedby={fieldErrors.preferredTeacherId ? teacherErrorId : undefined}
+                      value={preferredTeacherId}
+                      onChange={(event) => {
+                        setPreferredTeacherId(event.target.value);
+                        if (fieldErrors.preferredTeacherId) {
+                          setFieldErrors((prev) => ({ ...prev, preferredTeacherId: '' }));
+                        }
+                      }}
+                      disabled={Boolean(subscription?.renewalOf)}
+                      className="mt-2 w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-xl px-3 py-3 disabled:bg-[var(--wn-surface-sunken)] disabled:text-[var(--wn-text-tertiary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    >
+                      <option value="">{mp.chooseTutorPlaceholder}</option>
                       {teachers.map((teacher) => (
                         <option key={teacher._id} value={teacher._id}>
-                          {teacherName(teacher)}
-                          {teacher.rating?.average ? ` — ★ ${Number(teacher.rating.average).toFixed(1)}` : ''}
+                          {teacherName(teacher, mp.teacherFallback)}
+                          {teacher.rating?.average
+                            ? ` — ${new Intl.NumberFormat(intlLocale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(teacher.rating.average))}/5`
+                            : ''}
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-2">
+                    {fieldErrors.preferredTeacherId ? (
+                      <p id={teacherErrorId} role="alert" className="mt-1.5 text-xs font-medium text-[var(--wn-text-danger)]">
+                        {fieldErrors.preferredTeacherId}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-[var(--wn-text-secondary)] mt-2">
                       {subscription?.renewalOf
-                        ? (isAr
-                            ? 'هذا تجديد مباشر لنفس الجروب والمعلم، لذلك لا تحتاج إلى تسكين جديد.'
-                            : 'This is a direct renewal for the same group and tutor, so no new placement is needed.')
+                        ? mp.renewHint
                         : subscription?.section === 'ladies'
-                          ? (isAr ? 'قسم السيدات يعرض المعلمات المعتمدات فقط.' : 'The women’s section shows approved female tutors only.')
-                          : (isAr ? 'الإدارة ستحاول تسكينك مع اختيارك بعد اعتماد التحويل.' : 'Administration will place you with your preferred tutor after payment approval.')}
+                          ? mp.ladiesHint
+                          : mp.defaultHint}
                     </p>
-                  </label>
+                  </div>
                 ) : null}
 
-                <label className="block">
-                  <span className="text-sm font-semibold">{isAr ? 'طريقة التحويل' : 'Transfer method'}</span>
+                <div>
+                  <label htmlFor={methodSelectId} className="block text-sm font-semibold text-[var(--wn-text-primary)]">
+                    {mp.transferMethod}
+                  </label>
                   <select
+                    id={methodSelectId}
+                    aria-invalid={Boolean(fieldErrors.method)}
+                    aria-describedby={fieldErrors.method ? methodErrorId : undefined}
                     value={method}
-                    onChange={(event) => setMethod(event.target.value)}
-                    className="mt-2 w-full border rounded-xl px-3 py-3"
+                    onChange={(event) => {
+                      setMethod(event.target.value);
+                      if (fieldErrors.method) {
+                        setFieldErrors((prev) => ({ ...prev, method: '' }));
+                      }
+                    }}
+                    className="mt-2 w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-xl px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
                   >
                     {config.methods.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {isAr && item.id === 'mobile_wallet' ? 'محفظة إلكترونية' : item.label}
+                        {item.id === 'mobile_wallet' ? mp.mobileWalletLabel : item.label}
                       </option>
                     ))}
                   </select>
-                </label>
+                  {fieldErrors.method ? (
+                    <p id={methodErrorId} role="alert" className="mt-1.5 text-xs font-medium text-[var(--wn-text-danger)]">
+                      {fieldErrors.method}
+                    </p>
+                  ) : null}
+                </div>
 
                 {selectedMethod ? (
-                  <div className="rounded-xl border p-4">
-                    <p className="text-xs text-gray-500 mb-1">{isAr ? 'حوّل إلى' : 'Transfer to'}</p>
+                  <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-4">
+                    <p className="text-xs text-[var(--wn-text-secondary)] mb-1">{mp.transferTo}</p>
                     <div className="flex items-center justify-between gap-3">
-                      <strong className="break-all">{selectedMethod.destination}</strong>
+                      <strong className="break-all text-[var(--wn-text-primary)]">
+                        {selectedMethod.destination}
+                      </strong>
                       <button
                         type="button"
                         onClick={copyDestination}
-                        className="wn-btn wn-btn--secondary !px-3 !py-2"
-                        aria-label={isAr ? 'نسخ رقم التحويل' : 'Copy transfer destination'}
+                        className="wn-btn wn-btn--secondary !px-3 !py-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center shrink-0"
+                        aria-label={mp.copyAria}
                       >
-                        <Copy size={15} />
+                        <Copy size={15} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
                 ) : null}
 
-                <label className="block">
-                  <span className="text-sm font-semibold">
-                    {isAr ? 'رقم/مرجع العملية (إن وجد)' : 'Transfer reference (if available)'}
-                  </span>
+                <div>
+                  <label htmlFor={transferRefId} className="block text-sm font-semibold text-[var(--wn-text-primary)]">
+                    {mp.transferRefLabel}
+                  </label>
                   <input
+                    id={transferRefId}
                     value={transferReference}
                     onChange={(event) => setTransferReference(event.target.value)}
+                    placeholder={mp.transferRefPlaceholder}
                     maxLength={160}
-                    className="mt-2 w-full border rounded-xl px-3 py-3"
+                    className="mt-2 w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-xl px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
                   />
-                </label>
+                </div>
 
-                <label className="block">
-                  <span className="text-sm font-semibold">
-                    {isAr ? 'صورة أو PDF لإثبات التحويل' : 'Transfer proof image or PDF'}
-                  </span>
-                  <div className="mt-2 border-2 border-dashed rounded-xl p-5 text-center">
-                    <Upload size={26} className="mx-auto mb-2 text-emerald-700" />
+                <div>
+                  <label htmlFor={proofInputId} className="block text-sm font-semibold text-[var(--wn-text-primary)]">
+                    {mp.proofLabel}
+                  </label>
+                  <div className="mt-2 border-2 border-dashed border-[var(--wn-border-strong)] bg-[var(--wn-surface-soft)] rounded-xl p-5 text-center overflow-hidden">
+                    <Upload size={26} className="mx-auto mb-2 text-[var(--wn-emerald)]" aria-hidden="true" />
+                    <p className="text-xs text-[var(--wn-text-secondary)] mb-3">{mp.proofSelectHint}</p>
                     <input
+                      id={proofInputId}
                       required
                       type="file"
                       accept="image/jpeg,image/png,application/pdf"
-                      onChange={(event) => setProof(event.target.files?.[0] || null)}
+                      aria-invalid={Boolean(fieldErrors.proof)}
+                      aria-describedby={fieldErrors.proof ? proofErrorId : undefined}
+                      onChange={(event) => {
+                        setProof(event.target.files?.[0] || null);
+                        if (fieldErrors.proof) {
+                          setFieldErrors((prev) => ({ ...prev, proof: '' }));
+                        }
+                      }}
+                      className="block w-full max-w-full overflow-hidden text-ellipsis text-sm text-[var(--wn-text-secondary)] file:me-3 file:min-h-[44px] file:cursor-pointer file:rounded-lg file:border file:border-[var(--wn-border)] file:bg-[var(--wn-surface)] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[var(--wn-text-primary)]"
                     />
-                    {proof ? <p className="text-xs text-emerald-700 mt-2">{proof.name}</p> : null}
+                    {proof ? (
+                      <p className="mt-2 truncate text-xs font-medium text-[var(--wn-emerald)]">
+                        {proof.name}
+                      </p>
+                    ) : null}
                   </div>
-                </label>
+                  {fieldErrors.proof ? (
+                    <p id={proofErrorId} role="alert" className="mt-1.5 text-xs font-medium text-[var(--wn-text-danger)]">
+                      {fieldErrors.proof}
+                    </p>
+                  ) : null}
+                </div>
 
-                <div className="rounded-xl bg-slate-50 border p-4 text-xs text-gray-600 leading-6">
-                  {isSubscription
-                    ? (isAr
-                      ? 'رفع الإيصال لا يفعّل الاشتراك تلقائيًا. الإدارة ستراجع وصول المبلغ أولًا، ثم تنشئ أو تختار المجموعة المناسبة وتسكّنك مع الشيخ أو المعلمة التي اخترتها.'
-                      : 'Uploading the receipt does not activate the subscription automatically. Administration verifies the payment first, then creates or selects a suitable group with your chosen tutor.')
-                    : (isAr
-                      ? 'رفع الإيصال لا يعني قبول الدفع تلقائيًا. الإدارة ستتحقق من وصول المبلغ ثم تفعّل الدورة.'
-                      : 'Uploading a receipt does not automatically approve payment. Administration verifies receipt before activation.')}
+                <div className="rounded-xl bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] p-4 text-xs text-[var(--wn-text-secondary)] leading-6">
+                  {isSubscription ? mp.disclaimerSub : mp.disclaimerCourse}
                 </div>
 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="wn-btn wn-btn--primary wn-btn--block wn-btn--lg disabled:opacity-60"
+                  className="wn-btn wn-btn--primary wn-btn--block wn-btn--lg min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  {submitting
-                    ? (isAr ? 'جاري الإرسال...' : 'Submitting...')
-                    : (isAr ? 'إرسال التحويل للمراجعة' : 'Submit transfer for review')}
+                  {submitting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+                      <span>{mp.submitting}</span>
+                    </>
+                  ) : mp.submitBtn}
                 </button>
               </form>
             )}
