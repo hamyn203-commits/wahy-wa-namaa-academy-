@@ -290,7 +290,7 @@
 }
 .wn-plans-women-banner h2 { margin: 2px 0 3px; font-size: 20px; }
 .wn-plans-women-banner p { color: #6e7774; font-size: 13px; }
-.wn-plans-women-banner > img { width: 180px; height: 92px; object-fit: contain; }
+.wn-plans-women-banner > img { width: 184px; height: 104px; object-fit: cover; object-position: center 22%; border-radius: var(--wn-radius-md); box-shadow: var(--wn-shadow-sm); }
 
 .wn-plans-catalog { padding: 70px 0 82px; }
 
@@ -349,6 +349,12 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 24%;
+  transition: transform var(--wn-dur-slow) var(--wn-ease);
+}
+
+.wn-plan-card:hover .wn-plan-card__media img {
+  transform: scale(1.04);
 }
 
 .wn-plan-card__badge {

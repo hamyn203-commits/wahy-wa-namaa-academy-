@@ -24,7 +24,8 @@ const PLAN_DEFS = [
     price: 10,
     studentsAr: 'من 15 إلى 20 طالب',
     studentsEn: '15–20 students',
-    image: '/images/plans/plan-community.svg',
+    image: '/images/plans/men-community.jpg',
+    imageWomen: '/images/plans/women-community.jpg',
     badgeAr: 'الأوفر',
     badgeEn: 'Best value',
     tone: 'mint',
@@ -40,7 +41,8 @@ const PLAN_DEFS = [
     price: 20,
     studentsAr: 'من 5 إلى 10 طلاب',
     studentsEn: '5–10 students',
-    image: '/images/plans/plan-group.svg',
+    image: '/images/plans/men-group.jpg',
+    imageWomen: '/images/plans/women-group.jpg',
     badgeAr: 'الأكثر طلبًا',
     badgeEn: 'Most popular',
     tone: 'emerald',
@@ -57,7 +59,8 @@ const PLAN_DEFS = [
     price: 35,
     studentsAr: 'من 3 إلى 5 طلاب',
     studentsEn: '3–5 students',
-    image: '/images/plans/plan-focused.svg',
+    image: '/images/plans/men-focused.jpg',
+    imageWomen: '/images/plans/women-focused.jpg',
     badgeAr: 'متابعة أقوى',
     badgeEn: 'More focus',
     tone: 'teal',
@@ -73,7 +76,8 @@ const PLAN_DEFS = [
     price: 50,
     studentsAr: 'من 2 إلى 3 طلاب',
     studentsEn: '2–3 students',
-    image: '/images/plans/plan-mini.svg',
+    image: '/images/plans/men-mini.jpg',
+    imageWomen: '/images/plans/women-mini.jpg',
     badgeAr: 'شبه فردي',
     badgeEn: 'Semi-private',
     tone: 'gold',
@@ -89,7 +93,8 @@ const PLAN_DEFS = [
     price: 100,
     studentsAr: 'طالب واحد',
     studentsEn: '1 student',
-    image: '/images/plans/plan-private.svg',
+    image: '/images/plans/men-private.jpg',
+    imageWomen: '/images/plans/women-private.jpg',
     badgeAr: 'أعلى متابعة',
     badgeEn: 'Maximum attention',
     tone: 'ink',
@@ -607,7 +612,7 @@ export default function PlansPage() {
 
             <div className="wn-plans-hero__visual">
               <img
-                src={audience === 'women' ? '/images/plans/plan-women.svg' : '/images/plans/plan-community.svg'}
+                src={audience === 'women' ? '/images/plans/women-group.jpg' : '/images/plans/men-group.jpg'}
                 decoding="async"
                 alt={isRTL
                   ? (audience === 'women' ? 'حلقة قرآن لقسم السيدات' : 'طلاب في حلقة قرآن جماعية')
@@ -721,7 +726,7 @@ export default function PlansPage() {
                   <h2>{isRTL ? 'نفس الخطط والأسعار — مع معلمات فقط' : 'Same plans and pricing — female tutors only'}</h2>
                   <p>{isRTL ? 'يتم توزيع الطالبات حسب السن والمستوى، مع الحفاظ على الخصوصية وجودة المتابعة.' : 'Learners are grouped by age and level with privacy and consistent academic follow-up.'}</p>
                 </div>
-                <img src="/images/plans/plan-women.svg" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+                <img src="/images/plans/women-mini.jpg" alt="" aria-hidden="true" loading="lazy" decoding="async" />
               </aside>
             )}
           </div>
@@ -752,7 +757,12 @@ export default function PlansPage() {
                   }
                 >
                   <div className="wn-plan-card__media">
-                    <img src={plan.image} alt={isRTL ? plan.nameAr : plan.nameEn} loading="lazy" decoding="async" />
+                    <img
+                      src={audience === 'women' ? plan.imageWomen : plan.image}
+                      alt={isRTL ? plan.nameAr : plan.nameEn}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <span className="wn-plan-card__badge">{isRTL ? plan.badgeAr : plan.badgeEn}</span>
                   </div>
 
