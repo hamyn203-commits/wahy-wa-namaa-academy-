@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '../../context/ToastProvider';
+import { useI18n } from '../../i18n';
 import { apiUrl } from '../../config';
 import { INITIAL_FORM, DRAFT_KEY, STATUS_TOKEN_KEY } from './constants';
 import { uploadFileDirect } from '../../lib/fileUpload';
@@ -23,24 +24,24 @@ const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const emailLooksValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 
 const MB = 1024 * 1024;
-const FILE_RULES = {
+const FILE_RULE_SPECS = {
   publicImage: {
     types: ['image/jpeg', 'image/png'],
     extensions: ['.jpg', '.jpeg', '.jfif', '.png'],
     maxBytes: 100 * MB,
-    label: 'الصورة الشخصية',
+    fallbackLabel: 'الصورة الشخصية',
   },
   privateDocument: {
     types: ['image/jpeg', 'image/png', 'application/pdf'],
     extensions: ['.jpg', '.jpeg', '.jfif', '.png', '.pdf'],
     maxBytes: 25 * MB,
-    label: 'المستند',
+    fallbackLabel: 'المستند',
   },
   recitationVideo: {
     types: ['video/mp4', 'video/webm', 'video/quicktime'],
     extensions: ['.mp4', '.webm', '.mov'],
     maxBytes: 100 * MB,
-    label: 'فيديو التلاوة',
+    fallbackLabel: 'فيديو التلاوة',
   },
 };
 
@@ -50,38 +51,52 @@ function fileExtension(name = '') {
   return index >= 0 ? value.slice(index).toLowerCase() : '';
 }
 
-function validateSelectedFile(file, rule) {
+function formatMsg(template, vars = {}) {
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v ?? '')),
+    String(template || '')
+  );
+}
+
+function validateSelectedFile(file, rule, label, val) {
   if (!file) return null;
   if (!Number.isFinite(Number(file.size)) || Number(file.size) <= 0) {
-    return `${rule.label}: الملف فارغ أو غير صالح`;
+    return formatMsg(val.fileEmpty || '{label}: الملف فارغ أو غير صالح', { label });
   }
   if (Number(file.size) > rule.maxBytes) {
-    return `${rule.label}: الحد الأقصى ${Math.round(rule.maxBytes / MB)} MB لكل ملف`;
+    return formatMsg(val.fileTooLarge || '{label}: الحد الأقصى {maxMb} MB لكل ملف', {
+      label,
+      maxMb: Math.round(rule.maxBytes / MB),
+    });
   }
   if (!rule.types.includes(String(file.type || '').toLowerCase())) {
-    return `${rule.label}: نوع الملف غير مدعوم`;
+    return formatMsg(val.fileUnsupportedType || '{label}: نوع الملف غير مدعوم', { label });
   }
   if (!rule.extensions.includes(fileExtension(file.name))) {
-    return `${rule.label}: امتداد الملف غير مدعوم`;
+    return formatMsg(val.fileUnsupportedExt || '{label}: امتداد الملف غير مدعوم', { label });
   }
   return null;
 }
 
-function validateTeacherFiles(files) {
+function validateTeacherFiles(files, tr) {
+  const val = tr?.validation || {};
+  const ruleLabels = tr?.fileRules || {};
+  const labelFor = (key) => ruleLabels[key] || FILE_RULE_SPECS[key].fallbackLabel;
+
   const checks = [
-    [files.profilePhoto, FILE_RULES.publicImage],
-    [files.idCardFront, FILE_RULES.privateDocument],
-    [files.idCardBack, FILE_RULES.privateDocument],
-    [files.graduationCertificate, FILE_RULES.privateDocument],
-    ...((files.tajweedCertificates || []).map((file) => [file, FILE_RULES.privateDocument])),
-    ...((files.ijazat || []).map((file) => [file, FILE_RULES.privateDocument])),
-    [files.introductionVideo, FILE_RULES.recitationVideo],
-    ...((files.recitationVideos || []).map((file) => [file, FILE_RULES.recitationVideo])),
-    [files.teachingMethodVideo, FILE_RULES.recitationVideo],
+    [files.profilePhoto, FILE_RULE_SPECS.publicImage, labelFor('publicImage')],
+    [files.idCardFront, FILE_RULE_SPECS.privateDocument, labelFor('privateDocument')],
+    [files.idCardBack, FILE_RULE_SPECS.privateDocument, labelFor('privateDocument')],
+    [files.graduationCertificate, FILE_RULE_SPECS.privateDocument, labelFor('privateDocument')],
+    ...((files.tajweedCertificates || []).map((file) => [file, FILE_RULE_SPECS.privateDocument, labelFor('privateDocument')])),
+    ...((files.ijazat || []).map((file) => [file, FILE_RULE_SPECS.privateDocument, labelFor('privateDocument')])),
+    [files.introductionVideo, FILE_RULE_SPECS.recitationVideo, labelFor('recitationVideo')],
+    ...((files.recitationVideos || []).map((file) => [file, FILE_RULE_SPECS.recitationVideo, labelFor('recitationVideo')])),
+    [files.teachingMethodVideo, FILE_RULE_SPECS.recitationVideo, labelFor('recitationVideo')],
   ];
 
-  for (const [file, rule] of checks) {
-    const error = validateSelectedFile(file, rule);
+  for (const [file, rule, label] of checks) {
+    const error = validateSelectedFile(file, rule, label, val);
     if (error) return error;
   }
 
@@ -96,7 +111,7 @@ function validateTeacherFiles(files) {
     Number(file.lastModified || 0),
   ].join(':'));
   if (new Set(fingerprints).size !== fingerprints.length) {
-    return 'استخدم ثلاثة ملفات مختلفة: فيديو التعريف، فيديو التلاوة، وفيديو طريقة التدريس.';
+    return val.distinctVideosRequired || 'استخدم ثلاثة ملفات مختلفة: فيديو التعريف، فيديو التلاوة، وفيديو طريقة التدريس.';
   }
 
   return null;
@@ -104,13 +119,21 @@ function validateTeacherFiles(files) {
 
 export function useTeacherForm() {
   const toast = useToast();
+  const { t } = useI18n();
+  const tr = t?.teacherRegistration || {};
   const { user } = useAuth();
   const authenticatedTeacher = user?.role === 'teacher';
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const submissionLock = useRef(false);
+  const sendCodeLock = useRef(false);
+  const verifyCodeLock = useRef(false);
+  const checkStatusLock = useRef(false);
   const completedUploads = useRef({ scope: '', files: new Map() });
   const [applicationStatus, setApplicationStatus] = useState('pending');
   const [applicationStatusToken, setApplicationStatusToken] = useState('');
@@ -177,35 +200,46 @@ export function useTeacherForm() {
     }));
   }, [authenticatedTeacher, user?.email, user?.name, user?.phone]);
 
-  const checkApplicationStatus = useCallback(async () => {
+  const statusCheckFailedMsg = tr.toasts?.statusCheckFailed || 'تعذر تحديث حالة الطلب حاليًا، حاول مرة أخرى.';
+
+  const applyStatusResponse = useCallback((data) => {
+    const nextStatus = data.applicationStatus || 'pending';
+    setApplicationStatus(nextStatus);
+    setApplicationReviewNote(data.reviewNote || '');
+    setApplicationRequestedChanges(Array.isArray(data.requestedChanges) ? data.requestedChanges : []);
+    try { sessionStorage.setItem(STATUS_TOKEN_KEY, JSON.stringify({ token: applicationStatusToken, status: nextStatus, email: credentials.email })); } catch { /* ignore */ }
+  }, [applicationStatusToken, credentials.email]);
+
+  const checkApplicationStatus = useCallback(async (manual = false) => {
     if (!submitted || !applicationStatusToken) return;
+    if (manual && checkStatusLock.current) return;
+    if (manual) { checkStatusLock.current = true; setCheckingStatus(true); }
     try {
       const r = await fetch(apiUrl('/api/teachers/application-status'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: applicationStatusToken }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) return;
-      const nextStatus = data.applicationStatus || 'pending';
-      setApplicationStatus(nextStatus);
-      setApplicationReviewNote(data.reviewNote || '');
-      setApplicationRequestedChanges(Array.isArray(data.requestedChanges) ? data.requestedChanges : []);
-      try { sessionStorage.setItem(STATUS_TOKEN_KEY, JSON.stringify({ token: applicationStatusToken, status: nextStatus, email: credentials.email })); } catch { /* ignore */ }
-    } catch { /* ignore */ }
-  }, [submitted, applicationStatusToken, credentials.email]);
+      if (!r.ok) { if (manual) toast.error(data.error || statusCheckFailedMsg); return; }
+      applyStatusResponse(data);
+    } catch {
+      if (manual) toast.error(statusCheckFailedMsg);
+    } finally {
+      if (manual) { checkStatusLock.current = false; setCheckingStatus(false); }
+    }
+  }, [submitted, applicationStatusToken, applyStatusResponse, toast, statusCheckFailedMsg]);
 
   useEffect(() => {
     if (!submitted || !applicationStatusToken) return undefined;
 
-    checkApplicationStatus();
+    checkApplicationStatus(false);
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') checkApplicationStatus();
+      if (document.visibilityState === 'visible') checkApplicationStatus(false);
     }, 10000);
 
-    const onFocus = () => checkApplicationStatus();
+    const onFocus = () => checkApplicationStatus(false);
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') checkApplicationStatus();
+      if (document.visibilityState === 'visible') checkApplicationStatus(false);
     };
 
     window.addEventListener('focus', onFocus);
@@ -227,8 +261,8 @@ export function useTeacherForm() {
   }, [formData, credentials.email, step]);
 
   useEffect(() => {
-    const t = setTimeout(saveDraft, 500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(saveDraft, 500);
+    return () => clearTimeout(timer);
   }, [saveDraft]);
 
   const update = (section, field, value) => {
@@ -286,9 +320,14 @@ export function useTeacherForm() {
   };
 
   const sendCode = async () => {
+    if (sendCodeLock.current) return;
     const email = normalizeEmail(credentials.email);
-    if (!emailLooksValid(email)) return toast.error('أدخل بريدًا إلكترونيًا صحيحًا أولاً');
+    if (!emailLooksValid(email)) {
+      return toast.error(tr.validation?.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً');
+    }
 
+    sendCodeLock.current = true;
+    setSendingCode(true);
     resetVerification();
 
     try {
@@ -298,18 +337,29 @@ export function useTeacherForm() {
         body: JSON.stringify({ email }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'فشل إرسال كود التحقق');
+      if (!r.ok) throw new Error(data.error || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
       setIsCodeSent(true);
-      toast.success('تم إرسال كود التحقق إلى بريدك الإلكتروني');
+      toast.success(tr.toasts?.codeSentSuccess || 'تم إرسال كود التحقق إلى بريدك الإلكتروني');
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e.message || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
+    } finally {
+      sendCodeLock.current = false;
+      setSendingCode(false);
     }
   };
 
   const verifyCode = async () => {
+    if (verifyCodeLock.current) return;
     const email = normalizeEmail(credentials.email);
-    if (!emailLooksValid(email)) return toast.error('أدخل بريدًا إلكترونيًا صحيحًا');
-    if (verificationCode.length !== 6) return toast.error('الكود مكوّن من 6 أرقام');
+    if (!emailLooksValid(email)) {
+      return toast.error(tr.validation?.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً');
+    }
+    if (verificationCode.length !== 6) {
+      return toast.error(tr.validation?.codeLengthError || 'الكود مكوّن من 6 أرقام');
+    }
+
+    verifyCodeLock.current = true;
+    setVerifyingCode(true);
 
     try {
       const r = await fetch(apiUrl('/api/auth/verify-code'), {
@@ -318,76 +368,80 @@ export function useTeacherForm() {
         body: JSON.stringify({ email, code: verificationCode }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'كود غير صحيح');
-      if (!data.verificationToken) throw new Error('تعذر إنشاء إثبات التحقق');
+      if (!r.ok) throw new Error(data.error || tr.toasts?.invalidCode || 'كود غير صحيح');
+      if (!data.verificationToken) throw new Error(tr.toasts?.verifyTokenFailed || 'تعذر إنشاء إثبات التحقق');
 
       setEmailVerified(true);
       setVerifiedEmail(email);
       setVerificationToken(data.verificationToken);
-      toast.success('تم تأكيد البريد الإلكتروني');
+      toast.success(tr.toasts?.emailVerifiedSuccess || 'تم تأكيد البريد الإلكتروني');
       setStep(3);
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e.message || tr.toasts?.invalidCode || 'كود غير صحيح');
+    } finally {
+      verifyCodeLock.current = false;
+      setVerifyingCode(false);
     }
   };
 
   const validate = (s) => {
     const p = formData.personalInfo;
     const a = formData.academicInfo;
+    const val = tr.validation || {};
     switch (s) {
       case 1:
-        if (!p.fullName?.trim()) return 'الاسم مطلوب';
-        if (!p.age || Number(p.age) < 18) return 'العمر 18+';
-        if (!['male', 'female'].includes(p.gender)) return 'اختر الجنس (معلم / معلمة)';
-        if (!p.address?.trim()) return 'العنوان مطلوب';
-        if (!a.university?.trim()) return 'اسم الجامعة / خريج أي مطلوب';
-        if (!a.graduationYear) return 'سنة التخرج مطلوبة';
-        if (!p.country) return 'اختر الدولة';
-        if (!p.phone?.trim()) return 'رقم الهاتف مطلوب';
+        if (!p.fullName?.trim()) return val.nameRequired || 'الاسم مطلوب';
+        if (!p.age || Number(p.age) < 18) return val.ageMin18 || 'العمر 18+';
+        if (!['male', 'female'].includes(p.gender)) return val.genderRequired || 'اختر الجنس (معلم / معلمة)';
+        if (!p.address?.trim()) return val.addressRequired || 'العنوان مطلوب';
+        if (!a.university?.trim()) return val.universityRequired || 'اسم الجامعة / خريج أي مطلوب';
+        if (!a.graduationYear) return val.gradYearRequired || 'سنة التخرج مطلوبة';
+        if (!p.country) return val.countryRequired || 'اختر الدولة';
+        if (!p.phone?.trim()) return val.phoneRequired || 'رقم الهاتف مطلوب';
         return null;
       case 2: {
         const email = normalizeEmail(credentials.email);
-        if (!emailLooksValid(email)) return 'أدخل بريدًا إلكترونيًا صحيحًا';
+        if (!emailLooksValid(email)) return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً';
         if (!emailVerified || !verificationToken || verifiedEmail !== email) {
-          return 'يجب تأكيد البريد الإلكتروني أولاً';
+          return val.emailVerifyFirst || 'يجب تأكيد البريد الإلكتروني أولاً';
         }
         return null;
       }
       case 3:
-        if (!credentials.password || credentials.password.length < 8) return 'كلمة المرور 8+ أحرف';
-        if (credentials.password !== credentials.confirmPassword) return 'كلمتا المرور غير متطابقتين';
+        if (!credentials.password || credentials.password.length < 8) return val.passwordMin8 || 'كلمة المرور 8+ أحرف';
+        if (credentials.password !== credentials.confirmPassword) return val.passwordMismatch || 'كلمتا المرور غير متطابقتين';
         return null;
       case 4: {
         const docs = formData.documentAvailability || {};
-        if (!files.profilePhoto) return 'ارفع صورة شخصية 4×6';
-        if (!files.idCardFront) return 'ارفع صورة وجه البطاقة الشخصية';
-        if (!files.idCardBack) return 'ارفع صورة ظهر البطاقة الشخصية';
-        if (!files.introductionVideo) return 'ارفع فيديو تعريفي قصير';
-        if (!files.recitationVideos?.length) return 'ارفع فيديو تلاوة واحد على الأقل';
-        if (!files.teachingMethodVideo) return 'ارفع فيديو يوضح طريقة التدريس';
+        if (!files.profilePhoto) return val.photoRequired || 'ارفع صورة شخصية 4×6';
+        if (!files.idCardFront) return val.idFrontRequired || 'ارفع صورة وجه البطاقة الشخصية';
+        if (!files.idCardBack) return val.idBackRequired || 'ارفع صورة ظهر البطاقة الشخصية';
+        if (!files.introductionVideo) return val.introVideoRequired || 'ارفع فيديو تعريفي قصير';
+        if (!files.recitationVideos?.length) return val.recitationVideoRequired || 'ارفع فيديو تلاوة واحد على الأقل';
+        if (!files.teachingMethodVideo) return val.methodVideoRequired || 'ارفع فيديو يوضح طريقة التدريس';
 
         if (typeof docs.graduationCertificate !== 'boolean') {
-          return 'حدد هل شهادة التخرج موجودة أم غير موجودة';
+          return val.gradAvailabilityRequired || 'حدد هل شهادة التخرج موجودة أم غير موجودة';
         }
         if (docs.graduationCertificate && !files.graduationCertificate) {
-          return 'ارفع شهادة التخرج لأنك اخترت أنها موجودة';
+          return val.gradFileRequired || 'ارفع شهادة التخرج لأنك اخترت أنها موجودة';
         }
 
         if (typeof docs.tajweedCertificates !== 'boolean') {
-          return 'حدد هل شهادات التجويد موجودة أم غير موجودة';
+          return val.tajweedAvailabilityRequired || 'حدد هل شهادات التجويد موجودة أم غير موجودة';
         }
         if (docs.tajweedCertificates && !files.tajweedCertificates?.length) {
-          return 'ارفع شهادة تجويد واحدة على الأقل';
+          return val.tajweedFileRequired || 'ارفع شهادة تجويد واحدة على الأقل';
         }
 
         if (typeof docs.ijazat !== 'boolean') {
-          return 'حدد هل لديك إجازات أم لا';
+          return val.ijazatAvailabilityRequired || 'حدد هل لديك إجازات أم لا';
         }
         if (docs.ijazat && !files.ijazat?.length) {
-          return 'ارفع إجازة واحدة على الأقل';
+          return val.ijazatFileRequired || 'ارفع إجازة واحدة على الأقل';
         }
 
-        return validateTeacherFiles(files);
+        return validateTeacherFiles(files, tr);
       }
       default:
         return null;
@@ -410,7 +464,7 @@ export function useTeacherForm() {
 
     const verifiedEmailNow = normalizeEmail(authenticatedTeacher ? user.email : credentials.email);
     if (!authenticatedTeacher && (!emailVerified || !verificationToken || verifiedEmail !== verifiedEmailNow)) {
-      toast.error('يجب إعادة تأكيد البريد الإلكتروني');
+      toast.error(tr.validation?.reverifyEmail || 'يجب إعادة تأكيد البريد الإلكتروني');
       setStep(2);
       return;
     }
@@ -428,6 +482,7 @@ export function useTeacherForm() {
       if (completedUploads.current.scope !== scope) {
         completedUploads.current = { scope, files: new Map() };
       }
+      const ul = tr.uploadLabels || {};
       const one = (key, purpose, label, enabled = true) => ({
         key, purpose, label, files: enabled && files[key] ? [files[key]] : [],
       });
@@ -435,15 +490,15 @@ export function useTeacherForm() {
         key, purpose, label, multiple: true, files: enabled ? files[key] || [] : [],
       });
       const uploadedFiles = await uploadTeacherFiles([
-        one('profilePhoto', 'teacher-public', 'الصورة الشخصية'),
-        one('idCardFront', 'teacher-private', 'وجه البطاقة'),
-        one('idCardBack', 'teacher-private', 'ظهر البطاقة'),
-        one('graduationCertificate', 'teacher-private', 'شهادة التخرج', formData.documentAvailability.graduationCertificate),
-        many('tajweedCertificates', 'teacher-private', 'شهادات التجويد', formData.documentAvailability.tajweedCertificates),
-        many('ijazat', 'teacher-private', 'الإجازات', formData.documentAvailability.ijazat),
-        one('introductionVideo', 'teacher-public', 'الفيديو التعريفي'),
-        { ...many('recitationVideos', 'teacher-public', 'فيديو التلاوة'), key: 'recitationVideo' },
-        one('teachingMethodVideo', 'teacher-public', 'فيديو طريقة التدريس'),
+        one('profilePhoto', 'teacher-public', ul.profilePhoto || 'الصورة الشخصية'),
+        one('idCardFront', 'teacher-private', ul.idCardFront || 'وجه البطاقة'),
+        one('idCardBack', 'teacher-private', ul.idCardBack || 'ظهر البطاقة'),
+        one('graduationCertificate', 'teacher-private', ul.graduationCertificate || 'شهادة التخرج', formData.documentAvailability.graduationCertificate),
+        many('tajweedCertificates', 'teacher-private', ul.tajweedCertificates || 'شهادات التجويد', formData.documentAvailability.tajweedCertificates),
+        many('ijazat', 'teacher-private', ul.ijazat || 'الإجازات', formData.documentAvailability.ijazat),
+        one('introductionVideo', 'teacher-public', ul.introductionVideo || 'الفيديو التعريفي'),
+        { ...many('recitationVideos', 'teacher-public', ul.recitationVideo || 'فيديو التلاوة'), key: 'recitationVideo' },
+        one('teachingMethodVideo', 'teacher-public', ul.teachingMethodVideo || 'فيديو طريقة التدريس'),
       ], {
         upload: (file, purpose, options) => uploadFileDirect(file, purpose, { ...options, verificationToken }),
         cache: completedUploads.current.files,
@@ -504,9 +559,11 @@ export function useTeacherForm() {
         body: JSON.stringify(payload),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || 'تعذر حفظ طلب المعلم. تواصل مع الإدارة إذا تكرر الخطأ.');
+      if (!r.ok) {
+        throw new Error(data.error || tr.toasts?.saveFailed || 'تعذر حفظ طلب المعلم. تواصل مع الإدارة إذا تكرر الخطأ.');
+      }
       if (data.success !== true) {
-        throw new Error('تعذر تأكيد حفظ الطلب من رد الخادم. راجع حالة الطلب مع الإدارة قبل إعادة الإرسال.');
+        throw new Error(tr.toasts?.confirmFailed || 'تعذر تأكيد حفظ الطلب من رد الخادم. راجع حالة الطلب مع الإدارة قبل إعادة الإرسال.');
       }
       try {
         sessionStorage.removeItem(DRAFT_KEY);
@@ -527,10 +584,10 @@ export function useTeacherForm() {
       } catch { /* ignore */ }
       completedUploads.current.files.clear();
       setSubmitted(true);
-      toast.success('تم إرسال طلبك بنجاح!');
+      toast.success(tr.toasts?.submitSuccess || 'تم إرسال طلبك بنجاح!');
     } catch (e) {
       const message = saveTimedOut || /failed to fetch|network|load failed/i.test(e.message || '')
-        ? 'اكتمل رفع الملفات لكن تعذر تأكيد حفظ الطلب. تحقق من حالة الطلب مع الإدارة قبل إعادة الإرسال.'
+        ? (tr.toasts?.timeoutAfterUpload || 'اكتمل رفع الملفات لكن تعذر تأكيد حفظ الطلب. تحقق من حالة الطلب مع الإدارة قبل إعادة الإرسال.')
         : e.message;
       setFieldError(message);
       toast.error(message);
@@ -543,7 +600,8 @@ export function useTeacherForm() {
   };
 
   return {
-    step, setStep, submitted, submitting, uploadProgress, applicationStatus,
+    step, setStep, submitted, submitting, sendingCode, verifyingCode, checkingStatus,
+    uploadProgress, applicationStatus,
     applicationReviewNote, applicationRequestedChanges,
     checkApplicationStatus, resetSubmittedApplication,
     credentials, setCredentials, authenticatedTeacher,
@@ -555,6 +613,6 @@ export function useTeacherForm() {
 }
 
 function pCity(address) {
-  const part = address?.split('،')?.[0]?.trim();
+  const part = address?.split('،')?.[0]?.trim() || address?.split(',')?.[0]?.trim();
   return part || address?.slice(0, 40) || '—';
 }

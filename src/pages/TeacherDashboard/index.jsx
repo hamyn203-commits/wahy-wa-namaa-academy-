@@ -4,8 +4,8 @@ import {
   Calendar, Users, Star, Wallet, ClipboardList,
   BookOpen, X, Plus, Clock, BarChart3, MessageSquare, Sparkles,
   Video, MoreHorizontal, UserRound, CheckCircle2, AlertTriangle,
-  Headphones, RotateCcw, ChevronLeft, TrendingUp, CalendarDays,
-  Upload, Trash2, Send, Megaphone,
+  Headphones, ChevronLeft, ChevronRight, TrendingUp, CalendarDays,
+  Upload, Trash2, Send, Megaphone, Loader2, RefreshCw,
 } from 'lucide-react';
 import DashboardLayout, { StatCard } from '../../components/dashboard/DashboardLayout';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
@@ -15,19 +15,25 @@ import { uploadFileDirect } from '../../lib/fileUpload';
 import { apiUrl } from '../../config';
 import { TASK_TYPES } from '../TeacherRegistration/constants';
 import SessionChatModal from '../../components/session/SessionChatModal';
+import Modal from '../../components/shared/Modal';
+import EmptyState from '../../components/shared/EmptyState';
 import Skeleton from '../../components/shared/Skeleton';
+import TeacherAvatar from '../../components/shared/TeacherAvatar';
 import { sessionJoinWindow, formatSessionDateTime, sessionTimeZone } from '../../lib/sessionTime';
-import { teacherPublicImage, teacherImageFallback } from '../../lib/teacherMedia';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import GroupSessionCompleteModal from './GroupSessionCompleteModal';
 import { RejectSessionModal, ConfirmDeleteUpdateModal } from './TeacherActionModals';
 import QuranProgressSummary from '../../components/dashboard/QuranProgressSummary';
 import {
-  TeacherVoiceFeedbackRecorder,
   prepareTeacherFeedbackAudio,
   uploadTeacherFeedbackMultipart,
 } from '../../components/homework/VoiceFeedbackControls';
+import TeacherWalletPanel from './TeacherWalletPanel';
+import TeacherSchedulePanel from './TeacherSchedulePanel';
+import TeacherAnalyticsPanel from './TeacherAnalyticsPanel';
+import TeacherProfileTab from './TeacherProfileTab';
+import TeacherHomeworkPanel from './TeacherHomeworkPanel';
 
 const SESSION_RATE = 50;
 const WEEK_DAYS = [
@@ -53,13 +59,25 @@ const emptyEval = {
 };
 const emptyHomework = { type: 'memorization', description: '', dueDate: '' };
 
+function formatMsg(template, vars = {}) {
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v ?? '')),
+    String(template || '')
+  );
+}
+
 export default function TeacherDashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, ready, logout } = useRequireAuth(['teacher']);
-  const { locale } = useI18n();
+  const { locale, isRTL, t } = useI18n();
+  const tp = t?.teacherPortal || {};
+  const trReg = t?.teacherRegistration || {};
+  const intlLocale = resolveIntlLocale(locale);
   const lp = (value) => localizedPath(value, locale);
   const toast = useToast();
+  const ForwardChevron = isRTL ? ChevronLeft : ChevronRight;
+
   const [tab, setTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState({});
@@ -70,25 +88,36 @@ export default function TeacherDashboard() {
   const [activeStudents, setActiveStudents] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
   const meetingProvider = 'livekit';
   const [chatSession, setChatSession] = useState(null);
   const [unreadChatSessionIds, setUnreadChatSessionIds] = useState(() => new Set());
   const consumedChatSessionRef = useRef('');
   const consumedEvaluateRef = useRef('');
+
   const [rescheduleModal, setRescheduleModal] = useState(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [respondingSessionId, setRespondingSessionId] = useState('');
+  const respondingLock = useRef(false);
 
   const [evalModal, setEvalModal] = useState(null);
   const [evaluation, setEvaluation] = useState(emptyEval);
   const [homeworkList, setHomeworkList] = useState([]);
+  const [completingSession, setCompletingSession] = useState(false);
+  const [evalAyahError, setEvalAyahError] = useState('');
+  const completingSessionLock = useRef(false);
   const [groupCompleteModal, setGroupCompleteModal] = useState(null);
 
   const [taskModal, setTaskModal] = useState(false);
   const [taskTargetMode, setTaskTargetMode] = useState('student');
   const [taskCircleId, setTaskCircleId] = useState('');
   const [newTask, setNewTask] = useState({ studentId: '', type: 'memorization', title: '', description: '', dueDate: '' });
+  const [assigningTask, setAssigningTask] = useState(false);
+  const assignTaskLock = useRef(false);
+
   const [taskFeedbackAudio, setTaskFeedbackAudio] = useState({});
   const [reviewingTaskId, setReviewingTaskId] = useState('');
   const [aiTargetMode, setAiTargetMode] = useState('student');
@@ -96,6 +125,7 @@ export default function TeacherDashboard() {
   const [assigningAiId, setAssigningAiId] = useState('');
   const [deleteUpdateModal, setDeleteUpdateModal] = useState(null);
   const [deletingUpdate, setDeletingUpdate] = useState(false);
+
   const [finance, setFinance] = useState({
     balances: {
       EGP: { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 },
@@ -114,20 +144,34 @@ export default function TeacherDashboard() {
     bankAccountNumber: '',
     paypalEmail: '',
   });
+  const [withdrawError, setWithdrawError] = useState('');
   const [withdrawing, setWithdrawing] = useState(false);
+  const withdrawLock = useRef(false);
+
   const [studentModal, setStudentModal] = useState(null);
   const [studentSummary, setStudentSummary] = useState(null);
   const [studentSummaryLoading, setStudentSummaryLoading] = useState(false);
+  const [studentSummaryError, setStudentSummaryError] = useState(false);
+
   const [homeworkAudio, setHomeworkAudio] = useState({ taskId: '', url: '', loading: false });
   const [taskReview, setTaskReview] = useState({});
+
   const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(false);
+
   const [reviewsData, setReviewsData] = useState({ reviews: [], averageRating: 0, totalReviews: 0 });
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState(false);
+
   const [schedule, setSchedule] = useState([]);
   const [savingSchedule, setSavingSchedule] = useState(false);
+
   const [aiModal, setAiModal] = useState(false);
-  const [aiTopic, setAiTopic] = useState('التجويد');
+  const [aiTopic, setAiTopic] = useState('');
   const [aiResult, setAiResult] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+
   const [teacherUpdates, setTeacherUpdates] = useState([]);
   const [updateForm, setUpdateForm] = useState({
     title: '',
@@ -138,6 +182,9 @@ export default function TeacherDashboard() {
   });
   const [publishingUpdate, setPublishingUpdate] = useState(false);
   const [updateVideoUrls, setUpdateVideoUrls] = useState({});
+  const [loadingVideoKey, setLoadingVideoKey] = useState('');
+  const loadingVideoLock = useRef(new Set());
+
   const [profileChange, setProfileChange] = useState(null);
   const [profileEdit, setProfileEdit] = useState({
     fullName: '', city: '', university: '', faculty: '', qualification: '',
@@ -148,13 +195,31 @@ export default function TeacherDashboard() {
   });
   const [savingProfileChange, setSavingProfileChange] = useState(false);
   const [attendanceUpdating, setAttendanceUpdating] = useState('');
+  const [enteringRoomId, setEnteringRoomId] = useState('');
+  const enteringRoomLock = useRef(false);
+
   const [myCircles, setMyCircles] = useState([]);
   const [circleSessionModal, setCircleSessionModal] = useState(null);
   const [circleSessionForm, setCircleSessionForm] = useState({ scheduledAt: '', duration: 60, notes: '' });
   const [savingCircleSession, setSavingCircleSession] = useState(false);
 
+  const toastsDict = tp.toasts || {};
+  const errDict = tp.errors || {};
+  const valDict = tp.validation || {};
+  const profileLoadFailedMsg = errDict.profileLoadFailed || 'تعذر تحميل الملف التعريفي للمعلم';
+  const dashboardLoadFailedMsg = errDict.dashboardLoadFailed || 'تعذر تحميل بيانات لوحة المعلم';
+  const analyticsLoadFailedMsg = errDict.analyticsLoadFailed || 'تعذر تحميل بيانات الأداء';
+  const reviewsLoadFailedMsg = errDict.reviewsLoadFailed || 'تعذر تحميل التقييمات';
+  const homeworkSubmittedMsg = toastsDict.homeworkSubmittedNotif || 'وصل تسليم واجب صوتي جديد من أحد طلابك';
+
+  const statusLabel = (s) => tp.statusLabels?.[s] || s;
+  const financeStatusLabel = (status) => tp.financeStatus?.[status] || status;
+  const teacherLearnerLevelLabel = (level) => tp.learnerLevels?.[level] || tp.learnerLevels?.unspecified || 'غير محدد';
+  const teacherLearnerTrackLabel = (track) => tp.learnerTracks?.[track] || tp.learnerTracks?.unspecified || 'لم يُحدد المسار';
+  const taskTypeLabel = (typeId) => trReg.taskTypes?.[typeId] || TASK_TYPES.find((x) => x.id === typeId)?.label || typeId;
 
   const load = useCallback(async () => {
+    setLoadError(false);
     try {
       const results = await Promise.allSettled([
         api.get('/api/teachers/dashboard/profile', { auth: true }),
@@ -173,7 +238,10 @@ export default function TeacherDashboard() {
         api.get('/api/teachers/dashboard/circles', { auth: true }),
       ]);
 
-      const [profRes, stRes, trRes, pendRegRes, sessRes, doneRes, studRes, tskRes, balanceRes, txRes, analyticsRes, updateRes, profileChangeRes] = results;
+      const [
+        profRes, stRes, trRes, pendRegRes, sessRes, doneRes, studRes,
+        tskRes, balanceRes, txRes, analyticsRes, updateRes, profileChangeRes, circlesRes,
+      ] = results;
 
       if (profRes.status === 'fulfilled' && profRes.value) setProfile(profRes.value);
       if (stRes.status === 'fulfilled' && stRes.value) setStats(stRes.value);
@@ -209,27 +277,60 @@ export default function TeacherDashboard() {
       setTransactions(tx?.transactions || []);
 
       const analyticsData = analyticsRes.status === 'fulfilled' ? analyticsRes.value : null;
-      if (analyticsData) setAnalytics(analyticsData);
+      if (analyticsData) {
+        setAnalytics(analyticsData);
+        setAnalyticsError(false);
+      }
 
       const updateData = updateRes.status === 'fulfilled' ? updateRes.value : null;
       setTeacherUpdates(updateData?.updates || []);
 
       const profileChangeData = profileChangeRes.status === 'fulfilled' ? profileChangeRes.value : null;
       setProfileChange(profileChangeData?.request || null);
-      const circlesRes = results[13];
       setMyCircles(circlesRes?.status === 'fulfilled' ? (circlesRes.value?.circles || []) : []);
 
-      if (profRes.status === 'rejected') {
-        toast.error('تعذر تحميل الملف التعريفي للمعلم');
+      const rejectedCount = results.filter((r) => r.status === 'rejected').length;
+      if (profRes.status === 'rejected' || rejectedCount >= 5) {
+        setLoadError(true);
+        toast.error(profileLoadFailedMsg);
       }
     } catch {
-      toast.error('تعذر تحميل بيانات لوحة المعلم');
+      setLoadError(true);
+      toast.error(dashboardLoadFailedMsg);
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, profileLoadFailedMsg, dashboardLoadFailedMsg]);
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
+
+  const fetchAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(false);
+    try {
+      const data = await api.get('/api/teachers/dashboard/analytics', { auth: true });
+      setAnalytics(data);
+    } catch {
+      setAnalyticsError(true);
+      toast.error(analyticsLoadFailedMsg);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [toast, analyticsLoadFailedMsg]);
+
+  const fetchReviews = useCallback(async () => {
+    setReviewsLoading(true);
+    setReviewsError(false);
+    try {
+      const data = await api.get('/api/teachers/dashboard/reviews', { auth: true });
+      setReviewsData(data || { reviews: [], averageRating: 0, totalReviews: 0 });
+    } catch {
+      setReviewsError(true);
+      toast.error(reviewsLoadFailedMsg);
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, [toast, reviewsLoadFailedMsg]);
 
   useEffect(() => {
     const teacher = profile?.teacher;
@@ -248,8 +349,9 @@ export default function TeacherDashboard() {
 
   const submitProfileChange = async (event) => {
     event.preventDefault();
+    if (savingProfileChange) return;
     if (profileChange?.status === 'pending') {
-      return toast.error('لديك طلب تعديل قيد مراجعة الإدارة بالفعل');
+      return toast.error(toastsDict.profileChangePending || 'لديك طلب تعديل قيد مراجعة الإدارة بالفعل');
     }
 
     const teacher = profile?.teacher;
@@ -276,14 +378,13 @@ export default function TeacherDashboard() {
       const result = await api.post('/api/teachers/dashboard/profile-change', { changes, media }, { auth: true });
       setProfileChange(result.request || null);
       setProfileFiles({ profilePhoto: null, introductionVideo: null, recitationVideo: null, teachingMethodVideo: null });
-      toast.success('تم إرسال التعديلات للإدارة. ملفك العام سيبقى كما هو حتى الموافقة.');
+      toast.success(toastsDict.profileChangeSuccess || 'تم إرسال التعديلات للإدارة. ملفك العام سيبقى كما هو حتى الموافقة.');
     } catch (error) {
-      toast.error(error.message || 'تعذر إرسال طلب التعديل');
+      toast.error(error.message || toastsDict.profileChangeFailed || 'تعذر إرسال طلب التعديل');
     } finally {
       setSavingProfileChange(false);
     }
   };
-
 
   useEffect(() => {
     return () => {
@@ -309,7 +410,7 @@ export default function TeacherDashboard() {
           .sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt)),
       );
     } catch {
-      // Keep the current dashboard stable during a transient sync failure.
+      // Keep the current dashboard stable during a transient background sync failure.
     }
   }, [ready]);
 
@@ -331,7 +432,7 @@ export default function TeacherDashboard() {
     }
   }, [ready]);
 
-  const openSessionChat = useCallback((session) => {
+  const openSessionChat = (session) => {
     if (!session) return;
     setChatSession(session);
     setUnreadChatSessionIds((current) => {
@@ -340,11 +441,12 @@ export default function TeacherDashboard() {
       next.delete(String(session._id));
       return next;
     });
-  }, []);
+  };
 
-  const openEval = useCallback((session) => {
+  const openEval = (session) => {
     setEvalModal(session);
     setEvaluation(emptyEval);
+    setEvalAyahError('');
     if (session?.type === 'trial' && session?._id) {
       api.get(`/api/trials/by-session/${session._id}`, { auth: true })
         .then((res) => {
@@ -360,7 +462,7 @@ export default function TeacherDashboard() {
         .catch(() => {});
     }
     setHomeworkList([]);
-  }, []);
+  };
 
   useEffect(() => {
     if (!ready) return undefined;
@@ -406,13 +508,13 @@ export default function TeacherDashboard() {
       }
       if (type === 'homework-submitted') {
         syncTasksAndStudents();
-        toast.info('وصل تسليم واجب صوتي جديد من أحد طلابك');
+        toast.info(homeworkSubmittedMsg);
       }
     };
 
     window.addEventListener('wn:realtime-notification', onRealtimeNotification);
     return () => window.removeEventListener('wn:realtime-notification', onRealtimeNotification);
-  }, [ready, syncSessions, syncTasksAndStudents, chatSession?._id, toast]);
+  }, [ready, syncSessions, syncTasksAndStudents, chatSession?._id, toast, homeworkSubmittedMsg]);
 
   useEffect(() => {
     const requestedTab = searchParams.get('tab');
@@ -421,7 +523,6 @@ export default function TeacherDashboard() {
       setTab(requestedTab);
     }
 
-    // Backwards-compatible deep links.
     if (requestedTab === 'trials') setTab('requests');
     if (requestedTab === 'evaluate') setTab('sessions');
 
@@ -431,7 +532,13 @@ export default function TeacherDashboard() {
       const found = allKnown.find((item) => String(item._id) === String(requestedSessionId));
       if (found) {
         consumedChatSessionRef.current = String(requestedSessionId);
-        openSessionChat(found);
+        setChatSession(found);
+        setUnreadChatSessionIds((current) => {
+          if (!current.has(String(found._id))) return current;
+          const next = new Set(current);
+          next.delete(String(found._id));
+          return next;
+        });
       }
     }
 
@@ -443,34 +550,57 @@ export default function TeacherDashboard() {
         if (foundEval.type === 'group_circle') {
           setGroupCompleteModal(foundEval);
         } else {
-          openEval(foundEval);
+          setEvalModal(foundEval);
+          setEvaluation(emptyEval);
+          setEvalAyahError('');
+          setHomeworkList([]);
+          if (foundEval.type === 'trial' && foundEval._id) {
+            api.get(`/api/trials/by-session/${foundEval._id}`, { auth: true })
+              .then((res) => {
+                if (res?.trial) {
+                  setEvaluation((prev) => ({
+                    ...prev,
+                    recommendedLevel: res.trial.currentLevel || 'beginner',
+                    recommendedTrack: res.trial.preferredTrack || 'memorization',
+                    trialRequestId: res.trial._id || '',
+                  }));
+                }
+              })
+              .catch(() => {});
+          }
         }
       }
     }
-  }, [searchParams, trials, pendingRegular, sessions, completedSessions, openSessionChat, openEval]);
+  }, [searchParams, trials, pendingRegular, sessions, completedSessions]);
 
   useEffect(() => {
     if (!ready) return;
-    if (tab === 'analytics' && !analytics) {
-      api.get('/api/teachers/dashboard/analytics', { auth: true }).then(setAnalytics).catch(() => {});
+    if (tab === 'analytics' && !analytics && !analyticsLoading && !analyticsError) {
+      fetchAnalytics();
     }
-    if (tab === 'reviews' && !reviewsData.reviews.length) {
-      api.get('/api/teachers/dashboard/reviews', { auth: true }).then(setReviewsData).catch(() => {});
+    if (tab === 'reviews' && !reviewsData.reviews.length && !reviewsLoading && !reviewsError) {
+      fetchReviews();
     }
     if (tab === 'schedule' && !schedule.length) {
       api.get('/api/teachers/dashboard/availability', { auth: true })
-        .then((d) => setSchedule(mergeSchedule(d.availability)))
-        .catch(() => setSchedule(mergeSchedule([])));
+        .then((d) => setSchedule(mergeSchedule(d.availability, tp.weekdays)))
+        .catch(() => setSchedule(mergeSchedule([], tp.weekdays)));
     }
-  }, [tab, ready, analytics, reviewsData.reviews.length, schedule.length]);
+  }, [
+    tab, ready, analytics, analyticsLoading, analyticsError, fetchAnalytics,
+    reviewsData.reviews.length, reviewsLoading, reviewsError, fetchReviews,
+    schedule.length, tp.weekdays,
+  ]);
 
   if (!ready) return null;
 
   const expectedSessionEarning = Math.round(((Number(profile?.teacher?.hourlyRate || SESSION_RATE) * Math.max(1, Number(evalModal?.duration || 60))) / 60) * 100) / 100;
+  const teacher = profile?.teacher;
 
   const submitGroupCircleSession = async () => {
+    if (savingCircleSession) return;
     if (!circleSessionModal || !circleSessionForm.scheduledAt) {
-      return toast.error('اختر موعد الحصة الجماعية');
+      return toast.error(valDict.circleDateRequired || 'اختر موعد الحصة الجماعية');
     }
     setSavingCircleSession(true);
     try {
@@ -481,20 +611,21 @@ export default function TeacherDashboard() {
         duration: Number(circleSessionForm.duration || circleSessionModal.durationMaxMinutes || 60),
         notes: circleSessionForm.notes?.trim() || '',
       }, { auth: true });
-      toast.success('تم جدولة حصة الحلقة الجماعية وإشعار الطلاب');
+      toast.success(toastsDict.circleSessionScheduled || 'تم جدولة حصة الحلقة الجماعية وإشعار الطلاب');
       setCircleSessionModal(null);
       setCircleSessionForm({ scheduledAt: '', duration: 60, notes: '' });
       load();
     } catch (error) {
-      toast.error(error.message || 'تعذر جدولة حصة الحلقة');
+      toast.error(error.message || toastsDict.circleSessionFailed || 'تعذر جدولة حصة الحلقة');
     } finally {
       setSavingCircleSession(false);
     }
   };
 
-    const teacher = profile?.teacher;
-
   const respondTrial = async (id, action, extra = {}) => {
+    if (respondingLock.current) return;
+    respondingLock.current = true;
+    setRespondingSessionId(String(id));
     try {
       await api.put(`/api/sessions/${id}/respond`, {
         action,
@@ -505,17 +636,20 @@ export default function TeacherDashboard() {
       }, { auth: true });
 
       const labels = {
-        accept: 'تم قبول الطلب وإشعار الطالب',
-        reject: 'تم الاعتذار عن الطلب وإشعار الطالب',
-        reschedule: 'تم اقتراح الموعد الجديد وإشعار الطالب',
+        accept: toastsDict.requestAccepted || 'تم قبول الطلب وإشعار الطالب',
+        reject: toastsDict.requestRejected || 'تم الاعتذار عن الطلب وإشعار الطالب',
+        reschedule: toastsDict.requestRescheduled || 'تم اقتراح الموعد الجديد وإشعار الطالب',
       };
-      toast.success(labels[action] || 'تم تحديث الطلب');
+      toast.success(labels[action] || toastsDict.requestUpdated || 'تم تحديث الطلب');
       setRescheduleModal(null);
       setRescheduleDate('');
       setRejectModal(null);
       load();
     } catch (error) {
-      toast.error(error.message || 'حدث خطأ');
+      toast.error(error.message || toastsDict.genericError || 'حدث خطأ');
+    } finally {
+      respondingLock.current = false;
+      setRespondingSessionId('');
     }
   };
 
@@ -530,11 +664,12 @@ export default function TeacherDashboard() {
   };
 
   const submitReschedule = async () => {
+    if (respondingLock.current) return;
     if (!rescheduleModal || !rescheduleDate) {
-      return toast.error('اختر الموعد الجديد');
+      return toast.error(valDict.rescheduleDateRequired || 'اختر الموعد الجديد');
     }
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(rescheduleDate)) {
-      return toast.error('اختر موعدًا صحيحًا');
+      return toast.error(valDict.rescheduleDateInvalid || 'اختر موعدًا صحيحًا');
     }
     await respondTrial(rescheduleModal._id, 'reschedule', {
       rescheduledDate: rescheduleDate,
@@ -547,7 +682,19 @@ export default function TeacherDashboard() {
   };
 
   const completeSession = async () => {
-    if (!evalModal) return;
+    if (!evalModal || completingSessionLock.current || completingSession) return;
+
+    const fromNum = evaluation.fromAyah ? Number(evaluation.fromAyah) : null;
+    const toNum = evaluation.toAyah ? Number(evaluation.toAyah) : null;
+    if (fromNum !== null && toNum !== null && toNum < fromNum) {
+      const msg = valDict.ayahOrderInvalid || 'يجب أن تكون آية النهاية أكبر من أو تساوي آية البداية';
+      setEvalAyahError(msg);
+      return;
+    }
+    setEvalAyahError('');
+
+    completingSessionLock.current = true;
+    setCompletingSession(true);
     try {
       const completed = await api.put(`/api/sessions/${evalModal._id}/complete`, {
         evaluation: {
@@ -581,7 +728,7 @@ export default function TeacherDashboard() {
           notes: evaluation.overallNotes,
         }, { auth: true });
       } catch {
-        toast.info('تم إنهاء الحصة، لكن تعذر إرسال تقرير المتابعة الخارجي. التقرير محفوظ داخل الحصة.');
+        toast.info(toastsDict.reportPartialError || 'تم إنهاء الحصة، لكن تعذر إرسال تقرير المتابعة الخارجي. التقرير محفوظ داخل الحصة.');
       }
 
       const earnedAmount = Number(completed?.session?.earnings?.amount || expectedSessionEarning);
@@ -590,13 +737,18 @@ export default function TeacherDashboard() {
           level: evaluation.recommendedLevel || 'beginner',
           recommendedTrack: evaluation.recommendedTrack || 'memorization',
           notes: evaluation.overallNotes?.trim() || '',
-        }, { auth: true }).catch(() => {});
+        }, { auth: true }).catch(() => {
+          toast.info(toastsDict.trialAssessWarn || 'تم إنهاء الحصة، وتعذر تحديث توصية المسار المبدئية.');
+        });
       }
-      toast.success(`تم إنهاء الحصة واعتماد الاستحقاق (+${earnedAmount} ج.م)`);
+      toast.success(formatMsg(toastsDict.sessionCompleted || 'تم إنهاء الحصة واعتماد الاستحقاق (+{amount} ج.م)', { amount: earnedAmount }));
       setEvalModal(null);
       load();
     } catch (error) {
-      toast.error(error.message || 'فشل إكمال الحصة');
+      toast.error(error.message || toastsDict.sessionCompleteFailed || 'فشل إكمال الحصة');
+    } finally {
+      completingSessionLock.current = false;
+      setCompletingSession(false);
     }
   };
 
@@ -616,13 +768,13 @@ export default function TeacherDashboard() {
       )));
       toast.success(
         status === 'attended'
-          ? 'تم تسجيل حضور الطالب'
+          ? (toastsDict.attendanceAttended || 'تم تسجيل حضور الطالب')
           : status === 'excused'
-            ? 'تم تسجيل اعتذار الطالب'
-            : 'تم تسجيل غياب الطالب'
+            ? (toastsDict.attendanceExcused || 'تم تسجيل اعتذار الطالب')
+            : (toastsDict.attendanceAbsent || 'تم تسجيل غياب الطالب')
       );
     } catch (error) {
-      toast.error(error.message || 'فشل تحديث الحضور');
+      toast.error(error.message || toastsDict.attendanceFailed || 'فشل تحديث الحضور');
     } finally {
       setAttendanceUpdating('');
     }
@@ -635,7 +787,7 @@ export default function TeacherDashboard() {
       (entry) => ['pending', 'confirmed'].includes(entry.status)
     );
     if (unresolved.length) {
-      toast.info('سجل الحضور النهائي لكل الطلاب من قائمة الحضور داخل الحصة قبل الإنهاء');
+      toast.info(toastsDict.completeGroupUnresolved || 'سجل الحضور النهائي لكل الطلاب من قائمة الحضور داخل الحصة قبل الإنهاء');
       return;
     }
 
@@ -643,10 +795,13 @@ export default function TeacherDashboard() {
   };
 
   const assignTask = async () => {
-    if (!newTask.title?.trim()) return toast.error('اكتب عنوان الواجب');
-    if (taskTargetMode === 'student' && !newTask.studentId) return toast.error('اختر الطالب');
-    if (taskTargetMode === 'circle' && !taskCircleId) return toast.error('اختر الحلقة الجماعية');
+    if (assignTaskLock.current || assigningTask) return;
+    if (!newTask.title?.trim()) return toast.error(valDict.taskTitleRequired || 'اكتب عنوان الواجب');
+    if (taskTargetMode === 'student' && !newTask.studentId) return toast.error(valDict.taskStudentRequired || 'اختر الطالب');
+    if (taskTargetMode === 'circle' && !taskCircleId) return toast.error(valDict.taskCircleRequired || 'اختر الحلقة الجماعية');
 
+    assignTaskLock.current = true;
+    setAssigningTask(true);
     try {
       const payload = {
         type: newTask.type,
@@ -660,37 +815,45 @@ export default function TeacherDashboard() {
       const res = await api.post('/api/teachers/dashboard/tasks', payload, { auth: true });
       toast.success(
         taskTargetMode === 'circle'
-          ? `تم إسناد الواجب لجميع طلاب الحلقة (${res.count || 0})`
-          : 'تم إسناد الواجب وإشعار الطالب'
+          ? formatMsg(toastsDict.taskAssignedCircle || 'تم إسناد الواجب لجميع طلاب الحلقة ({count})', { count: res.count || 0 })
+          : (toastsDict.taskAssignedStudent || 'تم إسناد الواجب وإشعار الطالب')
       );
       setTaskModal(false);
       setNewTask({ studentId: '', type: 'memorization', title: '', description: '', dueDate: '' });
       setTaskCircleId('');
       load();
     } catch (error) {
-      toast.error(error.message || 'فشل إسناد الواجب');
+      toast.error(error.message || toastsDict.taskAssignFailed || 'فشل إسناد الواجب');
+    } finally {
+      assignTaskLock.current = false;
+      setAssigningTask(false);
     }
   };
 
   const assignAiTask = async (assignment) => {
+    if (assigningAiId) return;
     if (!aiTargetId) {
-      return toast.error(aiTargetMode === 'circle' ? 'اختر الحلقة أولاً' : 'اختر الطالب أولاً');
+      return toast.error(
+        aiTargetMode === 'circle'
+          ? (valDict.aiTargetCircleRequired || 'اختر الحلقة أولاً')
+          : (valDict.aiTargetStudentRequired || 'اختر الطالب أولاً')
+      );
     }
     setAssigningAiId(assignment.id || assignment.title);
     try {
       const payload = {
         type: 'memorization',
-        title: String(assignment.title || 'واجب قرآني').slice(0, 180),
+        title: String(assignment.title || tp.homework?.newTaskBtn || 'واجب قرآني').slice(0, 180),
         description: String(assignment.description || '').slice(0, 1500),
         ...(aiTargetMode === 'circle'
           ? { circleId: aiTargetId }
           : { studentId: aiTargetId }),
       };
       await api.post('/api/teachers/dashboard/tasks', payload, { auth: true });
-      toast.success('تم إسناد الواجب المقترح بنجاح');
+      toast.success(toastsDict.aiTaskAssigned || 'تم إسناد الواجب المقترح بنجاح');
       syncTasksAndStudents();
     } catch (error) {
-      toast.error(error.message || 'تعذر إسناد الواجب');
+      toast.error(error.message || toastsDict.aiTaskFailed || 'تعذر إسناد الواجب');
     } finally {
       setAssigningAiId('');
     }
@@ -698,6 +861,16 @@ export default function TeacherDashboard() {
 
   const requestWithdraw = async (e) => {
     e.preventDefault();
+    if (withdrawLock.current || withdrawing) return;
+
+    if (withdrawForm.payoutMethod === 'instapay' && !withdrawForm.ipaAddress.trim() && !withdrawForm.phone.trim()) {
+      const msg = valDict.instapayContactRequired || 'أدخل عنوان InstaPay IPA أو رقم الهاتف المرتبط';
+      setWithdrawError(msg);
+      return;
+    }
+    setWithdrawError('');
+
+    withdrawLock.current = true;
     setWithdrawing(true);
     try {
       const payoutDetails = {};
@@ -719,7 +892,7 @@ export default function TeacherDashboard() {
         payoutDetails,
       }, { auth: true });
 
-      toast.success('تم إرسال طلب السحب للإدارة');
+      toast.success(toastsDict.withdrawSuccess || 'تم إرسال طلب السحب للإدارة');
       setWithdrawForm({
         amount: '',
         currency: 'EGP',
@@ -732,13 +905,15 @@ export default function TeacherDashboard() {
       });
       load();
     } catch (err) {
-      toast.error(err.message || 'فشل طلب السحب');
+      toast.error(err.message || toastsDict.withdrawFailed || 'فشل طلب السحب');
     } finally {
+      withdrawLock.current = false;
       setWithdrawing(false);
     }
   };
 
   const reviewTask = async (task, action) => {
+    if (reviewingTaskId) return;
     setReviewingTaskId(task._id);
     try {
       const audioDraft = taskFeedbackAudio[task._id];
@@ -760,21 +935,24 @@ export default function TeacherDashboard() {
         delete next[task._id];
         return next;
       });
-      toast.success(action === 'approve' ? 'تم اعتماد الواجب وإشعار الطالب' : 'تم طلب إعادة الواجب وإشعار الطالب');
+      toast.success(
+        action === 'approve'
+          ? (toastsDict.taskApproved || 'تم اعتماد الواجب وإشعار الطالب')
+          : (toastsDict.taskRevisionRequested || 'تم طلب إعادة الواجب وإشعار الطالب')
+      );
       setTaskReview((current) => ({ ...current, [task._id]: '' }));
       if (homeworkAudio.url) URL.revokeObjectURL(homeworkAudio.url);
       setHomeworkAudio({ taskId: '', url: '', loading: false });
       load();
     } catch (error) {
-      toast.error(error.message || 'تعذر مراجعة الواجب');
+      toast.error(error.message || toastsDict.taskReviewFailed || 'تعذر مراجعة الواجب');
     } finally {
       setReviewingTaskId('');
     }
   };
 
   const playHomeworkSubmission = async (task) => {
-    if (!task.submissionFile) return toast.error('لا يوجد ملف تسليم لهذا الواجب');
-
+    if (!task.submissionFile) return toast.error(toastsDict.noSubmissionFile || 'لا يوجد ملف تسليم لهذا الواجب');
     if (homeworkAudio.taskId === task._id && homeworkAudio.url) return;
 
     if (homeworkAudio.url) URL.revokeObjectURL(homeworkAudio.url);
@@ -794,42 +972,54 @@ export default function TeacherDashboard() {
       });
     } catch (error) {
       setHomeworkAudio({ taskId: '', url: '', loading: false });
-      toast.error(error.message || 'تعذر تشغيل تسجيل الطالب');
+      toast.error(error.message || toastsDict.audioPlayFailed || 'تعذر تشغيل تسجيل الطالب');
     }
   };
 
   const openStudent = async (student) => {
     if (!student?._id) {
-      toast.info('بيانات الطالب غير متوفرة');
+      toast.info(toastsDict.studentInfoUnavailable || 'بيانات الطالب غير متوفرة');
       return;
     }
     setStudentModal(student);
     setStudentSummary(null);
+    setStudentSummaryError(false);
     setStudentSummaryLoading(true);
     try {
       const result = await api.get(`/api/teachers/dashboard/students/${student._id}/summary`, { auth: true });
       setStudentSummary(result);
     } catch (error) {
-      toast.error(error.message || 'تعذر تحميل ملف الطالب');
+      setStudentSummaryError(true);
+      toast.error(error.message || toastsDict.studentLoadFailed || 'تعذر تحميل ملف الطالب');
     } finally {
       setStudentSummaryLoading(false);
     }
   };
 
   const enterAcademyRoom = async (session) => {
+    if (!session?._id || enteringRoomLock.current) return;
+    enteringRoomLock.current = true;
+    setEnteringRoomId(String(session._id));
     try {
       const isGroupCircle = session.type === 'group_circle';
       const room = await api.post('/api/live/sessions', {
         title: isGroupCircle
-          ? (session.circle?.name || 'حلقة جماعية')
-          : `حلقة ${session.student?.name || 'الطالب'}`,
-        description: isGroupCircle ? 'حلقة جماعية عبر غرفة الأكاديمية' : 'حلقة فردية عبر غرفة الأكاديمية',
+          ? (session.circle?.name || tp.circles?.liveTitleGroup || 'حلقة جماعية')
+          : formatMsg(tp.circles?.liveTitleStudent || 'حلقة {name}', {
+              name: session.student?.name || tp.welcome?.studentFallback || 'الطالب',
+            }),
+        description: isGroupCircle
+          ? (tp.circles?.liveDescGroup || 'حلقة جماعية عبر غرفة الأكاديمية')
+          : (tp.circles?.liveDescStudent || 'حلقة فردية عبر غرفة الأكاديمية'),
         subject: 'quran',
         sessionId: session._id,
       }, { auth: true });
       navigate(lp(`/live/${room.roomId}`));
     } catch (error) {
-      toast.error(error.message || 'تعذر فتح غرفة الأكاديمية');
+      toast.error(error.message || toastsDict.roomOpenFailed || 'تعذر فتح غرفة الأكاديمية');
+    } finally {
+      enteringRoomLock.current = false;
+      setEnteringRoomId('');
     }
   };
 
@@ -862,14 +1052,15 @@ export default function TeacherDashboard() {
 
   const publishTeacherUpdate = async (event) => {
     event.preventDefault();
+    if (publishingUpdate) return;
 
-    if (!updateForm.title.trim()) return toast.error('اكتب عنوان الرسالة');
+    if (!updateForm.title.trim()) return toast.error(valDict.updateTitleRequired || 'اكتب عنوان الرسالة');
     if (!updateForm.message.trim() && !updateForm.files.length) {
-      return toast.error('اكتب نص الرسالة أو أرفق فيديو');
+      return toast.error(valDict.updateContentRequired || 'اكتب نص الرسالة أو أرفق فيديو');
     }
-    if (updateForm.files.length > 5) return toast.error('الحد الأقصى 5 فيديوهات في الرسالة الواحدة');
+    if (updateForm.files.length > 5) return toast.error(valDict.updateMaxVideos || 'الحد الأقصى 5 فيديوهات في الرسالة الواحدة');
     if (updateForm.audienceMode === 'selected' && !updateForm.studentIds.length) {
-      return toast.error('اختر طالبًا واحدًا على الأقل');
+      return toast.error(valDict.updateStudentRequired || 'اختر طالبًا واحدًا على الأقل');
     }
 
     setPublishingUpdate(true);
@@ -893,7 +1084,7 @@ export default function TeacherDashboard() {
         videos: uploaded,
       }, { auth: true });
 
-      toast.success('تم نشر الرسالة وإشعار الطلاب');
+      toast.success(toastsDict.updatePublished || 'تم نشر الرسالة وإشعار الطلاب');
       setUpdateForm({
         title: '',
         message: '',
@@ -904,7 +1095,7 @@ export default function TeacherDashboard() {
       const result = await api.get('/api/teacher-updates/teacher', { auth: true });
       setTeacherUpdates(result.updates || []);
     } catch (error) {
-      toast.error(error.message || 'تعذر نشر الرسالة');
+      toast.error(error.message || toastsDict.updatePublishFailed || 'تعذر نشر الرسالة');
     } finally {
       setPublishingUpdate(false);
     }
@@ -916,10 +1107,10 @@ export default function TeacherDashboard() {
     try {
       await api.delete(`/api/teacher-updates/teacher/${deleteUpdateModal._id}`, { auth: true });
       setTeacherUpdates((current) => current.filter((item) => item._id !== deleteUpdateModal._id));
-      toast.success('تم حذف الرسالة');
+      toast.success(toastsDict.updateDeleted || 'تم حذف الرسالة');
       setDeleteUpdateModal(null);
     } catch (error) {
-      toast.error(error.message || 'تعذر حذف الرسالة');
+      toast.error(error.message || toastsDict.updateDeleteFailed || 'تعذر حذف الرسالة');
     } finally {
       setDeletingUpdate(false);
     }
@@ -927,8 +1118,10 @@ export default function TeacherDashboard() {
 
   const loadTeacherUpdateVideo = async (updateId, index) => {
     const key = `${updateId}-${index}`;
-    if (updateVideoUrls[key]) return;
+    if (updateVideoUrls[key] || loadingVideoLock.current.has(key)) return;
 
+    loadingVideoLock.current.add(key);
+    setLoadingVideoKey(key);
     try {
       const result = await api.post(`/api/teacher-updates/${updateId}/videos/${index}/access`, {}, { auth: true });
       setUpdateVideoUrls((current) => ({
@@ -936,21 +1129,33 @@ export default function TeacherDashboard() {
         [key]: apiUrl(result.streamUrl),
       }));
     } catch (error) {
-      toast.error(error.message || 'تعذر فتح الفيديو');
+      toast.error(error.message || toastsDict.videoOpenFailed || 'تعذر فتح الفيديو');
+    } finally {
+      loadingVideoLock.current.delete(key);
+      setLoadingVideoKey('');
     }
   };
 
   const generateAiHomework = async () => {
+    if (aiLoading) return;
     setAiLoading(true);
     try {
-      const res = await api.post('/api/ai/homework-generate', { topic: aiTopic, level: 'intermediate', count: 5, locale: 'ar' }, { auth: true });
+      const res = await api.post(
+        '/api/ai/homework-generate',
+        { topic: aiTopic || tp.evalCriteria?.tajweed || 'التجويد', level: 'intermediate', count: 5, locale },
+        { auth: true }
+      );
       setAiResult(res);
-      toast.success('تم توليد الواجبات');
-    } catch (e) { toast.error(e.message || 'فشل'); }
-    finally { setAiLoading(false); }
+      toast.success(toastsDict.aiGenerated || 'تم توليد الواجبات');
+    } catch (e) {
+      toast.error(e.message || toastsDict.aiFailed || 'تعذر توليد الواجبات حاليًا');
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const saveSchedule = async () => {
+    if (savingSchedule) return;
     setSavingSchedule(true);
     try {
       const availability = schedule
@@ -964,9 +1169,9 @@ export default function TeacherDashboard() {
         availability,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }, { auth: true });
-      toast.success('تم حفظ أوقات التوفر');
+      toast.success(toastsDict.scheduleSaved || 'تم حفظ أوقات التوفر');
     } catch (error) {
-      toast.error(error.message || 'فشل حفظ الجدول');
+      toast.error(error.message || toastsDict.scheduleSaveFailed || 'فشل حفظ الجدول');
     } finally {
       setSavingSchedule(false);
     }
@@ -1000,21 +1205,23 @@ export default function TeacherDashboard() {
     )));
   };
 
+  const tabsDict = tp.tabs || {};
+  const tabDescs = tabsDict.descriptions || {};
   const primaryNavItems = [
-    { id: 'overview', label: 'الرئيسية', icon: Sparkles },
-    { id: 'requests', label: 'الطلبات', icon: ClipboardList, badge: trials.length + pendingRegular.length },
-    { id: 'sessions', label: 'حصصي', icon: Calendar, badge: sessions.length },
-    { id: 'students', label: 'طلابي', icon: Users, badge: activeStudents.length },
-    { id: 'homework', label: 'الواجبات', icon: BookOpen, badge: tasks.filter((task) => task.status === 'submitted').length },
+    { id: 'overview', label: tabsDict.overview || 'الرئيسية', icon: Sparkles },
+    { id: 'requests', label: tabsDict.requests || 'الطلبات', icon: ClipboardList, badge: trials.length + pendingRegular.length },
+    { id: 'sessions', label: tabsDict.sessions || 'حصصي', icon: Calendar, badge: sessions.length },
+    { id: 'students', label: tabsDict.students || 'طلابي', icon: Users, badge: activeStudents.length },
+    { id: 'homework', label: tabsDict.homework || 'الواجبات', icon: BookOpen, badge: tasks.filter((task) => task.status === 'submitted').length },
   ];
 
   const secondaryNavItems = [
-    { id: 'updates', label: 'رسائل لطلابي', icon: Megaphone, description: 'فيديوهات ورسائل تعليمية لطلابك' },
-    { id: 'schedule', label: 'الجدول', icon: CalendarDays, description: 'أوقات التوفر الأسبوعية' },
-    { id: 'wallet', label: 'المحفظة', icon: Wallet, description: 'الرصيد والسحب والمعاملات' },
-    { id: 'analytics', label: 'الأداء', icon: BarChart3, description: 'الحصص والتحويل والواجبات' },
-    { id: 'reviews', label: 'التقييمات', icon: Star, description: 'آراء الطلاب ومتوسط التقييم' },
-    { id: 'account', label: 'ملفي العام', icon: UserRound, description: 'صورتي وبياناتي وطلب تعديل الملف' },
+    { id: 'updates', label: tabsDict.updates || 'رسائل لطلابي', icon: Megaphone, description: tabDescs.updates || 'فيديوهات ورسائل تعليمية لطلابك' },
+    { id: 'schedule', label: tabsDict.schedule || 'الجدول', icon: CalendarDays, description: tabDescs.schedule || 'أوقات التوفر الأسبوعية' },
+    { id: 'wallet', label: tabsDict.wallet || 'المحفظة', icon: Wallet, description: tabDescs.wallet || 'الرصيد والسحب والمعاملات' },
+    { id: 'analytics', label: tabsDict.analytics || 'الأداء', icon: BarChart3, description: tabDescs.analytics || 'الحصص والتحويل والواجبات' },
+    { id: 'reviews', label: tabsDict.reviews || 'التقييمات', icon: Star, description: tabDescs.reviews || 'آراء الطلاب ومتوسط التقييم' },
+    { id: 'account', label: tabsDict.account || 'ملفي العام', icon: UserRound, description: tabDescs.account || 'صورتي وبياناتي وطلب تعديل الملف' },
   ];
 
   const now = new Date();
@@ -1028,11 +1235,23 @@ export default function TeacherDashboard() {
   const egpBalance = finance?.balances?.EGP || { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 };
   const usdBalance = finance?.balances?.USD || { available: 0, pending: 0, withdrawn: 0, totalEarned: 0 };
 
+  const wl = tp.welcome || {};
+  const ov = tp.overview || {};
+  const rq = tp.requests || {};
+  const ss = tp.sessions || {};
+  const att = tp.attendance || {};
+  const st = tp.students || {};
+  const up = tp.updates || {};
+  const rv = tp.reviews || {};
+  const mod = tp.modals || {};
+  const currencyEgp = ov.currencyEgp || 'ج.م';
+  const teacherDisplayName = teacher?.personalInfo?.fullName || user?.name || wl.tutorFallback || 'معلمنا';
+
   return (
-    <DashboardLayout title="لوحة تحكم المعلم" user={user} onLogout={logout}>
+    <DashboardLayout title={tp.dashboardTitle || 'لوحة تحكم المعلم'} user={user} onLogout={logout}>
       {loading ? (
         <div className="space-y-4 py-6" role="status" aria-live="polite">
-          <span className="sr-only">جاري تحميل لوحة المعلم...</span>
+          <span className="sr-only">{tp.loadingSr || 'جاري تحميل لوحة المعلم…'}</span>
           <Skeleton className="h-44 w-full rounded-2xl" />
           <div className="grid gap-4 md:grid-cols-4">
             <Skeleton className="h-24 w-full rounded-2xl" />
@@ -1044,119 +1263,171 @@ export default function TeacherDashboard() {
         </div>
       ) : (
         <>
+          {loadError && (
+            <div
+              role="alert"
+              className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] px-4 py-3 text-sm text-[var(--wn-text-danger)]"
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <span>{errDict.dashboardLoadFailed || 'تعذر تحميل بيانات لوحة المعلم'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={load}
+                className="wn-btn wn-btn--primary min-h-[44px] text-xs inline-flex items-center gap-1.5"
+              >
+                <RefreshCw size={14} aria-hidden="true" />
+                <span>{errDict.retry || 'إعادة المحاولة'}</span>
+              </button>
+            </div>
+          )}
 
           <section className="wn-teacher-welcome">
             <div className="wn-teacher-welcome__main">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-14 h-14 rounded-full overflow-hidden border border-emerald-200 bg-emerald-50 grid place-items-center shrink-0">
-                  {teacher?.media?.profilePhoto ? (
-                    <img
-                      src={teacherPublicImage(teacher.media.profilePhoto)}
-                      alt={teacher?.personalInfo?.fullName || user?.name || 'المعلم'}
-                      onError={teacherImageFallback}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-lg font-bold text-emerald-900">{(teacher?.personalInfo?.fullName || user?.name || 'م').slice(0, 1)}</span>
-                  )}
-                </div>
+                <TeacherAvatar
+                  src={teacher?.media?.profilePhoto}
+                  name={teacherDisplayName}
+                  alt={teacherDisplayName}
+                  size="md"
+                  className="w-14 h-14 rounded-full border border-[var(--wn-border-mint)] shrink-0"
+                />
                 <div>
                   <span className="wn-teacher-welcome__eyebrow">
-                    <Sparkles size={15} />
-                    مساحة المعلم اليومية
+                    <Sparkles size={15} aria-hidden="true" />
+                    {wl.eyebrow || 'مساحة المعلم اليومية'}
                   </span>
-                  <h2>السلام عليكم، {teacher?.personalInfo?.fullName || user?.name || 'معلمنا'}</h2>
+                  <h2>{formatMsg(wl.greeting || 'السلام عليكم، {name}', { name: teacherDisplayName })}</h2>
                 </div>
               </div>
               <p>
                 {nextSession
-                  ? `حلقتك القادمة مع ${nextSession.student?.name || 'الطالب'} — كل ما تحتاجه للتحضير والمتابعة أمامك.`
+                  ? formatMsg(wl.subtitleNext || 'حلقتك القادمة مع {student} — كل ما تحتاجه للتحضير والمتابعة أمامك.', {
+                      student: nextSession.student?.name || wl.studentFallback || 'الطالب',
+                    })
                   : actionCount
-                    ? 'لديك مهام تحتاج قرارك. ابدأ بمركز الإجراءات ثم راجع جدولك.'
-                    : 'يومك هادئ الآن. راجع جدولك أو تابع تقدم طلابك.'}
+                    ? (wl.subtitleActions || 'لديك مهام تحتاج قرارك. ابدأ بمركز الإجراءات ثم راجع جدولك.')
+                    : (wl.subtitleCalm || 'يومك هادئ الآن. راجع جدولك أو تابع تقدم طلابك.')}
               </p>
 
               <div className="wn-teacher-welcome__chips">
-                <span className="is-verified"><CheckCircle2 size={14} /> معلم معتمد</span>
+                <span className="is-verified"><CheckCircle2 size={14} aria-hidden="true" /> {wl.verifiedChip || 'معلم معتمد'}</span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className={`inline-block h-2 w-2 rounded-full ${nextSession ? 'bg-emerald-400 animate-pulse' : (trials.length + pendingRegular.length) > 0 ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                  {nextSession ? 'حصة مجدولة قادمة' : (trials.length + pendingRegular.length) > 0 ? `${trials.length + pendingRegular.length} طلب بانتظارك` : 'متاح لاستقبال الحجوزات'}
+                  <span
+                    aria-hidden="true"
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      nextSession
+                        ? 'bg-[var(--wn-emerald)] animate-pulse'
+                        : (trials.length + pendingRegular.length) > 0
+                          ? 'bg-[var(--wn-gold)] animate-pulse'
+                          : 'bg-[var(--wn-emerald)]'
+                    }`}
+                  />
+                  {nextSession
+                    ? (wl.chipUpcoming || 'حصة مجدولة قادمة')
+                    : (trials.length + pendingRegular.length) > 0
+                      ? formatMsg(wl.chipPendingRequests || '{count} طلب بانتظارك', { count: trials.length + pendingRegular.length })
+                      : (wl.chipAvailable || 'متاح لاستقبال الحجوزات')}
                 </span>
-                <span><Users size={14} /> {activeStudents.length} طالب نشط</span>
-                <span><Star size={14} /> {stats.averageRating?.toFixed?.(1) || '0'} تقييم</span>
+                <span>
+                  <Users size={14} aria-hidden="true" />{' '}
+                  {formatMsg(wl.chipActiveStudents || '{count} طالب نشط', { count: activeStudents.length })}
+                </span>
+                <span>
+                  <Star size={14} aria-hidden="true" />{' '}
+                  {formatMsg(wl.chipRating || '{rating} تقييم', { rating: stats.averageRating?.toFixed?.(1) || '0' })}
+                </span>
               </div>
 
               <div className="wn-teacher-welcome__actions">
                 {nextSession ? (
-                  <button type="button" onClick={() => enterAcademyRoom(nextSession)} className="wn-teacher-primary-action">
-                    <Video size={17} />
-                    دخول الحصة القادمة
+                  <button
+                    type="button"
+                    disabled={enteringRoomId === String(nextSession._id)}
+                    onClick={() => enterAcademyRoom(nextSession)}
+                    className="wn-teacher-primary-action min-h-[44px]"
+                  >
+                    {enteringRoomId === String(nextSession._id) ? (
+                      <Loader2 size={17} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Video size={17} aria-hidden="true" />
+                    )}
+                    {wl.enterNextBtn || 'دخول الحصة القادمة'}
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setTab('schedule')} className="wn-teacher-primary-action">
-                    <CalendarDays size={17} />
-                    مراجعة الجدول
+                  <button type="button" onClick={() => setTab('schedule')} className="wn-teacher-primary-action min-h-[44px]">
+                    <CalendarDays size={17} aria-hidden="true" />
+                    {wl.reviewScheduleBtn || 'مراجعة الجدول'}
                   </button>
                 )}
-                <button type="button" onClick={() => setTab('requests')} className="wn-teacher-secondary-action">
-                  <ClipboardList size={17} />
-                  مركز الطلبات
+                <button type="button" onClick={() => setTab('requests')} className="wn-teacher-secondary-action min-h-[44px]">
+                  <ClipboardList size={17} aria-hidden="true" />
+                  {wl.requestsCenterBtn || 'مركز الطلبات'}
                   {(trials.length + pendingRegular.length) > 0 ? <b>{trials.length + pendingRegular.length}</b> : null}
                 </button>
-                <button type="button" onClick={() => setTab('updates')} className="wn-teacher-secondary-action">
-                  <Megaphone size={17} />
-                  رسالة لطلابي
+                <button type="button" onClick={() => setTab('updates')} className="wn-teacher-secondary-action min-h-[44px]">
+                  <Megaphone size={17} aria-hidden="true" />
+                  {wl.messageStudentsBtn || 'رسالة لطلابي'}
                 </button>
-                <button type="button" onClick={() => setTab('account')} className="wn-teacher-secondary-action">
-                  <UserRound size={17} />
-                  ملفي العام
-                  {profileChange?.status === 'pending' ? <b>مراجعة</b> : null}
+                <button type="button" onClick={() => setTab('account')} className="wn-teacher-secondary-action min-h-[44px]">
+                  <UserRound size={17} aria-hidden="true" />
+                  {wl.publicProfileBtn || 'ملفي العام'}
+                  {profileChange?.status === 'pending' ? <b>{wl.reviewBadge || 'مراجعة'}</b> : null}
                 </button>
               </div>
             </div>
 
             <div className="wn-teacher-welcome__next">
               <div className="wn-teacher-welcome__next-heading">
-                <span>{nextSession ? 'الحصة القادمة' : 'الحالة الحالية'}</span>
-                {nextSession ? <Clock size={16} /> : <Sparkles size={16} />}
+                <span>{nextSession ? (wl.nextCardTitle || 'الحصة القادمة') : (wl.statusCardTitle || 'الحالة الحالية')}</span>
+                {nextSession ? <Clock size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
               </div>
               {nextSession ? (
                 <>
-                  <strong>{nextSession.type === 'group_circle' ? (nextSession.circle?.name || 'حلقة جماعية') : (nextSession.student?.name || 'الطالب')}</strong>
-                  <p>{formatSessionDateTime(nextSession, 'ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-                  <p>{formatSessionDateTime(nextSession, 'ar-EG', { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextSession, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
+                  <strong>
+                    {nextSession.type === 'group_circle'
+                      ? (nextSession.circle?.name || wl.groupCircleFallback || 'حلقة جماعية')
+                      : (nextSession.student?.name || wl.studentFallback || 'الطالب')}
+                  </strong>
+                  <p>{formatSessionDateTime(nextSession, locale, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                  <p>{formatSessionDateTime(nextSession, locale, { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(nextSession, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
                   <div className="wn-teacher-welcome__next-actions">
-                    <button type="button" onClick={() => openSessionChat(nextSession)} className="relative">
-                      <MessageSquare size={15} /> محادثة
+                    <button type="button" onClick={() => openSessionChat(nextSession)} className="relative min-h-[44px]">
+                      <MessageSquare size={15} aria-hidden="true" /> {wl.chatBtn || 'محادثة'}
                       {unreadChatSessionIds.has(String(nextSession._id)) ? (
-                        <span className="inline-block h-2 w-2 rounded-full bg-rose-500" aria-label="رسالة جديدة" />
+                        <span
+                          className="inline-block h-2 w-2 rounded-full bg-[var(--wn-danger)]"
+                          aria-label={wl.newMessageAria || 'رسالة جديدة'}
+                        />
                       ) : null}
                     </button>
                     {nextSession.type === 'group_circle' ? (
-                      <button type="button" onClick={() => setTab('sessions')}>
-                        <Users size={15} /> طلاب الحلقة
+                      <button type="button" onClick={() => setTab('sessions')} className="min-h-[44px]">
+                        <Users size={15} aria-hidden="true" /> {wl.circleStudentsBtn || 'طلاب الحلقة'}
                       </button>
                     ) : (
                       <button
                         type="button"
+                        className="min-h-[44px]"
                         onClick={() => {
                           if (nextSession.student?._id) {
                             openStudent(nextSession.student);
                           } else {
-                            toast.info('بيانات الطالب غير متوفرة');
+                            toast.info(toastsDict.studentInfoUnavailable || 'بيانات الطالب غير متوفرة');
                           }
                         }}
                       >
-                        <UserRound size={15} /> ملف الطالب
+                        <UserRound size={15} aria-hidden="true" /> {wl.studentFileBtn || 'ملف الطالب'}
                       </button>
                     )}
                   </div>
                 </>
               ) : (
                 <div className="wn-teacher-welcome__empty">
-                  <Calendar size={26} />
-                  <strong>لا توجد حصة قادمة</strong>
-                  <p>ستظهر أقرب حصة مؤكدة هنا تلقائيًا.</p>
+                  <Calendar size={26} aria-hidden="true" />
+                  <strong>{wl.noUpcomingTitle || 'لا توجد حصة قادمة'}</strong>
+                  <p>{wl.noUpcomingDesc || 'ستظهر أقرب حصة مؤكدة هنا تلقائيًا.'}</p>
                 </div>
               )}
             </div>
@@ -1169,6 +1440,8 @@ export default function TeacherDashboard() {
               active={tab}
               onChange={setTab}
               actionCount={actionCount}
+              isRTL={isRTL}
+              t={t}
             />
 
             {tab === 'overview' && (
@@ -1177,41 +1450,69 @@ export default function TeacherDashboard() {
                   <section className="wn-teacher-today-card">
                     <div className="wn-teacher-section-heading">
                       <div>
-                        <span>جدول اليوم</span>
-                        <h3>الحصص القادمة</h3>
+                        <span>{ov.todayEyebrow || 'جدول اليوم'}</span>
+                        <h3>{ov.upcomingTitle || 'الحصص القادمة'}</h3>
                       </div>
-                      <button type="button" onClick={() => setTab('sessions')}>عرض كل الحصص</button>
+                      <button type="button" onClick={() => setTab('sessions')} className="min-h-[44px]">
+                        {ov.viewAllSessions || 'عرض كل الحصص'}
+                      </button>
                     </div>
 
                     {upcomingSessions.length === 0 ? (
-                      <div className="wn-teacher-empty-state">
-                        <Calendar size={28} />
-                        <div>
-                          <strong>لا توجد حصص قادمة حاليًا</strong>
-                          <p>راجع التوفر الأسبوعي أو الطلبات الجديدة.</p>
-                        </div>
-                      </div>
+                      <EmptyState
+                        icon={Calendar}
+                        title={ov.noUpcomingTitle || 'لا توجد حصص قادمة حاليًا'}
+                        description={ov.noUpcomingDesc || 'راجع التوفر الأسبوعي أو الطلبات الجديدة.'}
+                      />
                     ) : (
                       <div className="wn-teacher-agenda">
                         {upcomingSessions.slice(0, 3).map((session, index) => (
                           <div key={session._id} className={'wn-teacher-agenda__item ' + (index === 0 ? 'is-next' : '')}>
                             <div className="wn-teacher-agenda__time">
-                              <strong>{formatSessionDateTime(session, 'ar-EG', { hour: '2-digit', minute: '2-digit' })}</strong>
-                              <small>{formatSessionDateTime(session, 'ar-EG', { day: 'numeric', month: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
+                              <strong>{formatSessionDateTime(session, locale, { hour: '2-digit', minute: '2-digit' })}</strong>
+                              <small>{formatSessionDateTime(session, locale, { day: 'numeric', month: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
                             </div>
                             <div className="wn-teacher-agenda__student">
-                              <strong>{session.type === 'group_circle' ? (session.circle?.name || 'حلقة جماعية') : (session.student?.name || 'طالب')}</strong>
-                              <span>{session.type === 'trial' ? 'حصة تجريبية' : session.type === 'group_circle' ? 'حصة جماعية' : 'حصة فردية'}</span>
+                              <strong>
+                                {session.type === 'group_circle'
+                                  ? (session.circle?.name || wl.groupCircleFallback || 'حلقة جماعية')
+                                  : (session.student?.name || rq.studentFallback || 'طالب')}
+                              </strong>
+                              <span>
+                                {session.type === 'trial'
+                                  ? (ov.sessionTrial || 'حصة تجريبية')
+                                  : session.type === 'group_circle'
+                                    ? (ov.sessionGroup || 'حصة جماعية')
+                                    : (ov.sessionIndividual || 'حصة فردية')}
+                              </span>
                             </div>
                             <div className="wn-teacher-agenda__actions">
-                              <button type="button" onClick={() => openSessionChat(session)} aria-label="محادثة" className="relative">
-                                <MessageSquare size={16} />
+                              <button
+                                type="button"
+                                onClick={() => openSessionChat(session)}
+                                aria-label={ov.chatAria || 'محادثة'}
+                                className="relative min-h-[44px]"
+                              >
+                                <MessageSquare size={16} aria-hidden="true" />
                                 {unreadChatSessionIds.has(String(session._id)) ? (
-                                  <span className="absolute -top-1 -end-1 h-2.5 w-2.5 rounded-full bg-rose-500" />
+                                  <span
+                                    aria-hidden="true"
+                                    className="absolute -top-1 -end-1 h-2.5 w-2.5 rounded-full bg-[var(--wn-danger)]"
+                                  />
                                 ) : null}
                               </button>
-                              <button type="button" onClick={() => enterAcademyRoom(session)} className="is-primary">
-                                <Video size={16} /> دخول
+                              <button
+                                type="button"
+                                disabled={enteringRoomId === String(session._id)}
+                                onClick={() => enterAcademyRoom(session)}
+                                className="is-primary min-h-[44px]"
+                              >
+                                {enteringRoomId === String(session._id) ? (
+                                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <Video size={16} aria-hidden="true" />
+                                )}
+                                {ov.enterBtn || 'دخول'}
                               </button>
                             </div>
                           </div>
@@ -1223,26 +1524,26 @@ export default function TeacherDashboard() {
                   <aside className="wn-teacher-action-center">
                     <div className="wn-teacher-section-heading">
                       <div>
-                        <span>يحتاج إجراء</span>
-                        <h3>مركز الإجراءات</h3>
+                        <span>{ov.actionEyebrow || 'يحتاج إجراء'}</span>
+                        <h3>{ov.actionTitle || 'مركز الإجراءات'}</h3>
                       </div>
                       {actionCount > 0 ? <b>{actionCount}</b> : null}
                     </div>
 
                     <div className="wn-teacher-action-list">
-                      <button type="button" onClick={() => setTab('requests')}>
-                        <span className="wn-teacher-action-icon is-amber"><ClipboardList size={18} /></span>
-                        <span><strong>طلبات جديدة</strong><small>تجريبية ومنتظمة تحتاج ردك</small></span>
+                      <button type="button" onClick={() => setTab('requests')} className="min-h-[44px]">
+                        <span className="wn-teacher-action-icon is-amber"><ClipboardList size={18} aria-hidden="true" /></span>
+                        <span><strong>{ov.newRequestsTitle || 'طلبات جديدة'}</strong><small>{ov.newRequestsDesc || 'تجريبية ومنتظمة تحتاج ردك'}</small></span>
                         <b>{trials.length + pendingRegular.length}</b>
                       </button>
-                      <button type="button" onClick={() => setTab('homework')}>
-                        <span className="wn-teacher-action-icon is-blue"><Headphones size={18} /></span>
-                        <span><strong>واجبات للتصحيح</strong><small>تسجيلات الطلاب المُسلّمة</small></span>
+                      <button type="button" onClick={() => setTab('homework')} className="min-h-[44px]">
+                        <span className="wn-teacher-action-icon is-blue"><Headphones size={18} aria-hidden="true" /></span>
+                        <span><strong>{ov.homeworkReviewTitle || 'واجبات للتصحيح'}</strong><small>{ov.homeworkReviewDesc || 'تسجيلات الطلاب المُسلّمة'}</small></span>
                         <b>{submittedTasks.length}</b>
                       </button>
-                      <button type="button" onClick={() => setTab('sessions')}>
-                        <span className="wn-teacher-action-icon is-emerald"><CheckCircle2 size={18} /></span>
-                        <span><strong>حصص تحتاج إغلاق</strong><small>انتهى موعدها ولم تُعتمد بعد</small></span>
+                      <button type="button" onClick={() => setTab('sessions')} className="min-h-[44px]">
+                        <span className="wn-teacher-action-icon is-emerald"><CheckCircle2 size={18} aria-hidden="true" /></span>
+                        <span><strong>{ov.awaitingCloseTitle || 'حصص تحتاج إغلاق'}</strong><small>{ov.awaitingCloseDesc || 'انتهى موعدها ولم تُعتمد بعد'}</small></span>
                         <b>{awaitingCompletion.length}</b>
                       </button>
                     </div>
@@ -1250,40 +1551,51 @@ export default function TeacherDashboard() {
                 </div>
 
                 <div className="wn-teacher-stat-grid">
-                  <StatCard label="الرصيد المتاح" value={(usdBalance.available || 0) > 0 ? `${egpBalance.available || 0} ج.م / $${usdBalance.available}` : `${egpBalance.available || 0} ج.م`} icon={Wallet} />
-                  <StatCard label="حصص مكتملة" value={stats.totalSessions || 0} icon={Calendar} />
-                  <StatCard label="طلاب نشطون" value={activeStudents.length} icon={Users} />
-                  <StatCard label="متوسط التقييم" value={stats.averageRating?.toFixed?.(1) || '0'} icon={Star} />
+                  <StatCard
+                    label={ov.statAvailableBalance || 'الرصيد المتاح'}
+                    value={(usdBalance.available || 0) > 0
+                      ? `${egpBalance.available || 0} ${currencyEgp} / $${usdBalance.available}`
+                      : `${egpBalance.available || 0} ${currencyEgp}`}
+                    icon={Wallet}
+                  />
+                  <StatCard label={ov.statCompletedSessions || 'حصص مكتملة'} value={stats.totalSessions || 0} icon={Calendar} />
+                  <StatCard label={ov.statActiveStudents || 'طلاب نشطون'} value={activeStudents.length} icon={Users} />
+                  <StatCard label={ov.statAverageRating || 'متوسط التقييم'} value={stats.averageRating?.toFixed?.(1) || '0'} icon={Star} />
                 </div>
 
                 <div className="wn-teacher-overview__lower">
                   <section className="wn-teacher-students-preview">
                     <div className="wn-teacher-section-heading">
                       <div>
-                        <span>طلابك</span>
-                        <h3>متابعة سريعة</h3>
+                        <span>{ov.studentsEyebrow || 'طلابك'}</span>
+                        <h3>{ov.studentsTitle || 'متابعة سريعة'}</h3>
                       </div>
-                      <button type="button" onClick={() => setTab('students')}>كل الطلاب</button>
+                      <button type="button" onClick={() => setTab('students')} className="min-h-[44px]">
+                        {ov.allStudentsBtn || 'كل الطلاب'}
+                      </button>
                     </div>
                     {activeStudents.length === 0 ? (
-                      <div className="wn-teacher-empty-state compact">
-                        <Users size={24} />
-                        <div><strong>لا يوجد طلاب نشطون بعد</strong><p>سيظهر الطلاب بعد قبول أول حصة منتظمة.</p></div>
-                      </div>
+                      <EmptyState
+                        icon={Users}
+                        title={ov.noStudentsTitle || 'لا يوجد طلاب نشطون بعد'}
+                        description={ov.noStudentsDesc || 'سيظهر الطلاب بعد قبول أول حصة منتظمة.'}
+                      />
                     ) : (
                       <div className="wn-teacher-student-preview-list">
                         {activeStudents.slice(0, 4).map((student) => (
-                          <button type="button" key={student._id} onClick={() => openStudent(student)}>
+                          <button type="button" key={student._id} onClick={() => openStudent(student)} className="min-h-[44px]">
                             <span className="wn-teacher-avatar">{(student.name || 'ط').slice(0, 1)}</span>
                             <span>
                               <strong>{student.name}</strong>
                               <small>
                                 {student.nextSession
-                                  ? `القادمة ${new Date(student.nextSession.scheduledAt).toLocaleDateString('ar-EG')}`
-                                  : 'لا موعد قادم'}
+                                  ? formatMsg(ov.nextPrefix || 'القادمة {date}', {
+                                      date: new Date(student.nextSession.scheduledAt).toLocaleDateString(intlLocale),
+                                    })
+                                  : (ov.noNextDate || 'لا موعد قادم')}
                               </small>
                             </span>
-                            <ChevronLeft size={16} />
+                            <ForwardChevron size={16} aria-hidden="true" />
                           </button>
                         ))}
                       </div>
@@ -1291,15 +1603,15 @@ export default function TeacherDashboard() {
                   </section>
 
                   <section className="wn-teacher-performance-preview">
-                    <span>هذا الشهر</span>
-                    <h3>لوحة الأداء</h3>
+                    <span>{ov.thisMonthEyebrow || 'هذا الشهر'}</span>
+                    <h3>{ov.performanceTitle || 'لوحة الأداء'}</h3>
                     <div className="wn-teacher-performance-preview__metrics">
-                      <div><strong>{analytics?.trialConversion?.rate ?? '—'}%</strong><small>تحويل التجريبية</small></div>
-                      <div><strong>{analytics?.homework?.completionRate ?? '—'}%</strong><small>إكمال الواجبات</small></div>
-                      <div><strong>{analytics?.upcomingSevenDays ?? upcomingSessions.length}</strong><small>الأسبوع القادم</small></div>
+                      <div><strong>{analytics?.trialConversion?.rate ?? '—'}%</strong><small>{ov.trialConversion || 'تحويل التجريبية'}</small></div>
+                      <div><strong>{analytics?.homework?.completionRate ?? '—'}%</strong><small>{ov.homeworkCompletion || 'إكمال الواجبات'}</small></div>
+                      <div><strong>{analytics?.upcomingSevenDays ?? upcomingSessions.length}</strong><small>{ov.nextWeek || 'الأسبوع القادم'}</small></div>
                     </div>
-                    <button type="button" onClick={() => setTab('analytics')}>
-                      عرض تحليلات الأداء <TrendingUp size={15} />
+                    <button type="button" onClick={() => setTab('analytics')} className="min-h-[44px]">
+                      {ov.viewAnalyticsBtn || 'عرض تحليلات الأداء'} <TrendingUp size={15} aria-hidden="true" />
                     </button>
                   </section>
                 </div>
@@ -1307,459 +1619,114 @@ export default function TeacherDashboard() {
             )}
 
             {tab === 'account' && teacher && (
-              <div className="wn-teacher-profile-view">
-                <section className="wn-teacher-profile-card">
-                  <div className="wn-teacher-profile-card__top">
-                    <div className="wn-teacher-profile-card__avatar">
-                      {teacher.media?.profilePhoto ? (
-                        <img
-                          src={teacherPublicImage(teacher.media.profilePhoto)}
-                          alt={teacher.personalInfo?.fullName || user?.name || 'المعلم'}
-                          onError={teacherImageFallback}
-                          className="w-full h-full object-cover rounded-full"
-                        />
-                      ) : (teacher.personalInfo?.fullName || user?.name || 'م').slice(0, 1)}
-                    </div>
-                    <div>
-                      <span className="wn-teacher-profile-card__status"><CheckCircle2 size={14} /> {statusLabel(teacher.status)}</span>
-                      <h3>{teacher.personalInfo?.fullName || user?.name}</h3>
-                      <p>{teacher.academicInfo?.qualification || teacher.academicInfo?.specialization || 'معلم قرآن كريم'}</p>
-                    </div>
-                    <button type="button" onClick={() => setAiModal(true)} className="wn-teacher-ai-button">
-                      <Sparkles size={16} /> مساعد المعلم
-                    </button>
-                  </div>
-
-                  <div className="wn-teacher-profile-grid">
-                    <InfoRow label="البريد" value={user?.email} />
-                    <InfoRow label="الهاتف" value={teacher.personalInfo?.phone} />
-                    <InfoRow label="البلد" value={teacher.personalInfo?.country} />
-                    <InfoRow label="المدينة" value={teacher.personalInfo?.city} />
-                    <InfoRow label="الجامعة" value={teacher.academicInfo?.university} />
-                    <InfoRow label="التخصص" value={teacher.academicInfo?.specialization} />
-                    <InfoRow label="سنوات الخبرة" value={teacher.quranInfo?.teachingExperience} />
-                    <InfoRow label="الإجازات" value={teacher.quranInfo?.numberOfIjazat} />
-                  </div>
-
-                  <div className="wn-teacher-profile-note">
-                    <AlertTriangle size={17} />
-                    <div>
-                      <strong>بيانات الملف العام</strong>
-                      <p>أي تعديل ترسله هنا لا يظهر للطلاب إلا بعد مراجعة الإدارة واعتماده.</p>
-                    </div>
-                  </div>
-
-                  {profileChange && (
-                    <div className={`mt-5 rounded-xl border p-4 text-sm ${profileChange.status === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900' : profileChange.status === 'approved' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
-                      <strong className="block">
-                        {profileChange.status === 'pending' ? 'طلب التعديل قيد مراجعة الإدارة' : profileChange.status === 'approved' ? 'آخر تعديل تم اعتماده' : 'آخر تعديل لم يتم اعتماده'}
-                      </strong>
-                      {profileChange.adminNote ? <p className="mt-1">ملاحظة الإدارة: {profileChange.adminNote}</p> : null}
-                      {profileChange.createdAt ? <small className="block mt-1 opacity-80">{new Date(profileChange.createdAt).toLocaleString('ar-EG')}</small> : null}
-                    </div>
-                  )}
-
-                  <form onSubmit={submitProfileChange} className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-                    <div className="mb-4">
-                      <h4 className="font-bold text-emerald-950">تعديل الملف العام</h4>
-                      <p className="text-xs text-slate-500 mt-1">حدّث بياناتك أو وسائطك، ثم أرسلها للمراجعة. البيانات الحالية تظل منشورة حتى اعتماد التغيير.</p>
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {[
-                        ['fullName', 'الاسم العام'],
-                        ['city', 'المدينة'],
-                        ['university', 'الجامعة / جهة الدراسة'],
-                        ['faculty', 'الكلية'],
-                        ['qualification', 'المؤهل'],
-                      ].map(([key, label]) => (
-                        <label key={key} className="text-sm font-semibold">
-                          {label}
-                          <input
-                            className="input-field w-full mt-1"
-                            value={profileEdit[key]}
-                            disabled={profileChange?.status === 'pending'}
-                            onChange={(event) => setProfileEdit((current) => ({ ...current, [key]: event.target.value }))}
-                          />
-                        </label>
-                      ))}
-                      <label className="text-sm font-semibold">سنوات الخبرة
-                        <input type="number" min="0" max="80" className="input-field w-full mt-1" value={profileEdit.teachingExperience}
-                          disabled={profileChange?.status === 'pending'}
-                          onChange={(event) => setProfileEdit((current) => ({ ...current, teachingExperience: event.target.value }))} />
-                      </label>
-                      <label className="text-sm font-semibold">عدد الإجازات
-                        <input type="number" min="0" max="100" className="input-field w-full mt-1" value={profileEdit.numberOfIjazat}
-                          disabled={profileChange?.status === 'pending'}
-                          onChange={(event) => setProfileEdit((current) => ({ ...current, numberOfIjazat: event.target.value }))} />
-                      </label>
-                    </div>
-
-                    <label className="block text-sm font-semibold mt-3">نبذة تظهر للطلاب
-                      <textarea rows={4} maxLength={1200} className="input-field w-full mt-1" value={profileEdit.bio}
-                        disabled={profileChange?.status === 'pending'}
-                        onChange={(event) => setProfileEdit((current) => ({ ...current, bio: event.target.value }))} />
-                    </label>
-
-                    <div className="mt-5 grid sm:grid-cols-2 gap-3">
-                      {[
-                        ['profilePhoto', 'صورة شخصية جديدة', 'image/jpeg,image/png'],
-                        ['introductionVideo', 'فيديو تعريفي جديد', 'video/mp4,video/webm,video/quicktime'],
-                        ['recitationVideo', 'فيديو تلاوة جديد', 'video/mp4,video/webm,video/quicktime'],
-                        ['teachingMethodVideo', 'فيديو طريقة تدريس جديد', 'video/mp4,video/webm,video/quicktime'],
-                      ].map(([key, label, accept]) => (
-                        <label key={key} className="rounded-xl border border-dashed border-slate-300 p-3 text-sm">
-                          <strong className="block mb-2">{label}</strong>
-                          <input type="file" accept={accept} disabled={profileChange?.status === 'pending'}
-                            onChange={(event) => setProfileFiles((current) => ({ ...current, [key]: event.target.files?.[0] || null }))} />
-                          {profileFiles[key] ? <small className="block mt-1 text-emerald-700">{profileFiles[key].name}</small> : null}
-                        </label>
-                      ))}
-                    </div>
-
-                    <button type="submit" disabled={savingProfileChange || profileChange?.status === 'pending'}
-                      className="wn-btn wn-btn--primary mt-5 disabled:opacity-50">
-                      <Send size={16} />
-                      {savingProfileChange ? 'جاري الإرسال...' : profileChange?.status === 'pending' ? 'قيد المراجعة' : 'إرسال التعديلات للمراجعة'}
-                    </button>
-                  </form>
-                </section>
-              </div>
+              <TeacherProfileTab
+                teacher={teacher}
+                user={user}
+                statusLabel={statusLabel}
+                profileChange={profileChange}
+                profileEdit={profileEdit}
+                setProfileEdit={setProfileEdit}
+                profileFiles={profileFiles}
+                setProfileFiles={setProfileFiles}
+                savingProfileChange={savingProfileChange}
+                submitProfileChange={submitProfileChange}
+                onOpenAi={() => setAiModal(true)}
+                locale={locale}
+                t={t}
+              />
             )}
 
             {tab === 'wallet' && (
-              <div className="wn-teacher-wallet">
-                <div className="wn-teacher-wallet__hero">
-                  <div>
-                    <span>الرصيد المتاح للسحب</span>
-                    <div className="flex flex-wrap items-baseline gap-3 mt-1">
-                      <h3>{egpBalance.available || 0} <small>ج.م</small></h3>
-                      <div className="text-2xl font-bold text-white/90 flex items-baseline gap-1">
-                        <span>/</span>
-                        <span>{usdBalance.available || 0}</span>
-                        <small className="text-sm font-normal text-white/75">USD</small>
-                      </div>
-                    </div>
-                    <p>النظام المالي الجديد يعتمد سجل معاملات واحد لكل استحقاق وسحب.</p>
-                  </div>
-                  <Wallet size={34} />
-                </div>
-
-                <div className="wn-teacher-wallet__stats">
-                  <div><span>إجمالي المستحقات</span><strong>{egpBalance.totalEarned || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.totalEarned || 0} USD)</span></strong></div>
-                  <div><span>طلبات سحب معلقة</span><strong>{egpBalance.pending || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.pending || 0} USD)</span></strong></div>
-                  <div><span>تم سحبه</span><strong>{egpBalance.withdrawn || 0} ج.م <span className="text-xs text-slate-500 font-normal">({usdBalance.withdrawn || 0} USD)</span></strong></div>
-                </div>
-
-                <div className="wn-teacher-wallet__grid">
-                  <form onSubmit={requestWithdraw} className="wn-teacher-wallet__payout">
-                    <div className="wn-teacher-section-heading">
-                      <div><span>طلب جديد</span><h3>سحب الأرباح</h3></div>
-                    </div>
-
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div>
-                        <label>العملة</label>
-                        <select
-                          value={withdrawForm.currency}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, currency: event.target.value }))}
-                          className="input-field w-full"
-                        >
-                          <option value="EGP">جنيه مصري (EGP)</option>
-                          <option value="USD">دولار أمريكي (USD)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label>المبلغ</label>
-                        <input
-                          type="number"
-                          required
-                          min={withdrawForm.currency === 'USD' ? (finance?.limits?.minPayoutUSD || 10) : (finance?.limits?.minPayoutEGP || 100)}
-                          value={withdrawForm.amount}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, amount: event.target.value }))}
-                          className="input-field w-full"
-                          placeholder={`الحد الأدنى ${withdrawForm.currency === 'USD' ? (finance?.limits?.minPayoutUSD || 10) + ' $' : (finance?.limits?.minPayoutEGP || 100) + ' ج.م'}`}
-                        />
-                      </div>
-                      <div>
-                        <label>وسيلة السحب</label>
-                        <select
-                          value={withdrawForm.payoutMethod}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, payoutMethod: event.target.value }))}
-                          className="input-field w-full"
-                        >
-                          <option value="vodafone_cash">محفظة إلكترونية</option>
-                          <option value="instapay">InstaPay</option>
-                          <option value="bank_transfer">تحويل بنكي</option>
-                          <option value="paypal">PayPal</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {withdrawForm.payoutMethod === 'vodafone_cash' && (
-                      <input
-                        required
-                        className="input-field w-full"
-                        placeholder="رقم المحفظة — 01xxxxxxxxx"
-                        value={withdrawForm.phone}
-                        onChange={(event) => setWithdrawForm((current) => ({ ...current, phone: event.target.value }))}
-                      />
-                    )}
-                    {withdrawForm.payoutMethod === 'instapay' && (
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <input
-                          className="input-field w-full"
-                          placeholder="InstaPay IPA"
-                          value={withdrawForm.ipaAddress}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, ipaAddress: event.target.value }))}
-                        />
-                        <input
-                          className="input-field w-full"
-                          placeholder="أو رقم الهاتف"
-                          value={withdrawForm.phone}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, phone: event.target.value }))}
-                        />
-                      </div>
-                    )}
-                    {withdrawForm.payoutMethod === 'bank_transfer' && (
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <input
-                          required
-                          className="input-field w-full"
-                          placeholder="اسم البنك"
-                          value={withdrawForm.bankName}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, bankName: event.target.value }))}
-                        />
-                        <input
-                          required
-                          className="input-field w-full"
-                          placeholder="رقم الحساب / IBAN"
-                          value={withdrawForm.bankAccountNumber}
-                          onChange={(event) => setWithdrawForm((current) => ({ ...current, bankAccountNumber: event.target.value }))}
-                        />
-                      </div>
-                    )}
-                    {withdrawForm.payoutMethod === 'paypal' && (
-                      <input
-                        required
-                        type="email"
-                        className="input-field w-full"
-                        placeholder="بريد PayPal"
-                        value={withdrawForm.paypalEmail}
-                        onChange={(event) => setWithdrawForm((current) => ({ ...current, paypalEmail: event.target.value }))}
-                      />
-                    )}
-
-                    <button type="submit" disabled={withdrawing} className="wn-teacher-primary-action">
-                      {withdrawing ? 'جاري الإرسال...' : 'إرسال طلب السحب'}
-                    </button>
-                  </form>
-
-                  <section className="wn-teacher-wallet__transactions">
-                    <div className="wn-teacher-section-heading">
-                      <div><span>السجل المالي</span><h3>آخر المعاملات</h3></div>
-                    </div>
-                    {transactions.length === 0 ? (
-                      <div className="wn-teacher-empty-state compact">
-                        <Wallet size={24} />
-                        <div><strong>لا معاملات بعد</strong><p>ستظهر استحقاقات الحصص وطلبات السحب هنا.</p></div>
-                      </div>
-                    ) : (
-                      <div className="wn-teacher-transaction-list">
-                        {transactions.slice(0, 12).map((transaction) => (
-                          <div key={transaction._id}>
-                            <span className={'wn-teacher-transaction-icon ' + (transaction.type === 'payout' ? 'is-out' : 'is-in')}>
-                              {transaction.type === 'payout' ? '−' : '+'}
-                            </span>
-                            <span>
-                              <strong>
-                                {transaction.type === 'session_earning'
-                                  ? 'مستحق حصة'
-                                  : transaction.type === 'payout'
-                                    ? 'طلب سحب'
-                                    : transaction.type === 'adjustment'
-                                      ? 'رصيد مرحّل'
-                                      : 'معاملة'}
-                              </strong>
-                              <small>{new Date(transaction.createdAt).toLocaleString('ar-EG')}</small>
-                            </span>
-                            <span className="wn-teacher-transaction-amount">
-                              <strong>{transaction.type === 'payout' ? '−' : '+'}{transaction.amount} {transaction.currency}</strong>
-                              <small>{financeStatusLabel(transaction.status)}</small>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </div>
-              </div>
+              <TeacherWalletPanel
+                egpBalance={egpBalance}
+                usdBalance={usdBalance}
+                finance={finance}
+                withdrawForm={withdrawForm}
+                setWithdrawForm={setWithdrawForm}
+                withdrawError={withdrawError}
+                setWithdrawError={setWithdrawError}
+                requestWithdraw={requestWithdraw}
+                withdrawing={withdrawing}
+                transactions={transactions}
+                financeStatusLabel={financeStatusLabel}
+                locale={locale}
+                t={t}
+              />
             )}
 
             {tab === 'schedule' && (
-              <div className="wn-teacher-schedule">
-                <div className="wn-teacher-schedule__intro">
-                  <div>
-                    <span>إدارة التوفر</span>
-                    <h3>جدولك الأسبوعي</h3>
-                    <p>يمكنك إضافة أكثر من فترة في اليوم نفسه. يمنع النظام الفترات المتداخلة تلقائيًا.</p>
-                  </div>
-                  <button type="button" onClick={saveSchedule} disabled={savingSchedule} className="wn-teacher-primary-action">
-                    {savingSchedule ? 'جاري الحفظ...' : 'حفظ التوفر'}
-                  </button>
-                </div>
-
-                <div className="wn-teacher-schedule__days">
-                  {schedule.map((day, dayIndex) => (
-                    <section key={day.day} className="wn-teacher-schedule-day">
-                      <div className="wn-teacher-schedule-day__heading">
-                        <div>
-                          <strong>{day.label}</strong>
-                          <small>{day.slots.length ? `${day.slots.length} فترة متاحة` : 'غير متاح'}</small>
-                        </div>
-                        <button type="button" onClick={() => addScheduleSlot(dayIndex)}>
-                          <Plus size={15} /> إضافة فترة
-                        </button>
-                      </div>
-
-                      {day.slots.length === 0 ? (
-                        <div className="wn-teacher-schedule-day__off">لا توجد أوقات متاحة في هذا اليوم</div>
-                      ) : (
-                        <div className="wn-teacher-schedule-day__slots">
-                          {day.slots.map((slot, slotIndex) => (
-                            <div key={`${day.day}-${slotIndex}`}>
-                              <Clock size={16} />
-                              <input
-                                type="time"
-                                className="input-field"
-                                value={slot.startTime}
-                                onChange={(event) => updateScheduleSlot(dayIndex, slotIndex, 'startTime', event.target.value)}
-                              />
-                              <span>إلى</span>
-                              <input
-                                type="time"
-                                className="input-field"
-                                value={slot.endTime}
-                                onChange={(event) => updateScheduleSlot(dayIndex, slotIndex, 'endTime', event.target.value)}
-                              />
-                              <button type="button" onClick={() => removeScheduleSlot(dayIndex, slotIndex)} aria-label="حذف الفترة">
-                                <X size={16} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  ))}
-                </div>
-              </div>
+              <TeacherSchedulePanel
+                schedule={schedule}
+                savingSchedule={savingSchedule}
+                saveSchedule={saveSchedule}
+                addScheduleSlot={addScheduleSlot}
+                updateScheduleSlot={updateScheduleSlot}
+                removeScheduleSlot={removeScheduleSlot}
+                t={t}
+              />
             )}
 
             {tab === 'analytics' && (
-              <div className="wn-teacher-analytics">
-                {!analytics ? (
-                  <div className="wn-teacher-empty-state">
-                    <BarChart3 size={28} />
-                    <div><strong>جاري إعداد لوحة الأداء</strong><p>يتم تجميع بيانات الحصص والواجبات والتحويل.</p></div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="wn-teacher-analytics__hero">
-                      <div>
-                        <span>مؤشر الأداء التعليمي</span>
-                        <h3>أداءك مع الطلاب في مكان واحد</h3>
-                        <p>هذه المؤشرات تساعدك على تحسين الاستمرار بعد التجريبية ومتابعة الالتزام بالواجبات.</p>
-                      </div>
-                      <TrendingUp size={32} />
-                    </div>
-
-                    <div className="wn-teacher-analytics__kpis">
-                      <div>
-                        <span>تحويل التجريبية</span>
-                        <strong>{analytics.trialConversion?.rate || 0}%</strong>
-                        <small>{analytics.trialConversion?.converted || 0} من {analytics.trialConversion?.completedTrials || 0} استمروا</small>
-                      </div>
-                      <div>
-                        <span>إكمال الواجبات</span>
-                        <strong>{analytics.homework?.completionRate || 0}%</strong>
-                        <small>{analytics.homework?.completed || 0} واجب معتمد</small>
-                      </div>
-                      <div>
-                        <span>متوسط التقييم</span>
-                        <strong>{Number(analytics.averageRating || 0).toFixed(1)}</strong>
-                        <small>من 5 نجوم</small>
-                      </div>
-                      <div>
-                        <span>الأسبوع القادم</span>
-                        <strong>{analytics.upcomingSevenDays || 0}</strong>
-                        <small>حصة مؤكدة</small>
-                      </div>
-                    </div>
-
-                    <div className="wn-teacher-analytics__grid">
-                      <section>
-                        <div className="wn-teacher-section-heading">
-                          <div><span>الحصص</span><h3>آخر 6 أشهر</h3></div>
-                          <strong>{analytics.totalCompleted || 0}</strong>
-                        </div>
-                        <div className="wn-teacher-monthly-bars">
-                          {(analytics.monthlySessions || []).length === 0 ? (
-                            <div className="wn-teacher-empty-state compact">
-                              <Calendar size={22} />
-                              <div><strong>لا بيانات كافية بعد</strong><p>تظهر الاتجاهات بعد إكمال الحصص.</p></div>
-                            </div>
-                          ) : (analytics.monthlySessions || []).map((month) => {
-                            const maxCount = Math.max(...analytics.monthlySessions.map((item) => item.count), 1);
-                            return (
-                              <div key={month.month}>
-                                <span>{month.month}</span>
-                                <div><i style={{ width: `${Math.max(8, (month.count / maxCount) * 100)}%` }} /></div>
-                                <strong>{month.count}</strong>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </section>
-
-                      <section>
-                        <div className="wn-teacher-section-heading">
-                          <div><span>الدخل</span><h3>ملخص الاستحقاقات</h3></div>
-                        </div>
-                        <div className="wn-teacher-earning-summary">
-                          <div><span>اليوم</span><strong>{analytics.earnings?.daily || 0} ج.م</strong></div>
-                          <div><span>آخر 7 أيام</span><strong>{analytics.earnings?.weekly || 0} ج.م</strong></div>
-                          <div><span>هذا الشهر</span><strong>{analytics.earnings?.monthly || 0} ج.م</strong></div>
-                          <div><span>متاح للسحب</span><strong>{analytics.earnings?.available || 0} ج.م</strong></div>
-                        </div>
-                        <button type="button" onClick={() => setTab('wallet')} className="wn-teacher-text-link">
-                          فتح المحفظة <ChevronLeft size={15} />
-                        </button>
-                      </section>
-                    </div>
-                  </>
-                )}
-              </div>
+              <TeacherAnalyticsPanel
+                analytics={analytics}
+                analyticsLoading={analyticsLoading}
+                analyticsError={analyticsError}
+                onRetry={fetchAnalytics}
+                onOpenWallet={() => setTab('wallet')}
+                isRTL={isRTL}
+                t={t}
+              />
             )}
 
             {tab === 'reviews' && (
               <div className="space-y-3">
-                <p className="text-sm text-slate-600 flex items-center gap-2">
-                  <MessageSquare size={16} /> متوسط التقييم: <strong>{reviewsData.averageRating?.toFixed?.(1) || '0'}</strong> ({reviewsData.totalReviews || 0} تقييم)
+                <p className="text-sm text-[var(--wn-text-secondary)] flex items-center gap-2">
+                  <MessageSquare size={16} aria-hidden="true" />
+                  <span>{rv.avgLabel || 'متوسط التقييم:'}</span>
+                  <strong>{reviewsData.averageRating?.toFixed?.(1) || '0'}</strong>
+                  <span>({formatMsg(rv.reviewsCount || '{count} تقييم', { count: reviewsData.totalReviews || 0 })})</span>
                 </p>
-                {reviewsData.reviews.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">لا تقييمات بعد</p>
+                {reviewsError && !reviewsData.reviews.length ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] p-5 text-center space-y-3"
+                  >
+                    <p className="text-sm font-semibold text-[var(--wn-text-danger)]">
+                      {rv.errorTitle || 'تعذر تحميل تقييمات الطلاب'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={fetchReviews}
+                      className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2"
+                    >
+                      <RefreshCw size={15} aria-hidden="true" />
+                      <span>{rv.retryBtn || 'إعادة المحاولة'}</span>
+                    </button>
+                  </div>
+                ) : reviewsLoading && !reviewsData.reviews.length ? (
+                  <div className="space-y-3" role="status" aria-live="polite">
+                    <Skeleton className="h-20 rounded-xl" />
+                    <Skeleton className="h-20 rounded-xl" />
+                  </div>
+                ) : reviewsData.reviews.length === 0 ? (
+                  <EmptyState icon={Star} title={rv.empty || 'لا تقييمات بعد'} />
                 ) : reviewsData.reviews.map((r) => (
-                  <div key={r._id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <p className="font-bold text-sm">{r.student?.name || 'طالب'}</p>
-                      <div className="flex gap-0.5">
+                  <div key={r._id} className="border border-[var(--wn-border)] bg-[var(--wn-surface)] rounded-lg p-4">
+                    <div className="flex justify-between items-start gap-2">
+                      <p className="font-bold text-sm text-[var(--wn-heading)]">{r.student?.name || rv.studentFallback || 'طالب'}</p>
+                      <div className="flex gap-0.5" aria-label={`${r.rating}/5`}>
                         {Array.from({ length: 5 }).map((_, i) => (
-                          <Star key={i} size={14} className={i < r.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'} />
+                          <Star
+                            key={i}
+                            size={14}
+                            aria-hidden="true"
+                            className={i < r.rating ? 'text-[var(--wn-gold)] fill-[var(--wn-gold)]' : 'text-[var(--wn-border-strong)]'}
+                          />
                         ))}
                       </div>
                     </div>
-                    {r.comment && <p className="text-sm text-gray-600 mt-2">{r.comment}</p>}
-                    <p className="text-xs text-gray-400 mt-1">{new Date(r.createdAt).toLocaleDateString('ar-EG')}</p>
+                    {r.comment && <p className="text-sm text-[var(--wn-text-secondary)] mt-2">{r.comment}</p>}
+                    <p className="text-xs text-[var(--wn-text-tertiary)] mt-1">{new Date(r.createdAt).toLocaleDateString(intlLocale)}</p>
                   </div>
                 ))}
               </div>
@@ -1769,21 +1736,22 @@ export default function TeacherDashboard() {
               <div className="wn-teacher-requests">
                 <div className="wn-teacher-requests__intro">
                   <div>
-                    <span>صندوق الطلبات</span>
-                    <h3>طلبات تحتاج قرارك</h3>
-                    <p>اقبل الموعد، اقترح وقتًا آخر، أو اعتذر. الطالب يتلقى القرار فورًا.</p>
+                    <span>{rq.eyebrow || 'صندوق الطلبات'}</span>
+                    <h3>{rq.title || 'طلبات تحتاج قرارك'}</h3>
+                    <p>{rq.subtitle || 'اقبل الموعد، اقترح وقتًا آخر، أو اعتذر. الطالب يتلقى القرار فورًا.'}</p>
                   </div>
                   <div className="wn-teacher-request-count">
                     <strong>{trials.length + pendingRegular.length}</strong>
-                    <small>طلب معلق</small>
+                    <small>{rq.pendingCountLabel || 'طلب معلق'}</small>
                   </div>
                 </div>
 
                 {(trials.length + pendingRegular.length) === 0 ? (
-                  <div className="wn-teacher-empty-state">
-                    <CheckCircle2 size={28} />
-                    <div><strong>صندوق الطلبات فارغ</strong><p>لا توجد طلبات تحتاج ردك الآن.</p></div>
-                  </div>
+                  <EmptyState
+                    icon={CheckCircle2}
+                    title={rq.emptyTitle || 'صندوق الطلبات فارغ'}
+                    description={rq.emptyDesc || 'لا توجد طلبات تحتاج ردك الآن.'}
+                  />
                 ) : (
                   <div className="wn-teacher-request-list">
                     {[
@@ -1791,38 +1759,70 @@ export default function TeacherDashboard() {
                       ...pendingRegular.map((item) => ({ ...item, requestKind: 'regular' })),
                     ]
                       .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
-                      .map((session) => (
-                        <article key={session._id} className="wn-teacher-request-card">
-                          <div className="wn-teacher-request-card__date">
-                            <strong>{formatSessionDateTime(session, 'ar-EG', { day: '2-digit' })}</strong>
-                            <span>{formatSessionDateTime(session, 'ar-EG', { month: 'short' })}</span>
-                          </div>
-                          <div className="wn-teacher-request-card__body">
-                            <span className={'wn-teacher-request-kind ' + (session.requestKind === 'trial' ? 'is-trial' : 'is-regular')}>
-                              {session.requestKind === 'trial' ? 'حصة تجريبية' : 'حصة منتظمة'}
-                            </span>
-                            {session.rescheduledFrom ? (
-                              <span className="ms-1.5 inline-block rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
-                                بانتظار تأكيد الطالب للموعد المقترح
+                      .map((session) => {
+                        const isResponding = respondingSessionId === String(session._id);
+                        return (
+                          <article key={session._id} className="wn-teacher-request-card">
+                            <div className="wn-teacher-request-card__date">
+                              <strong>{formatSessionDateTime(session, locale, { day: '2-digit' })}</strong>
+                              <span>{formatSessionDateTime(session, locale, { month: 'short' })}</span>
+                            </div>
+                            <div className="wn-teacher-request-card__body">
+                              <span className={'wn-teacher-request-kind ' + (session.requestKind === 'trial' ? 'is-trial' : 'is-regular')}>
+                                {session.requestKind === 'trial' ? (rq.kindTrial || 'حصة تجريبية') : (rq.kindRegular || 'حصة منتظمة')}
                               </span>
-                            ) : null}
-                            <h4>{session.student?.name || 'طالب'}</h4>
-                            <p><Clock size={14} /> {formatSessionDateTime(session, 'ar-EG', { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</p>
-                            {session.notes ? <small>{session.notes}</small> : null}
-                          </div>
-                          <div className="wn-teacher-request-card__actions">
-                            <button type="button" onClick={() => openSessionChat(session)} className="is-chat relative">
-                              <MessageSquare size={16} /> محادثة
-                              {unreadChatSessionIds.has(String(session._id)) ? (
-                                <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                              {session.rescheduledFrom ? (
+                                <span className="ms-1.5 inline-block rounded-full bg-[var(--wn-gold-soft)] border border-[var(--wn-gold)]/40 px-2.5 py-0.5 text-[11px] font-bold text-[var(--wn-badge-gold-text)]">
+                                  {rq.awaitingStudentConfirm || 'بانتظار تأكيد الطالب للموعد المقترح'}
+                                </span>
                               ) : null}
-                            </button>
-                            <button type="button" onClick={() => respondTrial(session._id, 'accept')} className="is-accept"><CheckCircle2 size={16} /> قبول</button>
-                            <button type="button" onClick={() => { setRescheduleModal(session); setRescheduleDate(''); }} className="is-reschedule"><Clock size={16} /> موعد آخر</button>
-                            <button type="button" onClick={() => setRejectModal(session)} className="is-reject"><X size={16} /> اعتذار</button>
-                          </div>
-                        </article>
-                      ))}
+                              <h4>{session.student?.name || rq.studentFallback || 'طالب'}</h4>
+                              <p>
+                                <Clock size={14} aria-hidden="true" />{' '}
+                                {formatSessionDateTime(session, locale, { hour: '2-digit', minute: '2-digit' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}
+                              </p>
+                              {session.notes ? <small>{session.notes}</small> : null}
+                            </div>
+                            <div className="wn-teacher-request-card__actions">
+                              <button type="button" onClick={() => openSessionChat(session)} className="is-chat relative min-h-[44px]">
+                                <MessageSquare size={16} aria-hidden="true" /> {rq.chatBtn || 'محادثة'}
+                                {unreadChatSessionIds.has(String(session._id)) ? (
+                                  <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-[var(--wn-danger)]" />
+                                ) : null}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isResponding}
+                                onClick={() => respondTrial(session._id, 'accept')}
+                                className="is-accept min-h-[44px] inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                              >
+                                {isResponding ? (
+                                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <CheckCircle2 size={16} aria-hidden="true" />
+                                )}
+                                {rq.acceptBtn || 'قبول'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isResponding}
+                                onClick={() => { setRescheduleModal(session); setRescheduleDate(''); }}
+                                className="is-reschedule min-h-[44px] disabled:opacity-50"
+                              >
+                                <Clock size={16} aria-hidden="true" /> {rq.rescheduleBtn || 'موعد آخر'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isResponding}
+                                onClick={() => setRejectModal(session)}
+                                className="is-reject min-h-[44px] disabled:opacity-50"
+                              >
+                                <X size={16} aria-hidden="true" /> {rq.rejectBtn || 'اعتذار'}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -1832,43 +1832,58 @@ export default function TeacherDashboard() {
               <div className="wn-teacher-sessions">
                 <div className="wn-teacher-sessions__intro">
                   <div>
-                    <span>الحصص المؤكدة</span>
-                    <h3>جدول الحصص</h3>
-                    <p>استخدم غرفة الأكاديمية للحصة، ثم أغلق الحصة وأرسل تقرير المتابعة بعد بدايتها.</p>
+                    <span>{ss.eyebrow || 'الحصص المؤكدة'}</span>
+                    <h3>{ss.title || 'جدول الحصص'}</h3>
+                    <p>{ss.subtitle || 'استخدم غرفة الأكاديمية للحصة، ثم أغلق الحصة وأرسل تقرير المتابعة بعد بدايتها.'}</p>
                   </div>
-                  <button type="button" onClick={() => setTab('schedule')} className="wn-teacher-secondary-light">
-                    <CalendarDays size={16} /> إدارة التوفر
+                  <button type="button" onClick={() => setTab('schedule')} className="wn-teacher-secondary-light min-h-[44px]">
+                    <CalendarDays size={16} aria-hidden="true" /> {ss.manageScheduleBtn || 'إدارة التوفر'}
                   </button>
                 </div>
 
                 {myCircles.length > 0 && (
-                  <section className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                  <section className="mb-6 rounded-2xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                       <div>
-                        <span className="text-xs font-bold text-emerald-700">حلقات الاشتراكات الجماعية</span>
-                        <h4 className="text-base font-bold text-slate-900">حلقاتي الجماعية المسندة إليّ ({myCircles.length})</h4>
+                        <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">{ss.circlesEyebrow || 'حلقات الاشتراكات الجماعية'}</span>
+                        <h4 className="text-base font-bold text-[var(--wn-heading)]">
+                          {formatMsg(ss.circlesTitle || 'حلقاتي الجماعية المسندة إليّ ({count})', { count: myCircles.length })}
+                        </h4>
                       </div>
                     </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       {myCircles.map((circle) => {
                         const canSchedule = ['active', 'full'].includes(circle.status);
                         return (
-                          <div key={circle._id} className="rounded-xl border border-slate-200 bg-white p-3.5 flex flex-col justify-between gap-3">
+                          <div key={circle._id} className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-3.5 flex flex-col justify-between gap-3">
                             <div>
                               <div className="flex items-center justify-between gap-2">
-                                <strong className="text-sm text-slate-900">{circle.name}</strong>
-                                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                                  canSchedule ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                }`}>
-                                  {circle.status === 'active' ? 'نشطة' : circle.status === 'full' ? 'مكتملة العدد' : 'قيد التكوين'}
+                                <strong className="text-sm text-[var(--wn-heading)]">{circle.name}</strong>
+                                <span
+                                  className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                    canSchedule
+                                      ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)]'
+                                      : 'bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)]'
+                                  }`}
+                                >
+                                  {circle.status === 'active'
+                                    ? (ss.circleActive || 'نشطة')
+                                    : circle.status === 'full'
+                                      ? (ss.circleFull || 'مكتملة العدد')
+                                      : (ss.circleForming || 'قيد التكوين')}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-600 mt-1">
-                                الطلاب: {circle.currentCount || 0} / {circle.capacity || 10} · المدة: {circle.durationMinMinutes || 30}–{circle.durationMaxMinutes || 60} دقيقة
+                              <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+                                {formatMsg(ss.circleMeta || 'الطلاب: {current} / {capacity} · المدة: {min}–{max} دقيقة', {
+                                  current: circle.currentCount || 0,
+                                  capacity: circle.capacity || 10,
+                                  min: circle.durationMinMinutes || 30,
+                                  max: circle.durationMaxMinutes || 60,
+                                })}
                               </p>
                               {(circle.students || []).length > 0 && (
-                                <p className="text-xs text-slate-500 mt-1 truncate">
-                                  {circle.students.map((st) => st.name).filter(Boolean).join('، ')}
+                                <p className="text-xs text-[var(--wn-text-tertiary)] mt-1 truncate">
+                                  {circle.students.map((stItem) => stItem.name).filter(Boolean).join('، ')}
                                 </p>
                               )}
                             </div>
@@ -1883,9 +1898,9 @@ export default function TeacherDashboard() {
                                   notes: '',
                                 });
                               }}
-                              className="btn-primary text-xs py-2 disabled:opacity-50"
+                              className="btn-primary min-h-[44px] text-xs py-2 disabled:opacity-50"
                             >
-                              <Plus size={14} /> جدولة حصة للحلقة
+                              <Plus size={14} aria-hidden="true" /> {ss.scheduleCircleBtn || 'جدولة حصة للحلقة'}
                             </button>
                           </div>
                         );
@@ -1894,12 +1909,12 @@ export default function TeacherDashboard() {
                   </section>
                 )}
 
-                
                 {sessions.length === 0 ? (
-                  <div className="wn-teacher-empty-state">
-                    <Calendar size={28} />
-                    <div><strong>لا توجد حصص مؤكدة</strong><p>الحصص التي تقبلها ستظهر هنا.</p></div>
-                  </div>
+                  <EmptyState
+                    icon={Calendar}
+                    title={ss.noConfirmedTitle || 'لا توجد حصص مؤكدة'}
+                    description={ss.noConfirmedDesc || 'الحصص التي تقبلها ستظهر هنا.'}
+                  />
                 ) : (
                   <div className="wn-teacher-session-list">
                     {[...sessions]
@@ -1911,35 +1926,51 @@ export default function TeacherDashboard() {
                         const hasStarted = session.lifecycle?.started ?? (new Date(session.scheduledAt) <= new Date());
                         const canJoinRoom = session.lifecycle?.joinOpen ?? (session.status === 'accepted' && joinWindow.within);
                         const canComplete = session.lifecycle?.canComplete ?? hasStarted;
+                        const isEntering = enteringRoomId === String(session._id);
+
                         return (
                           <article key={session._id} className={'wn-teacher-session-card ' + (hasStarted ? 'is-due' : '')}>
                             <div className="wn-teacher-session-card__time">
-                              <strong>{formatSessionDateTime(session, 'ar-EG', { hour: '2-digit', minute: '2-digit' })}</strong>
-                              <span>{formatSessionDateTime(session, 'ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                              <strong>{formatSessionDateTime(session, locale, { hour: '2-digit', minute: '2-digit' })}</strong>
+                              <span>{formatSessionDateTime(session, locale, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                               <small>{sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
                             </div>
                             <div className="wn-teacher-session-card__student">
-                              <span>{session.type === 'trial' ? 'تجريبية' : session.type === 'group_circle' ? 'جماعية' : 'فردية'}</span>
-                              <h4>{session.type === 'group_circle' ? (session.circle?.name || 'حلقة جماعية') : (session.student?.name || 'طالب')}</h4>
+                              <span>
+                                {session.type === 'trial'
+                                  ? (ss.badgeTrial || 'تجريبية')
+                                  : session.type === 'group_circle'
+                                    ? (ss.badgeGroup || 'جماعية')
+                                    : (ss.badgeIndividual || 'فردية')}
+                              </span>
+                              <h4>
+                                {session.type === 'group_circle'
+                                  ? (session.circle?.name || wl.groupCircleFallback || 'حلقة جماعية')
+                                  : (session.student?.name || rq.studentFallback || 'طالب')}
+                              </h4>
                               {session.type !== 'group_circle' ? (() => {
                                 const studentEntry = (session.attendance || []).find(
                                   (entry) => String(entry.student?._id || entry.student || '') === String(session.student?._id || session.student || '')
                                 );
                                 return (
                                   <div className="space-y-1.5">
-                                    <button type="button" onClick={() => openStudent(session.student)}>عرض ملف الطالب</button>
+                                    <button type="button" onClick={() => openStudent(session.student)} className="min-h-[44px]">
+                                      {ss.viewStudentProfileBtn || 'عرض ملف الطالب'}
+                                    </button>
                                     {studentEntry?.status === 'confirmed' ? (
-                                      <span className="block w-fit rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-                                        ✓ أكد الطالب الحضور
+                                      <span className="block w-fit rounded-full bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] px-2.5 py-0.5 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                                        {ss.studentConfirmed || '✓ أكد الطالب الحضور'}
                                       </span>
                                     ) : null}
                                     {studentEntry?.status === 'excused' ? (
                                       <div className="space-y-0.5">
-                                        <span className="inline-block rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                                          اعتذر الطالب مسبقاً
+                                        <span className="inline-block rounded-full bg-[var(--wn-gold-soft)] border border-[var(--wn-gold)]/40 px-2.5 py-0.5 text-xs font-bold text-[var(--wn-badge-gold-text)]">
+                                          {ss.studentExcused || 'اعتذر الطالب مسبقًا'}
                                         </span>
                                         {studentEntry.excuseReason ? (
-                                          <p className="text-xs text-slate-600">السبب: {studentEntry.excuseReason}</p>
+                                          <p className="text-xs text-[var(--wn-text-secondary)]">
+                                            {formatMsg(ss.excuseReason || 'السبب: {reason}', { reason: studentEntry.excuseReason })}
+                                          </p>
                                         ) : null}
                                       </div>
                                     ) : null}
@@ -1947,66 +1978,78 @@ export default function TeacherDashboard() {
                                 );
                               })() : (
                                 <div className="mt-2 space-y-2">
-                                  <small>{session.attendance?.length || 0} طالب · {session.duration || 60} دقيقة</small>
+                                  <small>
+                                    {formatMsg(ss.groupMeta || '{count} طالب · {duration} دقيقة', {
+                                      count: session.attendance?.length || 0,
+                                      duration: session.duration || 60,
+                                    })}
+                                  </small>
                                   {!hasStarted ? (
-                                    <p className="text-xs font-semibold text-slate-500">تسجيل الحضور يفتح عند بداية موعد الحلقة.</p>
+                                    <p className="text-xs font-semibold text-[var(--wn-text-secondary)]">
+                                      {ss.attendanceOpensOnStart || 'تسجيل الحضور يفتح عند بداية موعد الحلقة.'}
+                                    </p>
                                   ) : null}
                                   <div className="space-y-1.5">
                                     {(session.attendance || []).map((entry) => {
                                       const studentId = entry.student?._id || entry.student;
-                                      const studentName = entry.student?.name || 'طالب';
+                                      const studentName = entry.student?.name || rq.studentFallback || 'طالب';
                                       const isEligibleExcuse = entry.status === 'excused' && entry.eligibleForCompensation;
                                       const isUpdating = attendanceUpdating === session._id + ':' + studentId;
                                       return (
-                                        <div key={studentId} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs">
-                                          <strong className="min-w-[90px]">{studentName}</strong>
+                                        <div
+                                          key={studentId}
+                                          className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-2.5 py-2 text-xs"
+                                        >
+                                          <strong className="min-w-[90px] text-[var(--wn-heading)]">{studentName}</strong>
                                           {isEligibleExcuse ? (
                                             <>
-                                              <span className="rounded-full bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                                                معتذر — لا تخصم
+                                              <span className="rounded-full bg-[var(--wn-surface-mint)] px-2 py-1 font-semibold text-[var(--wn-badge-emerald-text)]">
+                                                {att.excusedExempt || 'معتذر — لا تخصم'}
                                               </span>
                                               <button
                                                 type="button"
                                                 disabled={isUpdating || !hasStarted}
                                                 onClick={() => updateGroupAttendance(session, studentId, 'attended')}
-                                                className="rounded-lg bg-emerald-50 px-2.5 py-1 font-bold text-emerald-700"
+                                                className="min-h-[44px] inline-flex items-center justify-center rounded-lg bg-[var(--wn-emerald-soft)] px-3 py-1 font-bold text-[var(--wn-badge-emerald-text)] disabled:opacity-50"
                                               >
-                                                حضر فعليًا
+                                                {att.markAttendedActual || 'حضر فعليًا'}
                                               </button>
                                             </>
                                           ) : (
                                             <>
                                               <button
                                                 type="button"
+                                                aria-pressed={entry.status === 'attended'}
                                                 disabled={isUpdating || !hasStarted}
                                                 onClick={() => updateGroupAttendance(session, studentId, 'attended')}
                                                 className={
-                                                  'rounded-lg px-2.5 py-1 font-bold ' +
+                                                  'min-h-[44px] inline-flex items-center justify-center rounded-lg px-3 py-1 font-bold disabled:opacity-50 ' +
                                                   (entry.status === 'attended'
-                                                    ? 'bg-emerald-600 text-white'
-                                                    : 'bg-emerald-50 text-emerald-700')
+                                                    ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                                                    : 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)]')
                                                 }
                                               >
-                                                حضر
+                                                {att.markAttended || 'حضر'}
                                               </button>
                                               <button
                                                 type="button"
+                                                aria-pressed={entry.status === 'absent'}
                                                 disabled={isUpdating || !hasStarted}
                                                 onClick={() => updateGroupAttendance(session, studentId, 'absent')}
                                                 className={
-                                                  'rounded-lg px-2.5 py-1 font-bold ' +
+                                                  'min-h-[44px] inline-flex items-center justify-center rounded-lg px-3 py-1 font-bold disabled:opacity-50 ' +
                                                   (entry.status === 'absent'
-                                                    ? 'bg-rose-600 text-white'
-                                                    : 'bg-rose-50 text-rose-700')
+                                                    ? 'bg-[var(--wn-danger)] text-[var(--wn-white)]'
+                                                    : 'bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)]')
                                                 }
                                               >
-                                                غاب
+                                                {att.markAbsent || 'غاب'}
                                               </button>
                                             </>
                                           )}
                                           {entry.status === 'excused' && !entry.eligibleForCompensation ? (
-                                            <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700">
-                                              اعتذار متأخر — تخصم
+                                            <span className="rounded-full bg-[var(--wn-gold-soft)] px-2 py-1 font-semibold text-[var(--wn-badge-gold-text)]">
+                                              {att.excusedLate || 'اعتذار متأخر — تخصم'}
                                             </span>
                                           ) : null}
                                         </div>
@@ -2017,30 +2060,49 @@ export default function TeacherDashboard() {
                               )}
                             </div>
                             <div className="wn-teacher-session-card__actions">
-                              <button type="button" onClick={() => openSessionChat(session)} className="relative">
-                                <MessageSquare size={16} /> محادثة
+                              <button type="button" onClick={() => openSessionChat(session)} className="relative min-h-[44px]">
+                                <MessageSquare size={16} aria-hidden="true" /> {ss.chatBtn || 'محادثة'}
                                 {unreadChatSessionIds.has(String(session._id)) ? (
-                                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                                  <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-[var(--wn-danger)]" />
                                 ) : null}
                               </button>
                               {canJoinRoom ? (
                                 <>
-                                  <button type="button" onClick={() => enterAcademyRoom(session)} className="is-room"><Video size={16} /> غرفة الأكاديمية</button>
-                                  <Link to={lp(`/meeting/${session._id}`)} className="is-translate">ترجمة مباشرة</Link>
+                                  <button
+                                    type="button"
+                                    disabled={isEntering}
+                                    onClick={() => enterAcademyRoom(session)}
+                                    className="is-room min-h-[44px]"
+                                  >
+                                    {isEntering ? (
+                                      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Video size={16} aria-hidden="true" />
+                                    )}
+                                    {ss.academyRoomBtn || 'غرفة الأكاديمية'}
+                                  </button>
+                                  <Link to={lp(`/meeting/${session._id}`)} className="is-translate min-h-[44px]">
+                                    {ss.liveTranslateBtn || 'ترجمة مباشرة'}
+                                  </Link>
                                 </>
                               ) : (
-                                <span className="text-xs font-semibold text-slate-500 px-2">
-                                  {joinWindow.phase === 'early' ? 'الغرفة تفتح قبل الموعد بـ30 دقيقة' : 'انتهى وقت الدخول — أغلق الحصة وأرسل التقرير'}
+                                <span className="text-xs font-semibold text-[var(--wn-text-secondary)] px-2">
+                                  {joinWindow.phase === 'early'
+                                    ? (ss.roomOpensEarly || 'الغرفة تفتح قبل الموعد بـ 30 دقيقة')
+                                    : (ss.roomWindowEnded || 'انتهى وقت الدخول — أغلق الحصة وأرسل التقرير')}
                                 </span>
                               )}
                               <button
                                 type="button"
                                 onClick={() => session.type === 'group_circle' ? completeGroupSession(session) : openEval(session)}
                                 disabled={!canComplete}
-                                className="is-complete"
-                                title={!canComplete ? 'يمكن إنهاء الحصة بعد بدء موعدها حسب توقيت السيرفر فقط' : undefined}
+                                className="is-complete min-h-[44px]"
+                                title={!canComplete ? (ss.completeDisabledTitle || 'يمكن إنهاء الحصة بعد بدء موعدها حسب توقيت السيرفر فقط') : undefined}
                               >
-                                <CheckCircle2 size={16} /> {session.type === 'group_circle' ? 'إنهاء الحصة الجماعية' : 'إنهاء + تقرير'}
+                                <CheckCircle2 size={16} aria-hidden="true" />{' '}
+                                {session.type === 'group_circle'
+                                  ? (ss.completeGroupBtn || 'إنهاء الحصة الجماعية')
+                                  : (ss.completeReportBtn || 'إنهاء + تقرير')}
                               </button>
                             </div>
                           </article>
@@ -2049,20 +2111,21 @@ export default function TeacherDashboard() {
                   </div>
                 )}
 
-                <section className="mt-8 border-t border-slate-200 pt-6">
+                <section className="mt-8 border-t border-[var(--wn-border)] pt-6">
                   <div className="wn-teacher-section-heading">
                     <div>
-                      <span>السجل</span>
-                      <h3>الحصص المكتملة وتقاريرها</h3>
+                      <span>{ss.historyEyebrow || 'السجل'}</span>
+                      <h3>{ss.historyTitle || 'الحصص المكتملة وتقاريرها'}</h3>
                     </div>
                     <strong>{completedSessions.length}</strong>
                   </div>
 
                   {completedSessions.length === 0 ? (
-                    <div className="wn-teacher-empty-state compact">
-                      <CheckCircle2 size={22} />
-                      <div><strong>لا توجد حصص مكتملة بعد</strong><p>بعد إنهاء أي حصة سيظهر تقريرها هنا.</p></div>
-                    </div>
+                    <EmptyState
+                      icon={CheckCircle2}
+                      title={ss.noCompletedTitle || 'لا توجد حصص مكتملة بعد'}
+                      description={ss.noCompletedDesc || 'بعد إنهاء أي حصة سيظهر تقريرها هنا.'}
+                    />
                   ) : (
                     <div className="space-y-3">
                       {completedSessions.map((session) => {
@@ -2076,46 +2139,61 @@ export default function TeacherDashboard() {
                         const toAyah = ev.toAyah || legacyReport.toAyah;
                         const nextHomework = ev.nextHomework || legacyReport.nextHomework;
                         const notes = ev.overallNotes || legacyReport.notes;
+                        const evalCriteria = ss.evalCriteria || {};
 
                         return (
-                          <article key={session._id} className="rounded-xl border border-slate-200 bg-white p-4">
+                          <article key={session._id} className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-4">
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <span className="text-xs font-bold text-emerald-700">{session.type === 'trial' ? 'حصة تجريبية' : session.type === 'group_circle' ? 'حصة جماعية' : 'حصة منتظمة'}</span>
-                                <h4 className="font-bold text-slate-900">{session.type === 'group_circle' ? (session.circle?.name || 'حلقة جماعية') : (session.student?.name || 'طالب')}</h4>
-                                <p className="text-xs text-slate-500">
-                                  {formatSessionDateTime(session, 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}
+                                <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                                  {session.type === 'trial'
+                                    ? (ov.sessionTrial || 'حصة تجريبية')
+                                    : session.type === 'group_circle'
+                                      ? (ov.sessionGroup || 'حصة جماعية')
+                                      : (ss.historyRegular || 'حصة منتظمة')}
+                                </span>
+                                <h4 className="font-bold text-[var(--wn-heading)]">
+                                  {session.type === 'group_circle'
+                                    ? (session.circle?.name || wl.groupCircleFallback || 'حلقة جماعية')
+                                    : (session.student?.name || rq.studentFallback || 'طالب')}
+                                </h4>
+                                <p className="text-xs text-[var(--wn-text-secondary)]">
+                                  {formatSessionDateTime(session, locale, { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}
                                 </p>
                               </div>
-                              <button type="button" onClick={() => openSessionChat(session)} className="wn-teacher-secondary-light relative">
-                                <MessageSquare size={15} /> محادثة الحصة
+                              <button type="button" onClick={() => openSessionChat(session)} className="wn-teacher-secondary-light relative min-h-[44px]">
+                                <MessageSquare size={15} aria-hidden="true" /> {ss.chatSessionBtn || 'محادثة الحصة'}
                                 {unreadChatSessionIds.has(String(session._id)) ? (
-                                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                                  <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-[var(--wn-danger)]" />
                                 ) : null}
                               </button>
                             </div>
 
                             <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
                               {[
-                                ['attendance', 'الحضور'],
-                                ['memorization', 'الحفظ'],
-                                ['tajweed', 'التجويد'],
-                                ['behavior', 'السلوك'],
-                                ['commitment', 'الالتزام'],
+                                ['attendance', evalCriteria.attendance || 'الحضور'],
+                                ['memorization', evalCriteria.memorization || 'الحفظ'],
+                                ['tajweed', evalCriteria.tajweed || 'التجويد'],
+                                ['behavior', evalCriteria.behavior || 'السلوك'],
+                                ['commitment', evalCriteria.commitment || 'الالتزام'],
                               ].map(([key, label]) => (
-                                <div key={key} className="rounded-lg bg-slate-50 p-2 text-center">
-                                  <span className="block text-slate-500">{label}</span>
-                                  <strong className="text-emerald-800">{ev[key] ?? '—'}/5</strong>
+                                <div key={key} className="rounded-lg bg-[var(--wn-surface-soft)] p-2 text-center">
+                                  <span className="block text-[var(--wn-text-secondary)]">{label}</span>
+                                  <strong className="text-[var(--wn-heading)]">{ev[key] ?? '—'}/5</strong>
                                 </div>
                               ))}
                             </div>
 
                             {(surah || fromAyah || toAyah || nextHomework || notes) ? (
-                              <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-slate-700">
-                                {surah ? <p><strong>السورة / المقطع:</strong> {surah}</p> : null}
-                                {(fromAyah || toAyah) ? <p><strong>الآيات:</strong> {fromAyah || '—'} إلى {toAyah || '—'}</p> : null}
-                                {nextHomework ? <p><strong>الهدف / الواجب القادم:</strong> {nextHomework}</p> : null}
-                                {notes ? <p><strong>الملاحظات:</strong> {notes}</p> : null}
+                              <div className="mt-3 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-3 text-sm text-[var(--wn-text-primary)]">
+                                {surah ? <p><strong>{ss.surahLabel || 'السورة / المقطع:'}</strong> {surah}</p> : null}
+                                {(fromAyah || toAyah) ? (
+                                  <p>
+                                    <strong>{ss.ayahsLabel || 'الآيات:'}</strong> {fromAyah || '—'} {ss.toAyah || 'إلى'} {toAyah || '—'}
+                                  </p>
+                                ) : null}
+                                {nextHomework ? <p><strong>{ss.nextHomeworkLabel || 'الهدف / الواجب القادم:'}</strong> {nextHomework}</p> : null}
+                                {notes ? <p><strong>{ss.notesLabel || 'الملاحظات:'}</strong> {notes}</p> : null}
                               </div>
                             ) : null}
                           </article>
@@ -2131,18 +2209,19 @@ export default function TeacherDashboard() {
               <div className="wn-teacher-students">
                 <div className="wn-teacher-students__intro">
                   <div>
-                    <span>Student Hub</span>
-                    <h3>طلابي</h3>
-                    <p>متابعة الطالب لا تتوقف عند الحجز: الحصص، الواجبات، آخر تقدم، والموعد القادم في مكان واحد.</p>
+                    <span>{st.eyebrow || 'ملفات الطلاب'}</span>
+                    <h3>{st.title || 'طلابي'}</h3>
+                    <p>{st.subtitle || 'متابعة الطالب لا تتوقف عند الحجز: الحصص، الواجبات، آخر تقدم، والموعد القادم في مكان واحد.'}</p>
                   </div>
                   <strong>{activeStudents.length}</strong>
                 </div>
 
                 {activeStudents.length === 0 ? (
-                  <div className="wn-teacher-empty-state">
-                    <Users size={28} />
-                    <div><strong>لا يوجد طلاب نشطون بعد</strong><p>بعد قبول أول حصة منتظمة سيظهر الطالب هنا تلقائيًا.</p></div>
-                  </div>
+                  <EmptyState
+                    icon={Users}
+                    title={st.emptyTitle || 'لا يوجد طلاب نشطون بعد'}
+                    description={st.emptyDesc || 'بعد قبول أول حصة منتظمة سيظهر الطالب هنا تلقائيًا.'}
+                  />
                 ) : (
                   <div className="wn-teacher-student-grid">
                     {activeStudents.map((student) => (
@@ -2151,54 +2230,56 @@ export default function TeacherDashboard() {
                           <span className="wn-teacher-avatar large">{(student.name || 'ط').slice(0, 1)}</span>
                           <div>
                             <h4>{student.name}</h4>
-                            <p>{student.completedSessions || 0} حصة مكتملة</p>
+                            <p>{formatMsg(st.completedCount || '{count} حصة مكتملة', { count: student.completedSessions || 0 })}</p>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {(student.circles || []).length > 0 ? (
                                 student.circles.map((circle) => (
                                   <span
                                     key={circle._id}
-                                    className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-800"
+                                    className="inline-block rounded-full bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] px-2 py-0.5 text-[11px] font-bold text-[var(--wn-badge-emerald-text)]"
                                   >
                                     {circle.name}
                                   </span>
                                 ))
                               ) : (
-                                <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                                  حلقات فردية
+                                <span className="inline-block rounded-full bg-[var(--wn-surface-sunken)] px-2 py-0.5 text-[11px] font-semibold text-[var(--wn-text-secondary)]">
+                                  {st.individualCircles || 'حلقات فردية'}
                                 </span>
                               )}
                             </div>
                           </div>
-                          {student.submittedHomework > 0 ? <b>{student.submittedHomework} واجب للتصحيح</b> : null}
+                          {student.submittedHomework > 0 ? (
+                            <b>{formatMsg(st.homeworkToReview || '{count} واجب للتصحيح', { count: student.submittedHomework })}</b>
+                          ) : null}
                         </div>
 
                         <div className="wn-teacher-student-card__metrics">
                           <div>
-                            <span>الحصة القادمة</span>
-                            <strong>{student.nextSession ? new Date(student.nextSession.scheduledAt).toLocaleDateString('ar-EG') : '—'}</strong>
+                            <span>{st.nextSessionLabel || 'الحصة القادمة'}</span>
+                            <strong>{student.nextSession ? new Date(student.nextSession.scheduledAt).toLocaleDateString(intlLocale) : '—'}</strong>
                           </div>
                           <div>
-                            <span>واجبات معلقة</span>
+                            <span>{st.pendingHomeworkLabel || 'واجبات معلقة'}</span>
                             <strong>{student.pendingHomework || 0}</strong>
                           </div>
                           <div>
-                            <span>آخر حفظ</span>
+                            <span>{st.lastMemorizationLabel || 'آخر حفظ'}</span>
                             <strong>{student.lastProgress?.surahRecited || '—'}</strong>
                           </div>
                         </div>
 
                         {student.lastProgress ? (
                           <div className="wn-teacher-student-card__progress">
-                            <span>آخر تقييم</span>
+                            <span>{st.lastEvalLabel || 'آخر تقييم'}</span>
                             <div>
-                              <small>الحفظ</small><strong>{student.lastProgress.memorizationScore ?? '—'}/10</strong>
-                              <small>التجويد</small><strong>{student.lastProgress.tajweedScore ?? '—'}/10</strong>
+                              <small>{st.memorization || 'الحفظ'}</small><strong>{student.lastProgress.memorizationScore ?? '—'}/10</strong>
+                              <small>{st.tajweed || 'التجويد'}</small><strong>{student.lastProgress.tajweedScore ?? '—'}/10</strong>
                             </div>
                           </div>
                         ) : null}
 
-                        <button type="button" onClick={() => openStudent(student)} className="wn-teacher-student-card__open">
-                          فتح الملف التعليمي <ChevronLeft size={16} />
+                        <button type="button" onClick={() => openStudent(student)} className="wn-teacher-student-card__open min-h-[44px]">
+                          {st.openProfileBtn || 'فتح الملف التعليمي'} <ForwardChevron size={16} aria-hidden="true" />
                         </button>
                       </article>
                     ))}
@@ -2211,62 +2292,93 @@ export default function TeacherDashboard() {
               <div className="wn-teacher-updates">
                 <div className="wn-teacher-updates__intro">
                   <div>
-                    <span>رسائل لطلابي</span>
-                    <h3>شارك كلمة أو توجيهًا بالفيديو</h3>
-                    <p>يمكنك إرفاق حتى 5 فيديوهات في الرسالة الواحدة، وإرسالها لكل طلابك النشطين أو لطلاب تختارهم.</p>
+                    <span>{up.eyebrow || 'رسائل لطلابي'}</span>
+                    <h3>{up.title || 'شارك كلمة أو توجيهًا بالفيديو'}</h3>
+                    <p>{up.subtitle || 'يمكنك إرفاق حتى 5 فيديوهات في الرسالة الواحدة، وإرسالها لكل طلابك النشطين أو لطلاب تختارهم.'}</p>
                   </div>
-                  <Megaphone size={30} />
+                  <Megaphone size={30} aria-hidden="true" />
                 </div>
 
                 <div className="wn-teacher-updates__grid">
                   <form onSubmit={publishTeacherUpdate} className="wn-teacher-update-composer">
                     <div className="wn-teacher-section-heading">
-                      <div><span>رسالة جديدة</span><h3>انشر تحديثًا لطلابك</h3></div>
+                      <div><span>{up.composerEyebrow || 'رسالة جديدة'}</span><h3>{up.composerTitle || 'انشر تحديثًا لطلابك'}</h3></div>
                     </div>
 
-                    <input className="input-field w-full" maxLength={140} required
-                      placeholder="العنوان — مثال: كلمة قبل مراجعة سورة الملك"
-                      value={updateForm.title}
-                      onChange={(event) => setUpdateForm((current) => ({ ...current, title: event.target.value }))} />
+                    <div>
+                      <label htmlFor="teacher-update-title" className="sr-only">
+                        {up.titlePlaceholder || 'عنوان الرسالة'}
+                      </label>
+                      <input
+                        id="teacher-update-title"
+                        className="input-field w-full"
+                        maxLength={140}
+                        required
+                        placeholder={up.titlePlaceholder || 'العنوان — مثال: كلمة قبل مراجعة سورة الملك'}
+                        value={updateForm.title}
+                        onChange={(event) => setUpdateForm((current) => ({ ...current, title: event.target.value }))}
+                      />
+                    </div>
 
-                    <textarea className="input-field w-full" rows={4} maxLength={2000}
-                      placeholder="اكتب رسالة قصيرة أو تعليمات مع الفيديو..."
-                      value={updateForm.message}
-                      onChange={(event) => setUpdateForm((current) => ({ ...current, message: event.target.value }))} />
+                    <div>
+                      <label htmlFor="teacher-update-message" className="sr-only">
+                        {up.messagePlaceholder || 'نص الرسالة'}
+                      </label>
+                      <textarea
+                        id="teacher-update-message"
+                        className="input-field w-full"
+                        rows={4}
+                        maxLength={2000}
+                        placeholder={up.messagePlaceholder || 'اكتب رسالة قصيرة أو تعليمات مع الفيديو...'}
+                        value={updateForm.message}
+                        onChange={(event) => setUpdateForm((current) => ({ ...current, message: event.target.value }))}
+                      />
+                    </div>
 
                     <div className="wn-teacher-update-audience">
-                      <label>
-                        <input type="radio" name="teacher-update-audience"
+                      <label htmlFor="update-audience-all">
+                        <input
+                          id="update-audience-all"
+                          type="radio"
+                          name="teacher-update-audience"
                           checked={updateForm.audienceMode === 'all-active'}
-                          onChange={() => setUpdateForm((current) => ({ ...current, audienceMode: 'all-active', studentIds: [] }))} />
-                        <span><strong>كل طلابي النشطين</strong><small>تصل الرسالة لكل الطلاب المرتبطين بك</small></span>
+                          onChange={() => setUpdateForm((current) => ({ ...current, audienceMode: 'all-active', studentIds: [] }))}
+                        />
+                        <span><strong>{up.audienceAllTitle || 'كل طلابي النشطين'}</strong><small>{up.audienceAllDesc || 'تصل الرسالة لكل الطلاب المرتبطين بك'}</small></span>
                       </label>
-                      <label>
-                        <input type="radio" name="teacher-update-audience"
+                      <label htmlFor="update-audience-selected">
+                        <input
+                          id="update-audience-selected"
+                          type="radio"
+                          name="teacher-update-audience"
                           checked={updateForm.audienceMode === 'selected'}
-                          onChange={() => setUpdateForm((current) => ({ ...current, audienceMode: 'selected' }))} />
-                        <span><strong>طلاب محددون</strong><small>اختر طالبًا أو أكثر</small></span>
+                          onChange={() => setUpdateForm((current) => ({ ...current, audienceMode: 'selected' }))}
+                        />
+                        <span><strong>{up.audienceSelectedTitle || 'طلاب محددون'}</strong><small>{up.audienceSelectedDesc || 'اختر طالبًا أو أكثر'}</small></span>
                       </label>
                     </div>
 
                     {updateForm.audienceMode === 'selected' && (
                       <div className="space-y-3">
                         {myCircles.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                            <span className="text-xs font-bold text-emerald-900">تحديد حلقة كاملة:</span>
+                          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-2.5">
+                            <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                              {up.selectCirclePrefix || 'تحديد حلقة كاملة:'}
+                            </span>
                             {myCircles.map((circle) => {
-                              const circleIds = (circle.students || []).map((st) => String(st?._id || st)).filter(Boolean);
+                              const circleIds = (circle.students || []).map((stItem) => String(stItem?._id || stItem)).filter(Boolean);
                               const allSelected = circleIds.length > 0 && circleIds.every((id) => updateForm.studentIds.includes(id));
                               return (
                                 <button
                                   key={circle._id}
                                   type="button"
+                                  aria-pressed={allSelected}
                                   disabled={!circleIds.length}
                                   onClick={() => toggleUpdateCircleStudents(circle)}
-                                  className={`rounded-full border px-2.5 py-1 text-xs font-bold transition ${
+                                  className={`min-h-[44px] inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-bold transition ${
                                     allSelected
-                                      ? 'border-emerald-700 bg-emerald-700 text-white'
-                                      : 'border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100'
+                                      ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                                      : 'border-[var(--wn-border-mint)] bg-[var(--wn-surface)] text-[var(--wn-badge-emerald-text)] hover:bg-[var(--wn-emerald-soft)]'
                                   } disabled:opacity-40`}
                                 >
                                   {circle.name}
@@ -2276,89 +2388,141 @@ export default function TeacherDashboard() {
                           </div>
                         )}
                         <div className="wn-teacher-update-students">
-                          {activeStudents.length === 0 ? <p>لا يوجد طلاب نشطون للاختيار.</p> : activeStudents.map((student) => (
+                          {activeStudents.length === 0 ? (
+                            <p>{up.noActiveStudents || 'لا يوجد طلاب نشطون للاختيار.'}</p>
+                          ) : activeStudents.map((student) => (
                             <label key={student._id} className={updateForm.studentIds.includes(student._id) ? 'is-selected' : ''}>
-                              <input type="checkbox"
+                              <input
+                                type="checkbox"
                                 checked={updateForm.studentIds.includes(student._id)}
-                                onChange={() => toggleUpdateStudent(student._id)} />
+                                onChange={() => toggleUpdateStudent(student._id)}
+                              />
                               <span className="wn-teacher-avatar">{(student.name || 'ط').slice(0, 1)}</span>
-                              <span><strong>{student.name}</strong><small>{student.completedSessions || 0} حصة مكتملة</small></span>
+                              <span>
+                                <strong>{student.name}</strong>
+                                <small>{formatMsg(up.completedCount || '{count} حصة مكتملة', { count: student.completedSessions || 0 })}</small>
+                              </span>
                             </label>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    <label className="wn-teacher-update-upload">
-                      <Upload size={22} />
+                    <label htmlFor="teacher-update-video-upload" className="wn-teacher-update-upload">
+                      <Upload size={22} aria-hidden="true" />
                       <span>
-                        <strong>اختر فيديوهات (اختياري)</strong>
-                        <small>MP4 / WebM / MOV — حتى 5 فيديوهات، 100MB لكل فيديو</small>
+                        <strong>{up.uploadTitle || 'اختر فيديوهات (اختياري)'}</strong>
+                        <small>{up.uploadHint || 'MP4 / WebM / MOV — حتى 5 فيديوهات، 100MB لكل فيديو'}</small>
                       </span>
-                      <input type="file" accept="video/mp4,video/webm,video/quicktime" multiple
+                      <input
+                        id="teacher-update-video-upload"
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        multiple
                         onChange={(event) => {
-                          const files = Array.from(event.target.files || []).slice(0, 5);
-                          setUpdateForm((current) => ({ ...current, files }));
-                        }} />
+                          const selected = Array.from(event.target.files || []).slice(0, 5);
+                          setUpdateForm((current) => ({ ...current, files: selected }));
+                        }}
+                      />
                     </label>
 
                     {updateForm.files.length > 0 && (
                       <div className="wn-teacher-update-files">
                         {updateForm.files.map((file, index) => (
                           <div key={`${file.name}-${index}`}>
-                            <Video size={16} />
+                            <Video size={16} aria-hidden="true" />
                             <span><strong>{file.name}</strong><small>{(file.size / (1024 * 1024)).toFixed(1)} MB</small></span>
-                            <button type="button"
+                            <button
+                              type="button"
                               onClick={() => setUpdateForm((current) => ({ ...current, files: current.files.filter((_, i) => i !== index) }))}
-                              aria-label="حذف الفيديو"><X size={15} /></button>
+                              aria-label={up.removeVideoAria || 'حذف الفيديو'}
+                              className="min-h-[44px] min-w-[44px]"
+                            >
+                              <X size={15} aria-hidden="true" />
+                            </button>
                           </div>
                         ))}
                       </div>
                     )}
 
-                    <button type="submit" disabled={publishingUpdate || !updateForm.title.trim()} className="wn-teacher-primary-action">
-                      <Send size={16} />
-                      {publishingUpdate ? (updateForm.files.length > 0 ? 'جاري رفع الفيديوهات والنشر...' : 'جاري النشر...') : 'نشر وإشعار الطلاب'}
+                    <button
+                      type="submit"
+                      disabled={publishingUpdate || !updateForm.title.trim()}
+                      className="wn-teacher-primary-action min-h-[44px] inline-flex items-center justify-center gap-2"
+                    >
+                      {publishingUpdate ? (
+                        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Send size={16} aria-hidden="true" />
+                      )}
+                      <span>
+                        {publishingUpdate
+                          ? (updateForm.files.length > 0 ? (up.publishingVideosBtn || 'جاري رفع الفيديوهات والنشر…') : (up.publishingBtn || 'جاري النشر…'))
+                          : (up.publishBtn || 'نشر وإشعار الطلاب')}
+                      </span>
                     </button>
                   </form>
 
                   <section className="wn-teacher-update-history">
                     <div className="wn-teacher-section-heading">
-                      <div><span>سجل النشر</span><h3>رسائلك السابقة</h3></div>
+                      <div><span>{up.historyEyebrow || 'سجل النشر'}</span><h3>{up.historyTitle || 'رسائلك السابقة'}</h3></div>
                       <strong>{teacherUpdates.length}</strong>
                     </div>
 
                     {teacherUpdates.length === 0 ? (
-                      <div className="wn-teacher-empty-state compact">
-                        <Megaphone size={24} />
-                        <div><strong>لم تنشر رسالة بعد</strong><p>أول رسالة فيديو ستظهر هنا.</p></div>
-                      </div>
+                      <EmptyState
+                        icon={Megaphone}
+                        title={up.emptyTitle || 'لم تنشر رسالة بعد'}
+                        description={up.emptyDesc || 'أول رسالة فيديو ستظهر هنا.'}
+                      />
                     ) : (
                       <div className="wn-teacher-update-list">
                         {teacherUpdates.map((update) => (
                           <article key={update._id}>
                             <div className="wn-teacher-update-list__heading">
                               <div>
-                                <span>{update.audience?.mode === 'selected' ? 'طلاب محددون' : 'كل الطلاب النشطين'}</span>
+                                <span>
+                                  {update.audience?.mode === 'selected'
+                                    ? (up.audienceSelectedBadge || 'طلاب محددون')
+                                    : (up.audienceAllBadge || 'كل الطلاب النشطين')}
+                                </span>
                                 <h4>{update.title}</h4>
-                                <small>{new Date(update.publishedAt || update.createdAt).toLocaleString('ar-EG')}</small>
+                                <small>{new Date(update.publishedAt || update.createdAt).toLocaleString(intlLocale)}</small>
                               </div>
-                              <button type="button" onClick={() => setDeleteUpdateModal(update)} aria-label="حذف الرسالة">
-                                <Trash2 size={16} />
+                              <button
+                                type="button"
+                                onClick={() => setDeleteUpdateModal(update)}
+                                aria-label={up.deleteAria || 'حذف الرسالة'}
+                                className="min-h-[44px] min-w-[44px]"
+                              >
+                                <Trash2 size={16} aria-hidden="true" />
                               </button>
                             </div>
                             {update.message ? <p>{update.message}</p> : null}
                             <div className="wn-teacher-update-videos">
                               {(update.videos || []).map((video, index) => {
                                 const key = `${update._id}-${index}`;
+                                const isVideoLoading = loadingVideoKey === key;
                                 return (
                                   <div key={key}>
                                     {updateVideoUrls[key] ? (
                                       <video src={updateVideoUrls[key]} controls preload="metadata" />
                                     ) : (
-                                      <button type="button" onClick={() => loadTeacherUpdateVideo(update._id, index)}>
-                                        <Video size={20} />
-                                        <span><strong>تشغيل الفيديو {index + 1}</strong><small>{video.name || 'فيديو المعلم'}</small></span>
+                                      <button
+                                        type="button"
+                                        disabled={isVideoLoading}
+                                        onClick={() => loadTeacherUpdateVideo(update._id, index)}
+                                        className="min-h-[44px]"
+                                      >
+                                        {isVideoLoading ? (
+                                          <Loader2 size={20} className="animate-spin" aria-hidden="true" />
+                                        ) : (
+                                          <Video size={20} aria-hidden="true" />
+                                        )}
+                                        <span>
+                                          <strong>{formatMsg(up.playVideoTitle || 'تشغيل الفيديو {index}', { index: index + 1 })}</strong>
+                                          <small>{video.name || up.videoFallbackName || 'فيديو المعلم'}</small>
+                                        </span>
                                       </button>
                                     )}
                                   </div>
@@ -2375,107 +2539,23 @@ export default function TeacherDashboard() {
             )}
 
             {tab === 'homework' && (
-              <div className="wn-teacher-homework">
-                <div className="wn-teacher-homework__intro">
-                  <div>
-                    <span>متابعة الواجبات</span>
-                    <h3>الواجبات والتسجيلات الصوتية</h3>
-                    <p>استمع لتسليم الطالب، اكتب ملاحظتك، ثم اعتمد الواجب أو اطلب إعادة التسجيل.</p>
-                  </div>
-                  <div className="wn-teacher-homework__actions">
-                    {submittedTasks.length > 0 ? <b>{submittedTasks.length} تحتاج مراجعة</b> : null}
-                    <button type="button" onClick={() => setTaskModal(true)} className="wn-teacher-primary-action">
-                      <Plus size={16} /> واجب جديد
-                    </button>
-                  </div>
-                </div>
-
-                {tasks.length === 0 ? (
-                  <div className="wn-teacher-empty-state">
-                    <BookOpen size={28} />
-                    <div><strong>لا توجد واجبات بعد</strong><p>أنشئ واجبًا لطالب نشط ليظهر هنا.</p></div>
-                  </div>
-                ) : (
-                  <div className="wn-teacher-homework-list">
-                    {tasks.map((task) => (
-                      <article key={task._id} className={'wn-teacher-homework-card is-' + task.status}>
-                        <div className="wn-teacher-homework-card__top">
-                          <span className="wn-teacher-homework-card__icon"><BookOpen size={18} /></span>
-                          <div>
-                            <span>{taskTypeLabel(task.type)}</span>
-                            <h4>{task.title}</h4>
-                            <p>{task.student?.name || 'طالب'}</p>
-                            {task.circle?.name ? (
-                              <small className="block text-xs text-emerald-700 font-semibold">{task.circle.name}</small>
-                            ) : null}
-                          </div>
-                          <span className="wn-teacher-homework-status">
-                            {task.status === 'done' ? 'معتمد' : task.status === 'submitted' ? 'جاهز للمراجعة' : 'بانتظار الطالب'}
-                          </span>
-                        </div>
-
-                        {task.description ? <p className="wn-teacher-homework-card__description">{task.description}</p> : null}
-
-                        <div className="wn-teacher-homework-card__meta">
-                          <span><Calendar size={14} /> {task.dueDate ? new Date(task.dueDate).toLocaleDateString('ar-EG') : 'بدون موعد'}</span>
-                          <span><Clock size={14} /> أُنشئ {new Date(task.createdAt).toLocaleDateString('ar-EG')}</span>
-                        </div>
-
-                        {task.status === 'submitted' && (
-                          <div className="wn-teacher-homework-review">
-                            <div className="wn-teacher-homework-audio">
-                              <button type="button" onClick={() => playHomeworkSubmission(task)} disabled={homeworkAudio.loading && homeworkAudio.taskId === task._id}>
-                                <Headphones size={17} />
-                                {homeworkAudio.loading && homeworkAudio.taskId === task._id ? 'جاري التحميل...' : 'استماع لتسجيل الطالب'}
-                              </button>
-                              {homeworkAudio.taskId === task._id && homeworkAudio.url ? (
-                                <audio src={homeworkAudio.url} controls preload="metadata" />
-                              ) : null}
-                            </div>
-
-                            <textarea
-                              rows={2}
-                              className="input-field w-full"
-                              placeholder="ملاحظة للطالب — مثال: ممتاز، راجع أحكام النون الساكنة في الآية 6"
-                              value={taskReview[task._id] || ''}
-                              onChange={(event) => setTaskReview((current) => ({ ...current, [task._id]: event.target.value }))}
-                            />
-
-                            <TeacherVoiceFeedbackRecorder
-                              value={taskFeedbackAudio[task._id] || null}
-                              onChange={(val) => setTaskFeedbackAudio((current) => ({ ...current, [task._id]: val }))}
-                              disabled={reviewingTaskId === task._id}
-                            />
-
-                            <div className="wn-teacher-homework-review__actions">
-                              <button type="button" disabled={reviewingTaskId === task._id} onClick={() => reviewTask(task, 'approve')} className="is-approve disabled:opacity-50">
-                                <CheckCircle2 size={16} /> {reviewingTaskId === task._id ? 'جاري الحفظ...' : 'اعتماد الواجب'}
-                              </button>
-                              <button type="button" disabled={reviewingTaskId === task._id} onClick={() => reviewTask(task, 'request-revision')} className="is-revision disabled:opacity-50">
-                                <RotateCcw size={16} /> يحتاج إعادة
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {task.teacherFeedback ? (
-                          <div className="wn-teacher-homework-feedback">
-                            <MessageSquare size={15} />
-                            <div><strong>ملاحظتك</strong><p>{task.teacherFeedback}</p></div>
-                          </div>
-                        ) : null}
-                        {task.hasTeacherFeedbackAudio ? (
-                          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800">
-                            <Headphones size={13} /> مرفق توجيه صوتي للطالب
-                          </div>
-                        ) : null}
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <TeacherHomeworkPanel
+                tasks={tasks}
+                submittedTasks={submittedTasks}
+                taskTypeLabel={taskTypeLabel}
+                homeworkAudio={homeworkAudio}
+                playHomeworkSubmission={playHomeworkSubmission}
+                taskReview={taskReview}
+                setTaskReview={setTaskReview}
+                taskFeedbackAudio={taskFeedbackAudio}
+                setTaskFeedbackAudio={setTaskFeedbackAudio}
+                reviewingTaskId={reviewingTaskId}
+                reviewTask={reviewTask}
+                onOpenNewTask={() => setTaskModal(true)}
+                locale={locale}
+                t={t}
+              />
             )}
-
           </div>
         </>
       )}
@@ -2483,222 +2563,298 @@ export default function TeacherDashboard() {
       {chatSession && (
         <SessionChatModal
           session={chatSession}
-          locale="ar"
+          locale={locale}
           viewerRole="teacher"
           onClose={() => setChatSession(null)}
         />
       )}
 
-      {rescheduleModal && (
-        <Modal title={`اقتراح موعد جديد لـ ${rescheduleModal.student?.name || 'الطالب'}`} onClose={() => { setRescheduleModal(null); setRescheduleDate(''); }}>
+      <Modal
+        isOpen={Boolean(rescheduleModal)}
+        onClose={() => { setRescheduleModal(null); setRescheduleDate(''); }}
+        title={formatMsg(mod.reschedule?.title || 'اقتراح موعد جديد لـ {name}', {
+          name: rescheduleModal?.student?.name || wl.studentFallback || 'الطالب',
+        })}
+        maxWidth="480px"
+        disableClose={Boolean(respondingSessionId)}
+      >
+        {rescheduleModal && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">
-              الموعد الحالي: {formatSessionDateTime(rescheduleModal, 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+            <p className="text-sm text-[var(--wn-text-secondary)]">
+              {formatMsg(mod.reschedule?.currentTime || 'الموعد الحالي: {date}', {
+                date: formatSessionDateTime(rescheduleModal, locale, { dateStyle: 'medium', timeStyle: 'short' }),
+              })}
             </p>
-            <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-xs text-emerald-900">
-              سيتم تفسير الموعد الجديد حسب <strong>{sessionTimeZone(rescheduleModal, teacher?.availabilityTimezone || 'Africa/Cairo')}</strong> وليس حسب منطقة جهازك.
+            <div className="rounded-lg bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] p-3 text-xs text-[var(--wn-badge-emerald-text)]">
+              {formatMsg(
+                mod.reschedule?.tzNotice || 'سيتم تفسير الموعد الجديد حسب {tz} وليس حسب منطقة جهازك.',
+                { tz: sessionTimeZone(rescheduleModal, teacher?.availabilityTimezone || 'Africa/Cairo') }
+              )}
             </div>
             <div>
-              <label className="text-sm font-medium">الموعد المقترح</label>
+              <label htmlFor="teacher-reschedule-date" className="block text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.reschedule?.label || 'الموعد المقترح'}
+              </label>
               <input
+                id="teacher-reschedule-date"
                 type="datetime-local"
                 value={rescheduleDate}
                 onChange={(event) => setRescheduleDate(event.target.value)}
                 className="input-field w-full mt-1"
               />
             </div>
-            <button type="button" onClick={submitReschedule} className="btn-primary w-full">
-              إرسال الموعد الجديد للطالب
+            <button
+              type="button"
+              disabled={Boolean(respondingSessionId)}
+              onClick={submitReschedule}
+              className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {respondingSessionId && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+              <span>
+                {respondingSessionId
+                  ? (mod.reschedule?.submittingBtn || 'جاري الإرسال…')
+                  : (mod.reschedule?.submitBtn || 'إرسال الموعد الجديد للطالب')}
+              </span>
             </button>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
 
-      {studentModal && (
-        <Modal
-          title={`الملف التعليمي — ${studentModal.name || 'الطالب'}`}
-          onClose={() => { setStudentModal(null); setStudentSummary(null); }}
-          wide
-        >
-          {studentSummaryLoading ? (
-            <div className="wn-teacher-empty-state">
-              <Users size={28} />
-              <div><strong>جاري تحميل ملف الطالب</strong><p>يتم جمع الحصص والواجبات والتقارير.</p></div>
+      <Modal
+        isOpen={Boolean(studentModal)}
+        onClose={() => { setStudentModal(null); setStudentSummary(null); setStudentSummaryError(false); }}
+        title={formatMsg(mod.studentSummary?.title || 'الملف التعليمي — {name}', {
+          name: studentModal?.name || wl.studentFallback || 'الطالب',
+        })}
+        maxWidth="896px"
+      >
+        {studentSummaryLoading ? (
+          <div className="space-y-4 py-2" role="status" aria-live="polite">
+            <span className="sr-only">{mod.studentSummary?.loadingTitle || 'جاري تحميل ملف الطالب'}</span>
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
             </div>
-          ) : !studentSummary ? (
-            <div className="wn-teacher-empty-state">
-              <AlertTriangle size={28} />
-              <div><strong>تعذر تحميل الملف</strong><p>أغلق النافذة وحاول مرة أخرى.</p></div>
-            </div>
-          ) : (
-            <div className="wn-teacher-student-profile">
-              <div className="wn-teacher-student-profile__hero">
-                <span className="wn-teacher-avatar xlarge">{(studentSummary.student?.name || 'ط').slice(0, 1)}</span>
-                <div>
-                  <h3>{studentSummary.student?.name}</h3>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    {teacherLearnerLevelLabel(studentSummary.student?.currentLevel)} · {teacherLearnerTrackLabel(studentSummary.student?.preferredTrack)}
-                  </p>
-                  {(studentSummary.circles || []).length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {studentSummary.circles.map((circle) => (
-                        <span
-                          key={circle._id}
-                          className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-800"
-                        >
-                          {circle.name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <button type="button" onClick={() => {
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </div>
+        ) : studentSummaryError || !studentSummary ? (
+          <div className="rounded-xl border border-[var(--wn-danger)]/30 bg-[var(--wn-danger-soft)] p-6 text-center space-y-3" role="alert">
+            <AlertTriangle size={28} className="mx-auto text-[var(--wn-text-danger)]" aria-hidden="true" />
+            <strong className="block text-[var(--wn-heading)]">{mod.studentSummary?.errorTitle || 'تعذر تحميل الملف'}</strong>
+            <p className="text-xs text-[var(--wn-text-secondary)]">{mod.studentSummary?.errorDesc || 'أعد المحاولة أو أغلق النافذة.'}</p>
+            <button
+              type="button"
+              onClick={() => openStudent(studentModal)}
+              className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2"
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+              <span>{mod.studentSummary?.retryBtn || 'إعادة المحاولة'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="wn-teacher-student-profile">
+            <div className="wn-teacher-student-profile__hero">
+              <span className="wn-teacher-avatar xlarge">{(studentSummary.student?.name || 'ط').slice(0, 1)}</span>
+              <div>
+                <h3>{studentSummary.student?.name}</h3>
+                <p className="text-xs text-[var(--wn-text-secondary)] mt-0.5">
+                  {teacherLearnerLevelLabel(studentSummary.student?.currentLevel)} · {teacherLearnerTrackLabel(studentSummary.student?.preferredTrack)}
+                </p>
+                {(studentSummary.circles || []).length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {studentSummary.circles.map((circle) => (
+                      <span
+                        key={circle._id}
+                        className="inline-block rounded-full bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] px-2 py-0.5 text-[11px] font-bold text-[var(--wn-badge-emerald-text)]"
+                      >
+                        {circle.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="min-h-[44px]"
+                onClick={() => {
                   setStudentModal(null);
                   setTaskTargetMode('student');
                   setNewTask((current) => ({ ...current, studentId: studentSummary.student?._id || '' }));
                   setTaskModal(true);
-                }}>
-                  <Plus size={15} /> إسناد واجب
-                </button>
-              </div>
-
-              <div className="wn-teacher-student-profile__stats">
-                <div><span>إجمالي الحصص</span><strong>{studentSummary.summary?.totalSessions || 0}</strong></div>
-                <div><span>مكتملة</span><strong>{studentSummary.summary?.completedSessions || 0}</strong></div>
-                <div><span>قادمة</span><strong>{studentSummary.summary?.upcomingSessions || 0}</strong></div>
-                <div><span>واجبات للتصحيح</span><strong>{studentSummary.summary?.submittedHomework || 0}</strong></div>
-              </div>
-
-              <QuranProgressSummary
-                variant="teacher"
-                locale="ar"
-                quranSummary={studentSummary.quranSummary}
-                evaluations={studentSummary.sessions}
-              />
-
-              <section className="wn-teacher-student-profile__section">
-                <div className="wn-teacher-section-heading">
-                  <div><span>التاريخ التعليمي</span><h3>آخر الحصص والتقارير</h3></div>
-                </div>
-                {(studentSummary.sessions || []).length === 0 ? (
-                  <p className="text-sm text-slate-500">لا توجد حصص مسجلة.</p>
-                ) : (
-                  <div className="wn-teacher-student-timeline">
-                    {studentSummary.sessions.slice(0, 10).map((session) => (
-                      <div key={session._id}>
-                        <span className={'wn-teacher-timeline-dot ' + (session.status === 'completed' ? 'is-done' : '')} />
-                        <div>
-                          <strong>
-                            {session.type === 'trial'
-                              ? 'حصة تجريبية'
-                              : session.type === 'group_circle'
-                                ? (session.circle?.name ? `حلقة جماعية — ${session.circle.name}` : 'حلقة جماعية')
-                                : 'حصة منتظمة'}
-                          </strong>
-                          <small>{formatSessionDateTime(session, 'ar-EG', { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
-                          {(session.evaluation || session.progressReport) ? (
-                            <div className="wn-teacher-timeline-report">
-                              {session.evaluation ? (
-                                <>
-                                  <span>الحفظ <b>{session.evaluation.memorization ?? '—'}/5</b></span>
-                                  <span>التجويد <b>{session.evaluation.tajweed ?? '—'}/5</b></span>
-                                </>
-                              ) : (
-                                <>
-                                  <span>الحفظ <b>{session.progressReport?.memorizationScore ?? '—'}/10</b></span>
-                                  <span>التجويد <b>{session.progressReport?.tajweedScore ?? '—'}/10</b></span>
-                                </>
-                              )}
-                              {(session.evaluation?.surahRecited || session.progressReport?.surahRecited) ? (
-                                <p>تم التسميع: {session.evaluation?.surahRecited || session.progressReport?.surahRecited}</p>
-                              ) : null}
-                              {(session.evaluation?.nextHomework || session.progressReport?.nextHomework) ? (
-                                <p>التالي: {session.evaluation?.nextHomework || session.progressReport?.nextHomework}</p>
-                              ) : null}
-                              {(session.evaluation?.overallNotes || session.progressReport?.notes) ? (
-                                <p>ملاحظات: {session.evaluation?.overallNotes || session.progressReport?.notes}</p>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              <section className="wn-teacher-student-profile__section">
-                <div className="wn-teacher-section-heading">
-                  <div><span>الواجبات</span><h3>آخر المهام</h3></div>
-                </div>
-                {(studentSummary.tasks || []).length === 0 ? (
-                  <p className="text-sm text-slate-500">لا توجد واجبات لهذا الطالب.</p>
-                ) : (
-                  <div className="wn-teacher-student-task-list">
-                    {studentSummary.tasks.slice(0, 8).map((task) => (
-                      <div key={task._id}>
-                        <span>{taskTypeLabel(task.type)}</span>
-                        <strong>{task.title}</strong>
-                        <small>{task.status === 'done' ? 'معتمد' : task.status === 'submitted' ? 'مُسلّم' : 'قيد الانتظار'}</small>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+                }}
+              >
+                <Plus size={15} aria-hidden="true" /> {mod.studentSummary?.assignTaskBtn || 'إسناد واجب'}
+              </button>
             </div>
-          )}
-        </Modal>
-      )}
 
-      {evalModal && (
-        <Modal title={`تقييم ${evalModal.student?.name}`} onClose={() => setEvalModal(null)}>
-          {evalModal.type === 'trial' && (
-            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-3">
-              <div>
-                <span className="text-xs font-bold text-emerald-800">تقييم الحصة التجريبية</span>
-                <h4 className="text-sm font-bold text-slate-900">تحديد مستوى الطالب والمسار الموصى به</h4>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label className="text-xs font-semibold text-slate-700">
-                  المستوى الحالي للطالب
-                  <select
-                    className="input-field w-full mt-1 text-sm"
-                    value={evaluation.recommendedLevel || 'beginner'}
-                    onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedLevel: e.target.value }))}
-                  >
-                    <option value="beginner">مبتدئ (تأسيس وقصار السور)</option>
-                    <option value="intermediate">متوسط (حفظ مع التجويد الأساسي)</option>
-                    <option value="advanced">متقدم (إتقان ومراجعة مكثفة)</option>
-                    <option value="ijazah">مؤهل لمسار الإجازة والسند</option>
-                  </select>
-                </label>
-                <label className="text-xs font-semibold text-slate-700">
-                  المسار التعليمي الموصى به
-                  <select
-                    className="input-field w-full mt-1 text-sm"
-                    value={evaluation.recommendedTrack || 'memorization'}
-                    onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedTrack: e.target.value }))}
-                  >
-                    <option value="memorization">مسار الحفظ والمراجعة</option>
-                    <option value="tajweed_ijazah">مسار التجويد والإجازة</option>
-                    <option value="kids_foundation">مسار تأسيس الأطفال والبراعم</option>
-                  </select>
-                </label>
-              </div>
+            <div className="wn-teacher-student-profile__stats">
+              <div><span>{mod.studentSummary?.totalSessions || 'إجمالي الحصص'}</span><strong>{studentSummary.summary?.totalSessions || 0}</strong></div>
+              <div><span>{mod.studentSummary?.completed || 'مكتملة'}</span><strong>{studentSummary.summary?.completedSessions || 0}</strong></div>
+              <div><span>{mod.studentSummary?.upcoming || 'قادمة'}</span><strong>{studentSummary.summary?.upcomingSessions || 0}</strong></div>
+              <div><span>{mod.studentSummary?.homeworkToReview || 'واجبات للتصحيح'}</span><strong>{studentSummary.summary?.submittedHomework || 0}</strong></div>
             </div>
-          )}
+
+            <QuranProgressSummary
+              variant="teacher"
+              locale={locale}
+              quranSummary={studentSummary.quranSummary}
+              evaluations={studentSummary.sessions}
+            />
+
+            <section className="wn-teacher-student-profile__section">
+              <div className="wn-teacher-section-heading">
+                <div><span>{mod.studentSummary?.timelineEyebrow || 'التاريخ التعليمي'}</span><h3>{mod.studentSummary?.timelineTitle || 'آخر الحصص والتقارير'}</h3></div>
+              </div>
+              {(studentSummary.sessions || []).length === 0 ? (
+                <p className="text-sm text-[var(--wn-text-secondary)]">{mod.studentSummary?.noSessions || 'لا توجد حصص مسجلة.'}</p>
+              ) : (
+                <div className="wn-teacher-student-timeline">
+                  {studentSummary.sessions.slice(0, 10).map((session) => (
+                    <div key={session._id}>
+                      <span className={'wn-teacher-timeline-dot ' + (session.status === 'completed' ? 'is-done' : '')} />
+                      <div>
+                        <strong>
+                          {session.type === 'trial'
+                            ? (mod.studentSummary?.trialLabel || 'حصة تجريبية')
+                            : session.type === 'group_circle'
+                              ? (session.circle?.name
+                                  ? formatMsg(mod.studentSummary?.groupNamed || 'حلقة جماعية — {name}', { name: session.circle.name })
+                                  : (mod.studentSummary?.groupLabel || 'حلقة جماعية'))
+                              : (mod.studentSummary?.regularLabel || 'حصة منتظمة')}
+                        </strong>
+                        <small>{formatSessionDateTime(session, locale, { dateStyle: 'medium', timeStyle: 'short' })} · {sessionTimeZone(session, teacher?.availabilityTimezone || 'Africa/Cairo')}</small>
+                        {(session.evaluation || session.progressReport) ? (
+                          <div className="wn-teacher-timeline-report">
+                            {session.evaluation ? (
+                              <>
+                                <span>{mod.studentSummary?.memLabel || 'الحفظ'} <b>{session.evaluation.memorization ?? '—'}/5</b></span>
+                                <span>{mod.studentSummary?.tajweedLabel || 'التجويد'} <b>{session.evaluation.tajweed ?? '—'}/5</b></span>
+                              </>
+                            ) : (
+                              <>
+                                <span>{mod.studentSummary?.memLabel || 'الحفظ'} <b>{session.progressReport?.memorizationScore ?? '—'}/10</b></span>
+                                <span>{mod.studentSummary?.tajweedLabel || 'التجويد'} <b>{session.progressReport?.tajweedScore ?? '—'}/10</b></span>
+                              </>
+                            )}
+                            {(session.evaluation?.surahRecited || session.progressReport?.surahRecited) ? (
+                              <p>{mod.studentSummary?.recitedLabel || 'تم التسميع:'} {session.evaluation?.surahRecited || session.progressReport?.surahRecited}</p>
+                            ) : null}
+                            {(session.evaluation?.nextHomework || session.progressReport?.nextHomework) ? (
+                              <p>{mod.studentSummary?.nextLabel || 'التالي:'} {session.evaluation?.nextHomework || session.progressReport?.nextHomework}</p>
+                            ) : null}
+                            {(session.evaluation?.overallNotes || session.progressReport?.notes) ? (
+                              <p>{mod.studentSummary?.notesLabel || 'ملاحظات:'} {session.evaluation?.overallNotes || session.progressReport?.notes}</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="wn-teacher-student-profile__section">
+              <div className="wn-teacher-section-heading">
+                <div><span>{mod.studentSummary?.tasksEyebrow || 'الواجبات'}</span><h3>{mod.studentSummary?.tasksTitle || 'آخر المهام'}</h3></div>
+              </div>
+              {(studentSummary.tasks || []).length === 0 ? (
+                <p className="text-sm text-[var(--wn-text-secondary)]">{mod.studentSummary?.noTasks || 'لا توجد واجبات لهذا الطالب.'}</p>
+              ) : (
+                <div className="wn-teacher-student-task-list">
+                  {studentSummary.tasks.slice(0, 8).map((task) => (
+                    <div key={task._id}>
+                      <span>{taskTypeLabel(task.type)}</span>
+                      <strong>{task.title}</strong>
+                      <small>
+                        {task.status === 'done'
+                          ? (mod.studentSummary?.taskDone || 'معتمد')
+                          : task.status === 'submitted'
+                            ? (mod.studentSummary?.taskSubmitted || 'مُسلّم')
+                            : (mod.studentSummary?.taskPending || 'قيد الانتظار')}
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(evalModal)}
+        onClose={() => setEvalModal(null)}
+        title={formatMsg(mod.eval?.title || 'تقييم {name}', {
+          name: evalModal?.student?.name || wl.studentFallback || 'الطالب',
+        })}
+        maxWidth="560px"
+        disableClose={completingSession}
+      >
+        {evalModal && (
           <div className="space-y-4">
+            {evalModal.type === 'trial' && (
+              <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-3.5 space-y-3">
+                <div>
+                  <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                    {mod.eval?.trialEyebrow || 'تقييم الحصة التجريبية'}
+                  </span>
+                  <h4 className="text-sm font-bold text-[var(--wn-heading)]">
+                    {mod.eval?.trialTitle || 'تحديد مستوى الطالب والمسار الموصى به'}
+                  </h4>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="eval-rec-level" className="block text-xs font-semibold text-[var(--wn-text-primary)]">
+                      {mod.eval?.levelLabel || 'المستوى الحالي للطالب'}
+                    </label>
+                    <select
+                      id="eval-rec-level"
+                      className="input-field w-full mt-1 text-sm min-h-[44px]"
+                      value={evaluation.recommendedLevel || 'beginner'}
+                      onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedLevel: e.target.value }))}
+                    >
+                      <option value="beginner">{tp.learnerLevels?.beginnerFull || 'مبتدئ (تأسيس وقصار السور)'}</option>
+                      <option value="intermediate">{tp.learnerLevels?.intermediateFull || 'متوسط (حفظ مع التجويد الأساسي)'}</option>
+                      <option value="advanced">{tp.learnerLevels?.advancedFull || 'متقدم (إتقان ومراجعة مكثفة)'}</option>
+                      <option value="ijazah">{tp.learnerLevels?.ijazahFull || 'مؤهل لمسار الإجازة والسند'}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="eval-rec-track" className="block text-xs font-semibold text-[var(--wn-text-primary)]">
+                      {mod.eval?.trackLabel || 'المسار التعليمي الموصى به'}
+                    </label>
+                    <select
+                      id="eval-rec-track"
+                      className="input-field w-full mt-1 text-sm min-h-[44px]"
+                      value={evaluation.recommendedTrack || 'memorization'}
+                      onChange={(e) => setEvaluation((cur) => ({ ...cur, recommendedTrack: e.target.value }))}
+                    >
+                      <option value="memorization">{tp.learnerTracks?.memorizationFull || 'مسار الحفظ والمراجعة'}</option>
+                      <option value="tajweed_ijazah">{tp.learnerTracks?.tajweedIjazahFull || 'مسار التجويد والإجازة'}</option>
+                      <option value="kids_foundation">{tp.learnerTracks?.kidsFoundationFull || 'مسار تأسيس الأطفال والبراعم'}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {[
-              ['attendance', 'الحضور والانتباه'],
-              ['memorization', 'الحفظ'],
-              ['tajweed', 'التجويد'],
-              ['behavior', 'السلوك'],
-              ['commitment', 'الالتزام'],
+              ['attendance', ss.evalCriteria?.attendance || 'الحضور والانتباه'],
+              ['memorization', ss.evalCriteria?.memorization || 'الحفظ'],
+              ['tajweed', ss.evalCriteria?.tajweed || 'التجويد'],
+              ['behavior', ss.evalCriteria?.behavior || 'السلوك'],
+              ['commitment', ss.evalCriteria?.commitment || 'الالتزام'],
             ].map(([key, label]) => {
               const inputId = `teacher-eval-${key}`;
               return (
                 <fieldset key={key} className="space-y-2">
-                  <legend className="text-sm font-medium">{label} (1-5)</legend>
+                  <legend className="text-sm font-medium text-[var(--wn-heading)]">
+                    {label} {mod.eval?.criteriaScale || '(1–5)'}
+                  </legend>
                   <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label={label}>
                     {[1, 2, 3, 4, 5].map((score) => (
                       <button
@@ -2708,72 +2864,105 @@ export default function TeacherDashboard() {
                         role="radio"
                         aria-checked={evaluation[key] === score}
                         onClick={() => setEvaluation((current) => ({ ...current, [key]: score }))}
-                        className={`min-h-11 rounded-lg border text-sm font-bold transition ${evaluation[key] === score
-                          ? 'border-emerald-700 bg-emerald-700 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-400'}`}
+                        className={`min-h-[44px] rounded-lg border text-sm font-bold transition ${
+                          evaluation[key] === score
+                            ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                            : 'border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] hover:border-[var(--wn-emerald)]'
+                        }`}
                       >
                         {score}
                       </button>
                     ))}
                   </div>
-                  <output className="text-sm text-emerald-700 font-bold">{evaluation[key]} من 5</output>
+                  <output className="text-sm text-[var(--wn-badge-emerald-text)] font-bold">
+                    {formatMsg(mod.eval?.outOfFive || '{score} من 5', { score: evaluation[key] })}
+                  </output>
                 </fieldset>
               );
             })}
+
             <div className="wn-teacher-eval-report">
               <div className="wn-teacher-section-heading">
-                <div><span>تقرير ولي الأمر</span><h3>ماذا تم في الحصة؟</h3></div>
+                <div>
+                  <span>{mod.eval?.guardianReportEyebrow || 'تقرير ولي الأمر'}</span>
+                  <h3>{mod.eval?.guardianReportTitle || 'ماذا تم في الحصة؟'}</h3>
+                </div>
               </div>
-              <label htmlFor="teacher-eval-surah" className="text-sm font-medium">السورة / المقطع الذي تم تسميعه</label>
+              <label htmlFor="teacher-eval-surah" className="text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.eval?.surahLabel || 'السورة / المقطع الذي تم تسميعه'}
+              </label>
               <input
                 id="teacher-eval-surah"
                 name="surahRecited"
                 className="input-field w-full"
-                placeholder="مثال: سورة البقرة"
+                placeholder={mod.eval?.surahPlaceholder || 'مثال: سورة البقرة'}
                 value={evaluation.surahRecited}
                 onChange={(event) => setEvaluation((current) => ({ ...current, surahRecited: event.target.value }))}
               />
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-medium" htmlFor="teacher-eval-from-ayah">
-                  من آية
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--wn-text-primary)]" htmlFor="teacher-eval-from-ayah">
+                    {mod.eval?.fromAyah || 'من آية'}
+                  </label>
                   <input
                     id="teacher-eval-from-ayah"
                     name="fromAyah"
                     type="number"
                     min="1"
+                    aria-invalid={Boolean(evalAyahError)}
+                    aria-describedby={evalAyahError ? 'teacher-eval-ayah-error' : undefined}
                     className="input-field w-full mt-1"
                     placeholder="1"
                     value={evaluation.fromAyah}
-                    onChange={(event) => setEvaluation((current) => ({ ...current, fromAyah: event.target.value }))}
+                    onChange={(event) => {
+                      setEvalAyahError('');
+                      setEvaluation((current) => ({ ...current, fromAyah: event.target.value }));
+                    }}
                   />
-                </label>
-                <label className="text-sm font-medium" htmlFor="teacher-eval-to-ayah">
-                  إلى آية
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--wn-text-primary)]" htmlFor="teacher-eval-to-ayah">
+                    {mod.eval?.toAyah || 'إلى آية'}
+                  </label>
                   <input
                     id="teacher-eval-to-ayah"
                     name="toAyah"
                     type="number"
                     min="1"
+                    aria-invalid={Boolean(evalAyahError)}
+                    aria-describedby={evalAyahError ? 'teacher-eval-ayah-error' : undefined}
                     className="input-field w-full mt-1"
                     placeholder="5"
                     value={evaluation.toAyah}
-                    onChange={(event) => setEvaluation((current) => ({ ...current, toAyah: event.target.value }))}
+                    onChange={(event) => {
+                      setEvalAyahError('');
+                      setEvaluation((current) => ({ ...current, toAyah: event.target.value }));
+                    }}
                   />
-                </label>
+                </div>
               </div>
-              <label htmlFor="teacher-eval-next-homework" className="text-sm font-medium">الواجب أو الهدف القادم</label>
+              {evalAyahError && (
+                <p id="teacher-eval-ayah-error" role="alert" className="text-xs font-semibold text-[var(--wn-text-danger)]">
+                  {evalAyahError}
+                </p>
+              )}
+              <label htmlFor="teacher-eval-next-homework" className="text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.eval?.nextHomeworkLabel || 'الواجب أو الهدف القادم'}
+              </label>
               <input
                 id="teacher-eval-next-homework"
                 name="nextHomework"
                 className="input-field w-full"
-                placeholder="الهدف أو الواجب التالي"
+                placeholder={mod.eval?.nextHomeworkPlaceholder || 'الهدف أو الواجب التالي'}
                 value={evaluation.nextHomework}
                 onChange={(event) => setEvaluation((current) => ({ ...current, nextHomework: event.target.value }))}
               />
             </div>
 
             <div>
-              <label htmlFor="teacher-eval-notes" className="text-sm font-medium">ملاحظات</label>
+              <label htmlFor="teacher-eval-notes" className="text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.eval?.notesLabel || 'ملاحظات'}
+              </label>
               <textarea
                 id="teacher-eval-notes"
                 name="overallNotes"
@@ -2783,156 +2972,311 @@ export default function TeacherDashboard() {
                 onChange={(e) => setEvaluation((p) => ({ ...p, overallNotes: e.target.value }))}
               />
             </div>
+
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium flex items-center gap-1"><ClipboardList size={16} /> واجبات بعد الحصة</label>
-                <button type="button" onClick={addHomework} className="text-sm text-emerald-600">+ إضافة</button>
+                <span className="text-sm font-medium text-[var(--wn-text-primary)] flex items-center gap-1">
+                  <ClipboardList size={16} aria-hidden="true" /> {mod.eval?.extraHomeworkLabel || 'واجبات بعد الحصة'}
+                </span>
+                <button
+                  type="button"
+                  onClick={addHomework}
+                  className="min-h-[44px] inline-flex items-center px-2 text-sm font-semibold text-[var(--wn-badge-emerald-text)]"
+                >
+                  {mod.eval?.addHomeworkBtn || '+ إضافة'}
+                </button>
               </div>
-              {homeworkList.map((hw, i) => (
-                <div key={i} className="border rounded-lg p-3 mb-2 space-y-2">
-                  <select className="input-field w-full" value={hw.type}
-                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, type: e.target.value } : h))}>
-                    {TASK_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {homeworkList.map((hwItem, i) => (
+                <div key={i} className="border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] rounded-lg p-3 mb-2 space-y-2">
+                  <select
+                    aria-label={`${mod.eval?.extraHomeworkLabel || 'واجب'} ${i + 1}`}
+                    className="input-field w-full min-h-[44px]"
+                    value={hwItem.type}
+                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, type: e.target.value } : h))}
+                  >
+                    {TASK_TYPES.map((typeItem) => (
+                      <option key={typeItem.id} value={typeItem.id}>
+                        {taskTypeLabel(typeItem.id)}
+                      </option>
+                    ))}
                   </select>
-                  <input className="input-field w-full" placeholder="التفاصيل (مثلاً: سورة البقرة 1-5)"
-                    value={hw.description}
-                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, description: e.target.value } : h))} />
-                  <input type="date" className="input-field w-full" value={hw.dueDate}
-                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, dueDate: e.target.value } : h))} />
+                  <input
+                    aria-label={mod.eval?.hwDetailsPlaceholder || 'تفاصيل الواجب'}
+                    className="input-field w-full"
+                    placeholder={mod.eval?.hwDetailsPlaceholder || 'التفاصيل (مثلاً: سورة البقرة 1-5)'}
+                    value={hwItem.description}
+                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, description: e.target.value } : h))}
+                  />
+                  <input
+                    aria-label={mod.taskAssign?.dueDateLabel || 'موعد التسليم'}
+                    type="date"
+                    className="input-field w-full"
+                    value={hwItem.dueDate}
+                    onChange={(e) => setHomeworkList((p) => p.map((h, j) => j === i ? { ...h, dueDate: e.target.value } : h))}
+                  />
                 </div>
               ))}
             </div>
+
             <div className="wn-teacher-eval-submit">
-              <p id="teacher-eval-submit-note"><CheckCircle2 size={16} /> سيتم إنهاء الحصة، تسجيل الاستحقاق، وحفظ تقرير المتابعة.</p>
+              <p id="teacher-eval-submit-note">
+                <CheckCircle2 size={16} aria-hidden="true" />{' '}
+                {mod.eval?.submitNote || 'سيتم إنهاء الحصة، تسجيل الاستحقاق، وحفظ تقرير المتابعة.'}
+              </p>
               <button
                 id="teacher-eval-submit"
                 type="button"
+                disabled={completingSession}
                 onClick={completeSession}
-                className="btn-primary w-full"
+                className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
                 aria-describedby="teacher-eval-submit-note"
               >
-                إنهاء الحصة وإرسال التقرير (+{expectedSessionEarning} ج.م)
+                {completingSession && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                <span>
+                  {completingSession
+                    ? (mod.eval?.submittingBtn || 'جاري الإغلاق والاعتماد…')
+                    : formatMsg(mod.eval?.submitBtn || 'إنهاء الحصة وإرسال التقرير (+{amount} ج.م)', {
+                        amount: expectedSessionEarning,
+                      })}
+                </span>
               </button>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
 
-      {taskModal && (() => {
+      {(() => {
         const assignableCircles = myCircles.filter((c) => ['active', 'full'].includes(c.status));
         return (
-          <Modal title="إسناد واجب جديد" onClose={() => setTaskModal(false)}>
+          <Modal
+            isOpen={taskModal}
+            onClose={() => setTaskModal(false)}
+            title={mod.taskAssign?.title || 'إسناد واجب جديد'}
+            maxWidth="480px"
+            disableClose={assigningTask}
+          >
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-xl bg-[var(--wn-surface-sunken)] p-1">
                 <button
                   type="button"
+                  aria-pressed={taskTargetMode === 'student'}
                   onClick={() => { setTaskTargetMode('student'); setTaskCircleId(''); }}
-                  className={`rounded-lg py-2 text-xs font-bold transition ${taskTargetMode === 'student' ? 'bg-white text-emerald-900 shadow-sm' : 'text-slate-600'}`}
+                  className={`min-h-[44px] rounded-lg py-2 text-xs font-bold transition ${
+                    taskTargetMode === 'student'
+                      ? 'bg-[var(--wn-surface)] text-[var(--wn-heading)] shadow-sm'
+                      : 'text-[var(--wn-text-secondary)]'
+                  }`}
                 >
-                  طالب محدد
+                  {mod.taskAssign?.modeStudent || 'طالب محدد'}
                 </button>
                 <button
                   type="button"
+                  aria-pressed={taskTargetMode === 'circle'}
                   disabled={assignableCircles.length === 0}
                   onClick={() => { setTaskTargetMode('circle'); setNewTask((p) => ({ ...p, studentId: '' })); }}
-                  className={`rounded-lg py-2 text-xs font-bold transition ${taskTargetMode === 'circle' ? 'bg-white text-emerald-900 shadow-sm' : 'text-slate-600'} disabled:opacity-40`}
+                  className={`min-h-[44px] rounded-lg py-2 text-xs font-bold transition ${
+                    taskTargetMode === 'circle'
+                      ? 'bg-[var(--wn-surface)] text-[var(--wn-heading)] shadow-sm'
+                      : 'text-[var(--wn-text-secondary)]'
+                  } disabled:opacity-40`}
                 >
-                  حلقة جماعية كاملة
+                  {mod.taskAssign?.modeCircle || 'حلقة جماعية كاملة'}
                 </button>
               </div>
               {taskTargetMode === 'circle' ? (
+                <div>
+                  <label htmlFor="task-assign-circle" className="sr-only">{mod.taskAssign?.selectCircle || 'اختر الحلقة الجماعية'}</label>
+                  <select
+                    id="task-assign-circle"
+                    className="input-field w-full min-h-[44px]"
+                    value={taskCircleId}
+                    onChange={(e) => setTaskCircleId(e.target.value)}
+                  >
+                    <option value="">{mod.taskAssign?.selectCircle || 'اختر الحلقة الجماعية'}</option>
+                    {assignableCircles.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {formatMsg(mod.taskAssign?.circleCount || '{name} ({count} طالب)', {
+                          name: c.name,
+                          count: c.currentCount || c.students?.length || 0,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="task-assign-student" className="sr-only">{mod.taskAssign?.selectStudent || 'اختر الطالب'}</label>
+                  <select
+                    id="task-assign-student"
+                    className="input-field w-full min-h-[44px]"
+                    value={newTask.studentId}
+                    onChange={(e) => setNewTask((p) => ({ ...p, studentId: e.target.value }))}
+                  >
+                    <option value="">{mod.taskAssign?.selectStudent || 'اختر الطالب'}</option>
+                    {activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label htmlFor="task-assign-type" className="sr-only">{mod.taskAssign?.title || 'نوع الواجب'}</label>
                 <select
-                  className="input-field w-full"
-                  value={taskCircleId}
-                  onChange={(e) => setTaskCircleId(e.target.value)}
+                  id="task-assign-type"
+                  className="input-field w-full min-h-[44px]"
+                  value={newTask.type}
+                  onChange={(e) => setNewTask((p) => ({ ...p, type: e.target.value }))}
                 >
-                  <option value="">اختر الحلقة الجماعية</option>
-                  {assignableCircles.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name} ({c.currentCount || c.students?.length || 0} طالب)
+                  {TASK_TYPES.map((typeItem) => (
+                    <option key={typeItem.id} value={typeItem.id}>
+                      {taskTypeLabel(typeItem.id)}
                     </option>
                   ))}
                 </select>
-              ) : (
-                <select className="input-field w-full" value={newTask.studentId}
-                  onChange={(e) => setNewTask((p) => ({ ...p, studentId: e.target.value }))}>
-                  <option value="">اختر الطالب</option>
-                  {activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-                </select>
-              )}
-              <select className="input-field w-full" value={newTask.type}
-                onChange={(e) => setNewTask((p) => ({ ...p, type: e.target.value }))}>
-                {TASK_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
-              <input className="input-field w-full" placeholder="عنوان الواجب" value={newTask.title}
-                onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))} />
-              <textarea className="input-field w-full" placeholder="التفاصيل" rows={2} value={newTask.description}
-                onChange={(e) => setNewTask((p) => ({ ...p, description: e.target.value }))} />
-              <input type="date" className="input-field w-full" value={newTask.dueDate}
-                onChange={(e) => setNewTask((p) => ({ ...p, dueDate: e.target.value }))} />
-              <button type="button" onClick={assignTask} className="btn-primary w-full">إسناد</button>
+              </div>
+              <div>
+                <label htmlFor="task-assign-title" className="sr-only">{mod.taskAssign?.titlePlaceholder || 'عنوان الواجب'}</label>
+                <input
+                  id="task-assign-title"
+                  className="input-field w-full"
+                  placeholder={mod.taskAssign?.titlePlaceholder || 'عنوان الواجب'}
+                  value={newTask.title}
+                  onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label htmlFor="task-assign-details" className="sr-only">{mod.taskAssign?.detailsPlaceholder || 'التفاصيل'}</label>
+                <textarea
+                  id="task-assign-details"
+                  className="input-field w-full"
+                  placeholder={mod.taskAssign?.detailsPlaceholder || 'التفاصيل'}
+                  rows={2}
+                  value={newTask.description}
+                  onChange={(e) => setNewTask((p) => ({ ...p, description: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label htmlFor="task-assign-due" className="block text-xs font-medium text-[var(--wn-text-secondary)] mb-1">
+                  {mod.taskAssign?.dueDateLabel || 'موعد التسليم (اختياري)'}
+                </label>
+                <input
+                  id="task-assign-due"
+                  type="date"
+                  className="input-field w-full"
+                  value={newTask.dueDate}
+                  onChange={(e) => setNewTask((p) => ({ ...p, dueDate: e.target.value }))}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={assigningTask}
+                onClick={assignTask}
+                className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {assigningTask && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                <span>{assigningTask ? (mod.taskAssign?.submittingBtn || 'جاري الإسناد…') : (mod.taskAssign?.submitBtn || 'إسناد')}</span>
+              </button>
             </div>
           </Modal>
         );
       })()}
 
-      {aiModal && (() => {
+      {(() => {
         const assignableCircles = myCircles.filter((c) => ['active', 'full'].includes(c.status));
         return (
-          <Modal title="مساعد المعلم — AI V4" onClose={() => setAiModal(false)}>
+          <Modal
+            isOpen={aiModal}
+            onClose={() => setAiModal(false)}
+            title={mod.aiAssistant?.title || 'مساعد المعلم الذكي'}
+            maxWidth="520px"
+          >
             <div className="space-y-3">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 space-y-2">
-                <span className="block text-xs font-bold text-emerald-900">إسناد سريع بعد التوليد (اختياري)</span>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-3 space-y-2">
+                <span className="block text-xs font-bold text-[var(--wn-badge-emerald-text)]">
+                  {mod.aiAssistant?.quickAssignTitle || 'إسناد سريع بعد التوليد (اختياري)'}
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
+                    aria-pressed={aiTargetMode === 'student'}
                     onClick={() => { setAiTargetMode('student'); setAiTargetId(''); }}
-                    className={`rounded-lg border py-1.5 text-xs font-bold ${aiTargetMode === 'student' ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700'}`}
+                    className={`min-h-[44px] rounded-lg border py-1.5 text-xs font-bold ${
+                      aiTargetMode === 'student'
+                        ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                        : 'border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)]'
+                    }`}
                   >
-                    طالب
+                    {mod.aiAssistant?.modeStudent || 'طالب'}
                   </button>
                   <button
                     type="button"
+                    aria-pressed={aiTargetMode === 'circle'}
                     disabled={assignableCircles.length === 0}
                     onClick={() => { setAiTargetMode('circle'); setAiTargetId(''); }}
-                    className={`rounded-lg border py-1.5 text-xs font-bold ${aiTargetMode === 'circle' ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-200 bg-white text-slate-700'} disabled:opacity-40`}
+                    className={`min-h-[44px] rounded-lg border py-1.5 text-xs font-bold ${
+                      aiTargetMode === 'circle'
+                        ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                        : 'border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)]'
+                    } disabled:opacity-40`}
                   >
-                    حلقة جماعية
+                    {mod.aiAssistant?.modeCircle || 'حلقة جماعية'}
                   </button>
                 </div>
+                <label htmlFor="ai-target-select" className="sr-only">
+                  {aiTargetMode === 'circle'
+                    ? (mod.aiAssistant?.selectCircle || 'اختر الحلقة المستهدفة')
+                    : (mod.aiAssistant?.selectStudent || 'اختر الطالب المستهدف')}
+                </label>
                 <select
-                  className="input-field w-full text-sm"
+                  id="ai-target-select"
+                  className="input-field w-full text-sm min-h-[44px]"
                   value={aiTargetId}
                   onChange={(e) => setAiTargetId(e.target.value)}
                 >
-                  <option value="">{aiTargetMode === 'circle' ? 'اختر الحلقة المستهدفة' : 'اختر الطالب المستهدف'}</option>
+                  <option value="">
+                    {aiTargetMode === 'circle'
+                      ? (mod.aiAssistant?.selectCircle || 'اختر الحلقة المستهدفة')
+                      : (mod.aiAssistant?.selectStudent || 'اختر الطالب المستهدف')}
+                  </option>
                   {aiTargetMode === 'circle'
                     ? assignableCircles.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)
                     : activeStudents.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
                 </select>
               </div>
-              <input className="input-field w-full" placeholder="موضوع الواجبات (مثلاً: الغنة)"
-                value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} />
-              <button type="button" onClick={generateAiHomework} disabled={aiLoading} className="btn-primary w-full flex items-center justify-center gap-2">
-                <Sparkles size={16} /> {aiLoading ? 'جاري التوليد...' : 'توليد 5 واجبات'}
+              <div>
+                <label htmlFor="ai-homework-topic" className="sr-only">{mod.aiAssistant?.topicPlaceholder || 'موضوع الواجبات'}</label>
+                <input
+                  id="ai-homework-topic"
+                  className="input-field w-full"
+                  placeholder={mod.aiAssistant?.topicPlaceholder || 'موضوع الواجبات (مثلاً: الغنة)'}
+                  value={aiTopic}
+                  onChange={(e) => setAiTopic(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={generateAiHomework}
+                disabled={aiLoading}
+                className="btn-primary w-full min-h-[44px] flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {aiLoading ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                <span>{aiLoading ? (mod.aiAssistant?.generatingBtn || 'جاري التوليد…') : (mod.aiAssistant?.generateBtn || 'توليد 5 واجبات')}</span>
               </button>
               {aiResult?.assignments?.map((a) => {
                 const itemKey = a.id || a.title;
                 const assigning = assigningAiId === itemKey;
                 return (
-                  <div key={itemKey} className="border rounded-lg p-3 text-sm space-y-2">
+                  <div key={itemKey} className="border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] rounded-lg p-3 text-sm space-y-2">
                     <div>
-                      <p className="font-bold">{a.title}</p>
-                      {a.description && <p className="text-gray-600 mt-1">{a.description}</p>}
+                      <p className="font-bold text-[var(--wn-heading)]">{a.title}</p>
+                      {a.description && <p className="text-[var(--wn-text-secondary)] mt-1">{a.description}</p>}
                     </div>
                     <button
                       type="button"
                       disabled={assigning}
                       onClick={() => assignAiTask(a)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                      className="min-h-[44px] inline-flex items-center gap-1.5 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] px-3 py-1.5 text-xs font-bold text-[var(--wn-badge-emerald-text)] hover:opacity-90 disabled:opacity-50"
                     >
-                      <Plus size={13} />
-                      {assigning ? 'جاري الإسناد...' : 'إسناد هذا الواجب'}
+                      {assigning ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Plus size={13} aria-hidden="true" />}
+                      <span>{assigning ? (mod.aiAssistant?.assigningBtn || 'جاري الإسناد…') : (mod.aiAssistant?.assignBtn || 'إسناد هذا الواجب')}</span>
                     </button>
                   </div>
                 );
@@ -2941,21 +3285,37 @@ export default function TeacherDashboard() {
           </Modal>
         );
       })()}
-      {circleSessionModal && (
-        <Modal title={`جدولة حصة — ${circleSessionModal.name}`} onClose={() => setCircleSessionModal(null)}>
+
+      <Modal
+        isOpen={Boolean(circleSessionModal)}
+        onClose={() => setCircleSessionModal(null)}
+        title={formatMsg(mod.scheduleCircle?.title || 'جدولة حصة — {name}', { name: circleSessionModal?.name || '' })}
+        maxWidth="480px"
+        disableClose={savingCircleSession}
+      >
+        {circleSessionModal && (
           <div className="space-y-3">
-            <label className="block text-sm font-medium">
-              موعد الحصة الجماعية *
+            <div>
+              <label htmlFor="circle-session-datetime" className="block text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.scheduleCircle?.dateTimeLabel || 'موعد الحصة الجماعية *'}
+              </label>
               <input
+                id="circle-session-datetime"
                 type="datetime-local"
                 className="input-field w-full mt-1"
                 value={circleSessionForm.scheduledAt}
                 onChange={(e) => setCircleSessionForm((p) => ({ ...p, scheduledAt: e.target.value }))}
               />
-            </label>
-            <label className="block text-sm font-medium">
-              مدة الحصة (بالدقائق: {circleSessionModal.durationMinMinutes || 30}–{circleSessionModal.durationMaxMinutes || 60})
+            </div>
+            <div>
+              <label htmlFor="circle-session-duration" className="block text-sm font-medium text-[var(--wn-text-primary)]">
+                {formatMsg(mod.scheduleCircle?.durationLabel || 'مدة الحصة (بالدقائق: {min}–{max})', {
+                  min: circleSessionModal.durationMinMinutes || 30,
+                  max: circleSessionModal.durationMaxMinutes || 60,
+                })}
+              </label>
               <input
+                id="circle-session-duration"
                 type="number"
                 min={circleSessionModal.durationMinMinutes || 30}
                 max={circleSessionModal.durationMaxMinutes || 60}
@@ -2963,28 +3323,36 @@ export default function TeacherDashboard() {
                 value={circleSessionForm.duration}
                 onChange={(e) => setCircleSessionForm((p) => ({ ...p, duration: e.target.value }))}
               />
-            </label>
-            <label className="block text-sm font-medium">
-              ملاحظات أو مقرر الحلقة (اختياري)
+            </div>
+            <div>
+              <label htmlFor="circle-session-notes" className="block text-sm font-medium text-[var(--wn-text-primary)]">
+                {mod.scheduleCircle?.notesLabel || 'ملاحظات أو مقرر الحلقة (اختياري)'}
+              </label>
               <textarea
+                id="circle-session-notes"
                 rows={2}
                 className="input-field w-full mt-1"
-                placeholder="مثال: تسميع سورة الملك من الآية 1 إلى 15"
+                placeholder={mod.scheduleCircle?.notesPlaceholder || 'مثال: تسميع سورة الملك من الآية 1 إلى 15'}
                 value={circleSessionForm.notes}
                 onChange={(e) => setCircleSessionForm((p) => ({ ...p, notes: e.target.value }))}
               />
-            </label>
+            </div>
             <button
               type="button"
               disabled={savingCircleSession}
               onClick={submitGroupCircleSession}
-              className="btn-primary w-full disabled:opacity-50"
+              className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {savingCircleSession ? 'جاري الجدولة...' : 'تأكيد جدولة الحصة الجماعية'}
+              {savingCircleSession && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+              <span>
+                {savingCircleSession
+                  ? (mod.scheduleCircle?.submittingBtn || 'جاري الجدولة…')
+                  : (mod.scheduleCircle?.confirmBtn || 'تأكيد جدولة الحصة الجماعية')}
+              </span>
             </button>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
 
       <GroupSessionCompleteModal
         session={groupCompleteModal}
@@ -3007,9 +3375,32 @@ export default function TeacherDashboard() {
   );
 }
 
-function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, actionCount }) {
+function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, actionCount, isRTL, t }) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  const cb = t?.teacherPortal?.commandBar || {};
   const secondaryActiveItem = secondaryItems.find((item) => item.id === active);
+  const ForwardChevron = isRTL ? ChevronLeft : ChevronRight;
+
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (moreRef.current && !moreRef.current.contains(event.target)) {
+        setMoreOpen(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [moreOpen]);
 
   const selectItem = (id) => {
     onChange(id);
@@ -3018,12 +3409,12 @@ function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, act
 
   return (
     <div className="wn-teacher-command-shell">
-      <nav className="wn-teacher-command" aria-label="التنقل داخل مساحة المعلم">
+      <nav className="wn-teacher-command" aria-label={cb.ariaLabel || 'التنقل داخل مساحة المعلم'}>
         <div className="wn-teacher-command__identity" aria-hidden="true">
           <span><BookOpen size={17} /></span>
           <div>
-            <strong>مساحة المعلم</strong>
-            <small>إدارة يومك التعليمي</small>
+            <strong>{cb.brandTitle || 'مساحة المعلم'}</strong>
+            <small>{cb.brandSubtitle || 'إدارة يومك التعليمي'}</small>
           </div>
         </div>
 
@@ -3035,10 +3426,10 @@ function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, act
                 type="button"
                 key={id}
                 onClick={() => selectItem(id)}
-                className={'wn-teacher-command__item ' + (selected ? 'is-active' : '')}
+                className={'wn-teacher-command__item min-h-[44px] ' + (selected ? 'is-active' : '')}
                 aria-current={selected ? 'page' : undefined}
               >
-                <span className="wn-teacher-command__icon"><Icon size={18} /></span>
+                <span className="wn-teacher-command__icon"><Icon size={18} aria-hidden="true" /></span>
                 <strong>{label}</strong>
                 {badge ? <b>{badge}</b> : null}
               </button>
@@ -3046,26 +3437,30 @@ function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, act
           })}
         </div>
 
-        <div className="wn-teacher-command__more">
+        <div className="wn-teacher-command__more" ref={moreRef}>
           <button
             type="button"
             onClick={() => setMoreOpen((value) => !value)}
-            className={'wn-teacher-command__item wn-teacher-command__more-button ' + (secondaryActiveItem ? 'is-active' : '')}
+            className={'wn-teacher-command__item wn-teacher-command__more-button min-h-[44px] ' + (secondaryActiveItem ? 'is-active' : '')}
             aria-expanded={moreOpen}
+            aria-haspopup="true"
+            aria-controls="teacher-command-more-panel"
           >
-            <span className="wn-teacher-command__icon"><MoreHorizontal size={19} /></span>
+            <span className="wn-teacher-command__icon"><MoreHorizontal size={19} aria-hidden="true" /></span>
             <span>
-              <strong>المزيد</strong>
+              <strong>{cb.more || 'المزيد'}</strong>
               {secondaryActiveItem ? <small>{secondaryActiveItem.label}</small> : null}
             </span>
             {actionCount > 0 && active === 'overview' ? <i>{actionCount}</i> : null}
           </button>
 
           {moreOpen && (
-            <div className="wn-teacher-command__panel">
+            <div id="teacher-command-more-panel" className="wn-teacher-command__panel">
               <div className="wn-teacher-command__panel-heading">
-                <div><span>أدوات المعلم</span><strong>إدارة المساحة</strong></div>
-                <button type="button" onClick={() => setMoreOpen(false)} aria-label="إغلاق"><X size={17} /></button>
+                <div><span>{cb.panelEyebrow || 'أدوات المعلم'}</span><strong>{cb.panelTitle || 'إدارة المساحة'}</strong></div>
+                <button type="button" onClick={() => setMoreOpen(false)} aria-label={cb.closeAria || 'إغلاق'} className="min-h-[44px] min-w-[44px]">
+                  <X size={17} aria-hidden="true" />
+                </button>
               </div>
               <div className="wn-teacher-command__panel-grid">
                 {secondaryItems.map(({ id, label, icon: Icon, description }) => (
@@ -3073,11 +3468,11 @@ function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, act
                     type="button"
                     key={id}
                     onClick={() => selectItem(id)}
-                    className={active === id ? 'is-active' : ''}
+                    className={'min-h-[44px] ' + (active === id ? 'is-active' : '')}
                   >
-                    <span><Icon size={18} /></span>
+                    <span><Icon size={18} aria-hidden="true" /></span>
                     <span><strong>{label}</strong><small>{description}</small></span>
-                    <ChevronLeft size={15} />
+                    <ForwardChevron size={15} aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -3089,76 +3484,12 @@ function TeacherCommandBar({ primaryItems, secondaryItems, active, onChange, act
   );
 }
 
-function Modal({ title, onClose, children, wide = false }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" dir="rtl">
-      <div
-        className={`bg-white rounded-xl ${wide ? 'max-w-4xl' : 'max-w-lg'} w-full max-h-[90vh] overflow-y-auto p-6 relative`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <button type="button" onClick={onClose} aria-label="إغلاق النافذة" className="absolute left-4 top-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
-        <h3 className="text-lg font-bold mb-4">{title}</h3>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function InfoRow({ label, value }) {
-  return (
-    <div className="bg-slate-50 rounded-lg p-3">
-      <span className="text-slate-500 text-xs">{label}</span>
-      <p className="font-semibold">{value || '—'}</p>
-    </div>
-  );
-}
-
-function statusLabel(s) {
-  const m = { pending: 'قيد المراجعة', 'under-review': 'تحت المراجعة', approved: 'موافق', rejected: 'مرفوض', suspended: 'موقوف' };
-  return m[s] || s;
-}
-
-function financeStatusLabel(status) {
-  const labels = {
-    pending: 'قيد المراجعة',
-    processing: 'جاري التحويل',
-    completed: 'مكتمل',
-    rejected: 'مرفوض',
-  };
-  return labels[status] || status;
-}
-
-function teacherLearnerLevelLabel(level) {
-  const labels = {
-    beginner: 'مبتدئ',
-    intermediate: 'متوسط',
-    advanced: 'متقدم',
-    ijazah: 'إجازة',
-  };
-  return labels[level] || 'غير محدد';
-}
-
-function teacherLearnerTrackLabel(track) {
-  const labels = {
-    memorization: 'الحفظ والمراجعة',
-    tajweed_ijazah: 'التجويد والإجازة',
-    kids_foundation: 'تأسيس الأطفال',
-  };
-  return labels[track] || 'لم يُحدد المسار';
-}
-
-function taskTypeLabel(t) {
-  return TASK_TYPES.find((x) => x.id === t)?.label || t;
-}
-
-function mergeSchedule(apiDays) {
+function mergeSchedule(apiDays, weekdayDict = {}) {
   return WEEK_DAYS.map((day) => {
     const found = (apiDays || []).find((item) => item.day === day.id);
     return {
       day: day.id,
-      label: day.label,
+      label: weekdayDict[day.id] || day.label,
       slots: (found?.slots || []).map((slot) => ({
         startTime: slot.startTime || '',
         endTime: slot.endTime || '',

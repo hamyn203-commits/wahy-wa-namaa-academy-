@@ -1,18 +1,48 @@
 import { User, Mail, Lock, Video, CheckCircle } from 'lucide-react';
 
 export const STEPS = [
-  { id: 1, title: 'بياناتك', fullTitle: 'البيانات الشخصية والأكاديمية والقرآنية', icon: User },
-  { id: 2, title: 'تحقق', fullTitle: 'تأكيد البريد الإلكتروني', icon: Mail },
-  { id: 3, title: 'حسابك', fullTitle: 'إنشاء كلمة المرور', icon: Lock },
-  { id: 4, title: 'صورة وفيديو', fullTitle: 'الصورة وفيديو التلاوة', icon: Video },
-  { id: 5, title: 'إرسال', fullTitle: 'المراجعة والإرسال', icon: CheckCircle },
+  { id: 1, shortKey: 's1Short', fullKey: 's1Full', title: 'بياناتك', fullTitle: 'البيانات الشخصية والأكاديمية والقرآنية', icon: User },
+  { id: 2, shortKey: 's2Short', fullKey: 's2Full', title: 'تحقق', fullTitle: 'تأكيد البريد الإلكتروني', icon: Mail },
+  { id: 3, shortKey: 's3Short', fullKey: 's3Full', title: 'حسابك', fullTitle: 'إنشاء كلمة المرور', icon: Lock },
+  { id: 4, shortKey: 's4Short', fullKey: 's4Full', title: 'صورة وفيديو', fullTitle: 'الصورة وفيديو التلاوة', icon: Video },
+  { id: 5, shortKey: 's5Short', fullKey: 's5Full', title: 'إرسال', fullTitle: 'المراجعة والإرسال', icon: CheckCircle },
 ];
 
-export const COUNTRIES = [
-  'مصر', 'السعودية', 'الإمارات', 'الكويت', 'قطر', 'البحرين', 'عُمان', 'الأردن',
-  'فلسطين', 'لبنان', 'سوريا', 'العراق', 'اليمن', 'المغرب', 'تونس', 'الجزائر',
-  'ليبيا', 'السودان', 'تركيا', 'ماليزيا', 'إندonesia', 'باكستان', 'بريطانيا', 'أمريكا', 'أخرى',
+export const COUNTRY_OPTIONS = [
+  { code: 'EG', value: 'مصر' },
+  { code: 'SA', value: 'السعودية' },
+  { code: 'AE', value: 'الإمارات' },
+  { code: 'KW', value: 'الكويت' },
+  { code: 'QA', value: 'قطر' },
+  { code: 'BH', value: 'البحرين' },
+  { code: 'OM', value: 'عُمان' },
+  { code: 'JO', value: 'الأردن' },
+  { code: 'PS', value: 'فلسطين' },
+  { code: 'LB', value: 'لبنان' },
+  { code: 'SY', value: 'سوريا' },
+  { code: 'IQ', value: 'العراق' },
+  { code: 'YE', value: 'اليمن' },
+  { code: 'MA', value: 'المغرب' },
+  { code: 'TN', value: 'تونس' },
+  { code: 'DZ', value: 'الجزائر' },
+  { code: 'LY', value: 'ليبيا' },
+  { code: 'SD', value: 'السودان' },
+  { code: 'TR', value: 'تركيا' },
+  { code: 'MY', value: 'ماليزيا' },
+  { code: 'ID', value: 'إندونيسيا' },
+  { code: 'PK', value: 'باكستان' },
+  { code: 'GB', value: 'بريطانيا' },
+  { code: 'US', value: 'أمريكا' },
+  { code: 'OTHER', value: 'أخرى' },
 ];
+
+export const COUNTRIES = COUNTRY_OPTIONS.map((item) => item.value);
+
+export function countryLabel(value, tr) {
+  const match = COUNTRY_OPTIONS.find((item) => item.value === value || item.code === value);
+  if (!match) return value || '';
+  return tr?.countries?.[match.code] || match.value;
+}
 
 export const SPECIALIZATION_OPTIONS = [
   { id: 'tajweed', label: 'أحكام التجويد' },
@@ -68,12 +98,14 @@ export const INITIAL_FORM = {
 export const DRAFT_KEY = 'teacher_registration_draft';
 export const STATUS_TOKEN_KEY = 'teacher_application_status_token';
 
-export const VIDEO_GUIDE = [
-  'مدة كل فيديو من 3 إلى 5 دقائق',
-  'يظهر وجهك بوضوح أمام الكاميرا',
-  'صوتك واضح بدون ضوضاء',
-  'اقرأ من المصحف أو من حفظك — تلاوة قرآنية',
-  'صيغة الفيديو: MP4 أو WebM أو MOV',
-  'الحد الأقصى لكل فيديو: 100 MB',
-  'يمكنك رفع أكثر من فيديو',
+export const VIDEO_GUIDE_KEYS = [
+  { key: 'duration', fallback: 'مدة كل فيديو من 3 إلى 5 دقائق' },
+  { key: 'clearFace', fallback: 'يظهر وجهك بوضوح أمام الكاميرا' },
+  { key: 'clearAudio', fallback: 'صوتك واضح بدون ضوضاء' },
+  { key: 'readQuran', fallback: 'اقرأ من المصحف أو من حفظك — تلاوة قرآنية' },
+  { key: 'formats', fallback: 'صيغة الفيديو: MP4 أو WebM أو MOV' },
+  { key: 'maxSize', fallback: 'الحد الأقصى لكل فيديو: 100 MB' },
+  { key: 'multipleAllowed', fallback: 'يمكنك رفع أكثر من فيديو' },
 ];
+
+export const VIDEO_GUIDE = VIDEO_GUIDE_KEYS.map((item) => item.fallback);

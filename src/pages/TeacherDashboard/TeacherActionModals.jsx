@@ -1,168 +1,150 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import Modal from '../../components/shared/Modal';
+import { useI18n } from '../../i18n';
 
-const REJECT_REASONS = [
-  'عدم مناسبة الوقت الحالي في الجدول',
-  'اكتمال الحصص المتاحة هذا الأسبوع',
-  'التخصص أو المرحلة العمرية خارج نطاقي',
-];
+function formatMsg(template, vars = {}) {
+  return Object.entries(vars).reduce(
+    (acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v ?? '')),
+    String(template || '')
+  );
+}
 
 export function RejectSessionModal({ session, onClose, onConfirm, submitting = false }) {
+  const { t } = useI18n();
+  const tp = t?.teacherPortal || {};
+  const rm = tp.modals?.rejectSession || {};
   const [reason, setReason] = useState('');
 
   useEffect(() => {
     setReason('');
   }, [session?._id]);
 
-  useEffect(() => {
-    if (!session) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape' && !submitting) onClose?.();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [session, submitting, onClose]);
+  const presets = [
+    rm.presets?.busy || 'عدم مناسبة الوقت الحالي في الجدول',
+    rm.presets?.full || 'اكتمال الحصص المتاحة هذا الأسبوع',
+    rm.presets?.scope || 'التخصص أو المرحلة العمرية خارج نطاقي',
+  ];
 
-  if (!session) return null;
+  const studentName = session?.student?.name || tp.welcome?.studentFallback || 'الطالب';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" dir="rtl">
-      <div
-        className="bg-white rounded-2xl max-w-md w-full p-6 relative shadow-xl space-y-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="الاعتذار عن طلب الحصة"
-      >
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={onClose}
-          aria-label="إغلاق"
-          className="absolute end-4 top-4 text-slate-400 hover:text-slate-700"
-        >
-          <X size={20} />
-        </button>
-
+    <Modal
+      isOpen={Boolean(session)}
+      onClose={onClose}
+      title={formatMsg(rm.title || 'الاعتذار عن طلب {name}', { name: studentName })}
+      ariaLabel={rm.ariaTitle || 'الاعتذار عن طلب الحصة'}
+      maxWidth="448px"
+      disableClose={submitting}
+    >
+      <div className="space-y-4">
         <div className="flex items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-            <AlertTriangle size={20} />
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)]">
+            <AlertTriangle size={20} aria-hidden="true" />
           </span>
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900">
-              الاعتذار عن طلب {session.student?.name || 'الطالب'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              يمكنك كتابة سبب مختصر يظهر للطالب باحترام ووضوح (اختياري).
-            </p>
-          </div>
+          <p className="text-xs text-[var(--wn-text-secondary)] mt-1 leading-relaxed">
+            {rm.subtitle || 'يمكنك كتابة سبب مختصر يظهر للطالب باحترام ووضوح (اختياري).'}
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {REJECT_REASONS.map((preset) => (
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => setReason(preset)}
-              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-emerald-300 hover:bg-emerald-50"
+              className="min-h-[44px] rounded-full border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--wn-text-primary)] hover:border-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-soft)]"
             >
               {preset}
             </button>
           ))}
         </div>
 
-        <textarea
-          rows={3}
-          maxLength={400}
-          className="input-field w-full text-sm"
-          placeholder="سبب الاعتذار (اختياري)..."
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-        />
+        <div>
+          <label htmlFor="reject-session-reason" className="sr-only">
+            {rm.placeholder || 'سبب الاعتذار (اختياري)...'}
+          </label>
+          <textarea
+            id="reject-session-reason"
+            rows={3}
+            maxLength={400}
+            className="input-field w-full text-sm"
+            placeholder={rm.placeholder || 'سبب الاعتذار (اختياري)...'}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             disabled={submitting}
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600"
+            className="wn-btn wn-btn--secondary min-h-[44px] px-4 py-2 text-sm disabled:opacity-50"
           >
-            تراجع
+            {rm.cancelBtn || 'تراجع'}
           </button>
           <button
             type="button"
             disabled={submitting}
             onClick={() => onConfirm?.(reason.trim())}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50"
+            className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[var(--wn-danger)] hover:opacity-90 text-[var(--wn-white)] text-sm font-bold disabled:opacity-50"
           >
-            {submitting ? 'جاري الإرسال...' : 'تأكيد الاعتذار'}
+            {submitting && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+            <span>{submitting ? (rm.submittingBtn || 'جاري الإرسال…') : (rm.confirmBtn || 'تأكيد الاعتذار')}</span>
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 export function ConfirmDeleteUpdateModal({ update, onClose, onConfirm, submitting = false }) {
-  useEffect(() => {
-    if (!update) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape' && !submitting) onClose?.();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [update, submitting, onClose]);
-
-  if (!update) return null;
+  const { t } = useI18n();
+  const dm = t?.teacherPortal?.modals?.deleteUpdate || {};
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" dir="rtl">
-      <div
-        className="bg-white rounded-2xl max-w-md w-full p-6 relative shadow-xl space-y-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="تأكيد حذف الرسالة"
-      >
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={onClose}
-          aria-label="إغلاق"
-          className="absolute end-4 top-4 text-slate-400 hover:text-slate-700"
-        >
-          <X size={20} />
-        </button>
-
+    <Modal
+      isOpen={Boolean(update)}
+      onClose={onClose}
+      title={dm.title || 'حذف هذه الرسالة وفيديوهاتها؟'}
+      ariaLabel={dm.ariaTitle || 'تأكيد حذف الرسالة'}
+      maxWidth="448px"
+      disableClose={submitting}
+    >
+      <div className="space-y-4">
         <div className="flex items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-            <Trash2 size={18} />
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)]">
+            <Trash2 size={18} aria-hidden="true" />
           </span>
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900">حذف هذه الرسالة وفيديوهاتها؟</h3>
-            <p className="text-xs text-slate-600 mt-1">
-              سيتم حذف «{update.title}» نهائياً ولن يتمكن الطلاب من مشاهدتها بعد ذلك.
-            </p>
-          </div>
+          <p className="text-xs text-[var(--wn-text-secondary)] mt-1 leading-relaxed">
+            {formatMsg(
+              dm.desc || 'سيتم حذف «{title}» نهائيًا ولن يتمكن الطلاب من مشاهدتها بعد ذلك.',
+              { title: update?.title || '' }
+            )}
+          </p>
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             disabled={submitting}
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600"
+            className="wn-btn wn-btn--secondary min-h-[44px] px-4 py-2 text-sm disabled:opacity-50"
           >
-            إلغاء
+            {dm.cancelBtn || 'إلغاء'}
           </button>
           <button
             type="button"
             disabled={submitting}
             onClick={onConfirm}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50"
+            className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[var(--wn-danger)] hover:opacity-90 text-[var(--wn-white)] text-sm font-bold disabled:opacity-50"
           >
-            {submitting ? 'جاري الحذف...' : 'تأكيد الحذف'}
+            {submitting && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+            <span>{submitting ? (dm.submittingBtn || 'جاري الحذف…') : (dm.confirmBtn || 'تأكيد الحذف')}</span>
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
