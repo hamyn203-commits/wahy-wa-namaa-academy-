@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, CheckCheck, Loader2 } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Bell, CheckCheck, Loader2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useI18n } from '../i18n';
@@ -32,9 +33,11 @@ function pickText(obj, locale = 'ar') {
 }
 
 export default function NotificationBell() {
-  const { locale, t } = useI18n();
+  const { locale, dir, isRTL, t } = useI18n();
   const nb = t?.notificationsBell || {};
   const toast = useToast();
+  const triggerRef = useRef(null);
+  const [panelPos, setPanelPos] = useState({ top: 72, left: 16, width: 360 });
   const knownNotificationIds = useRef(new Set());
   const initializedNotifications = useRef(false);
   const realtimeRoomRef = useRef(null);
@@ -186,6 +189,40 @@ export default function NotificationBell() {
     };
   }, [locale, toast, fetchNotifications]);
 
+  const updatePanelPosition = useCallback(() => {
+    if (typeof window === 'undefined' || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const margin = 12;
+    const vw = window.innerWidth;
+    const width = Math.min(384, vw - margin * 2);
+
+    // Prefer opening away from the edge closest to the sidebar:
+    // In RTL, align right edge of panel to bell's right edge so it expands leftward into main canvas;
+    // In LTR, align left edge of panel to bell's left edge if space allows, else align right edge.
+    let left = isRTL ? rect.right - width : rect.right - width;
+    if (!isRTL && rect.left + width <= vw - margin) {
+      left = rect.left;
+    }
+    if (isRTL && rect.right - width < margin) {
+      left = rect.left;
+    }
+    left = Math.max(margin, Math.min(left, vw - width - margin));
+    const top = Math.min(window.innerHeight - 160, Math.max(margin, rect.bottom + 8));
+
+    setPanelPos({ top, left, width });
+  }, [isRTL]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return undefined;
+    updatePanelPosition();
+    window.addEventListener('resize', updatePanelPosition);
+    window.addEventListener('scroll', updatePanelPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePanelPosition);
+      window.removeEventListener('scroll', updatePanelPosition, true);
+    };
+  }, [isOpen, updatePanelPosition]);
+
   useEffect(() => {
     if (!isOpen) return undefined;
     const onKeyDown = (event) => {
@@ -253,15 +290,172 @@ export default function NotificationBell() {
   const intlLocale = resolveIntlLocale(locale);
   const visibleNotifications = onlyUnread ? notifications.filter((n) => !n.isRead) : notifications;
 
+  const closeLabel = nb.close || (isRTL ? 'إغلاق الإشعارات' : 'Close notifications');
+
+  const popover = isOpen && typeof document !== 'undefined'
+    ? createPortal(
+      <div dir={dir}>
+        <div
+          className="fixed inset-0 z-[120] bg-black/15"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+        <div
+          role="dialog"
+          aria-label={nb.title || 'Notifications'}
+          style={{
+            top: `${panelPos.top}px`,
+            left: `${panelPos.left}px`,
+            width: `${panelPos.width}px`,
+          }}
+          className="fixed z-[130] max-h-[calc(100vh-5.5rem)] flex flex-col bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-2xl shadow-2xl overflow-hidden border border-[var(--wn-border-strong)]"
+        >
+          <div className="bg-[var(--wn-emerald-deep)] px-4 py-3 text-[var(--wn-text-inverse)]">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold text-base">{nb.title || 'Notifications'}</h3>
+              <div className="flex items-center gap-1.5">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    disabled={markingAll}
+                    onClick={markAllAsRead}
+                    className="min-h-[38px] text-xs font-bold bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-gold)] disabled:opacity-55 disabled:cursor-not-allowed"
+                  >
+                    {markingAll ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <CheckCheck size={15} aria-hidden="true" />}
+                    <span>{nb.markAll || 'Mark all'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  aria-label={closeLabel}
+                  title={closeLabel}
+                  className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-lg bg-white/12 hover:bg-white/25 text-[var(--wn-text-inverse)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-gold)]"
+                >
+                  <X size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 border-b border-[var(--wn-border)] bg-[var(--wn-surface-soft)] px-3 py-2 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setOnlyUnread(false)}
+              className={`min-h-[38px] rounded-lg px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+                !onlyUnread
+                  ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                  : 'text-[var(--wn-text-secondary)] hover:bg-[var(--wn-emerald-soft)]'
+              }`}
+            >
+              {nb.all || 'All'} ({notifications.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyUnread(true)}
+              className={`min-h-[38px] rounded-lg px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
+                onlyUnread
+                  ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
+                  : 'text-[var(--wn-text-secondary)] hover:bg-[var(--wn-emerald-soft)]'
+              }`}
+            >
+              {nb.unread || 'Unread'} ({unreadCount})
+            </button>
+          </div>
+          <div className="flex-1 max-h-96 overflow-y-auto">
+            {visibleNotifications.length === 0 ? (
+              <div className="p-8 text-center text-[var(--wn-text-secondary)]">
+                <Bell className="mx-auto mb-2 text-[var(--wn-text-tertiary)]" size={40} aria-hidden="true" />
+                <p>{nb.empty || 'No notifications'}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--wn-border)]">
+                {visibleNotifications.map((notification) => {
+                  const href = getNotificationLink(notification);
+                  const content = (
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl" aria-hidden="true">{getNotificationIcon(notification.type)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-semibold text-sm text-[var(--wn-text-primary)]">
+                            {pickText(notification.title, locale)}
+                          </h4>
+                          {!notification.isRead && (
+                            <div className="w-2 h-2 bg-[var(--wn-emerald)] rounded-full flex-shrink-0 mt-1" />
+                          )}
+                        </div>
+                        <p className="text-sm text-[var(--wn-text-secondary)] mt-1 line-clamp-2">
+                          {pickText(notification.message, locale)}
+                        </p>
+                        <p className="text-xs text-[var(--wn-text-tertiary)] mt-2">
+                          {new Date(notification.createdAt).toLocaleString(intlLocale)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+
+                  const clickHandler = () => {
+                    if (!notification.isRead) markAsRead(notification._id);
+                    setIsOpen(false);
+                  };
+
+                  return isExternal(href) ? (
+                    <a
+                      key={notification._id}
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={clickHandler}
+                      className={`block p-4 hover:bg-[var(--wn-surface-soft)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--wn-focus)] ${
+                        !notification.isRead ? 'bg-[var(--wn-emerald-soft)]' : ''
+                      }`}
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <Link
+                      key={notification._id}
+                      to={href}
+                      onClick={clickHandler}
+                      className={`block p-4 hover:bg-[var(--wn-surface-soft)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--wn-focus)] ${
+                        !notification.isRead ? 'bg-[var(--wn-emerald-soft)]' : ''
+                      }`}
+                    >
+                      {content}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {notifications.length > 0 && (
+            <div className="border-t border-[var(--wn-border)] p-2 bg-[var(--wn-surface-soft)]">
+              <Link
+                to={localizeInternalHref('/notifications', locale)}
+                onClick={() => setIsOpen(false)}
+                className="min-h-[44px] flex items-center justify-center rounded-lg text-sm text-[var(--wn-link)] hover:bg-[var(--wn-emerald-soft)] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+              >
+                {nb.viewAll || 'View all notifications'}
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    )
+    : null;
+
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((prev) => !prev)}
         className="relative min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-[var(--wn-text-secondary)] hover:text-[var(--wn-link)] hover:bg-[var(--wn-surface-soft)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
         aria-label={nb.title || 'Notifications'}
         aria-expanded={isOpen}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
       >
         <Bell size={22} aria-hidden="true" />
         {unreadCount > 0 && (
@@ -270,139 +464,7 @@ export default function NotificationBell() {
           </span>
         )}
       </button>
-
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div
-            role="menu"
-            aria-label={nb.title || 'Notifications'}
-            className="absolute end-0 mt-2 w-[min(24rem,calc(100vw-1.5rem))] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-xl shadow-2xl z-50 overflow-hidden border border-[var(--wn-border)]"
-          >
-            <div className="bg-[var(--wn-emerald-deep)] p-4 text-[var(--wn-text-inverse)]">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-bold text-lg">{nb.title || 'Notifications'}</h3>
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    disabled={markingAll}
-                    onClick={markAllAsRead}
-                    className="min-h-[44px] text-xs font-bold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-gold)] disabled:opacity-55 disabled:cursor-not-allowed"
-                  >
-                    {markingAll ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <CheckCheck size={16} aria-hidden="true" />}
-                    <span>{nb.markAll || 'Mark all'}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 border-b border-[var(--wn-border)] bg-[var(--wn-surface-soft)] px-3 py-2 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setOnlyUnread(false)}
-                className={`min-h-[44px] rounded-lg px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
-                  !onlyUnread
-                    ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
-                    : 'text-[var(--wn-text-secondary)] hover:bg-[var(--wn-emerald-soft)]'
-                }`}
-              >
-                {nb.all || 'All'} ({notifications.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setOnlyUnread(true)}
-                className={`min-h-[44px] rounded-lg px-3 py-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
-                  onlyUnread
-                    ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
-                    : 'text-[var(--wn-text-secondary)] hover:bg-[var(--wn-emerald-soft)]'
-                }`}
-              >
-                {nb.unread || 'Unread'} ({unreadCount})
-              </button>
-            </div>
-            <div className="max-h-96 overflow-y-auto">
-              {visibleNotifications.length === 0 ? (
-                <div className="p-8 text-center text-[var(--wn-text-secondary)]">
-                  <Bell className="mx-auto mb-2 text-[var(--wn-text-tertiary)]" size={40} aria-hidden="true" />
-                  <p>{nb.empty || 'No notifications'}</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-[var(--wn-border)]">
-                  {visibleNotifications.map((notification) => {
-                    const href = getNotificationLink(notification);
-                    const content = (
-                      <div className="flex items-start gap-3">
-                        <div className="text-2xl" aria-hidden="true">{getNotificationIcon(notification.type)}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-semibold text-sm text-[var(--wn-text-primary)]">
-                              {pickText(notification.title, locale)}
-                            </h4>
-                            {!notification.isRead && (
-                              <div className="w-2 h-2 bg-[var(--wn-emerald)] rounded-full flex-shrink-0 mt-1" />
-                            )}
-                          </div>
-                          <p className="text-sm text-[var(--wn-text-secondary)] mt-1 line-clamp-2">
-                            {pickText(notification.message, locale)}
-                          </p>
-                          <p className="text-xs text-[var(--wn-text-tertiary)] mt-2">
-                            {new Date(notification.createdAt).toLocaleString(intlLocale)}
-                          </p>
-                        </div>
-                      </div>
-                    );
-
-                    const clickHandler = () => {
-                      if (!notification.isRead) markAsRead(notification._id);
-                      setIsOpen(false);
-                    };
-
-                    return isExternal(href) ? (
-                      <a
-                        key={notification._id}
-                        role="menuitem"
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={clickHandler}
-                        className={`block p-4 hover:bg-[var(--wn-surface-soft)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--wn-focus)] ${
-                          !notification.isRead ? 'bg-[var(--wn-emerald-soft)]' : ''
-                        }`}
-                      >
-                        {content}
-                      </a>
-                    ) : (
-                      <Link
-                        key={notification._id}
-                        role="menuitem"
-                        to={href}
-                        onClick={clickHandler}
-                        className={`block p-4 hover:bg-[var(--wn-surface-soft)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--wn-focus)] ${
-                          !notification.isRead ? 'bg-[var(--wn-emerald-soft)]' : ''
-                        }`}
-                      >
-                        {content}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {notifications.length > 0 && (
-              <div className="border-t border-[var(--wn-border)] p-2 bg-[var(--wn-surface-soft)]">
-                <Link
-                  to={localizeInternalHref('/notifications', locale)}
-                  onClick={() => setIsOpen(false)}
-                  className="min-h-[44px] flex items-center justify-center rounded-lg text-sm text-[var(--wn-link)] hover:bg-[var(--wn-emerald-soft)] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
-                >
-                  {nb.viewAll || 'View all notifications'}
-                </Link>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+      {popover}
     </div>
   );
 }

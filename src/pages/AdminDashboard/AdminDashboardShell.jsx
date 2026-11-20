@@ -108,6 +108,21 @@ export default function AdminDashboardShell({
       ) : null}
 
       <aside id="wn-admin-sidebar" className={`wn-admin-sidebar ${mobileOpen ? 'is-open' : ''}`}>
+        <button
+          type="button"
+          className="wn-admin-sidebar__close"
+          onClick={() => {
+            if (mobileOpen) {
+              setMobileOpen(false);
+            } else {
+              setCollapsed(true);
+            }
+          }}
+          aria-label={sh.toggleSidebarHide || (isRTL ? 'إخفاء القائمة الجانبية' : 'Hide sidebar')}
+          title={sh.toggleSidebarHide || (isRTL ? 'إخفاء القائمة الجانبية' : 'Hide sidebar')}
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
         <div className="wn-admin-sidebar__brand">
           <BrandLogo
             size={58}

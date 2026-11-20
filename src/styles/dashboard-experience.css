@@ -10446,3 +10446,32 @@
   outline: none;
   box-shadow: var(--wn-focus-ring);
 }
+
+.wn-admin-sidebar__close {
+  position: absolute;
+  top: 0.75rem;
+  inset-inline-end: 0.75rem;
+  z-index: 3;
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 30%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 10%, transparent);
+  color: var(--wn-text-inverse);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-sidebar__close:hover,
+.wn-admin-sidebar__close:focus-visible {
+  background: color-mix(in srgb, var(--wn-gold) 22%, transparent);
+  border-color: color-mix(in srgb, var(--wn-gold) 60%, transparent);
+  color: var(--wn-gold);
+  outline: none;
+}
