@@ -904,6 +904,23 @@ export default function AdminDashboard() {
     { key: 'phone', type: 'text', required: false, label: tTeachers.fields.phone },
   ];
 
+  const actionCountById = Object.fromEntries(
+    (commandCenter?.actions || []).map((item) => [item.id, Number(item.count || 0)])
+  );
+  const sidebarBadges = {
+    teachers: Math.max(pending.length, actionCountById['teacher-review'] || 0) + pendingProfileChanges.length,
+    payments: actionCountById['manual-payments'] || 0,
+    withdrawals: actionCountById.payouts || 0,
+    messages: actionCountById.messages || 0,
+    trials: actionCountById['trial-requests'] || 0,
+    subscriptions: actionCountById['awaiting-placement'] || 0,
+    sessions: (actionCountById['overdue-sessions'] || 0) + (actionCountById['missing-session-reports'] || 0),
+  };
+  const statusSummary = {
+    critical: Number(commandCenter?.summary?.criticalActions || 0),
+    totalPending: Number(commandCenter?.summary?.totalPendingActions || 0),
+  };
+
   return (
     <>
       <SEOHead page={{ title: ta.seo.dashboardTitle, description: ta.seo.dashboardDesc, noindex: true, canonical: false }} />
@@ -914,6 +931,8 @@ export default function AdminDashboard() {
         onNavigate={navigateAdmin}
         onLogout={logout}
         search={adminSearch}
+        badges={sidebarBadges}
+        statusSummary={statusSummary}
       >
         {loading && tab !== 'overview' ? (
           <div className="space-y-4 py-4">

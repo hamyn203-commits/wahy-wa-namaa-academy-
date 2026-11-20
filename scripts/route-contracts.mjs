@@ -327,16 +327,13 @@ assert.match(adminDashboard, /review-checklist\/\$\{key\}/);
 assert.match(adminDashboard, /TeacherReviewDossier/);
 assert.match(adminDashboard, /AdminDashboardShell/);
 assert.match(adminDashboard, /AdminExecutiveHome/);
+assert.match(adminDashboard, /LaunchReadinessPanel/);
 assert.match(adminExecutiveHome, /EXECUTIVE OVERVIEW/);
-assert.match(adminExecutiveHome, /OPERATIONS PULSE/);
 assert.match(adminExecutiveHome, /ACTION CENTER/);
-assert.match(adminExecutiveHome, /SYSTEM HEALTH/);
 assert.match(adminExecutiveHome, /TeacherReviewQueue/);
-assert.match(adminExecutiveHome, /LaunchReadinessPanel/);
-assert.match(adminExecutiveHome, /ResponsiveContainer/);
 assert.match(adminExecutiveHome, /\/admin\?tab=teachers/);
 assert.match(adminExecutiveHome, /\/admin\?tab=sessions/);
-assert.match(adminExecutiveHome, /\/admin\?tab=people&focus=guardian-links/);
+assert.match(adminExecutiveHome, /\/admin\?tab=people/);
 assert.match(adminExecutiveHome, /\/admin\/payments/);
 assert.match(adminExecutiveHome, /\/admin\?tab=system/);
 assert.match(adminExecutiveHome, /onClick=\{\(\) => handleAction/);
@@ -354,11 +351,13 @@ assert.doesNotMatch(adminDashboard, /<DashboardLayout/);
 assert.doesNotMatch(adminDashboard, /<TabBar/);
 assert.match(adminDashboardShell, /wn-admin-sidebar/);
 assert.match(adminDashboardShell, /wn-admin-topbar/);
+assert.match(adminDashboardShell, /NAV_GROUPS/);
+assert.match(adminDashboardShell, /wn-admin-sidebar__badge/);
 assert.match(adminDashboardShell, /(?:مركز القيادة|shell\.nav\.overview|id:\s*['"]overview['"])/);
 assert.match(adminDashboardShell, /(?:الاشتراكات والتسكين|shell\.nav\.subscriptions|id:\s*['"]subscriptions['"][\s\S]{0,80}route:\s*['"]subscriptions['"])/);
 assert.match(adminDashboardShell, /(?:السحوبات والمالية|shell\.nav\.withdrawals|id:\s*['"]withdrawals['"])/);
 assert.match(adminDashboardShell, /(?:التحليلات والنمو|shell\.nav\.growth|id:\s*['"]growth['"])/);
-// T19 — Illustrated first screen with navigable actions and scrolled detail.
+// T19 — Sovereign Calm executive first screen with navigable actions and anchored workspace.
 assert.match(adminDashboardShell, /wn-admin-welcome--illustrated/);
 assert.match(adminDashboardShell, /active === 'overview'/);
 assert.match(adminDashboardShell, /wn-admin-page-heading/);
@@ -366,9 +365,9 @@ assert.match(adminDashboardShell, /href="#admin-executive-content"/);
 assert.match(adminExecutiveHome, /id="admin-executive-content"/);
 assert.ok(fs.existsSync(path.join(root, 'public/images/admin-mosque-hero.svg')));
 assert.ok(
-  adminExecutiveHome.indexOf('className="wn-admin-exec-quick-actions"')
-    < adminExecutiveHome.indexOf('className="wn-admin-exec-hero"'),
-  'Quick admin actions should appear before the detailed operational summary'
+  adminExecutiveHome.indexOf('className="wn-admin-exec-metrics"')
+    < adminExecutiveHome.indexOf('className="wn-admin-exec-workspace"'),
+  'Core executive KPI metrics should appear before the detailed action workspace'
 );
 // T20 — Admin readability at 150% scale, scoped to admin pages only.
 const adminReadableCss = read('src/styles/dashboard-experience.css');

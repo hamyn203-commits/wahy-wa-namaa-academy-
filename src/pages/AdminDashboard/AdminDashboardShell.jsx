@@ -1,31 +1,59 @@
 import {
-  Activity, ArrowDown, BookOpen, CalendarClock, CreditCard, FileText, GraduationCap, History,
+  Activity, AlertTriangle, BookOpen, CalendarClock, CreditCard, FileText, GraduationCap, History,
   Home, LogOut, Mail, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Settings, ShieldCheck, TrendingUp, Users, WalletCards, X, Sparkles, UserRoundCheck,
+  Settings, ShieldCheck, Sparkles, TrendingUp, UserRoundCheck, Users, WalletCards, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import BrandLogo from '../../components/BrandLogo';
 import NotificationBell from '../../components/NotificationBell';
 import { useI18n } from '../../i18n';
 import { resolveIntlLocale } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
 
-const NAV_ITEMS = [
-  { id: 'overview', icon: Home },
-  { id: 'analytics', icon: Activity },
-  { id: 'teachers', icon: GraduationCap },
-  { id: 'people', icon: Users },
-  { id: 'sessions', icon: CalendarClock },
-  { id: 'trials', icon: Sparkles, route: 'trials' },
-  { id: 'payments', icon: CreditCard, route: 'payments' },
-  { id: 'subscriptions', icon: UserRoundCheck, route: 'subscriptions' },
-  { id: 'withdrawals', icon: WalletCards },
-  { id: 'courses', icon: BookOpen },
-  { id: 'messages', icon: Mail },
-  { id: 'growth', icon: TrendingUp },
-  { id: 'blog', icon: FileText },
-  { id: 'audit', icon: History },
+const NAV_GROUPS = [
+  {
+    id: 'command',
+    ar: 'القيادة والرصد',
+    en: 'Command & Insights',
+    items: [
+      { id: 'overview', icon: Home },
+      { id: 'analytics', icon: Activity },
+    ],
+  },
+  {
+    id: 'operations',
+    ar: 'التشغيل التعليمي',
+    en: 'Academic Operations',
+    items: [
+      { id: 'teachers', icon: GraduationCap, badgeTone: 'gold' },
+      { id: 'people', icon: Users },
+      { id: 'sessions', icon: CalendarClock, badgeTone: 'danger' },
+      { id: 'trials', icon: Sparkles, route: 'trials', badgeTone: 'gold' },
+    ],
+  },
+  {
+    id: 'finance',
+    ar: 'المالية والاشتراكات',
+    en: 'Finance & Subscriptions',
+    items: [
+      { id: 'payments', icon: CreditCard, route: 'payments', badgeTone: 'danger' },
+      { id: 'subscriptions', icon: UserRoundCheck, route: 'subscriptions', badgeTone: 'gold' },
+      { id: 'withdrawals', icon: WalletCards, badgeTone: 'danger' },
+    ],
+  },
+  {
+    id: 'content',
+    ar: 'المحتوى والنظام',
+    en: 'Content & System',
+    items: [
+      { id: 'messages', icon: Mail, badgeTone: 'gold' },
+      { id: 'courses', icon: BookOpen },
+      { id: 'growth', icon: TrendingUp },
+      { id: 'blog', icon: FileText },
+      { id: 'audit', icon: History },
+      { id: 'system', icon: Settings },
+    ],
+  },
 ];
 
 export default function AdminDashboardShell({
@@ -35,6 +63,8 @@ export default function AdminDashboardShell({
   onNavigate,
   onLogout,
   search,
+  badges = {},
+  statusSummary = null,
   children,
 }) {
   const { locale, dir, isRTL, t } = useI18n();
@@ -60,14 +90,27 @@ export default function AdminDashboardShell({
 
   const roleHome = dashboardPathForRole('admin', locale);
   const firstName = user?.name?.trim().split(/\s+/)[0] || sh.adminFallbackName;
-  const navItems = useMemo(
-    () => NAV_ITEMS.map((item) => ({
-      ...item,
-      label: sh.nav?.[item.id] || (item.id === 'analytics' ? (isRTL ? 'الزيارات والتتبع' : 'Traffic & Funnel') : item.id),
+
+  const navGroups = useMemo(
+    () => NAV_GROUPS.map((group) => ({
+      ...group,
+      title: isRTL ? group.ar : group.en,
+      items: group.items.map((item) => ({
+        ...item,
+        label: item.id === 'system'
+          ? (sh.systemNavLabel || (isRTL ? 'النظام والجاهزية' : 'System & Readiness'))
+          : (sh.nav?.[item.id] || (item.id === 'analytics' ? (isRTL ? 'الزيارات والتتبع' : 'Traffic & Funnel') : item.id)),
+      })),
     })),
-    [sh.nav, isRTL]
+    [sh.nav, sh.systemNavLabel, isRTL]
   );
-  const activeSectionTitle = navItems.find((item) => item.id === active)?.label
+
+  const flatNavItems = useMemo(
+    () => navGroups.flatMap((group) => group.items),
+    [navGroups]
+  );
+
+  const activeSectionTitle = flatNavItems.find((item) => item.id === active)?.label
     || (active === 'system' ? sh.systemSectionTitle : sh.defaultSectionTitle);
 
   const today = useMemo(() => new Intl.DateTimeFormat(intlLocale, {
@@ -83,6 +126,10 @@ export default function AdminDashboardShell({
       onNavigate?.(item.route);
       return;
     }
+    if (item.id === 'system') {
+      onChange?.('system');
+      return;
+    }
     onChange?.(item.id);
   };
 
@@ -90,8 +137,11 @@ export default function AdminDashboardShell({
     ? (collapsed ? PanelRightOpen : PanelRightClose)
     : (collapsed ? PanelLeftOpen : PanelLeftClose);
 
+  const criticalCount = Number(statusSummary?.critical || 0);
+  const pendingCount = Number(statusSummary?.totalPending || 0);
+
   return (
-    <div className={`wn-admin-app ${collapsed ? 'is-sidebar-collapsed' : ''}`} dir={dir}>
+    <div className={`wn-admin-app wn-admin-calm ${collapsed ? 'is-sidebar-collapsed' : ''}`} dir={dir}>
       <button
         type="button"
         className="wn-admin-mobile-toggle"
@@ -123,9 +173,10 @@ export default function AdminDashboardShell({
         >
           <X size={18} aria-hidden="true" />
         </button>
+
         <div className="wn-admin-sidebar__brand">
           <BrandLogo
-            size={58}
+            size={48}
             showText={true}
             variant="light"
             layout="vertical"
@@ -136,52 +187,47 @@ export default function AdminDashboardShell({
         <div className="wn-admin-sidebar__divider" />
 
         <nav className="wn-admin-sidebar__nav" aria-label={sh.navAriaLabel}>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const selected = !item.route && active === item.id;
-            return (
-              <button
-                type="button"
-                key={item.id}
-                onClick={() => selectItem(item)}
-                className={selected ? 'is-active' : ''}
-                aria-current={selected ? 'page' : undefined}
-                aria-label={item.label}
-                title={item.label}
-              >
-                <Icon size={18} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+          {navGroups.map((group) => (
+            <div key={group.id} className="wn-admin-sidebar__group">
+              <span className="wn-admin-sidebar__group-label">{group.title}</span>
+              <div className="wn-admin-sidebar__group-items">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const selected = !item.route && active === item.id;
+                  const count = Number(badges?.[item.id] || 0);
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => selectItem(item)}
+                      className={selected ? 'is-active' : ''}
+                      aria-current={selected ? 'page' : undefined}
+                      aria-label={item.label}
+                      title={item.label}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                      <span className="wn-admin-sidebar__label">{item.label}</span>
+                      {count > 0 ? (
+                        <b className={`wn-admin-sidebar__badge is-${item.badgeTone || 'gold'}`}>
+                          {count > 99 ? '99+' : count}
+                        </b>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
-
-        <div className="wn-admin-sidebar__system">
-          <button
-            type="button"
-            onClick={() => { setMobileOpen(false); onChange?.('system'); }}
-            className={active === 'system' ? 'is-active' : ''}
-            aria-label={sh.systemNavLabel}
-            aria-current={active === 'system' ? 'page' : undefined}
-            title={sh.systemNavLabel}
-          >
-            <Settings size={18} aria-hidden="true" />
-            <span>{sh.systemNavLabel}</span>
-          </button>
-          <Link to={roleHome} aria-label={sh.adminLink} title={sh.adminLink} onClick={() => setMobileOpen(false)}>
-            <ShieldCheck size={18} aria-hidden="true" />
-            <span>{sh.adminLink}</span>
-          </Link>
-        </div>
 
         <div className="wn-admin-sidebar__profile">
           <div className="wn-admin-sidebar__avatar">{user?.name?.slice(0, 1) || sh.avatarFallback}</div>
-          <div>
+          <div className="wn-admin-sidebar__profile-meta">
             <strong>{user?.name || sh.adminFallbackName}</strong>
             <small>{sh.roleTitle}</small>
           </div>
           <button type="button" onClick={onLogout} aria-label={sh.logout} title={sh.logout}>
-            <LogOut size={17} aria-hidden="true" />
+            <LogOut size={16} aria-hidden="true" />
           </button>
         </div>
       </aside>
@@ -203,29 +249,43 @@ export default function AdminDashboardShell({
             aria-controls="wn-admin-sidebar"
             title={collapsed ? sh.toggleSidebarShow : sh.toggleSidebarHide}
           >
-            <ToggleIcon size={19} aria-hidden="true" />
+            <ToggleIcon size={18} aria-hidden="true" />
           </button>
         </header>
 
         <main className="wn-admin-canvas">
           {active === 'overview' ? (
-            <section className="wn-admin-welcome wn-admin-welcome--illustrated" aria-labelledby="admin-welcome-title">
+            <section className="wn-admin-welcome wn-admin-welcome--illustrated wn-admin-welcome--calm" aria-labelledby="admin-welcome-title">
               <div className="wn-admin-welcome__copy">
-                <span className="wn-admin-welcome__eyebrow"><Sparkles size={15} aria-hidden="true" /> {sh.welcomeEyebrow}</span>
+                <div className="wn-admin-welcome__meta-row">
+                  <span className="wn-admin-welcome__eyebrow">
+                    <Sparkles size={13} aria-hidden="true" /> {sh.welcomeEyebrow}
+                  </span>
+                  <a
+                    href="#admin-executive-content"
+                    className={`wn-admin-welcome__status-pill ${criticalCount > 0 ? 'is-alert' : 'is-clear'}`}
+                  >
+                    {criticalCount > 0 ? <AlertTriangle size={13} aria-hidden="true" /> : <ShieldCheck size={13} aria-hidden="true" />}
+                    <span>
+                      {criticalCount > 0
+                        ? (isRTL ? `${criticalCount} أولوية عاجلة` : `${criticalCount} urgent`)
+                        : pendingCount > 0
+                          ? (isRTL ? `${pendingCount} مهمة للمتابعة` : `${pendingCount} to review`)
+                          : (isRTL ? 'كل شيء مستقر اليوم' : 'All systems calm')}
+                    </span>
+                  </a>
+                </div>
                 <h1 id="admin-welcome-title">{sh.welcomeTitlePrefix} <em>{firstName}</em></h1>
                 <p>{sh.welcomeSubtitle}</p>
-                <div className="wn-admin-welcome__actions">
-                  <button type="button" className="is-primary" onClick={() => onChange?.('sessions')}>
-                    <CalendarClock size={17} aria-hidden="true" /> {sh.ctaSessions}
-                  </button>
-                  <button type="button" className="is-secondary" onClick={() => onChange?.('teachers')}>
-                    <GraduationCap size={17} aria-hidden="true" /> {sh.ctaTeachers}
-                  </button>
-                </div>
               </div>
-              <a className="wn-admin-welcome__scroll" href="#admin-executive-content">
-                {sh.scrollLabel} <ArrowDown size={15} aria-hidden="true" />
-              </a>
+              <div className="wn-admin-welcome__actions">
+                <button type="button" className="is-primary" onClick={() => onChange?.('teachers')}>
+                  <GraduationCap size={16} aria-hidden="true" /> {sh.ctaTeachers}
+                </button>
+                <button type="button" className="is-secondary" onClick={() => onChange?.('sessions')}>
+                  <CalendarClock size={16} aria-hidden="true" /> {sh.ctaSessions}
+                </button>
+              </div>
             </section>
           ) : (
             <section className="wn-admin-page-heading" aria-labelledby="admin-section-title">

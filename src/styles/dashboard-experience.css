@@ -10475,3 +10475,844 @@
   color: var(--wn-gold);
   outline: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Sovereign Calm (الهدوء السيادي) — Unified Admin Redesign Layer
+   100% design tokens · zero raw hex/rgba/px-font/px-radius/!important
+   ═══════════════════════════════════════════════════════════════════ */
+
+.wn-admin-app.wn-admin-calm {
+  background: var(--wn-surface-canvas);
+  color: var(--wn-text-primary);
+  font-size: var(--wn-text-base);
+  line-height: 1.6;
+}
+
+.wn-admin-app.wn-admin-calm :is(button, input, select, textarea) {
+  font-size: var(--wn-text-sm);
+}
+
+.wn-admin-app.wn-admin-calm [class~="text-xs"] { font-size: var(--wn-text-xs); line-height: 1.5; }
+.wn-admin-app.wn-admin-calm [class~="text-sm"] { font-size: var(--wn-text-sm); line-height: 1.55; }
+.wn-admin-app.wn-admin-calm [class~="text-base"] { font-size: var(--wn-text-base); line-height: 1.55; }
+.wn-admin-app.wn-admin-calm [class~="text-lg"] { font-size: var(--wn-text-lg); line-height: 1.4; }
+.wn-admin-app.wn-admin-calm [class~="text-xl"] { font-size: var(--wn-text-xl); line-height: 1.35; }
+.wn-admin-app.wn-admin-calm [class~="text-2xl"] { font-size: var(--wn-text-2xl); line-height: 1.3; }
+.wn-admin-app.wn-admin-calm [class~="text-[11px]"],
+.wn-admin-app.wn-admin-calm [class~="text-[10px]"] { font-size: var(--wn-text-2xs); line-height: 1.45; }
+.wn-admin-app.wn-admin-calm [class~="text-[12px]"] { font-size: var(--wn-text-xs); line-height: 1.5; }
+.wn-admin-app.wn-admin-calm .wn-btn { font-size: var(--wn-text-sm); }
+
+/* ── Royal Emerald Sidebar ──────────────────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar {
+  background: linear-gradient(
+    180deg,
+    var(--wn-emerald-deep) 0%,
+    color-mix(in srgb, var(--wn-emerald-deep) 86%, var(--wn-emerald-dark)) 100%
+  );
+  border-inline-end: 1px solid color-mix(in srgb, var(--wn-gold) 22%, transparent);
+  box-shadow: var(--wn-shadow-md);
+  color: var(--wn-text-inverse);
+}
+
+@media (min-width: 901px) {
+  .wn-admin-app.wn-admin-calm .wn-admin-sidebar {
+    width: 17.5rem;
+  }
+  .wn-admin-app.wn-admin-calm .wn-admin-stage {
+    margin-inline-start: 17.5rem;
+  }
+  .wn-admin-app.wn-admin-calm.is-sidebar-collapsed .wn-admin-stage {
+    margin-inline-start: 0;
+  }
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__brand {
+  padding: var(--wn-space-4) var(--wn-space-4) var(--wn-space-3);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__divider {
+  height: 1px;
+  margin: 0 var(--wn-space-4) var(--wn-space-3);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--wn-gold) 42%, transparent),
+    transparent
+  );
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav {
+  padding: 0 var(--wn-space-3) var(--wn-space-4);
+  gap: 0;
+  scrollbar-color: color-mix(in srgb, var(--wn-gold) 36%, transparent) transparent;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-space-1);
+  margin-bottom: var(--wn-space-3);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__group:last-child {
+  margin-bottom: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__group-label {
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: color-mix(in srgb, var(--wn-gold) 78%, var(--wn-text-inverse));
+  padding: var(--wn-space-1) var(--wn-space-3);
+  opacity: 0.85;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav button {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--wn-space-3);
+  min-height: 2.55rem;
+  padding: 0.45rem var(--wn-space-3);
+  border-radius: var(--wn-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--wn-text-inverse) 86%, transparent);
+  font-size: var(--wn-text-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: start;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: color-mix(in srgb, var(--wn-gold) 72%, var(--wn-text-inverse));
+  flex-shrink: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav button:hover {
+  background: color-mix(in srgb, var(--wn-white) 8%, transparent);
+  color: var(--wn-text-inverse);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav button.is-active {
+  background: color-mix(in srgb, var(--wn-gold) 18%, var(--wn-emerald-dark));
+  border-color: color-mix(in srgb, var(--wn-gold) 36%, transparent);
+  color: var(--wn-text-inverse);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--wn-gold);
+}
+
+[dir="rtl"] .wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav button.is-active {
+  box-shadow: inset -3px 0 0 var(--wn-gold);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__nav button.is-active svg {
+  color: var(--wn-gold);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding-inline: 0.35rem;
+  border-radius: var(--wn-radius-pill);
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__badge.is-gold {
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__badge.is-danger {
+  background: var(--wn-danger);
+  color: var(--wn-white);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile {
+  margin: var(--wn-space-3);
+  padding: var(--wn-space-2) var(--wn-space-3);
+  border-radius: var(--wn-radius-md);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 22%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 6%, transparent);
+  gap: var(--wn-space-2);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__avatar {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+  font-size: var(--wn-text-sm);
+  font-weight: 800;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile strong {
+  display: block;
+  font-size: var(--wn-text-sm);
+  color: var(--wn-text-inverse);
+  line-height: 1.35;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile small {
+  display: block;
+  font-size: var(--wn-text-2xs);
+  color: color-mix(in srgb, var(--wn-text-inverse) 72%, transparent);
+  line-height: 1.35;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile button {
+  width: var(--wn-control-sm);
+  height: var(--wn-control-sm);
+  border-radius: var(--wn-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--wn-white) 14%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 6%, transparent);
+  color: var(--wn-text-inverse);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-sidebar__profile button:hover {
+  background: color-mix(in srgb, var(--wn-danger) 28%, transparent);
+  border-color: color-mix(in srgb, var(--wn-danger) 50%, transparent);
+}
+
+/* ── Calm Topbar ────────────────────────────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-topbar {
+  min-height: 4.25rem;
+  padding: var(--wn-space-2) var(--wn-space-5);
+  background: color-mix(in srgb, var(--wn-surface) 92%, var(--wn-surface-canvas));
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--wn-border);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__date {
+  font-size: var(--wn-text-xs);
+  font-weight: 600;
+  color: var(--wn-text-secondary);
+  background: var(--wn-surface-subtle);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-pill);
+  padding: 0.35rem 0.75rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__locale {
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  color: var(--wn-emerald-dark);
+  background: var(--wn-emerald-soft);
+  border: 1px solid var(--wn-border-mint);
+  border-radius: var(--wn-radius-pill);
+  padding: 0.3rem 0.65rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__sidebar-toggle {
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
+  border-radius: var(--wn-radius-sm);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+  color: var(--wn-emerald-dark);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__sidebar-toggle:hover,
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__sidebar-toggle:focus-visible {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-emerald);
+  color: var(--wn-emerald-deep);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__search .wn-admin-global-search__bar input {
+  font-size: var(--wn-text-sm);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__search .wn-admin-global-search__bar > button:last-child {
+  font-size: var(--wn-text-xs);
+}
+
+/* ── Canvas & Page Headings ─────────────────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-canvas {
+  max-width: var(--wn-container-wide);
+  padding: var(--wn-space-5);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-page-heading {
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-lg);
+  padding: var(--wn-space-4) var(--wn-space-5);
+  margin-bottom: var(--wn-space-5);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-page-heading > span {
+  font-size: var(--wn-text-xs);
+  color: var(--wn-text-gold);
+  font-weight: 700;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-page-heading h1 {
+  font-size: var(--wn-text-xl);
+  color: var(--wn-heading);
+  margin-top: 0.15rem;
+}
+
+/* ── Compact Sovereign Welcome Header ───────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-welcome.wn-admin-welcome--calm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-4);
+  min-height: auto;
+  padding: var(--wn-space-5);
+  margin-bottom: var(--wn-space-5);
+  border-radius: var(--wn-radius-lg);
+  border: 1px solid var(--wn-border);
+  background:
+    linear-gradient(
+      135deg,
+      var(--wn-surface) 0%,
+      color-mix(in srgb, var(--wn-emerald-soft) 55%, var(--wn-surface)) 62%,
+      color-mix(in srgb, var(--wn-gold-soft) 55%, var(--wn-surface)) 100%
+    );
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__copy {
+  max-width: 44rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome__meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wn-space-2);
+  margin-bottom: var(--wn-space-2);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  color: var(--wn-emerald-dark);
+  background: var(--wn-emerald-soft);
+  border: 1px solid var(--wn-border-mint);
+  border-radius: var(--wn-radius-pill);
+  padding: 0.25rem 0.7rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome__status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  border-radius: var(--wn-radius-pill);
+  padding: 0.25rem 0.75rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome__status-pill.is-clear {
+  background: color-mix(in srgb, var(--wn-emerald) 10%, var(--wn-surface));
+  border-color: var(--wn-border-mint);
+  color: var(--wn-emerald-dark);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome__status-pill.is-alert {
+  background: var(--wn-danger-soft);
+  border-color: color-mix(in srgb, var(--wn-danger) 30%, transparent);
+  color: var(--wn-text-danger);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__copy h1 {
+  font-size: var(--wn-text-xl);
+  font-weight: 800;
+  color: var(--wn-heading);
+  margin: 0 0 0.25rem;
+  line-height: 1.3;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__copy h1 em {
+  font-style: normal;
+  color: var(--wn-emerald);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__copy p {
+  font-size: var(--wn-text-sm);
+  color: var(--wn-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wn-space-2);
+  margin: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wn-space-2);
+  min-height: var(--wn-control-md);
+  padding: 0.55rem var(--wn-space-4);
+  border-radius: var(--wn-radius-sm);
+  font-size: var(--wn-text-sm);
+  font-weight: 700;
+  transition:
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions button.is-primary {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+  border: 1px solid var(--wn-emerald);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions button.is-primary:hover {
+  background: var(--wn-emerald-hover);
+  transform: translateY(-1px);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions button.is-secondary {
+  background: var(--wn-surface);
+  color: var(--wn-emerald-dark);
+  border: 1px solid var(--wn-border-strong);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__actions button.is-secondary:hover {
+  border-color: var(--wn-emerald);
+  background: var(--wn-emerald-soft);
+}
+
+/* ── 4 Balanced Executive KPI Cards ─────────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-space-5);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--wn-space-4);
+  margin: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric {
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-md);
+  padding: var(--wn-space-4);
+  box-shadow: var(--wn-shadow-xs);
+  text-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-space-3);
+  transition:
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    box-shadow var(--wn-dur-fast) var(--wn-ease),
+    transform var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric.is-clickable:hover {
+  border-color: var(--wn-emerald);
+  box-shadow: var(--wn-shadow-sm);
+  transform: translateY(-2px);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wn-space-2);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--wn-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric.is-emerald .wn-admin-exec-metric__icon {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric.is-gold .wn-admin-exec-metric__icon {
+  background: var(--wn-gold-soft);
+  color: var(--wn-gold-dark);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric.is-teal .wn-admin-exec-metric__icon {
+  background: color-mix(in srgb, var(--wn-teal) 15%, var(--wn-surface));
+  color: var(--wn-teal-dark);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric.is-emerald-deep .wn-admin-exec-metric__icon {
+  background: color-mix(in srgb, var(--wn-emerald-deep) 12%, var(--wn-surface));
+  color: var(--wn-emerald-dark);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__badge {
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold-soft);
+  color: var(--wn-badge-gold-text);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 38%, transparent);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__body > span {
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  color: var(--wn-text-secondary);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__body > strong {
+  font-size: var(--wn-text-xl);
+  font-weight: 800;
+  color: var(--wn-heading);
+  line-height: 1.25;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__body > small {
+  font-size: var(--wn-text-xs);
+  color: var(--wn-text-tertiary);
+}
+
+/* ── 2-Column Calm Executive Workspace ──────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-exec-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: var(--wn-space-5);
+  align-items: start;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel {
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-lg);
+  padding: var(--wn-space-5);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel__head,
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--wn-space-3);
+  margin-bottom: var(--wn-space-4);
+  padding-bottom: var(--wn-space-3);
+  border-bottom: 1px solid var(--wn-border);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel__head > div > span,
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title > div > span {
+  display: block;
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--wn-text-gold);
+  margin-bottom: 0.15rem;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel__head h3,
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title h3 {
+  font-size: var(--wn-text-lg);
+  font-weight: 800;
+  color: var(--wn-heading);
+  margin: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel__head p,
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title p {
+  font-size: var(--wn-text-xs);
+  color: var(--wn-text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: var(--wn-control-sm);
+  padding: 0.4rem var(--wn-space-3);
+  border-radius: var(--wn-radius-sm);
+  border: 1px solid var(--wn-border-strong);
+  background: var(--wn-surface-soft);
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-section-title > button:hover {
+  background: var(--wn-emerald-soft);
+  border-color: var(--wn-emerald);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-count {
+  min-width: 2.25rem;
+  height: 2.25rem;
+  padding-inline: 0.6rem;
+  border-radius: var(--wn-radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--wn-text-sm);
+  font-weight: 800;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-count.has-pending {
+  background: var(--wn-danger-soft);
+  color: var(--wn-text-danger);
+  border: 1px solid color-mix(in srgb, var(--wn-danger) 28%, transparent);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-count.is-clear {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+  border: 1px solid var(--wn-border-mint);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-space-2);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list > button {
+  display: grid;
+  grid-template-columns: 2.35rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--wn-space-3);
+  padding: var(--wn-space-3);
+  border-radius: var(--wn-radius-md);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface-soft);
+  text-align: start;
+  transition:
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list > button:hover {
+  border-color: var(--wn-emerald);
+  background: var(--wn-emerald-soft);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list strong {
+  display: block;
+  font-size: var(--wn-text-sm);
+  font-weight: 700;
+  color: var(--wn-heading);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list small {
+  display: block;
+  font-size: var(--wn-text-xs);
+  color: var(--wn-text-secondary);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list b {
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding-inline: 0.45rem;
+  border-radius: var(--wn-radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--wn-text-xs);
+  font-weight: 800;
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border-strong);
+  color: var(--wn-heading);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear {
+  display: flex;
+  align-items: center;
+  gap: var(--wn-space-3);
+  padding: var(--wn-space-5) var(--wn-space-4);
+  border-radius: var(--wn-radius-md);
+  border: 1px solid var(--wn-border-mint);
+  background: var(--wn-surface-mint);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear__icon {
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear strong {
+  display: block;
+  font-size: var(--wn-text-base);
+  font-weight: 800;
+  color: var(--wn-emerald-dark);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear p {
+  font-size: var(--wn-text-xs);
+  color: var(--wn-text-secondary);
+  margin: 0.2rem 0 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-quiet-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wn-space-2);
+  margin-top: var(--wn-space-4);
+  padding-top: var(--wn-space-3);
+  border-top: 1px solid var(--wn-border);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-quiet-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: var(--wn-control-sm);
+  padding: 0.35rem var(--wn-space-3);
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface-subtle);
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  transition:
+    border-color var(--wn-dur-fast) var(--wn-ease),
+    background-color var(--wn-dur-fast) var(--wn-ease),
+    color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-quiet-links button:hover {
+  border-color: var(--wn-emerald);
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+}
+
+/* ── Responsive Breakpoints ─────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wn-admin-app.wn-admin-calm .wn-admin-exec-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .wn-admin-app.wn-admin-calm .wn-admin-canvas {
+    padding: var(--wn-space-4);
+  }
+  .wn-admin-app.wn-admin-calm .wn-admin-topbar {
+    padding: var(--wn-space-2) var(--wn-space-3);
+  }
+}
+
+@media (max-width: 640px) {
+  .wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wn-admin-app.wn-admin-calm .wn-admin-welcome.wn-admin-welcome--calm {
+    padding: var(--wn-space-4);
+  }
+  .wn-admin-app.wn-admin-calm .wn-admin-topbar__date {
+    display: none;
+  }
+}
+
+/* ── Dark Mode Sovereign Harmony ────────────────────────────────── */
+[data-theme="dark"] .wn-admin-app.wn-admin-calm {
+  background: var(--wn-surface-canvas);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-welcome.wn-admin-welcome--calm {
+  background: linear-gradient(
+    135deg,
+    var(--wn-surface) 0%,
+    color-mix(in srgb, var(--wn-emerald-deep) 55%, var(--wn-surface)) 100%
+  );
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-welcome--calm .wn-admin-welcome__copy h1 em {
+  color: var(--wn-gold);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-topbar {
+  background: color-mix(in srgb, var(--wn-surface) 92%, var(--wn-surface-canvas));
+  border-bottom-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-topbar__sidebar-toggle {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border-strong);
+  color: var(--wn-text-primary);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear {
+  background: color-mix(in srgb, var(--wn-emerald) 16%, var(--wn-surface));
+  border-color: color-mix(in srgb, var(--wn-emerald) 38%, transparent);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear strong {
+  color: var(--wn-text-primary);
+}
