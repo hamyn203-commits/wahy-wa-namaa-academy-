@@ -14,10 +14,10 @@ import { prefetchRoute } from '../../../lib/routePrefetch';
 import { PROGRAMS_COPY, pickLocale } from '../landingI18n';
 
 const PROGRAM_META = {
-  kids: { icon: Sparkles, to: '/programs/kids', image: '/images/programs/program-kids.jpg' },
-  hifz: { icon: BookOpen, to: '/courses?track=quran', image: '/images/programs/program-hifz.jpg' },
+  kids: { icon: Sparkles, to: '/programs/kids', image: '/images/programs/program-kids.jpg?v=2' },
+  hifz: { icon: BookOpen, to: '/courses?track=quran', image: '/images/programs/program-hifz.jpg?v=2' },
   tajweed: { icon: Award, to: '/courses?track=tajweed', image: '/images/programs/program-tajweed.jpg' },
-  understanding: { icon: Languages, to: '/tracks', image: '/images/programs/program-understanding.jpg' },
+  understanding: { icon: Languages, to: '/tracks', image: '/images/programs/program-understanding.jpg?v=2' },
   ijazah: { icon: ScrollText, to: '/courses?track=ijazah', image: '/images/programs/program-ijazah.jpg' },
 };
 
