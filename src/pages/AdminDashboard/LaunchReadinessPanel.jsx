@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, CheckCircle2, Globe2, Mail, RefreshCw, Video, Wallet, MessageCircleMore,
 } from 'lucide-react';
@@ -36,6 +36,7 @@ export default function LaunchReadinessPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastCheckedAt, setLastCheckedAt] = useState(null);
+  const lastFetchedAtRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,9 +47,13 @@ export default function LaunchReadinessPanel() {
         cache: 'no-store',
       });
       const body = await response.json().catch(() => null);
-      if (!response.ok || !body) {
+      const validLaunchPayload = Boolean(body && typeof body.ready === 'boolean');
+      // /api/launch-readiness intentionally returns HTTP 503 with the structured
+      // blockers payload whenever the academy is in NO-GO state.
+      if ((!response.ok && !(response.status === 503 && validLaunchPayload)) || !validLaunchPayload) {
         throw new Error(body?.error || lp.loadError);
       }
+      lastFetchedAtRef.current = Date.now();
       setData(body);
       setLastCheckedAt(new Date());
     } catch (err) {
@@ -65,7 +70,9 @@ export default function LaunchReadinessPanel() {
       if (document.visibilityState === 'visible') load();
     }, 60000);
 
-    const onFocus = () => load();
+    const onFocus = () => {
+      if (Date.now() - lastFetchedAtRef.current >= 15000) load();
+    };
     window.addEventListener('focus', onFocus);
 
     return () => {

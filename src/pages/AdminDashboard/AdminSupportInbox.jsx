@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MessageSquare } from 'lucide-react';
 import api from '../../lib/api';
 import SupportChat from '../../components/support/SupportChat';
@@ -16,17 +16,26 @@ export default function AdminSupportInbox({ selectedStudent, onSelect }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const lastRefreshAtRef = useRef(0);
+  const rateLimitedUntilRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now < rateLimitedUntilRef.current) return;
     try {
       const data = await api.get('/api/support/inbox', { auth: true });
+      lastRefreshAtRef.current = Date.now();
+      rateLimitedUntilRef.current = 0;
       setRows((current) => [
         ...data.conversations,
         ...current.filter((c) => !data.conversations.some((n) => n.student._id === c.student._id)),
       ]);
       setNextBefore(data.nextBefore);
       setError('');
-    } catch {
+    } catch (err) {
+      if (err?.status === 429) {
+        rateLimitedUntilRef.current = Date.now() + 60000;
+      }
       setError(si.refreshError);
     } finally {
       setLoading(false);
@@ -38,28 +47,37 @@ export default function AdminSupportInbox({ selectedStudent, onSelect }) {
     api.get('/api/support/inbox', { auth: true })
       .then((data) => {
         if (!mounted) return;
+        lastRefreshAtRef.current = Date.now();
         setRows(data.conversations || []);
         setNextBefore(data.nextBefore);
         setError('');
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err?.status === 429) {
+          rateLimitedUntilRef.current = Date.now() + 60000;
+        }
         if (mounted) setError(si.loadError);
       })
       .finally(() => {
         if (mounted) setLoading(false);
       });
 
-    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
-    const timer = setInterval(visible, 10000);
+    const visible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRefreshAtRef.current >= 8000) {
+        refresh();
+      }
+    };
+    const realtimeRefresh = () => refresh({ force: true });
+    const timer = setInterval(visible, 15000);
     window.addEventListener('focus', visible);
-    window.addEventListener('wn:realtime-notification', visible);
-    window.addEventListener('wn:support-changed', visible);
+    window.addEventListener('wn:realtime-notification', realtimeRefresh);
+    window.addEventListener('wn:support-changed', realtimeRefresh);
     return () => {
       mounted = false;
       clearInterval(timer);
       window.removeEventListener('focus', visible);
-      window.removeEventListener('wn:realtime-notification', visible);
-      window.removeEventListener('wn:support-changed', visible);
+      window.removeEventListener('wn:realtime-notification', realtimeRefresh);
+      window.removeEventListener('wn:support-changed', realtimeRefresh);
     };
   }, [refresh, si.loadError]);
 
@@ -88,7 +106,7 @@ export default function AdminSupportInbox({ selectedStudent, onSelect }) {
         {error && (
           <div role="alert" className="wn-support-error space-y-2 mb-3">
             <p>{error}</p>
-            <button type="button" onClick={refresh} className="wn-btn wn-btn--secondary min-h-[44px]">
+            <button type="button" onClick={() => refresh({ force: true })} className="wn-btn wn-btn--secondary min-h-[44px]">
               {si.retry}
             </button>
           </div>

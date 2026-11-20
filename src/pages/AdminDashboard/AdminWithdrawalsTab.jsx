@@ -73,7 +73,7 @@ export default function AdminWithdrawalsTab({ withdrawals, onReviewWithdraw }) {
               <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusBadgeClass(w.status)}`}>
                 {statusText}
               </span>
-              {w.status === 'pending' && (
+              {['pending', 'processing'].includes(w.status) && (
                 <>
                   <button
                     type="button"

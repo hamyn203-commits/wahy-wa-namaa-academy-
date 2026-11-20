@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { BookOpen, Check, Loader2, Trash2, Upload, Video } from 'lucide-react';
 import EmptyState from '../../components/shared/EmptyState';
+import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { localizedValue } from './adminFormat';
 
@@ -11,6 +12,7 @@ export default function AdminCoursesTab({
   approved,
   selectedCourse,
   lessons,
+  loadingLessons = false,
   courseForm,
   setCourseForm,
   lessonForm,
@@ -33,6 +35,7 @@ export default function AdminCoursesTab({
   const { locale, t } = useI18n();
   const tc = t.adminPortal.tabs.courses;
   const formId = useId();
+  const showDemoSeedCard = Boolean(import.meta.env.DEV);
 
   const filteredCourses = courses.filter(
     (c) => courseProgramFilter === 'all' || (c.programs || []).includes(courseProgramFilter)
@@ -40,21 +43,23 @@ export default function AdminCoursesTab({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-5 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="font-bold text-[var(--wn-heading)]">{tc.demoTitle}</h3>
-          <p className="text-sm text-[var(--wn-text-secondary)] mt-1">{tc.demoDesc}</p>
+      {showDemoSeedCard ? (
+        <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="font-bold text-[var(--wn-heading)]">{tc.demoTitle}</h3>
+            <p className="text-sm text-[var(--wn-text-secondary)] mt-1">{tc.demoDesc}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onSeedDemoCourse}
+            disabled={seeding}
+            className="min-h-[44px] px-4 py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60"
+          >
+            {seeding && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
+            <span>{seeding ? tc.creating : tc.demoBtn}</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onSeedDemoCourse}
-          disabled={seeding}
-          className="min-h-[44px] px-4 py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60"
-        >
-          {seeding && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
-          <span>{seeding ? tc.creating : tc.demoBtn}</span>
-        </button>
-      </div>
+      ) : null}
 
       <form onSubmit={onAddCourse} className="wn-dashboard-surface grid md:grid-cols-2 gap-3">
         <h3 className="font-bold text-[var(--wn-heading)] md:col-span-2 flex items-center gap-2">
@@ -311,7 +316,12 @@ export default function AdminCoursesTab({
               </button>
             </form>
 
-            {lessons.map((l) => {
+            {loadingLessons ? (
+              <div className="space-y-2" role="status" aria-label={t.adminPortal.common.loading}>
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </div>
+            ) : lessons.map((l) => {
               const lessonTitle = localizedValue(l.title, locale) || l.slug || '';
               return (
                 <div

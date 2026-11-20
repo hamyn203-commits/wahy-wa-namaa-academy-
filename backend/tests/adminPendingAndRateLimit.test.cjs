@@ -75,3 +75,43 @@ test('ToastProvider memoizes context value and AdminDashboard load does not loop
     'AdminDashboard load callback must not depend on the toast object directly'
   );
 });
+
+test('Admin button readiness fixes remain intact across LaunchReadinessPanel, Courses, Withdrawals, Search, and Dashboard', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const launchPanel = fs.readFileSync(path.join(repoRoot, 'src/pages/AdminDashboard/LaunchReadinessPanel.jsx'), 'utf8');
+  const coursesTab = fs.readFileSync(path.join(repoRoot, 'src/pages/AdminDashboard/AdminCoursesTab.jsx'), 'utf8');
+  const withdrawalsTab = fs.readFileSync(path.join(repoRoot, 'src/pages/AdminDashboard/AdminWithdrawalsTab.jsx'), 'utf8');
+  const peopleSearch = fs.readFileSync(path.join(repoRoot, 'src/pages/AdminDashboard/AdminPeopleSearch.jsx'), 'utf8');
+  const adminDashboard = fs.readFileSync(path.join(repoRoot, 'src/pages/AdminDashboard/index.jsx'), 'utf8');
+
+  assert.match(
+    launchPanel,
+    /response\.status\s*===\s*503\s*&&\s*validLaunchPayload/,
+    'LaunchReadinessPanel must accept HTTP 503 payloads when /api/launch-readiness reports NO-GO'
+  );
+  assert.match(
+    coursesTab,
+    /showDemoSeedCard\s*=\s*Boolean\(import\.meta\.env\.DEV\)/,
+    'AdminCoursesTab must hide the dev-only demo course seed button in production builds'
+  );
+  assert.match(
+    withdrawalsTab,
+    /\['pending',\s*'processing'\]\.includes\(w\.status\)/,
+    'AdminWithdrawalsTab must expose approve/reject controls for processing payouts too'
+  );
+  assert.match(
+    peopleSearch,
+    /disabled=\{!openable\}/,
+    'AdminPeopleSearch must disable results without a 360 dossier instead of failing silently'
+  );
+  assert.match(
+    adminDashboard,
+    /else\s+if\s*\(!requestedTab\)\s*\{\s*setTab\('overview'\)/,
+    'AdminDashboard must reset to overview tab when navigating back to /admin without ?tab='
+  );
+  assert.match(
+    adminDashboard,
+    /if\s*\(tab\s*===\s*'people'\)\s*loadApprovedTeachers\(\)/,
+    'AdminDashboard must populate approved teachers when entering the people tab directly'
+  );
+});

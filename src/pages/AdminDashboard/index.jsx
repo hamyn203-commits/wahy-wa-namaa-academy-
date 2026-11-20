@@ -111,6 +111,8 @@ export default function AdminDashboard() {
   const [deletingItem, setDeletingItem] = useState(false);
   const [submittingReviewPrompt, setSubmittingReviewPrompt] = useState(false);
   const [refreshingAudit, setRefreshingAudit] = useState(false);
+  const [refreshingTeachers, setRefreshingTeachers] = useState(false);
+  const [loadingLessons, setLoadingLessons] = useState(false);
 
   const [growthSummary, setGrowthSummary] = useState({});
   const [donations, setDonations] = useState([]);
@@ -312,9 +314,40 @@ export default function AdminDashboard() {
   }, []);
 
   const loadLessons = useCallback(async (courseId) => {
-    const r = await api.get(`/api/admin/courses/${courseId}/lessons`, { auth: true });
-    setLessons(Array.isArray(r) ? r : []);
-  }, []);
+    setLoadingLessons(true);
+    setLessons([]);
+    try {
+      const r = await api.get(`/api/admin/courses/${courseId}/lessons`, { auth: true });
+      setLessons(Array.isArray(r) ? r : []);
+    } catch (e) {
+      toastRef.current.error(e.message || tt.loadFailed);
+    } finally {
+      setLoadingLessons(false);
+    }
+  }, [tt.loadFailed]);
+
+  const refreshAudit = useCallback(async () => {
+    try {
+      await loadAudit();
+    } catch (e) {
+      toastRef.current.error(e.message || tt.loadFailed);
+    }
+  }, [loadAudit, tt.loadFailed]);
+
+  const refreshTeachersSection = useCallback(async () => {
+    if (refreshingTeachers) return;
+    setRefreshingTeachers(true);
+    setTabError('');
+    try {
+      await loadTeachersTab();
+    } catch (e) {
+      const message = e.message || tt.loadFailed;
+      setTabError(message);
+      toastRef.current.error(message);
+    } finally {
+      setRefreshingTeachers(false);
+    }
+  }, [refreshingTeachers, loadTeachersTab, tt.loadFailed]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -322,6 +355,7 @@ export default function AdminDashboard() {
     try {
       if (tab === 'overview') await loadCore();
       if (tab === 'teachers') await loadTeachersTab();
+      if (tab === 'people') loadApprovedTeachers().catch(() => {});
       if (tab === 'system') await loadHealth();
       if (tab === 'messages') await loadMessages();
       if (tab === 'courses') await Promise.all([loadApprovedTeachers().catch(() => {}), loadCourses()]);
@@ -344,6 +378,8 @@ export default function AdminDashboard() {
     const requestedTab = searchParams.get('tab');
     if (requestedTab && ALLOWED_TABS.includes(requestedTab)) {
       setTab(requestedTab);
+    } else if (!requestedTab) {
+      setTab('overview');
     }
   }, [searchParams]);
 
@@ -1199,8 +1235,14 @@ export default function AdminDashboard() {
                         <h3>{tTeachers.approvedTitle.replace('{count}', String(approved.length))}</h3>
                         <p>{tTeachers.approvedDesc}</p>
                       </div>
-                      <button type="button" className="wn-btn wn-btn--secondary min-h-[44px]" onClick={loadCore}>
-                        {tTeachers.refresh}
+                      <button
+                        type="button"
+                        className="wn-btn wn-btn--secondary min-h-[44px] inline-flex items-center gap-1.5 disabled:opacity-60"
+                        onClick={refreshTeachersSection}
+                        disabled={refreshingTeachers || loading}
+                      >
+                        <RefreshCw size={14} className={refreshingTeachers ? 'animate-spin' : ''} aria-hidden="true" />
+                        <span>{tTeachers.refresh}</span>
                       </button>
                     </div>
                     <label className="wn-admin-teachers-list__search">
@@ -1260,7 +1302,7 @@ export default function AdminDashboard() {
               <AdminAuditTab
                 auditEntries={auditEntries}
                 loading={refreshingAudit}
-                onRefresh={loadAudit}
+                onRefresh={refreshAudit}
               />
             )}
 
@@ -1270,6 +1312,7 @@ export default function AdminDashboard() {
                 approved={approved}
                 selectedCourse={selectedCourse}
                 lessons={lessons}
+                loadingLessons={loadingLessons}
                 courseForm={courseForm}
                 setCourseForm={setCourseForm}
                 lessonForm={lessonForm}

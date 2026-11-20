@@ -46,6 +46,12 @@ export default function AdminPeopleSearch({
     }
   };
 
+  const canOpenPerson = (person) => (
+    person.role === 'student'
+    || person.role === 'guardian'
+    || (person.role === 'teacher' && Boolean(person.teacherProfileId))
+  );
+
   const openPerson = (person) => {
     if (person.role === 'student') onOpenStudent?.(person._id);
     if (person.role === 'guardian') onOpenGuardian?.(person._id);
@@ -103,8 +109,15 @@ export default function AdminPeopleSearch({
               <span>{ps.groups.people}</span>
               {(result.people || []).map((person) => {
                 const Icon = personIcon(person.role);
+                const openable = canOpenPerson(person);
                 return (
-                  <button type="button" key={person._id} onClick={() => openPerson(person)}>
+                  <button
+                    type="button"
+                    key={person._id}
+                    disabled={!openable}
+                    onClick={() => openPerson(person)}
+                    className={openable ? '' : 'opacity-65 cursor-default'}
+                  >
                     <span><Icon size={17} aria-hidden="true" /></span>
                     <span>
                       <strong>{person.name || ps.noName}</strong>
