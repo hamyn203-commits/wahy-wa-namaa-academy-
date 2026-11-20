@@ -125,7 +125,7 @@ export default function HeroSection() {
 
         <div className="wn-approved-hero__visual">
           <img
-            src="/images/hero-wahy-namaa.jpg"
+            src="/images/hero-wahy-namaa.jpg?v=2"
             alt={copy.imageAlt}
             width="640"
             height="560"
