@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BadgeCheck, BookOpenCheck, Check, Clock3,
-  Crown, Heart, ShieldCheck, Sparkles, Users, UserRound, Video
+  Crown, Heart, ShieldCheck, Sparkles, Users, UserRound, Video, X
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -26,6 +26,44 @@ const LIVE_ONLINE_LABEL = {
   id: 'Online Langsung',
   ms: 'Dalam Talian Langsung',
   ku: 'ڕاستەوخۆ ئۆنلاین',
+};
+
+const PROGRAM_CONTEXT = {
+  kids: {
+    recommendedPlan: 'group',
+    titleAr: 'تحفيظ القرآن للأطفال',
+    titleEn: 'Quran Memorization for Kids',
+    noteAr: 'رشّحنا لك «الحلقة الجماعية» لأنها تجمع بين التحفيز التفاعلي والمتابعة القريبة للأطفال، ويمكنك اختيار أي باقة أخرى أو التبديل بين الأقسام بحرية.',
+    noteEn: 'We highlighted the Group Circle for warm, interactive peer motivation for children — and you can freely choose any other plan or section below.',
+  },
+  hifz: {
+    recommendedPlan: 'focused',
+    titleAr: 'الحفظ والمراجعة المتقنة',
+    titleEn: 'Mastered Hifz & Revision',
+    noteAr: 'رشّحنا لك «الحلقة المركزة» لوقت تسميع ومراجعة أكبر يضمن تثبيت المحفوظ، ويمكنك اختيار أي باقة أخرى تناسب جدولك.',
+    noteEn: 'We highlighted the Focused Circle for generous recitation and revision time — and you can freely choose any other plan below.',
+  },
+  tajweed: {
+    recommendedPlan: 'focused',
+    titleAr: 'تصحيح التلاوة والتجويد',
+    titleEn: 'Recitation Correction & Tajweed',
+    noteAr: 'رشّحنا لك «الحلقة المركزة» لتصحيح المخارج وأحكام التجويد عملياً مع المعلم بدقة أكبر، ويمكنك اختيار أي باقة أخرى بحرية.',
+    noteEn: 'We highlighted the Focused Circle for thorough live articulation and Tajweed coaching — and you can freely choose any other plan below.',
+  },
+  understanding: {
+    recommendedPlan: 'group',
+    titleAr: 'الفهم والتدبر واللسان العربي',
+    titleEn: 'Understanding, Tadabbur & Arabic',
+    noteAr: 'رشّحنا لك «الحلقة الجماعية» لتبادل التدبر وبناء الصلة بالمعاني القرآنية بتكلفة مناسبة، ويمكنك اختيار أي باقة أخرى أدناه.',
+    noteEn: 'We highlighted the Group Circle for engaging reflection and Arabic fluency — and you can freely choose any other plan below.',
+  },
+  ijazah: {
+    recommendedPlan: 'private',
+    titleAr: 'الإجازة والسند المتصل',
+    titleEn: 'Ijazah & Connected Sanad',
+    noteAr: 'رشّحنا لك «الحلقة الفردية الخاصة» لتفرّغ الشيخ أو المعلمة المجازة بالكامل لعرض ختمتك بالضبط والإتقان، ويمكنك اختيار أي باقة أخرى أدناه.',
+    noteEn: 'We highlighted the Private 1-on-1 Plan for dedicated Sanad recitation with a certified scholar — and you can freely choose any other plan below.',
+  },
 };
 
 const PLAN_DEFS = [
@@ -409,10 +447,12 @@ export default function PlansPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const renewalId = searchParams.get('renew') || '';
   const targetStudentId = searchParams.get('student') || '';
-  const requestedPlanId = searchParams.get('plan') || '';
+  const requestedProgramId = searchParams.get('program') || '';
+  const activeProgram = PROGRAM_CONTEXT[requestedProgramId] || null;
+  const requestedPlanId = searchParams.get('plan') || activeProgram?.recommendedPlan || '';
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const [audience, setAudience] = useState(() => (
     searchParams.get('section') === 'women' || searchParams.get('section') === 'ladies' ? 'women' : 'general'
@@ -433,6 +473,21 @@ export default function PlansPage() {
   useEffect(() => {
     if (!renewalId && enrolledSection) setTimeout(() => setAudience(enrolledSection === 'ladies' ? 'women' : 'general'), 0);
   }, [enrolledSection, renewalId]);
+
+  useEffect(() => {
+    if (!requestedProgramId || !PROGRAM_CONTEXT[requestedProgramId]) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById('plans-control-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [requestedProgramId]);
+
+  function clearProgramContext() {
+    const next = new URLSearchParams(searchParams);
+    next.delete('program');
+    next.delete('plan');
+    setSearchParams(next, { replace: true });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -644,8 +699,43 @@ export default function PlansPage() {
           </div>
         </section>
 
-        <section className="wn-plans-control-shell">
+        <section className="wn-plans-control-shell" id="plans-control-anchor">
           <div className="wn-plans-container">
+            {activeProgram && !renewalSource && (
+              <aside className="wn-plans-program-banner" role="status">
+                <div className="wn-plans-program-banner__icon" aria-hidden="true">
+                  <Sparkles size={20} />
+                </div>
+                <div className="wn-plans-program-banner__body">
+                  <span>{isRTL ? 'المسار المختار من برامجنا القرآنية' : 'Selected Quranic pathway'}</span>
+                  <strong>{isRTL ? activeProgram.titleAr : activeProgram.titleEn}</strong>
+                  <p>{isRTL ? activeProgram.noteAr : activeProgram.noteEn}</p>
+                </div>
+                <div className="wn-plans-program-banner__actions">
+                  <button
+                    type="button"
+                    className="wn-plans-program-banner__jump"
+                    onClick={() => {
+                      document
+                        .getElementById('plan-' + activeProgram.recommendedPlan)
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                  >
+                    <span>{isRTL ? 'الباقة المرشّحة' : 'View recommended plan'}</span>
+                    <ArrowIcon size={15} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="wn-plans-program-banner__close"
+                    onClick={clearProgramContext}
+                    aria-label={isRTL ? 'إخفاء تخصيص المسار' : 'Clear selected pathway'}
+                  >
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              </aside>
+            )}
+
             <div className="wn-plans-controls">
               <div
                 className="wn-plans-segment"
@@ -780,7 +870,11 @@ export default function PlansPage() {
                       loading="lazy"
                       decoding="async"
                     />
-                    <span className="wn-plan-card__badge">{isRTL ? plan.badgeAr : plan.badgeEn}</span>
+                    <span className="wn-plan-card__badge">
+                      {activeProgram && activeProgram.recommendedPlan === plan.id
+                        ? (isRTL ? 'الأنسب لمسارك' : 'Best fit for your track')
+                        : (isRTL ? plan.badgeAr : plan.badgeEn)}
+                    </span>
                     <span className="wn-plan-card__live-tag">
                       <span className="wn-plan-card__live-dot" aria-hidden="true" />
                       <Video size={12} aria-hidden="true" />

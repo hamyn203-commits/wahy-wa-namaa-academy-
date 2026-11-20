@@ -417,6 +417,14 @@
   transition: gap var(--wn-dur-fast) var(--wn-ease), color var(--wn-dur-fast) var(--wn-ease);
 }
 
+.wn-program-card-cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.wn-approved-program-card:hover .wn-program-card-cta,
 .wn-program-card-cta:hover {
   gap: 0.65rem;
   color: var(--wn-emerald-dark);

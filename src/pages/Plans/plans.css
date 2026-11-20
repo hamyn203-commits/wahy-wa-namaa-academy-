@@ -937,3 +937,120 @@
   background: var(--wn-gold-soft);
   color: var(--wn-text-gold);
 }
+
+/* Contextual selected-program banner when arriving from homepage program cards */
+.wn-plans-program-banner {
+  margin-bottom: 1rem;
+  padding: 1.15rem 1.35rem;
+  border-radius: var(--wn-radius-xl);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 44%, transparent);
+  background:
+    radial-gradient(circle at 90% 15%, color-mix(in srgb, var(--wn-gold) 18%, transparent), transparent 42%),
+    linear-gradient(135deg, var(--wn-emerald-deep) 0%, var(--wn-emerald-dark) 100%);
+  color: var(--wn-text-inverse);
+  box-shadow: var(--wn-shadow-md);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wn-plans-program-banner__icon {
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: var(--wn-radius-lg);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--wn-gold) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 45%, transparent);
+  color: var(--wn-gold);
+}
+
+.wn-plans-program-banner__body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.wn-plans-program-banner__body > span {
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+  color: var(--wn-gold);
+}
+
+.wn-plans-program-banner__body > strong {
+  font-family: var(--wn-font-display);
+  font-size: var(--wn-text-lg);
+  font-weight: 700;
+  color: var(--wn-white);
+  line-height: 1.3;
+}
+
+.wn-plans-program-banner__body > p {
+  margin: 0;
+  font-size: var(--wn-text-xs);
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--wn-white) 86%, transparent);
+}
+
+.wn-plans-program-banner__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.wn-plans-program-banner__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: var(--wn-control-md);
+  padding: 0.5rem 1rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid var(--wn-gold);
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+  font-size: var(--wn-text-xs);
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--wn-dur-fast) var(--wn-ease), box-shadow var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-plans-program-banner__jump:hover {
+  transform: translateY(-0.1rem);
+  box-shadow: var(--wn-shadow-gold);
+}
+
+.wn-plans-program-banner__close {
+  width: var(--wn-control-md);
+  height: var(--wn-control-md);
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-white) 24%, transparent);
+  background: color-mix(in srgb, var(--wn-white) 8%, transparent);
+  color: var(--wn-white);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background-color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-plans-program-banner__close:hover {
+  background: color-mix(in srgb, var(--wn-white) 18%, transparent);
+}
+
+@media (max-width: 767px) {
+  .wn-plans-program-banner {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 1rem 1.05rem;
+  }
+
+  .wn-plans-program-banner__icon {
+    display: none;
+  }
+
+  .wn-plans-program-banner__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

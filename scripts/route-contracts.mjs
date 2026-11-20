@@ -592,9 +592,10 @@ const coursesPage = read('src/pages/Courses/index.jsx');
 assert.match(heroSection, /ابدأ رحلتك الآن/);
 assert.match(heroSection, /\/start\?section=men/);
 assert.match(heroSection, /\/start\?section=women/);
-assert.match(programsSection, /\/courses\?track=quran/);
-assert.match(programsSection, /\/courses\?track=tajweed/);
-assert.match(programsSection, /\/courses\?track=ijazah/);
+assert.match(programsSection, /\/plans\?program=kids/);
+assert.match(programsSection, /\/plans\?program=hifz/);
+assert.match(programsSection, /\/plans\?program=tajweed/);
+assert.match(programsSection, /\/plans\?program=ijazah/);
 assert.match(coursesPage, /searchParams\.get\(['"]track['"]\)/);
 assert.match(showcaseSection, /studioMode/);
 assert.match(showcaseSection, /activeMilestone/);
@@ -606,6 +607,7 @@ assert.match(calculatorSection, /\/plans\?section=/);
 assert.match(plansPage, /searchParams\.get\(['"]section['"]\)/);
 assert.match(plansPage, /searchParams\.get\(['"]sessions['"]\)/);
 assert.match(plansPage, /searchParams\.get\(['"]plan['"]\)/);
+assert.match(plansPage, /searchParams\.get\(['"]program['"]\)/);
 
 
 
