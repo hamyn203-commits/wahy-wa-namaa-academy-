@@ -422,19 +422,292 @@
   color: var(--wn-emerald-dark);
 }
 
+.wn-why-card-editorial {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.55rem 1.45rem 1.3rem;
+  border-radius: var(--wn-radius-xl);
+  background: linear-gradient(
+    165deg,
+    var(--wn-surface) 0%,
+    color-mix(in srgb, var(--wn-surface-soft) 72%, var(--wn-surface)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 26%, var(--wn-border));
+}
+
+.wn-why-card-editorial::after {
+  display: none;
+}
+
+.wn-why-card-editorial::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  height: 0.22rem;
+  background: linear-gradient(90deg, var(--wn-emerald), var(--wn-gold));
+  transform: scaleX(0.24);
+  transform-origin: left center;
+  opacity: 0.72;
+  transition: transform var(--wn-dur) var(--wn-ease), opacity var(--wn-dur) var(--wn-ease);
+}
+
+[dir='rtl'] .wn-why-card-editorial::before {
+  transform-origin: right center;
+}
+
+.wn-why-card-editorial:hover::before {
+  transform: scaleX(1);
+  opacity: 1;
+}
+
+.wn-why-card-editorial__arch {
+  position: absolute;
+  top: -1.15rem;
+  inset-inline-end: -1.15rem;
+  width: 6.2rem;
+  height: 7.4rem;
+  border-radius: 5rem 5rem 1rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 22%, transparent);
+  background: radial-gradient(
+    circle at 50% 45%,
+    color-mix(in srgb, var(--wn-emerald) 6%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+  transition: transform var(--wn-dur) var(--wn-ease), border-color var(--wn-dur) var(--wn-ease);
+}
+
+.wn-why-card-editorial:hover .wn-why-card-editorial__arch {
+  transform: translateY(-0.18rem) scale(1.04);
+  border-color: color-mix(in srgb, var(--wn-gold) 44%, transparent);
+}
+
 .wn-why-card-editorial__top {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--wn-space-3);
-  margin-bottom: var(--wn-space-3);
+  margin-bottom: var(--wn-space-4);
+}
+
+.wn-why-card-editorial__icon {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--wn-radius-lg);
+  transition: transform var(--wn-dur-fast) var(--wn-ease), box-shadow var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-why-card-editorial__icon::after {
+  content: '';
+  position: absolute;
+  inset: -0.22rem;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 30%, transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.wn-why-card-editorial:hover .wn-why-card-editorial__icon {
+  transform: translateY(-0.12rem);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-why-card-editorial__icon--gold {
+  background: var(--wn-gold-soft);
+  color: var(--wn-gold-dark);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 38%, transparent);
+}
+
+.wn-why-card-editorial__icon--emerald {
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
+  border: 1px solid color-mix(in srgb, var(--wn-emerald) 28%, transparent);
+}
+
+.wn-why-card-editorial__icon--teal {
+  background: color-mix(in srgb, var(--wn-teal) 14%, var(--wn-surface));
+  color: var(--wn-emerald-dark);
+  border: 1px solid color-mix(in srgb, var(--wn-teal) 32%, transparent);
 }
 
 .wn-why-card-editorial__num {
   font-family: var(--wn-font-display);
-  font-size: var(--wn-text-lg);
+  font-size: var(--wn-text-2xl);
+  line-height: 1;
   font-weight: 700;
-  color: color-mix(in srgb, var(--wn-text-gold) 65%, transparent);
+  letter-spacing: -0.02em;
+  color: color-mix(in srgb, var(--wn-text-gold) 44%, transparent);
+  transition: color var(--wn-dur-fast) var(--wn-ease);
+}
+
+.wn-why-card-editorial:hover .wn-why-card-editorial__num {
+  color: color-mix(in srgb, var(--wn-text-gold) 72%, transparent);
+}
+
+.wn-why-card-editorial h3 {
+  position: relative;
+  z-index: 1;
+  margin-top: 0;
+}
+
+.wn-why-card-editorial p {
+  position: relative;
+  z-index: 1;
+  margin-bottom: var(--wn-space-4);
+}
+
+.wn-why-card-editorial__proof {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px dashed color-mix(in srgb, var(--wn-gold) 34%, var(--wn-border));
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--wn-emerald-dark);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.wn-why-card-editorial__proof svg {
+  flex: 0 0 auto;
+  color: var(--wn-emerald);
+}
+
+/* Featured deep-emerald anchor pillars (01 Oral Mastery & 05 Safeguarding) */
+.wn-why-card-editorial--featured {
+  background:
+    radial-gradient(circle at 86% 12%, color-mix(in srgb, var(--wn-gold) 22%, transparent), transparent 44%),
+    linear-gradient(150deg, var(--wn-emerald-deep) 0%, var(--wn-emerald-dark) 100%);
+  border-color: color-mix(in srgb, var(--wn-gold) 46%, transparent);
+  box-shadow: var(--wn-shadow-md);
+  color: var(--wn-text-inverse);
+}
+
+.wn-why-card-editorial--featured::before {
+  background: linear-gradient(90deg, var(--wn-gold), var(--wn-teal));
+  transform: scaleX(0.45);
+  opacity: 0.9;
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__arch {
+  border-color: color-mix(in srgb, var(--wn-gold) 34%, transparent);
+  background: radial-gradient(
+    circle at 50% 45%,
+    color-mix(in srgb, var(--wn-gold) 14%, transparent),
+    transparent 70%
+  );
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__icon {
+  background: color-mix(in srgb, var(--wn-gold) 18%, transparent);
+  color: var(--wn-gold);
+  border-color: color-mix(in srgb, var(--wn-gold) 44%, transparent);
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__icon::after {
+  border-color: color-mix(in srgb, var(--wn-gold) 38%, transparent);
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__num {
+  color: color-mix(in srgb, var(--wn-gold) 52%, transparent);
+}
+
+.wn-why-card-editorial--featured:hover .wn-why-card-editorial__num {
+  color: var(--wn-gold);
+}
+
+.wn-why-card-editorial--featured h3 {
+  color: var(--wn-white);
+}
+
+.wn-why-card-editorial--featured p {
+  color: color-mix(in srgb, var(--wn-white) 84%, transparent);
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__proof {
+  border-top-color: color-mix(in srgb, var(--wn-gold) 32%, transparent);
+  color: var(--wn-sand);
+}
+
+.wn-why-card-editorial--featured .wn-why-card-editorial__proof svg {
+  color: var(--wn-gold);
+}
+
+[data-theme='dark'] .wn-why-card-editorial {
+  background: linear-gradient(
+    165deg,
+    var(--wn-surface) 0%,
+    color-mix(in srgb, var(--wn-surface-soft) 80%, var(--wn-surface)) 100%
+  );
+  border-color: var(--wn-border);
+}
+
+[data-theme='dark'] .wn-why-card-editorial__icon--gold {
+  background: color-mix(in srgb, var(--wn-gold) 15%, var(--wn-surface-soft));
+  color: var(--wn-gold);
+}
+
+[data-theme='dark'] .wn-why-card-editorial__icon--emerald,
+[data-theme='dark'] .wn-why-card-editorial__icon--teal {
+  background: color-mix(in srgb, var(--wn-teal) 16%, var(--wn-surface-soft));
+  color: var(--wn-teal);
+}
+
+[data-theme='dark'] .wn-why-card-editorial__proof {
+  color: var(--wn-text-gold);
+  border-top-color: var(--wn-border);
+}
+
+[data-theme='dark'] .wn-why-card-editorial__proof svg {
+  color: var(--wn-teal);
+}
+
+[data-theme='dark'] .wn-why-card-editorial--featured {
+  background:
+    radial-gradient(circle at 86% 12%, color-mix(in srgb, var(--wn-gold) 20%, transparent), transparent 44%),
+    linear-gradient(150deg, var(--wn-emerald-deep) 0%, var(--wn-emerald-dark) 100%);
+  border-color: color-mix(in srgb, var(--wn-gold) 44%, transparent);
+}
+
+[data-theme='dark'] .wn-why-card-editorial--featured h3 {
+  color: var(--wn-white);
+}
+
+[data-theme='dark'] .wn-why-card-editorial--featured p {
+  color: color-mix(in srgb, var(--wn-white) 84%, transparent);
+}
+
+[data-theme='dark'] .wn-why-card-editorial--featured .wn-why-card-editorial__proof {
+  color: var(--wn-sand);
+  border-top-color: color-mix(in srgb, var(--wn-gold) 32%, transparent);
+}
+
+[data-theme='dark'] .wn-why-card-editorial--featured .wn-why-card-editorial__proof svg {
+  color: var(--wn-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wn-why-card-editorial::before,
+  .wn-why-card-editorial__arch,
+  .wn-why-card-editorial__icon {
+    transition: none;
+  }
+
+  .wn-why-card-editorial:hover .wn-why-card-editorial__arch,
+  .wn-why-card-editorial:hover .wn-why-card-editorial__icon {
+    transform: none;
+  }
 }
 
 /* ── 4. Immersive Ecosystem Interactive Triggers ────────────────────────── */
