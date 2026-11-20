@@ -39,8 +39,20 @@ const StudentSubscriptionSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
-    enum: ['EGP'],
+    enum: ['EGP', 'USD'],
     default: 'EGP',
+  },
+  pricingRegion: {
+    type: String,
+    enum: ['EG', 'GCC', 'WEST', 'INTL'],
+    default: 'EG',
+  },
+  countryCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    maxlength: 8,
+    default: 'EG',
   },
   pricePerSessionMinor: {
     type: Number,

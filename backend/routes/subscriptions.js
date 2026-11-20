@@ -76,6 +76,7 @@ const {
   publicPlanCatalog,
   quoteSubscription,
 } = require('../config/subscriptionPlans');
+const { detectCountryFromRequest } = require('../config/geoPricing');
 
 function serializeSubscription(subscription) {
   const value = typeof subscription?.toObject === 'function'
@@ -92,6 +93,8 @@ function serializeSubscription(subscription) {
     sessionsUsed: value.sessionsUsed,
     sessionsRemaining: value.sessionsRemaining,
     currency: value.currency,
+    pricingRegion: value.pricingRegion || 'EG',
+    countryCode: value.countryCode || 'EG',
     pricePerSessionMinor: value.pricePerSessionMinor,
     totalAmountMinor: value.totalAmountMinor,
     status: value.status,
@@ -111,10 +114,13 @@ function serializeSubscription(subscription) {
   };
 }
 
-router.get('/plans', (_req, res) => {
+router.get('/plans', (req, res) => {
+  const countryCode = detectCountryFromRequest(req);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Vary', 'x-vercel-ip-country, cf-ipcountry');
   return res.json({
     success: true,
-    ...publicPlanCatalog(),
+    ...publicPlanCatalog({ countryCode }),
   });
 });
 
@@ -177,9 +183,10 @@ router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req,
     }
 
     const sessionCount = Number(req.body.sessionCount);
+    const renewalCountry = source.countryCode || detectCountryFromRequest(req);
     let quote;
     try {
-      quote = quoteSubscription({ planKey: source.planKey, sessionCount });
+      quote = quoteSubscription({ planKey: source.planKey, sessionCount, countryCode: renewalCountry });
     } catch (error) {
       return res.status(400).json({ error: safeErrorMessage(error, 400),
         code: error.code || 'SUBSCRIPTION_RENEWAL_INVALID',
@@ -208,6 +215,8 @@ router.post('/:id/renew', protect, authorize('student', 'guardian'), async (req,
       sessionsUsed: 0,
       sessionsRemaining: quote.sessionCount,
       currency: quote.currency,
+      pricingRegion: quote.region,
+      countryCode: quote.countryCode,
       pricePerSessionMinor: quote.pricePerSessionMinor,
       totalAmountMinor: quote.totalAmountMinor,
       status: 'pending_payment',
@@ -288,9 +297,10 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       });
     }
 
+    const countryCode = detectCountryFromRequest(req);
     let quote;
     try {
-      quote = quoteSubscription({ planKey, sessionCount });
+      quote = quoteSubscription({ planKey, sessionCount, countryCode });
     } catch (error) {
       return res.status(400).json({ error: safeErrorMessage(error, 400),
         code: error.code || 'SUBSCRIPTION_SELECTION_INVALID',
@@ -334,6 +344,8 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       sessionsUsed: 0,
       sessionsRemaining: quote.sessionCount,
       currency: quote.currency,
+      pricingRegion: quote.region,
+      countryCode: quote.countryCode,
       pricePerSessionMinor: quote.pricePerSessionMinor,
       totalAmountMinor: quote.totalAmountMinor,
       status: 'pending_payment',

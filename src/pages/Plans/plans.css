@@ -1054,3 +1054,30 @@
     justify-content: space-between;
   }
 }
+
+.wn-plans-region-pill {
+  border-color: color-mix(in srgb, var(--wn-gold) 45%, transparent);
+  background: color-mix(in srgb, var(--wn-gold) 14%, transparent);
+  color: var(--wn-sand);
+}
+
+.wn-plan-card__local-hint {
+  margin-top: -0.35rem;
+  margin-bottom: 0.55rem;
+  font-size: var(--wn-text-2xs);
+  font-weight: 600;
+  color: var(--wn-text-tertiary);
+}
+
+.wn-plan-card__monthly-hint {
+  font-size: var(--wn-text-2xs);
+  font-weight: 600;
+  color: var(--wn-text-secondary);
+}
+
+.wn-plans-compare__hint {
+  margin-top: 0.12rem;
+  font-size: var(--wn-text-2xs);
+  font-weight: 500;
+  color: var(--wn-text-tertiary);
+}

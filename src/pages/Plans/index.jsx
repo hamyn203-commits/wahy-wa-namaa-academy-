@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BadgeCheck, BookOpenCheck, Check, Clock3,
-  Crown, Heart, ShieldCheck, Sparkles, Users, UserRound, Video, X
+  Crown, Globe, Heart, ShieldCheck, Sparkles, Users, UserRound, Video, X
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -14,6 +14,12 @@ import { useSEO } from '../../hooks/useSEO';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { localizedPath } from '../../lib/locale';
+import {
+  currencyLabelsFor,
+  formatLocalEquivalent,
+  formatMajorNumber,
+  formatRegionalMoney,
+} from '../../lib/regionalPricing';
 import './plans.css';
 
 const LIVE_ONLINE_LABEL = {
@@ -491,8 +497,13 @@ export default function PlansPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let endpoint = '/api/subscriptions/plans';
+    if (import.meta.env.DEV) {
+      const devCountry = searchParams.get('country');
+      if (devCountry) endpoint += '?country=' + encodeURIComponent(devCountry);
+    }
 
-    api.get('/api/subscriptions/plans')
+    api.get(endpoint)
       .then((data) => {
         if (!cancelled) setCatalog(data);
       })
@@ -503,7 +514,7 @@ export default function PlansPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!renewalId || !isAuthenticated || !['student', 'guardian'].includes(user?.role)) return;
@@ -535,15 +546,26 @@ export default function PlansPage() {
     ? catalog.sessionPacks
     : [4, 8, 12, 24];
 
+  const billingCurrency = catalog?.currency === 'USD' ? 'USD' : 'EGP';
+  const currencyLabels = currencyLabelsFor(billingCurrency, isRTL);
+  const localCurrencyHint = catalog?.localCurrencyHint || null;
+  const regionLabelText = isRTL
+    ? (catalog?.regionLabel?.ar || 'مصر')
+    : (catalog?.regionLabel?.en || 'Egypt');
+
   const plans = useMemo(() => PLAN_DEFS.map((plan) => {
     const serverPlan = serverPlans.get(plan.id);
-    const price = serverPlan ? serverPlan.pricePerSessionMinor / 100 : plan.price;
+    const priceMinor = serverPlan ? Number(serverPlan.pricePerSessionMinor) : plan.price * 100;
+    const packageTotalMinor = priceMinor * sessionCount;
     const minStudents = serverPlan?.minStudents;
     const maxStudents = serverPlan?.maxStudents;
 
     return {
       ...plan,
-      price,
+      priceMinor,
+      price: priceMinor / 100,
+      priceDisplay: formatMajorNumber(priceMinor),
+      priceLocalHint: formatLocalEquivalent(priceMinor, billingCurrency, localCurrencyHint, isRTL),
       studentsAr: minStudents && maxStudents
         ? (minStudents === maxStudents ? `${minStudents === 1 ? 'طالب واحد' : minStudents + ' طلاب'}` : `من ${minStudents} إلى ${maxStudents} طالب`)
         : plan.studentsAr,
@@ -552,9 +574,18 @@ export default function PlansPage() {
         : plan.studentsEn,
       durationAr: serverPlan?.durationLabel?.ar || plan.durationAr,
       durationEn: serverPlan?.durationLabel?.en || plan.durationEn,
-      packageTotal: price * sessionCount,
+      packageTotalMinor,
+      packageTotal: packageTotalMinor / 100,
+      packageTotalDisplay: formatMajorNumber(packageTotalMinor),
+      packageLocalHint: formatLocalEquivalent(packageTotalMinor, billingCurrency, localCurrencyHint, isRTL),
     };
-  }), [serverPlans, sessionCount]);
+  }), [serverPlans, sessionCount, billingCurrency, localCurrencyHint, isRTL]);
+
+  const minPlan = plans[0];
+  const minFormattedPrice = formatRegionalMoney(minPlan?.priceMinor ?? 1000, billingCurrency, locale);
+  const dynamicHeroTitle = isRTL
+    ? `ابدأ رحلتك القرآنية من ${minFormattedPrice} للحصة`
+    : `Start your Quran journey from ${minFormattedPrice} per session`;
 
   const visiblePlans = renewalSource
     ? plans.filter((plan) => plan.id === renewalSource.planKey)
@@ -640,7 +671,7 @@ export default function PlansPage() {
           .filter(Boolean)
           .join(' • '),
         price: plan.price,
-        currency: 'EGP',
+        currency: billingCurrency,
       })),
     }),
     createBreadcrumbSchema([
@@ -668,12 +699,18 @@ export default function PlansPage() {
           <div className="wn-plans-container wn-plans-hero__grid">
             <div className="wn-plans-hero__copy">
               <span className="wn-plans-kicker"><Sparkles size={16} aria-hidden="true" /> {copy.kicker}</span>
-              <h1>{copy.heroTitle}</h1>
+              <h1>{dynamicHeroTitle}</h1>
               <p>{copy.heroDesc}</p>
               <div className="wn-plans-hero__proof">
                 <span><ShieldCheck size={18} aria-hidden="true" /> {copy.proof1}</span>
                 <span><BookOpenCheck size={18} aria-hidden="true" /> {copy.proof2}</span>
                 <span><Clock3 size={18} aria-hidden="true" /> {copy.proof3}</span>
+                <span className="wn-plans-region-pill">
+                  <Globe size={16} aria-hidden="true" />
+                  {isRTL
+                    ? `تسعير منطقتك: ${regionLabelText} (${billingCurrency})`
+                    : `Regional pricing: ${regionLabelText} (${billingCurrency})`}
+                </span>
               </div>
             </div>
 
@@ -692,8 +729,15 @@ export default function PlansPage() {
               </span>
               <div className="wn-plans-hero__price">
                 <small>{copy.startAt}</small>
-                <strong>10 <em>{copy.currencyLong}</em></strong>
-                <span>{copy.perSession}</span>
+                <strong>
+                  {billingCurrency === 'USD' ? '$' : ''}
+                  {minPlan?.priceDisplay || '10'}{' '}
+                  <em>{currencyLabels.long}</em>
+                </strong>
+                <span>
+                  {copy.perSession}
+                  {minPlan?.priceLocalHint ? ` (${minPlan.priceLocalHint})` : ''}
+                </span>
               </div>
             </div>
           </div>
@@ -818,8 +862,8 @@ export default function PlansPage() {
                   <strong>{isRTL ? 'تم حفظ اختيار الباقة' : 'Package selection saved'}</strong>
                   <p>
                     {isRTL
-                      ? `${selection.sessionCount} حصة · الإجمالي ${selection.totalAmountMinor / 100} جنيه · لم يتم الدفع بعد`
-                      : `${selection.sessionCount} sessions · total ${selection.totalAmountMinor / 100} EGP · payment not completed`}
+                      ? `${selection.sessionCount} حصة · الإجمالي ${formatRegionalMoney(selection.totalAmountMinor, selection.currency || billingCurrency, locale)} · لم يتم الدفع بعد`
+                      : `${selection.sessionCount} sessions · total ${formatRegionalMoney(selection.totalAmountMinor, selection.currency || billingCurrency, locale)} · payment not completed`}
                   </p>
                 </div>
               </aside>
@@ -899,16 +943,28 @@ export default function PlansPage() {
 
                     <div className="wn-plan-card__price">
                       <span>{plan.from ? copy.fromWord : ''}</span>
-                      <strong>{plan.price}</strong>
+                      <strong>
+                        {billingCurrency === 'USD' ? '$' : ''}
+                        {plan.priceDisplay}
+                      </strong>
                       <div>
-                        <b>{copy.currencyLong}</b>
+                        <b>{currencyLabels.long}</b>
                         <small>{copy.perSessionUnit}</small>
                       </div>
                     </div>
+                    {plan.priceLocalHint ? (
+                      <div className="wn-plan-card__local-hint">
+                        {plan.priceLocalHint} {copy.perSessionUnit}
+                      </div>
+                    ) : null}
 
                     <div className="wn-plan-card__monthly">
                       <span>{sessionCount} {sessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord} {copy.inPackage}</span>
-                      <strong>{plan.from ? copy.fromWord : ''}{plan.packageTotal} {copy.currencyShort}</strong>
+                      <strong>
+                        {plan.from ? copy.fromWord : ''}
+                        {formatRegionalMoney(plan.packageTotalMinor, billingCurrency, locale)}
+                        {plan.packageLocalHint ? <small className="wn-plan-card__monthly-hint"> ({plan.packageLocalHint})</small> : null}
+                      </strong>
                     </div>
 
                     <ul>
@@ -969,8 +1025,20 @@ export default function PlansPage() {
                           </td>
                           <td>{isRTL ? plan.studentsAr : plan.studentsEn}</td>
                           <td>{isRTL ? plan.durationAr : plan.durationEn}</td>
-                          <td><strong>{plan.from ? copy.fromWord : ''}{plan.price} {copy.currencyShort}</strong></td>
-                          <td><strong>{plan.from ? copy.fromWord : ''}{plan.packageTotal} {copy.currencyShort}</strong></td>
+                          <td>
+                            <strong>
+                              {plan.from ? copy.fromWord : ''}
+                              {formatRegionalMoney(plan.priceMinor, billingCurrency, locale)}
+                            </strong>
+                            {plan.priceLocalHint ? <div className="wn-plans-compare__hint">{plan.priceLocalHint}</div> : null}
+                          </td>
+                          <td>
+                            <strong>
+                              {plan.from ? copy.fromWord : ''}
+                              {formatRegionalMoney(plan.packageTotalMinor, billingCurrency, locale)}
+                            </strong>
+                            {plan.packageLocalHint ? <div className="wn-plans-compare__hint">{plan.packageLocalHint}</div> : null}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -983,7 +1051,11 @@ export default function PlansPage() {
               <UserRound size={21} aria-hidden="true" />
               <div>
                 <strong>{isRTL ? 'التسكين حسب المستوى والعمر' : 'Placement by level and age'}</strong>
-                <p>{isRTL ? 'بعد الحصة التجريبية نرشح الحلقة الأنسب للطالب. الحلقة الاقتصادية 10 جنيه تبدأ عند اكتمال الحد الأدنى المناسب للتشغيل.' : 'After the trial, we recommend the best-fit circle. The 10 EGP community plan starts once the minimum viable group is formed.'}</p>
+                <p>
+                  {isRTL
+                    ? `بعد الحصة التجريبية نرشح الحلقة الأنسب للطالب. الحلقة الاقتصادية (${minFormattedPrice}) تبدأ عند اكتمال الحد الأدنى المناسب للتشغيل.`
+                    : `After the trial, we recommend the best-fit circle. The community plan (${minFormattedPrice}) starts once the minimum viable group is formed.`}
+                </p>
               </div>
             </div>
           </div>

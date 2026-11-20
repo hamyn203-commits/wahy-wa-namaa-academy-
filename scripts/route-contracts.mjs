@@ -260,7 +260,8 @@ assert.match(subscriptionRoutes, /SUBSCRIPTION_NOT_RENEWABLE/);
 assert.match(subscriptionRoutes, /RENEWAL_ALREADY_EXISTS/);
 assert.match(subscriptionRoutes, /RENEWAL_PAYMENT_PENDING/);
 assert.match(subscriptionRoutes, /renewalOf:\s*null/);
-assert.match(subscriptionRoutes, /quoteSubscription\(\{\s*planKey,\s*sessionCount\s*\}\)/);
+assert.match(subscriptionRoutes, /quoteSubscription\(\{\s*planKey,\s*sessionCount(?:,\s*countryCode)?\s*\}\)/);
+assert.match(subscriptionRoutes, /detectCountryFromRequest\(req\)/);
 assert.match(subscriptionModel, /pending_payment/);
 assert.match(subscriptionModel, /sessionCount:[\s\S]{0,100}enum:\s*\[4, 8, 12, 24\]/);
 

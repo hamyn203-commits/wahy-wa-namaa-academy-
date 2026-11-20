@@ -741,7 +741,7 @@ requireContains(
 requireContains(
   'backend/routes/subscriptions.js',
   'subscription selection must derive pricing from the server-side catalog',
-  /quoteSubscription\(\{\s*planKey,\s*sessionCount\s*\}\)[\s\S]{0,1800}pricePerSessionMinor:\s*quote\.pricePerSessionMinor[\s\S]{0,300}totalAmountMinor:\s*quote\.totalAmountMinor/
+  /quoteSubscription\(\{\s*planKey,\s*sessionCount(?:,\s*countryCode)?\s*\}\)[\s\S]{0,1800}pricePerSessionMinor:\s*quote\.pricePerSessionMinor[\s\S]{0,300}totalAmountMinor:\s*quote\.totalAmountMinor/
 );
 requireAbsent(
   'backend/routes/subscriptions.js',
@@ -781,7 +781,7 @@ requireContains(
 requireContains(
   'backend/routes/subscriptions.js',
   'renewal pricing must remain server-authoritative and reuse the current plan',
-  /router\.post\(['"]\/:id\/renew['"][\s\S]{0,1800}quoteSubscription\(\{\s*planKey:\s*source\.planKey,\s*sessionCount\s*\}\)[\s\S]{0,1800}preferredTeacher:\s*source\.preferredTeacher[\s\S]{0,300}circle:\s*source\.circle/
+  /router\.post\(['"]\/:id\/renew['"][\s\S]{0,1800}quoteSubscription\(\{\s*planKey:\s*source\.planKey,\s*sessionCount(?:,\s*countryCode:\s*renewalCountry)?\s*\}\)[\s\S]{0,1800}preferredTeacher:\s*source\.preferredTeacher[\s\S]{0,300}circle:\s*source\.circle/
 );
 requireContains(
   'backend/routes/subscriptions.js',

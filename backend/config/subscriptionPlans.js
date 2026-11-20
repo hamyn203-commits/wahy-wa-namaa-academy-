@@ -1,3 +1,5 @@
+const { getTierForCountry } = require('./geoPricing');
+
 const SESSION_PACKS = Object.freeze([4, 8, 12, 24]);
 const SECTIONS = Object.freeze(['men_children', 'ladies']);
 
@@ -73,7 +75,7 @@ function isCompatibleStudentSection(enrollmentSection, section) {
   return !isSection(enrollmentSection) || enrollmentSection === section;
 }
 
-function quoteSubscription({ planKey, sessionCount }) {
+function quoteSubscription({ planKey, sessionCount, countryCode = 'EG' }) {
   const plan = getPlan(planKey);
   const count = Number(sessionCount);
 
@@ -89,21 +91,34 @@ function quoteSubscription({ planKey, sessionCount }) {
     throw error;
   }
 
+  const tier = getTierForCountry(countryCode);
+  const regionalMinor = tier.pricesMinor[plan.key] ?? plan.pricePerSessionMinor;
+
   return {
-    plan,
+    plan: { ...plan, pricePerSessionMinor: regionalMinor },
     sessionCount: count,
-    currency: 'EGP',
-    pricePerSessionMinor: plan.pricePerSessionMinor,
-    totalAmountMinor: plan.pricePerSessionMinor * count,
+    currency: tier.currency,
+    region: tier.region,
+    countryCode: tier.countryCode,
+    pricePerSessionMinor: regionalMinor,
+    totalAmountMinor: regionalMinor * count,
   };
 }
 
-function publicPlanCatalog() {
+function publicPlanCatalog({ countryCode = 'EG' } = {}) {
+  const tier = getTierForCountry(countryCode);
   return {
-    currency: 'EGP',
+    currency: tier.currency,
+    region: tier.region,
+    countryCode: tier.countryCode,
+    regionLabel: tier.regionLabel,
+    localCurrencyHint: tier.localCurrencyHint,
     sessionPacks: [...SESSION_PACKS],
     sections: [...SECTIONS],
-    plans: Object.values(PLANS).map((plan) => ({ ...plan })),
+    plans: Object.values(PLANS).map((plan) => ({
+      ...plan,
+      pricePerSessionMinor: tier.pricesMinor[plan.key] ?? plan.pricePerSessionMinor,
+    })),
   };
 }
 

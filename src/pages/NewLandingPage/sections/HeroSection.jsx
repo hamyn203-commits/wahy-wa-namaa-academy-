@@ -1,5 +1,6 @@
 import { useI18n } from '../../../i18n';
 import { useMarket } from '../../../context/MarketProvider';
+import { formatRegionalMoney } from '../../../lib/regionalPricing';
 import {
   BookOpen,
   GraduationCap,
@@ -21,10 +22,14 @@ const TRUST_ICONS = [GraduationCap, BookOpen, MonitorSmartphone, Users];
 
 export default function HeroSection() {
   const { locale, isRTL } = useI18n();
-  const { displayPrice } = useMarket();
+  const { regionalPricing } = useMarket();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const copy = pickLocale(HERO_COPY, locale, isRTL);
-  const startingPrice = displayPrice(10, 'EGP');
+  const startingPrice = formatRegionalMoney(
+    regionalPricing?.minPriceMinor ?? 1000,
+    regionalPricing?.currency || 'EGP',
+    locale
+  );
   const ctaPrimaryLabel = locale === 'ar' ? 'ابدأ رحلتك الآن' : copy.ctaStart;
 
   const trustItems = copy.trust.map((item, idx) => ({

@@ -2,12 +2,43 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useI18n } from '../i18n';
 import { convertPrice, formatPrice } from '../config/currencies';
 import { getMarketBySlug, resolveMarketPrefs, saveMarketPrefs } from '../lib/market';
+import api from '../lib/api';
+import {
+  DEFAULT_REGIONAL_PRICING,
+  normalizeCatalogToRegionalPricing,
+} from '../lib/regionalPricing';
 
 const MarketContext = createContext(null);
 
 export function MarketProvider({ children }) {
   const { locale } = useI18n();
   const [prefs, setPrefs] = useState(() => resolveMarketPrefs(locale));
+  const [regionalPricing, setRegionalPricing] = useState(DEFAULT_REGIONAL_PRICING);
+
+  useEffect(() => {
+    let cancelled = false;
+    let endpoint = '/api/subscriptions/plans';
+    try {
+      if (import.meta.env.DEV && typeof window !== 'undefined') {
+        const devCountry = new URLSearchParams(window.location.search).get('country');
+        if (devCountry) {
+          endpoint += `?country=${encodeURIComponent(devCountry)}`;
+        }
+      }
+    } catch { /* ignore */ }
+
+    api.get(endpoint)
+      .then((catalog) => {
+        if (!cancelled) {
+          setRegionalPricing(normalizeCatalogToRegionalPricing(catalog));
+        }
+      })
+      .catch(() => { /* keep default EG fallback */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setPrefs((prev) => {
@@ -89,7 +120,18 @@ export function MarketProvider({ children }) {
   );
 
   return (
-    <MarketContext.Provider value={{ ...prefs, market, setMarket, setCurrency, setTimezone, displayPrice, formatDateTime }}>
+    <MarketContext.Provider
+      value={{
+        ...prefs,
+        market,
+        regionalPricing,
+        setMarket,
+        setCurrency,
+        setTimezone,
+        displayPrice,
+        formatDateTime,
+      }}
+    >
       {children}
     </MarketContext.Provider>
   );

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useI18n } from '../../../i18n';
 import { useMarket } from '../../../context/MarketProvider';
+import { formatLocalEquivalent, formatRegionalMoney } from '../../../lib/regionalPricing';
 import {
   Calculator,
   Users,
@@ -104,7 +105,7 @@ const PLAN_KEYS = CALCULATOR_PLANS.map((plan) => plan.id);
 
 export default function PricingCalculatorSection() {
   const { locale, isRTL } = useI18n();
-  const { displayPrice } = useMarket();
+  const { regionalPricing } = useMarket();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
   const copy = pickLocale(CALCULATOR_COPY, locale, isRTL);
 
@@ -112,13 +113,23 @@ export default function PricingCalculatorSection() {
   const [selectedPlanId, setSelectedPlanId] = useState('group');
   const [sessionCount, setSessionCount] = useState(8);
 
+  const billingCurrency = regionalPricing?.currency || 'EGP';
+  const localHint = regionalPricing?.localCurrencyHint || null;
+  const getMinor = (plan) => regionalPricing?.pricesMinor?.[plan.id] ?? (plan.price * 100);
+
   const activePlan = CALCULATOR_PLANS.find((plan) => plan.id === selectedPlanId) || CALCULATOR_PLANS[1];
   const activePlanCopy = pickLocale(activePlan.i18n, locale, isRTL);
-  const totalAmount = activePlan.price * sessionCount;
+  const activeMinor = getMinor(activePlan);
+  const totalMinor = activeMinor * sessionCount;
+  const totalLocalHint = formatLocalEquivalent(totalMinor, billingCurrency, localHint, isRTL);
   const pacingNote = copy.pacing?.[sessionCount] || '';
 
   const checkoutTarget = `/plans?section=${encodeURIComponent(section)}&plan=${encodeURIComponent(activePlan.id)}&sessions=${sessionCount}#plan-${activePlan.id}`;
-  const minFormattedPrice = displayPrice(10, 'EGP');
+  const minFormattedPrice = formatRegionalMoney(
+    regionalPricing?.minPriceMinor ?? 1000,
+    billingCurrency,
+    locale
+  );
 
   const sessionWord = (count) => {
     if (locale === 'ar') return count === 12 ? copy.sessionSingular : copy.sessionPlural;
@@ -222,7 +233,7 @@ export default function PricingCalculatorSection() {
                         </span>
                         <strong className="wn-calc-plan-option__price">
                           {plan.from ? copy.fromPrefix : ''}
-                          {displayPrice(plan.price, 'EGP')} <small>{copy.perSessionUnit}</small>
+                          {formatRegionalMoney(getMinor(plan), billingCurrency, locale)} <small>{copy.perSessionUnit}</small>
                         </strong>
                       </div>
                       <h4>{planCopy.name}</h4>
@@ -288,7 +299,7 @@ export default function PricingCalculatorSection() {
                 <span>{copy.pricePerSessionLabel}</span>
                 <strong>
                   {activePlan.from ? copy.fromPrefix : ''}
-                  {displayPrice(activePlan.price, 'EGP')}
+                  {formatRegionalMoney(activeMinor, billingCurrency, locale)}
                 </strong>
               </div>
               <div className="wn-calc-summary__row">
@@ -301,7 +312,8 @@ export default function PricingCalculatorSection() {
                 <span>{copy.packageTotalLabel}</span>
                 <strong>
                   {activePlan.from ? copy.fromPrefix : ''}
-                  {displayPrice(totalAmount, 'EGP')}
+                  {formatRegionalMoney(totalMinor, billingCurrency, locale)}
+                  {totalLocalHint ? <em> ({totalLocalHint})</em> : null}
                 </strong>
               </div>
             </div>
