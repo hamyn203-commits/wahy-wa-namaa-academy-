@@ -34,6 +34,7 @@ export default function ImmersiveLearningSection() {
 
   const featureKeys = features.map((item) => item.id);
   const activeFeature = features.find((item) => item.id === activeId) || features[0];
+  const ActiveFeatureIcon = activeFeature.icon;
   const stagePanelId = 'wn-immersive-stage-panel';
 
   return (
@@ -55,7 +56,7 @@ export default function ImmersiveLearningSection() {
           <p className="wn-immersive__lead">{copy.lead}</p>
 
           <div className="wn-immersive__features" role="tablist" aria-label={copy.tablistAria}>
-            {features.map(({ id, icon: Icon, title, text }) => {
+            {features.map(({ id, icon: Icon, title, text }, idx) => {
               const selected = id === activeFeature.id;
               return (
                 <button
@@ -76,9 +77,14 @@ export default function ImmersiveLearningSection() {
                   })}
                   className={`wn-immersive-feature wn-immersive-feature--btn ${selected ? 'is-active' : ''}`}
                 >
-                  <span aria-hidden="true"><Icon size={18} strokeWidth={1.6} /></span>
-                  <div>
-                    <strong>{title}</strong>
+                  <span aria-hidden="true"><Icon size={18} strokeWidth={1.65} /></span>
+                  <div className="wn-immersive-feature__body">
+                    <div className="wn-immersive-feature__head">
+                      <strong>{title}</strong>
+                      <em className="wn-immersive-feature__idx" aria-hidden="true">
+                        {String(idx + 1).padStart(2, '0')}
+                      </em>
+                    </div>
                     <p>{text}</p>
                   </div>
                 </button>
@@ -101,54 +107,91 @@ export default function ImmersiveLearningSection() {
           id={stagePanelId}
           role="tabpanel"
           aria-labelledby={`wn-immersive-tab-${activeFeature.id}`}
-          className="wn-quran-3d-stage"
+          className={`wn-quran-3d-stage wn-quran-3d-stage--focus-${activeFeature.stageFocus}`}
           aria-label={copy.stageAria}
         >
           <div className="wn-quran-3d-stage__halo" aria-hidden="true" />
+          <div className="wn-quran-3d-stage__orbit" aria-hidden="true" />
           <div className="wn-quran-3d-stage__arch" aria-hidden="true" />
 
           <div className="wn-quran-book3d" aria-hidden="true">
             <div className="wn-quran-book3d__shadow" />
             <div className="wn-quran-book3d__left">
-              <div className="wn-quran-book3d__page-lines">
-                <i /><i /><i /><i /><i /><i />
+              <div className="wn-quran-book3d__mushaf-page" dir="rtl" lang="ar">
+                <span className="wn-quran-book3d__surah-band">سُورَةُ المُزَّمِّلِ</span>
+                <p className="font-quran wn-quran-book3d__ayah">
+                  وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا
+                </p>
+                <p className="font-quran wn-quran-book3d__ayah wn-quran-book3d__ayah--sub">
+                  فَاقْرَءُوا مَا تَيَسَّرَ مِنَ الْقُرْآنِ
+                </p>
+                <span className="wn-quran-book3d__ornament">۞ ✦ ۞</span>
               </div>
             </div>
             <div className="wn-quran-book3d__right">
-              <div className="wn-quran-book3d__page-lines">
-                <i /><i /><i /><i /><i /><i />
+              <div className="wn-quran-book3d__mushaf-page" dir="rtl" lang="ar">
+                <span className="wn-quran-book3d__surah-band">سُورَةُ الفَاتِحَةِ</span>
+                <p className="font-quran wn-quran-book3d__ayah">
+                  بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+                </p>
+                <p className="font-quran wn-quran-book3d__ayah wn-quran-book3d__ayah--sub">
+                  الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ
+                </p>
+                <span className="wn-quran-book3d__ornament">۞ ✦ ۞</span>
               </div>
             </div>
             <div className="wn-quran-book3d__spine" />
             <div className="wn-quran-book3d__light">✦</div>
           </div>
 
-          <div className={`wn-float-card wn-float-card--recite ${activeFeature.stageFocus === 'recite' ? 'is-highlighted' : ''}`}>
+          <button
+            type="button"
+            onClick={() => setActiveId('recite')}
+            className={`wn-float-card wn-float-card--recite wn-float-card--interactive ${activeFeature.stageFocus === 'recite' ? 'is-highlighted' : ''}`}
+          >
             <span className="wn-float-card__icon" aria-hidden="true"><Mic2 size={16} /></span>
-            <div>
+            <div className="wn-float-card__copy">
               <strong>{copy.cardReciteTitle}</strong>
               <small>{copy.cardReciteSub}</small>
+              <span className="wn-float-card__wave" aria-hidden="true">
+                <i /><i /><i /><i /><i />
+              </span>
             </div>
-          </div>
+          </button>
 
-          <div className={`wn-float-card wn-float-card--progress ${activeFeature.stageFocus === 'progress' ? 'is-highlighted' : ''}`}>
+          <button
+            type="button"
+            onClick={() => setActiveId('progress')}
+            className={`wn-float-card wn-float-card--progress wn-float-card--interactive ${activeFeature.stageFocus === 'progress' ? 'is-highlighted' : ''}`}
+          >
             <div className="wn-progress-ring" aria-hidden="true"><span>✦</span></div>
-            <div>
+            <div className="wn-float-card__copy">
               <strong>{copy.cardProgressTitle}</strong>
               <small>{copy.cardProgressSub}</small>
             </div>
-          </div>
+          </button>
 
-          <div className={`wn-float-card wn-float-card--family ${activeFeature.stageFocus === 'family' ? 'is-highlighted' : ''}`}>
+          <button
+            type="button"
+            onClick={() => setActiveId('family')}
+            className={`wn-float-card wn-float-card--family wn-float-card--interactive ${activeFeature.stageFocus === 'family' ? 'is-highlighted' : ''}`}
+          >
             <span className="wn-float-card__icon" aria-hidden="true"><CheckCircle2 size={16} /></span>
-            <div>
+            <div className="wn-float-card__copy">
               <strong>{copy.cardFamilyTitle}</strong>
               <small>{copy.cardFamilySub}</small>
             </div>
-          </div>
+          </button>
 
           <div className="wn-stage-focus-note" aria-live="polite">
-            {activeFeature.stageNote}
+            <span className="wn-stage-focus-note__badge" aria-hidden="true">
+              <ActiveFeatureIcon size={15} strokeWidth={1.8} />
+            </span>
+            <div className="wn-stage-focus-note__text">
+              <strong>{activeFeature.title}</strong>
+              <span>{activeFeature.stageNote}</span>
+            </div>
+            <i className="wn-stage-focus-note__pulse" aria-hidden="true" />
           </div>
 
           <div className="wn-quran-3d-stage__caption" aria-hidden="true">
