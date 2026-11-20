@@ -14,11 +14,11 @@ import { prefetchRoute } from '../../../lib/routePrefetch';
 import { PROGRAMS_COPY, pickLocale } from '../landingI18n';
 
 const PROGRAM_META = {
-  kids: { icon: Sparkles, to: '/programs/kids' },
-  hifz: { icon: BookOpen, to: '/courses?track=quran' },
-  tajweed: { icon: Award, to: '/courses?track=tajweed' },
-  understanding: { icon: Languages, to: '/tracks' },
-  ijazah: { icon: ScrollText, to: '/courses?track=ijazah' },
+  kids: { icon: Sparkles, to: '/programs/kids', image: '/images/programs/program-kids.jpg' },
+  hifz: { icon: BookOpen, to: '/courses?track=quran', image: '/images/programs/program-hifz.jpg' },
+  tajweed: { icon: Award, to: '/courses?track=tajweed', image: '/images/programs/program-tajweed.jpg' },
+  understanding: { icon: Languages, to: '/tracks', image: '/images/programs/program-understanding.jpg' },
+  ijazah: { icon: ScrollText, to: '/courses?track=ijazah', image: '/images/programs/program-ijazah.jpg' },
 };
 
 export default function ProgramsSection() {
@@ -30,6 +30,7 @@ export default function ProgramsSection() {
     ...item,
     icon: PROGRAM_META[item.id]?.icon || BookOpen,
     to: PROGRAM_META[item.id]?.to || '/courses',
+    image: PROGRAM_META[item.id]?.image || null,
   }));
 
   return (
@@ -43,10 +44,26 @@ export default function ProgramsSection() {
         </div>
 
         <div className="wn-approved-programs__grid">
-          {programs.map(({ id, icon: Icon, tag, title, desc, ctaLabel, to }) => (
+          {programs.map(({ id, icon: Icon, image, tag, title, desc, ctaLabel, to }) => (
             <article key={id} className="wn-approved-program-card">
-              <div className="wn-approved-program-card__visual">
-                <Icon size={34} strokeWidth={1.55} aria-hidden="true" />
+              <div className={`wn-approved-program-card__visual${image ? ' wn-approved-program-card__visual--photo' : ''}`}>
+                {image ? (
+                  <>
+                    <img
+                      src={image}
+                      alt={title}
+                      loading="lazy"
+                      decoding="async"
+                      className="wn-approved-program-card__img"
+                    />
+                    <div className="wn-approved-program-card__scrim" aria-hidden="true" />
+                    <span className="wn-approved-program-card__icon-badge" aria-hidden="true">
+                      <Icon size={18} strokeWidth={1.75} />
+                    </span>
+                  </>
+                ) : (
+                  <Icon size={34} strokeWidth={1.55} aria-hidden="true" />
+                )}
                 <span className="wn-program-card-tag">{tag}</span>
               </div>
               <div className="wn-approved-program-card__body">
