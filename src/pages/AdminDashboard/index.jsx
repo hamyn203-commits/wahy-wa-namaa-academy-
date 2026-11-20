@@ -46,8 +46,16 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const toastRef = useRef(toast);
   const formId = useId();
   const peopleDirectoryRef = useRef(null);
+  const pendingRefreshInFlightRef = useRef(false);
+  const lastPendingRefreshAtRef = useRef(0);
+  const pendingRateLimitedUntilRef = useRef(0);
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const ta = t.adminPortal;
   const tc = ta.common;
@@ -125,10 +133,81 @@ export default function AdminDashboard() {
     navigate(target.startsWith('/') ? localizeInternalHref(target, locale) : target);
   }, [navigate, locale]);
 
-  const loadPendingTeachers = useCallback(async () => {
-    const result = await api.get('/api/admin/teachers/pending', { auth: true });
-    setPending(Array.isArray(result) ? result : (result.teachers || []));
+  const formatPendingLoadError = useCallback((reason) => {
+    if (reason?.status === 429) {
+      return `${tt.pendingLoadFailed} (${locale === 'ar' ? 'طلبات كثيرة مؤقتاً — انتظر قليلاً ثم أعد المحاولة' : 'Too many requests — please wait a moment and retry'})`;
+    }
+    const detail = typeof reason?.message === 'string' ? reason.message.trim() : '';
+    if (detail && !/^HTTP \d+$/.test(detail)) {
+      return `${tt.pendingLoadFailed}: ${detail}`;
+    }
+    return tt.pendingLoadFailed;
+  }, [tt.pendingLoadFailed, locale]);
+
+  const loadPendingTeachers = useCallback(async (options) => {
+    const silent = Boolean(options && typeof options === 'object' && options.silent === true);
+    if (pendingRefreshInFlightRef.current) return false;
+    pendingRefreshInFlightRef.current = true;
+    try {
+      const result = await api.get('/api/admin/teachers/pending', { auth: true });
+      setPending(Array.isArray(result) ? result : (result.teachers || []));
+      lastPendingRefreshAtRef.current = Date.now();
+      pendingRateLimitedUntilRef.current = 0;
+      setTabError((current) => (current && current.startsWith(tt.pendingLoadFailed) ? '' : current));
+      return true;
+    } catch (error) {
+      if (error?.status === 429) {
+        pendingRateLimitedUntilRef.current = Date.now() + 60000;
+      }
+      if (!silent) {
+        const message = formatPendingLoadError(error);
+        setTabError(message);
+        toastRef.current.error(message);
+      }
+      return false;
+    } finally {
+      pendingRefreshInFlightRef.current = false;
+    }
+  }, [formatPendingLoadError, tt.pendingLoadFailed]);
+
+  const loadApprovedTeachers = useCallback(async () => {
+    const value = await api.get('/api/admin/teachers/approved', { auth: true });
+    setApproved(Array.isArray(value) ? value : (value?.teachers || []));
   }, []);
+
+  const loadHealth = useCallback(async () => {
+    const value = await api.get('/api/health');
+    setHealth(value);
+  }, []);
+
+  const loadTeachersTab = useCallback(async () => {
+    const [pendingResult, approvedResult, profileChangesResult] = await Promise.allSettled([
+      api.get('/api/admin/teachers/pending', { auth: true }),
+      api.get('/api/admin/teachers/approved', { auth: true }),
+      api.get('/api/teachers/admin/profile-changes/pending', { auth: true }),
+    ]);
+
+    if (pendingResult.status === 'fulfilled') {
+      const value = pendingResult.value;
+      setPending(Array.isArray(value) ? value : (value?.teachers || []));
+      lastPendingRefreshAtRef.current = Date.now();
+      pendingRateLimitedUntilRef.current = 0;
+    }
+    if (approvedResult.status === 'fulfilled') {
+      const value = approvedResult.value;
+      setApproved(Array.isArray(value) ? value : (value?.teachers || []));
+    }
+    if (profileChangesResult.status === 'fulfilled') {
+      setPendingProfileChanges(profileChangesResult.value?.requests || []);
+    }
+
+    if (pendingResult.status === 'rejected') {
+      if (pendingResult.reason?.status === 429) {
+        pendingRateLimitedUntilRef.current = Date.now() + 60000;
+      }
+      throw new Error(formatPendingLoadError(pendingResult.reason));
+    }
+  }, [formatPendingLoadError]);
 
   const loadCore = useCallback(async () => {
     const [statsResult, pendingResult, approvedResult, healthResult, commandResult, profileChangesResult] = await Promise.allSettled([
@@ -144,6 +223,8 @@ export default function AdminDashboard() {
     if (pendingResult.status === 'fulfilled') {
       const value = pendingResult.value;
       setPending(Array.isArray(value) ? value : (value?.teachers || []));
+      lastPendingRefreshAtRef.current = Date.now();
+      pendingRateLimitedUntilRef.current = 0;
     }
     if (approvedResult.status === 'fulfilled') {
       const value = approvedResult.value;
@@ -156,9 +237,12 @@ export default function AdminDashboard() {
     if (profileChangesResult.status === 'fulfilled') setPendingProfileChanges(profileChangesResult.value?.requests || []);
 
     if (pendingResult.status === 'rejected') {
-      throw new Error(tt.pendingLoadFailed);
+      if (pendingResult.reason?.status === 429) {
+        pendingRateLimitedUntilRef.current = Date.now() + 60000;
+      }
+      throw new Error(formatPendingLoadError(pendingResult.reason));
     }
-  }, [tt.pendingLoadFailed]);
+  }, [formatPendingLoadError]);
 
   const loadMessages = useCallback(async () => {
     const r = await api.get('/api/contact', { auth: true });
@@ -236,9 +320,11 @@ export default function AdminDashboard() {
     setLoading(true);
     setTabError('');
     try {
-      if (['overview', 'teachers', 'courses', 'system'].includes(tab)) await loadCore();
+      if (tab === 'overview') await loadCore();
+      if (tab === 'teachers') await loadTeachersTab();
+      if (tab === 'system') await loadHealth();
       if (tab === 'messages') await loadMessages();
-      if (tab === 'courses') await loadCourses();
+      if (tab === 'courses') await Promise.all([loadApprovedTeachers().catch(() => {}), loadCourses()]);
       if (tab === 'blog') await loadBlog();
       if (tab === 'withdrawals') await loadWithdrawals();
       if (tab === 'growth') await loadGrowth();
@@ -246,11 +332,11 @@ export default function AdminDashboard() {
     } catch (e) {
       const message = e.message || tt.loadFailed;
       setTabError(message);
-      toast.error(message);
+      toastRef.current.error(message);
     } finally {
       setLoading(false);
     }
-  }, [tab, loadCore, loadMessages, loadCourses, loadBlog, loadWithdrawals, loadGrowth, loadAudit, toast, tt.loadFailed]);
+  }, [tab, loadCore, loadTeachersTab, loadHealth, loadApprovedTeachers, loadMessages, loadCourses, loadBlog, loadWithdrawals, loadGrowth, loadAudit, tt.loadFailed]);
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
 
@@ -265,9 +351,16 @@ export default function AdminDashboard() {
     if (!ready || !['overview', 'teachers'].includes(tab)) return undefined;
 
     const refreshQueue = () => {
-      if (document.visibilityState === 'visible') {
-        loadPendingTeachers().catch(() => {});
+      const now = Date.now();
+      if (
+        document.visibilityState !== 'visible'
+        || pendingRefreshInFlightRef.current
+        || now < pendingRateLimitedUntilRef.current
+        || now - lastPendingRefreshAtRef.current < 10000
+      ) {
+        return;
       }
+      loadPendingTeachers({ silent: true }).catch(() => {});
     };
 
     const interval = window.setInterval(refreshQueue, 12000);
@@ -289,7 +382,7 @@ export default function AdminDashboard() {
 
     const onRealtimeNotification = (event) => {
       const actionUrl = String(event?.detail?.data?.actionUrl || '');
-      if (actionUrl.includes('tab=teachers')) loadPendingTeachers().catch(() => {});
+      if (actionUrl.includes('tab=teachers')) loadPendingTeachers({ silent: true }).catch(() => {});
       if (actionUrl.includes('tab=withdrawals')) loadWithdrawals().catch(() => {});
     };
 
@@ -794,7 +887,7 @@ export default function AdminDashboard() {
               <Skeleton className="h-44 w-full" />
             </div>
           </div>
-        ) : tabError && !['overview', 'people', 'sessions'].includes(tab) ? (
+        ) : tabError && !['overview', 'people', 'sessions', 'teachers'].includes(tab) ? (
           <div
             role="alert"
             className="wn-dashboard-surface border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] flex flex-wrap items-center justify-between gap-3"
@@ -927,6 +1020,26 @@ export default function AdminDashboard() {
 
             {tab === 'teachers' && (
               <div className="space-y-6">
+                {tabError ? (
+                  <div
+                    role="alert"
+                    className="wn-dashboard-surface border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <span className="inline-flex items-center gap-2 font-semibold text-sm">
+                      <AlertTriangle size={18} aria-hidden="true" />
+                      <span>{tabError}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={load}
+                      className="min-h-[44px] px-4 py-2 rounded-lg bg-[var(--wn-surface)] text-[var(--wn-text-primary)] border border-[var(--wn-border-strong)] text-sm font-semibold inline-flex items-center gap-1.5"
+                    >
+                      <RefreshCw size={14} aria-hidden="true" />
+                      <span>{te.retry}</span>
+                    </button>
+                  </div>
+                ) : null}
+
                 {pendingProfileChanges.length > 0 && (
                   <section className="wn-dashboard-surface border-[var(--wn-status-warn-border)] bg-[var(--wn-status-warn-bg)]">
                     <div className="flex items-start justify-between gap-3 mb-4">

@@ -40,7 +40,7 @@ function extractActorKey(req) {
 
 const userRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: Number(process.env.USER_RATE_LIMIT_MAX || 300),
+  max: Number(process.env.USER_RATE_LIMIT_MAX || 600),
   keyGenerator: (req) => extractActorKey(req),
   skip: (req) => req.path === '/health' || req.path === '/readiness' || req.path === '/launch-readiness',
   message: {

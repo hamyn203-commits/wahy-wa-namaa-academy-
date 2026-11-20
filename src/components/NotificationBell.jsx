@@ -38,8 +38,11 @@ export default function NotificationBell() {
   const knownNotificationIds = useRef(new Set());
   const initializedNotifications = useRef(false);
   const realtimeRoomRef = useRef(null);
+  const realtimeConnectedRef = useRef(false);
   const fetching = useRef(false);
   const refreshPending = useRef(false);
+  const lastFetchAtRef = useRef(0);
+  const rateLimitedUntilRef = useRef(0);
   const fetchNotificationsRef = useRef(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -47,12 +50,16 @@ export default function NotificationBell() {
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now < rateLimitedUntilRef.current) return;
     if (fetching.current) { refreshPending.current = true; return; }
     fetching.current = true;
     try {
       if (!api.getToken()) return;
       const data = await api.get('/api/notifications?limit=10', { auth: true });
+      lastFetchAtRef.current = Date.now();
+      rateLimitedUntilRef.current = 0;
       const nextNotifications = data.notifications || [];
 
       if (!initializedNotifications.current) {
@@ -79,6 +86,9 @@ export default function NotificationBell() {
       setNotifications(nextNotifications);
       setUnreadCount(data.unreadCount || 0);
     } catch (error) {
+      if (error?.status === 429) {
+        rateLimitedUntilRef.current = Date.now() + 60000;
+      }
       console.error('Error fetching notifications:', error);
     } finally {
       fetching.current = false;
@@ -132,7 +142,9 @@ export default function NotificationBell() {
         });
 
         await room.connect(connection.url, connection.token, { autoSubscribe: false });
+        if (!disposed) realtimeConnectedRef.current = true;
       } catch (error) {
+        realtimeConnectedRef.current = false;
         console.warn('Realtime notifications unavailable; using polling fallback:', error?.message || error);
       }
     };
@@ -141,23 +153,33 @@ export default function NotificationBell() {
 
     // Fallback only. Normal updates arrive instantly through LiveKit.
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchNotifications();
-    }, 10000);
+      if (document.visibilityState !== 'visible') return;
+      const minGap = realtimeConnectedRef.current ? 45000 : 15000;
+      if (Date.now() - lastFetchAtRef.current < minGap) return;
+      fetchNotifications();
+    }, 15000);
 
-    const onFocus = () => fetchNotifications();
+    const onFocus = () => {
+      if (Date.now() - lastFetchAtRef.current < 8000) return;
+      fetchNotifications();
+    };
+    const onNotificationsChanged = () => fetchNotifications({ force: true });
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') fetchNotifications();
+      if (document.visibilityState === 'visible' && Date.now() - lastFetchAtRef.current >= 8000) {
+        fetchNotifications();
+      }
     };
 
     window.addEventListener('focus', onFocus);
-    window.addEventListener('wn:notifications-changed', onFocus);
+    window.addEventListener('wn:notifications-changed', onNotificationsChanged);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       disposed = true;
+      realtimeConnectedRef.current = false;
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
-      window.removeEventListener('wn:notifications-changed', onFocus);
+      window.removeEventListener('wn:notifications-changed', onNotificationsChanged);
       document.removeEventListener('visibilitychange', onVisibility);
       realtimeRoomRef.current?.disconnect?.();
       realtimeRoomRef.current = null;

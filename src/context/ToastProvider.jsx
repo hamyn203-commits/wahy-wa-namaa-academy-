@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useI18n } from '../i18n';
@@ -78,7 +78,23 @@ export function ToastProvider({ children }) {
       ...toast
     };
 
-    setToasts(prev => [...prev, newToast]);
+    setToasts((prev) => {
+      const hasDuplicate = prev.some(
+        (item) => item.type === newToast.type
+          && item.message === newToast.message
+          && item.title === newToast.title
+      );
+      if (hasDuplicate) {
+        return prev.map((item) => (
+          item.type === newToast.type
+          && item.message === newToast.message
+          && item.title === newToast.title
+            ? newToast
+            : item
+        ));
+      }
+      return [...prev, newToast];
+    });
 
     if (newToast.duration > 0) {
       const timer = setTimeout(() => {
@@ -121,7 +137,7 @@ export function ToastProvider({ children }) {
     };
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     addToast,
     removeToast,
     success,
@@ -129,7 +145,7 @@ export function ToastProvider({ children }) {
     warning,
     info,
     clearAll
-  };
+  }), [addToast, removeToast, success, error, warning, info, clearAll]);
 
   return (
     <ToastContext.Provider value={value}>
