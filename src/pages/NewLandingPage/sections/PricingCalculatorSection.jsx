@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useI18n } from '../../../i18n';
 import { useMarket } from '../../../context/MarketProvider';
-import { formatLocalEquivalent, formatRegionalMoney } from '../../../lib/regionalPricing';
+import {
+  formatLocalEquivalent,
+  formatRegionalMoney,
+  usdLocalEquivalentNote,
+} from '../../../lib/regionalPricing';
 import {
   Calculator,
   Users,
@@ -316,6 +320,11 @@ export default function PricingCalculatorSection() {
                   {totalLocalHint ? <em> ({totalLocalHint})</em> : null}
                 </strong>
               </div>
+              {billingCurrency === 'USD' ? (
+                <div className="wn-calc-summary__row">
+                  <span>{usdLocalEquivalentNote(isRTL)}</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="wn-calc-summary__specs">

@@ -19,6 +19,7 @@ import {
   formatLocalEquivalent,
   formatMajorNumber,
   formatRegionalMoney,
+  usdLocalEquivalentNote,
 } from '../../lib/regionalPricing';
 import './plans.css';
 
@@ -707,9 +708,13 @@ export default function PlansPage() {
                 <span><Clock3 size={18} aria-hidden="true" /> {copy.proof3}</span>
                 <span className="wn-plans-region-pill">
                   <Globe size={16} aria-hidden="true" />
-                  {isRTL
-                    ? `تسعير منطقتك: ${regionLabelText} (${billingCurrency})`
-                    : `Regional pricing: ${regionLabelText} (${billingCurrency})`}
+                  {billingCurrency === 'USD'
+                    ? (isRTL
+                      ? `تسعير ${regionLabelText}: ${usdLocalEquivalentNote(true)}`
+                      : `${regionLabelText}: ${usdLocalEquivalentNote(false)}`)
+                    : (isRTL
+                      ? `تسعير منطقتك: ${regionLabelText} (${billingCurrency})`
+                      : `Regional pricing: ${regionLabelText} (${billingCurrency})`)}
                 </span>
               </div>
             </div>
@@ -894,6 +899,12 @@ export default function PlansPage() {
               <span>{copy.catalogKicker}</span>
               <h2>{copy.catalogTitle}</h2>
               <p>{copy.catalogDesc}</p>
+              {billingCurrency === 'USD' ? (
+                <div className="wn-plans-usd-note" role="note">
+                  <Globe size={15} aria-hidden="true" />
+                  <span>{usdLocalEquivalentNote(isRTL)}</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="wn-plans-grid">

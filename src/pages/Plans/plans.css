@@ -1081,3 +1081,17 @@
   font-weight: 500;
   color: var(--wn-text-tertiary);
 }
+
+.wn-plans-usd-note {
+  margin-top: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--wn-radius-pill);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 42%, var(--wn-border));
+  background: var(--wn-gold-soft);
+  color: var(--wn-badge-gold-text);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+}

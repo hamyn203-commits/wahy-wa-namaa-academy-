@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { resolveIntlLocale } from '../../lib/locale';
+import { usdLocalEquivalentNote } from '../../lib/regionalPricing';
 
 function textValue(value, locale) {
   if (typeof value === 'string') return value;
@@ -348,6 +349,11 @@ export default function ManualPayment() {
                   <p className="text-2xl font-bold text-[var(--wn-emerald-dark)]">
                     {formattedAmount} {currency}
                   </p>
+                  {currency === 'USD' ? (
+                    <p className="mt-1 text-xs font-semibold text-[var(--wn-emerald-dark)]">
+                      {usdLocalEquivalentNote(dir === 'rtl')}
+                    </p>
+                  ) : null}
                   {isSubscription ? (
                     <div className="mt-2 text-xs text-[var(--wn-text-secondary)] space-y-1">
                       <p>{mp.sectionLabel}: <strong>{sectionLabel}</strong></p>

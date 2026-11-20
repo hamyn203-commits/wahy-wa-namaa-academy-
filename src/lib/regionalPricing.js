@@ -46,6 +46,12 @@ export function currencyLabelsFor(currency = 'EGP', isRTL = true) {
     : { long: 'EGP', short: 'EGP' };
 }
 
+export function usdLocalEquivalentNote(isRTL = true) {
+  return isRTL
+    ? 'السعر بالدولار الأمريكي أو ما يعادله بالعملة المحلية'
+    : 'Price is in USD or its equivalent in your local currency';
+}
+
 export function formatLocalEquivalent(minorUnits, currency, hint, isRTL = true) {
   if (currency !== 'USD' || !hint || !hint.ratePerUsd) return '';
   const usd = Number(minorUnits || 0) / 100;
