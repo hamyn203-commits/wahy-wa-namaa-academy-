@@ -1,5 +1,5 @@
-const CACHE_NAME = 'wahy-wa-namaa-v3';
-const RUNTIME_CACHE = 'wahy-wa-namaa-runtime-v2';
+const CACHE_NAME = 'wahy-wa-namaa-v4';
+const RUNTIME_CACHE = 'wahy-wa-namaa-runtime-v3';
 
 const PRECACHE_URLS = [
   '/manifest.json',
@@ -33,10 +33,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   if (url.origin === location.origin) {
-    // Never intercept API or hashed build asset requests in the Service Worker.
-    // Letting the browser handle them directly prevents stale chunk mismatches
-    // and Service Worker fetch rejections ("Failed to fetch").
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/') || url.pathname.startsWith('/assets/')) {
+    // Never intercept API, uploads, hashed build assets, or /images/ in the Service Worker.
+    // Letting Vercel CDN + browser handle them prevents stale chunk mismatches and frozen images.
+    if (
+      url.pathname.startsWith('/api/')
+      || url.pathname.startsWith('/uploads/')
+      || url.pathname.startsWith('/assets/')
+      || url.pathname.startsWith('/images/')
+    ) {
       return;
     }
     if (event.request.mode === 'navigate' || event.request.destination === 'document') {
