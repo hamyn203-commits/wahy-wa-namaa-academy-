@@ -1,5 +1,5 @@
 import {
-  ArrowDown, BookOpen, CalendarClock, CreditCard, FileText, GraduationCap, History,
+  Activity, ArrowDown, BookOpen, CalendarClock, CreditCard, FileText, GraduationCap, History,
   Home, LogOut, Mail, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
   Settings, ShieldCheck, TrendingUp, Users, WalletCards, X, Sparkles, UserRoundCheck,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { dashboardPathForRole } from '../../lib/navigation';
 
 const NAV_ITEMS = [
   { id: 'overview', icon: Home },
+  { id: 'analytics', icon: Activity },
   { id: 'teachers', icon: GraduationCap },
   { id: 'people', icon: Users },
   { id: 'sessions', icon: CalendarClock },
@@ -60,8 +61,11 @@ export default function AdminDashboardShell({
   const roleHome = dashboardPathForRole('admin', locale);
   const firstName = user?.name?.trim().split(/\s+/)[0] || sh.adminFallbackName;
   const navItems = useMemo(
-    () => NAV_ITEMS.map((item) => ({ ...item, label: sh.nav?.[item.id] || item.id })),
-    [sh.nav]
+    () => NAV_ITEMS.map((item) => ({
+      ...item,
+      label: sh.nav?.[item.id] || (item.id === 'analytics' ? (isRTL ? 'الزيارات والتتبع' : 'Traffic & Funnel') : item.id),
+    })),
+    [sh.nav, isRTL]
   );
   const activeSectionTitle = navItems.find((item) => item.id === active)?.label
     || (active === 'system' ? sh.systemSectionTitle : sh.defaultSectionTitle);

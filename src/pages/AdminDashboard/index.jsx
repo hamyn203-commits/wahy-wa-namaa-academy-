@@ -17,6 +17,7 @@ import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import { localizeInternalHref } from '../../lib/navigation';
 import { formatMsg } from './adminFormat';
 import AdminAuditTab from './AdminAuditTab';
+import AdminAnalyticsTab from './AdminAnalyticsTab';
 import AdminBlogTab from './AdminBlogTab';
 import AdminCoursesTab from './AdminCoursesTab';
 import AdminDashboardShell from './AdminDashboardShell';
@@ -35,7 +36,7 @@ import TeacherReviewDossier from './TeacherReviewDossier';
 import TeacherReviewQueue from './TeacherReviewQueue';
 
 const ALLOWED_TABS = [
-  'overview', 'people', 'sessions', 'system',
+  'overview', 'analytics', 'people', 'sessions', 'system',
   'messages', 'teachers', 'withdrawals', 'courses', 'blog', 'growth', 'audit',
 ];
 
@@ -826,6 +827,8 @@ export default function AdminDashboard() {
                 onSelectTab={selectAdminTab}
               />
             )}
+
+            {tab === 'analytics' && <AdminAnalyticsTab />}
 
             {tab === 'people' && (
               <>

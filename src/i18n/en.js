@@ -2888,6 +2888,7 @@ export default {
         withdrawals: 'Payouts & Finance',
         courses: 'Courses & Content',
         messages: 'Support & Messages',
+        analytics: 'Traffic & Funnel',
         growth: 'Analytics & Growth',
         blog: 'Blog',
         audit: 'Audit Log',

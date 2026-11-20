@@ -12,6 +12,7 @@ const PwaInstallPrompt = lazy(() => import('./components/PwaInstallPrompt'));
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import { StudentPublicRedirect, StudentShell } from './components/StudentArea';
+import PageVisitTracker from './components/PageVisitTracker';
 
 const LandingPage = lazy(() => import('./pages/NewLandingPage'));
 const StudentJourney = lazy(() => import('./pages/StudentJourney'));
@@ -181,6 +182,7 @@ export default function App() {
           <AuthProvider>
             <ToastProvider>
               <Router>
+                <PageVisitTracker />
                 <AppContent />
                 <Suspense fallback={null}><QuranChatWidget /></Suspense>
                 <Suspense fallback={null}><PwaInstallPrompt /></Suspense>

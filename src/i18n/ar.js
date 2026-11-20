@@ -2888,6 +2888,7 @@ export default {
         withdrawals: 'السحوبات والمالية',
         courses: 'الدورات والمحتوى',
         messages: 'الدعم والرسائل',
+        analytics: 'الزيارات والتتبع',
         growth: 'التحليلات والنمو',
         blog: 'المدونة',
         audit: 'سجل الإدارة',

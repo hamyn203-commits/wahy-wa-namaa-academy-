@@ -160,6 +160,17 @@ const aiLimiter = rateLimit({
   validate: false,
 });
 
+const analyticsIngestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.ANALYTICS_INGEST_RATE_LIMIT_MAX || 120),
+  keyGenerator: (req) => `analytics:${resolveClientIp(req)}`,
+  message: { error: 'Too many analytics events.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  skip: (req) => req.method !== 'POST',
+});
+
 if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/', generalLimiter);
   app.use('/api/', userRateLimiter);
@@ -176,6 +187,7 @@ if (process.env.DISABLE_RATE_LIMIT !== 'true') {
   app.use('/api/contact', publicSubmissionLimiter);
   app.use('/api/careers/apply', publicSubmissionLimiter);
   app.use('/api/donations', publicSubmissionLimiter);
+  app.use('/api/analytics', analyticsIngestLimiter);
   app.use('/api/ai', aiLimiter);
   app.use('/api/translate', aiLimiter);
 }
@@ -488,6 +500,7 @@ app.use('/api/circles', require('./routes/circles'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/trials', require('./routes/trials'));
 app.use('/api/finance', require('./routes/finance'));
+app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/cron', require('./routes/cron'));
 
 app.use((_req, res) => {

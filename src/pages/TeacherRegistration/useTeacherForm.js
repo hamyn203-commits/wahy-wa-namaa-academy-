@@ -7,6 +7,7 @@ import { uploadFileDirect } from '../../lib/fileUpload';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { uploadTeacherFiles } from '../../lib/teacherUploadQueue.mjs';
 import { getAccessToken, refreshAccessToken } from '../../lib/authSession';
+import { trackTeacherFunnel, resetTeacherFunnelSessionId } from '../../lib/analytics';
 
 const emptyFiles = () => ({
   profilePhoto: null,
@@ -119,7 +120,7 @@ function validateTeacherFiles(files, tr) {
 
 export function useTeacherForm() {
   const toast = useToast();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const tr = t?.teacherRegistration || {};
   const { user } = useAuth();
   const authenticatedTeacher = user?.role === 'teacher';
@@ -265,6 +266,99 @@ export function useTeacherForm() {
     return () => clearTimeout(timer);
   }, [saveDraft]);
 
+  const countTouchedFields = useCallback((fd, emailValue) => {
+    const p = fd?.personalInfo || {};
+    const a = fd?.academicInfo || {};
+    const fields = [
+      p.fullName,
+      p.age,
+      p.gender,
+      p.address,
+      p.phone,
+      p.whatsapp,
+      a.university,
+      a.graduationYear,
+      emailValue,
+    ];
+    return fields.filter((val) => String(val ?? '').trim().length > 0).length;
+  }, []);
+
+  const countSelectedFiles = useCallback((fObj) => {
+    if (!fObj) return 0;
+    let total = 0;
+    for (const val of Object.values(fObj)) {
+      if (Array.isArray(val)) total += val.length;
+      else if (val) total += 1;
+    }
+    return total;
+  }, []);
+
+  const buildFunnelPayload = useCallback((event, overrides = {}) => {
+    const p = formData?.personalInfo || {};
+    const emailVal = normalizeEmail(authenticatedTeacher ? user?.email : credentials.email);
+    return {
+      event,
+      step: overrides.step ?? step,
+      touchedFieldsCount: countTouchedFields(formData, emailVal),
+      filesSelectedCount: countSelectedFiles(files),
+      emailVerified: Boolean(overrides.emailVerified ?? emailVerified),
+      fullName: String(p.fullName || '').trim(),
+      email: emailVal,
+      phone: String(p.phone || '').trim(),
+      whatsapp: String(p.whatsapp || '').trim(),
+      country: String(p.country || '').trim(),
+      gender: ['male', 'female'].includes(p.gender) ? p.gender : '',
+      locale,
+      lastError: overrides.lastError || '',
+    };
+  }, [
+    authenticatedTeacher,
+    countSelectedFiles,
+    countTouchedFields,
+    credentials.email,
+    emailVerified,
+    files,
+    formData,
+    locale,
+    step,
+    user?.email,
+  ]);
+
+  const funnelOpenedRef = useRef(false);
+  const lastTrackedStepRef = useRef(1);
+  const lastTrackedFilesRef = useRef(0);
+
+  useEffect(() => {
+    if (funnelOpenedRef.current || submitted) return;
+    funnelOpenedRef.current = true;
+    trackTeacherFunnel(buildFunnelPayload('page_open', { step: 1 }));
+  }, [buildFunnelPayload, submitted]);
+
+  useEffect(() => {
+    if (submitted) return undefined;
+    const touched = countTouchedFields(formData, credentials.email);
+    if (touched === 0 && step === 1) return undefined;
+    const timer = window.setTimeout(() => {
+      trackTeacherFunnel(buildFunnelPayload(step > 1 ? `step_${step}` : 'form_started'));
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [buildFunnelPayload, countTouchedFields, credentials.email, formData, step, submitted]);
+
+  useEffect(() => {
+    if (submitted || step === lastTrackedStepRef.current) return;
+    lastTrackedStepRef.current = step;
+    trackTeacherFunnel(buildFunnelPayload(`step_${step}`, { step }));
+  }, [buildFunnelPayload, step, submitted]);
+
+  useEffect(() => {
+    if (submitted) return;
+    const fileCount = countSelectedFiles(files);
+    if (fileCount > 0 && fileCount !== lastTrackedFilesRef.current) {
+      lastTrackedFilesRef.current = fileCount;
+      trackTeacherFunnel(buildFunnelPayload('files_selected'));
+    }
+  }, [buildFunnelPayload, countSelectedFiles, files, submitted]);
+
   const update = (section, field, value) => {
     setFieldError('');
     setFormData((p) => ({ ...p, [section]: { ...p[section], [field]: value } }));
@@ -304,6 +398,10 @@ export function useTeacherForm() {
     try {
       sessionStorage.removeItem(STATUS_TOKEN_KEY);
     } catch { /* ignore */ }
+    resetTeacherFunnelSessionId();
+    funnelOpenedRef.current = false;
+    lastTrackedStepRef.current = 1;
+    lastTrackedFilesRef.current = 0;
     setSubmitted(false);
     setApplicationStatusToken('');
     setStep(1);
@@ -339,6 +437,7 @@ export function useTeacherForm() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
       setIsCodeSent(true);
+      trackTeacherFunnel(buildFunnelPayload('otp_sent', { step: 2 }));
       toast.success(tr.toasts?.codeSentSuccess || 'تم إرسال كود التحقق إلى بريدك الإلكتروني');
     } catch (e) {
       toast.error(e.message || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
@@ -374,6 +473,7 @@ export function useTeacherForm() {
       setEmailVerified(true);
       setVerifiedEmail(email);
       setVerificationToken(data.verificationToken);
+      trackTeacherFunnel(buildFunnelPayload('email_verified', { step: 3, emailVerified: true }));
       toast.success(tr.toasts?.emailVerifiedSuccess || 'تم تأكيد البريد الإلكتروني');
       setStep(3);
     } catch (e) {
@@ -583,12 +683,14 @@ export function useTeacherForm() {
         }
       } catch { /* ignore */ }
       completedUploads.current.files.clear();
+      trackTeacherFunnel(buildFunnelPayload('submitted', { step: 5, emailVerified: true }));
       setSubmitted(true);
       toast.success(tr.toasts?.submitSuccess || 'تم إرسال طلبك بنجاح!');
     } catch (e) {
       const message = saveTimedOut || /failed to fetch|network|load failed/i.test(e.message || '')
         ? (tr.toasts?.timeoutAfterUpload || 'اكتمل رفع الملفات لكن تعذر تأكيد حفظ الطلب. تحقق من حالة الطلب مع الإدارة قبل إعادة الإرسال.')
         : e.message;
+      trackTeacherFunnel(buildFunnelPayload('submit_error', { lastError: String(message || '').slice(0, 140) }));
       setFieldError(message);
       toast.error(message);
     } finally {
