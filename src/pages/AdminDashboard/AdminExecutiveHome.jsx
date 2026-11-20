@@ -42,11 +42,13 @@ function OverviewMetric({ icon: Icon, label, value, note, tone = 'emerald', badg
       className={`wn-admin-exec-metric is-${tone} ${onClick ? 'is-clickable' : ''}`}
     >
       <div className="wn-admin-exec-metric__top">
+        <div className="wn-admin-exec-metric__title-row">
+          <span>{label}</span>
+          {badge ? <span className="wn-admin-exec-metric__badge">{badge}</span> : null}
+        </div>
         <span className="wn-admin-exec-metric__icon"><Icon size={19} aria-hidden="true" /></span>
-        {badge ? <span className="wn-admin-exec-metric__badge">{badge}</span> : null}
       </div>
       <div className="wn-admin-exec-metric__body">
-        <span>{label}</span>
         <strong>{value}</strong>
         <small>{note}</small>
       </div>

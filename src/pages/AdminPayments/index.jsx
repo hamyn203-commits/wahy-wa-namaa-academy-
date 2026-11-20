@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Eye, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import DashboardLayout from '../../components/dashboard/DashboardLayout';
+import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
 import EmptyState from '../../components/shared/EmptyState';
 import Modal from '../../components/shared/Modal';
 import SEOHead from '../../components/SEOHead';
@@ -9,7 +9,7 @@ import Skeleton from '../../components/shared/Skeleton';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
-import { resolveIntlLocale } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import api from '../../lib/api';
 
 function formatMsg(template, vars = {}) {
@@ -143,8 +143,23 @@ export default function AdminPayments() {
 
   const isRejecting = Boolean(rejectModal && working === rejectModal.payment.id);
 
+  const handleTabChange = (nextTab) => {
+    navigate(`${localizedPath('/admin', locale)}?tab=${encodeURIComponent(nextTab)}`);
+  };
+  const handleAdminRoute = (route) => {
+    if (route === 'payments') return;
+    navigate(localizedPath(`/admin/${route}`, locale));
+  };
+
   return (
-    <DashboardLayout title={pa.title} user={user} onLogout={logout}>
+    <AdminDashboardShell
+      user={user}
+      active="payments"
+      pageTitle={pa.title}
+      onChange={handleTabChange}
+      onNavigate={handleAdminRoute}
+      onLogout={logout}
+    >
       <SEOHead page={{ title: pa.seoTitle, description: pa.seoDesc, noindex: true, canonical: false }} />
       <div className="wn-admin-payment-readable">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
@@ -385,7 +400,7 @@ export default function AdminPayments() {
           </div>
         ) : null}
       </Modal>
-    </DashboardLayout>
+    </AdminDashboardShell>
   );
 }
 

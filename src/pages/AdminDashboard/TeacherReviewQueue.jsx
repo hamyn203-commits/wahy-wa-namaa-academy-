@@ -16,28 +16,48 @@ export default function TeacherReviewQueue({
   const rq = t.adminPortal.dossiers.reviewQueue;
   const intlLocale = resolveIntlLocale(locale);
 
+  const Wrapper = compact ? 'div' : 'section';
+  const wrapperClass = compact ? 'wn-admin-review-queue--compact' : 'wn-dashboard-surface';
+
   return (
-    <section className="wn-dashboard-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h3 className="font-bold text-[var(--wn-heading)]">{formatMsg(rq.title, { count: teachers.length })}</h3>
-          <p className="text-xs text-[var(--wn-text-secondary)] mt-1">{rq.subtitle}</p>
+    <Wrapper className={wrapperClass}>
+      {compact ? (
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <span className="text-xs font-bold text-[var(--wn-text-secondary)]">
+            {formatMsg(rq.title, { count: teachers.length })}
+          </span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 min-h-[36px] rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] px-2.5 py-1.5 text-xs font-bold text-[var(--wn-heading)] hover:bg-[var(--wn-emerald-soft)] hover:border-[var(--wn-emerald)] disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            {rq.refresh}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="inline-flex items-center gap-2 min-h-[44px] rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-3 py-2 text-xs font-bold text-[var(--wn-heading)] hover:bg-[var(--wn-surface-soft)] disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-          {rq.refresh}
-        </button>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-bold text-[var(--wn-heading)]">{formatMsg(rq.title, { count: teachers.length })}</h3>
+            <p className="text-xs text-[var(--wn-text-secondary)] mt-1">{rq.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="inline-flex items-center gap-2 min-h-[44px] rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-3 py-2 text-xs font-bold text-[var(--wn-heading)] hover:bg-[var(--wn-surface-soft)] disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            {rq.refresh}
+          </button>
+        </div>
+      )}
 
       {loading && teachers.length === 0 ? (
-        <div className="space-y-3" role="status" aria-label={t.adminPortal.common.loading}>
-          <Skeleton className="h-24 w-full rounded-xl" />
-          <Skeleton className="h-24 w-full rounded-xl" />
+        <div className="space-y-2.5" role="status" aria-label={t.adminPortal.common.loading}>
+          <Skeleton className={compact ? 'h-16 w-full rounded-xl' : 'h-24 w-full rounded-xl'} />
+          <Skeleton className={compact ? 'h-16 w-full rounded-xl' : 'h-24 w-full rounded-xl'} />
         </div>
       ) : teachers.length === 0 ? (
         <EmptyState icon={ShieldCheck} title={rq.emptyTitle} description={rq.emptyDesc} />
@@ -90,6 +110,6 @@ export default function TeacherReviewQueue({
           ))}
         </div>
       )}
-    </section>
+    </Wrapper>
   );
 }

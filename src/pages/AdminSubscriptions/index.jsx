@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Plus, RefreshCw, UsersRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import DashboardLayout from '../../components/dashboard/DashboardLayout';
+import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
 import EmptyState from '../../components/shared/EmptyState';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
+import { localizedPath } from '../../lib/locale';
 import api from '../../lib/api';
 import SubscriptionCircleCard from './SubscriptionCircleCard';
 
@@ -202,8 +203,23 @@ export default function AdminSubscriptions() {
 
   if (!ready) return null;
 
+  const handleTabChange = (nextTab) => {
+    navigate(`${localizedPath('/admin', locale)}?tab=${encodeURIComponent(nextTab)}`);
+  };
+  const handleAdminRoute = (route) => {
+    if (route === 'subscriptions') return;
+    navigate(localizedPath(`/admin/${route}`, locale));
+  };
+
   return (
-    <DashboardLayout title={ps.title} user={user} onLogout={logout}>
+    <AdminDashboardShell
+      user={user}
+      active="subscriptions"
+      pageTitle={ps.title}
+      onChange={handleTabChange}
+      onNavigate={handleAdminRoute}
+      onLogout={logout}
+    >
       <SEOHead page={{ title: ps.seoTitle, description: ps.seoDesc, noindex: true, canonical: false }} />
       <div className="space-y-5" dir={dir}>
         <div className="flex flex-wrap justify-between gap-3">
@@ -593,7 +609,7 @@ export default function AdminSubscriptions() {
         )}
         <p className="text-xs text-[var(--wn-text-tertiary)]">{ps.footerNote}</p>
       </div>
-    </DashboardLayout>
+    </AdminDashboardShell>
   );
 }
 

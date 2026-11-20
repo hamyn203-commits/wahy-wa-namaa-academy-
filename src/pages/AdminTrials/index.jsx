@@ -3,7 +3,7 @@ import {
   AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, Loader2, Phone, RefreshCw, UserCheck, XCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import DashboardLayout from '../../components/dashboard/DashboardLayout';
+import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
 import EmptyState from '../../components/shared/EmptyState';
 import Modal from '../../components/shared/Modal';
 import SEOHead from '../../components/SEOHead';
@@ -11,7 +11,7 @@ import Skeleton from '../../components/shared/Skeleton';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
-import { resolveIntlLocale } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import api from '../../lib/api';
 
 function formatMsg(template, vars = {}) {
@@ -212,8 +212,23 @@ export default function AdminTrials() {
   const isCancelling = Boolean(cancelModal && working === cancelModal.trial._id);
   const isMarkingNoShow = Boolean(noShowModal && working === noShowModal._id);
 
+  const handleTabChange = (nextTab) => {
+    navigate(`${localizedPath('/admin', locale)}?tab=${encodeURIComponent(nextTab)}`);
+  };
+  const handleAdminRoute = (route) => {
+    if (route === 'trials') return;
+    navigate(localizedPath(`/admin/${route}`, locale));
+  };
+
   return (
-    <DashboardLayout title={pt.title} user={user} onLogout={logout}>
+    <AdminDashboardShell
+      user={user}
+      active="trials"
+      pageTitle={pt.title}
+      onChange={handleTabChange}
+      onNavigate={handleAdminRoute}
+      onLogout={logout}
+    >
       <SEOHead page={{ title: pt.seoTitle, description: pt.seoDesc, noindex: true, canonical: false }} />
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
         <button type="button" onClick={() => navigate('..', { relative: 'path' })} className="wn-btn wn-btn--secondary min-h-[44px]">
@@ -471,6 +486,6 @@ export default function AdminTrials() {
           </div>
         ) : null}
       </Modal>
-    </DashboardLayout>
+    </AdminDashboardShell>
   );
 }

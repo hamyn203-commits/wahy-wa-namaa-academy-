@@ -6,9 +6,11 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../../components/BrandLogo';
 import NotificationBell from '../../components/NotificationBell';
+import ThemeToggle from '../../components/shared/ThemeToggle';
 import { useI18n } from '../../i18n';
 import { resolveIntlLocale } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
+import '../../styles/dashboard-experience.css';
 
 const NAV_GROUPS = [
   {
@@ -63,6 +65,7 @@ export default function AdminDashboardShell({
   onNavigate,
   onLogout,
   search,
+  pageTitle = '',
   badges = {},
   statusSummary = null,
   children,
@@ -110,7 +113,8 @@ export default function AdminDashboardShell({
     [navGroups]
   );
 
-  const activeSectionTitle = flatNavItems.find((item) => item.id === active)?.label
+  const activeSectionTitle = pageTitle
+    || flatNavItems.find((item) => item.id === active)?.label
     || (active === 'system' ? sh.systemSectionTitle : sh.defaultSectionTitle);
 
   const today = useMemo(() => new Intl.DateTimeFormat(intlLocale, {
@@ -193,7 +197,7 @@ export default function AdminDashboardShell({
               <div className="wn-admin-sidebar__group-items">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const selected = !item.route && active === item.id;
+                  const selected = active === item.id;
                   const count = Number(badges?.[item.id] || 0);
                   return (
                     <button
@@ -234,8 +238,15 @@ export default function AdminDashboardShell({
 
       <div className="wn-admin-stage">
         <header className="wn-admin-topbar">
-          <div className="wn-admin-topbar__search">{search}</div>
+          <div className="wn-admin-topbar__search">
+            {search || (
+              <span className="wn-admin-topbar__crumb">
+                {sh.pageHeadingBrand} · <strong>{activeSectionTitle}</strong>
+              </span>
+            )}
+          </div>
           <div className="wn-admin-topbar__actions">
+            <ThemeToggle />
             <NotificationBell />
             <span className="wn-admin-topbar__date">{today}</span>
             <span className="wn-admin-topbar__locale">{locale.toUpperCase()}</span>

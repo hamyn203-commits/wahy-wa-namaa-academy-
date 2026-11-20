@@ -10759,18 +10759,38 @@
   font-size: var(--wn-text-xs);
 }
 
-/* ── Canvas & Page Headings ─────────────────────────────────────── */
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--wn-text-sm);
+  color: var(--wn-text-secondary);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-topbar__crumb strong {
+  color: var(--wn-heading);
+  font-weight: 800;
+}
+
+/* ── Canvas & Page Headings (Full-Width Balanced across ALL tabs) ── */
 .wn-admin-app.wn-admin-calm .wn-admin-canvas {
-  max-width: var(--wn-container-wide);
-  padding: var(--wn-space-5);
+  width: 100%;
+  max-width: 112rem;
+  margin-inline: auto;
+  padding: var(--wn-space-4) var(--wn-space-5) var(--wn-space-6);
 }
 
 .wn-admin-app.wn-admin-calm .wn-admin-page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--wn-space-2);
   background: var(--wn-surface);
   border: 1px solid var(--wn-border);
   border-radius: var(--wn-radius-lg);
-  padding: var(--wn-space-4) var(--wn-space-5);
-  margin-bottom: var(--wn-space-5);
+  padding: var(--wn-space-3) var(--wn-space-5);
+  margin-bottom: var(--wn-space-4);
   box-shadow: var(--wn-shadow-xs);
 }
 
@@ -10967,6 +10987,20 @@
   gap: var(--wn-space-2);
 }
 
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-metric__title-row > span:first-child {
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  color: var(--wn-text-secondary);
+}
+
 .wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-metric__icon {
   width: 2.5rem;
   height: 2.5rem;
@@ -11033,17 +11067,23 @@
 /* ── 2-Column Calm Executive Workspace ──────────────────────────── */
 .wn-admin-app.wn-admin-calm .wn-admin-exec-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: var(--wn-space-5);
-  align-items: start;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--wn-space-4);
+  align-items: stretch;
 }
 
 .wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel {
+  display: flex;
+  flex-direction: column;
   background: var(--wn-surface);
   border: 1px solid var(--wn-border);
   border-radius: var(--wn-radius-lg);
   padding: var(--wn-space-5);
   box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-priority-list {
+  flex: 1;
 }
 
 .wn-admin-app.wn-admin-calm .wn-admin-exec-home--calm .wn-admin-exec-panel__head,
@@ -11315,4 +11355,149 @@
 
 [data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-exec-all-clear strong {
   color: var(--wn-text-primary);
+}
+
+/* ── Unified Sovereign Calm Across ALL Admin Tabs & Buttons ─────── */
+.wn-admin-app.wn-admin-calm .wn-dashboard-surface {
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-lg);
+  padding: var(--wn-space-5);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-payment-readable {
+  font-size: var(--wn-text-sm);
+  line-height: 1.6;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-payment-readable .wn-dashboard-surface {
+  padding: var(--wn-space-4) var(--wn-space-5);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-session-control__hero,
+.wn-admin-app.wn-admin-calm .wn-admin-guardian-links > header,
+.wn-admin-app.wn-admin-calm .wn-admin-system-center__hero {
+  background: linear-gradient(
+    135deg,
+    var(--wn-emerald-deep) 0%,
+    var(--wn-emerald-dark) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 30%, transparent);
+  border-radius: var(--wn-radius-lg);
+  padding: var(--wn-space-5);
+  color: var(--wn-text-inverse);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-session-control__hero > div > span,
+.wn-admin-app.wn-admin-calm .wn-admin-guardian-links > header > div > span,
+.wn-admin-app.wn-admin-calm .wn-admin-system-center__hero > div > span {
+  color: var(--wn-gold);
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-session-control__hero h2,
+.wn-admin-app.wn-admin-calm .wn-admin-guardian-links > header h3,
+.wn-admin-app.wn-admin-calm .wn-admin-system-center__hero h2 {
+  color: var(--wn-text-inverse);
+  font-size: var(--wn-text-lg);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-session-control__hero p,
+.wn-admin-app.wn-admin-calm .wn-admin-guardian-links > header p,
+.wn-admin-app.wn-admin-calm .wn-admin-system-center__hero p {
+  color: color-mix(in srgb, var(--wn-text-inverse) 82%, transparent);
+  font-size: var(--wn-text-sm);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-session-control__filters button.is-active {
+  background: var(--wn-emerald);
+  border-color: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home {
+  background: var(--wn-surface);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-lg);
+  padding: var(--wn-space-5);
+  margin-top: var(--wn-space-4);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__intro h2 {
+  color: var(--wn-heading);
+  font-size: var(--wn-text-lg);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__intro p {
+  color: var(--wn-text-secondary);
+  font-size: var(--wn-text-sm);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__cards > button {
+  background: var(--wn-surface-soft);
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-md);
+  padding: var(--wn-space-4);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__cards > button:hover,
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__cards > button:focus-visible {
+  border-color: var(--wn-emerald);
+  background: var(--wn-emerald-soft);
+  box-shadow: var(--wn-shadow-sm);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-people-home__cards svg {
+  color: var(--wn-emerald);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-command-center__score,
+.wn-admin-app.wn-admin-calm .wn-admin-review-checklist__actions button.is-approve,
+.wn-admin-app.wn-admin-calm .wn-admin-dossier__footer .is-approve,
+.wn-admin-app.wn-admin-calm .wn-admin-homework-list > article > button {
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+}
+
+.wn-admin-app.wn-admin-calm .wn-stat-card {
+  border: 1px solid var(--wn-border);
+  border-radius: var(--wn-radius-md);
+  background: var(--wn-surface);
+  box-shadow: var(--wn-shadow-xs);
+}
+
+.wn-admin-app.wn-admin-calm .wn-stat-card__value {
+  color: var(--wn-heading);
+  font-size: var(--wn-text-xl);
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-review-queue--compact {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.wn-admin-app.wn-admin-calm .wn-admin-review-queue--compact .wn-empty-state {
+  padding: var(--wn-space-5) var(--wn-space-3);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-dashboard-surface,
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-people-home,
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-page-heading {
+  background: var(--wn-surface);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-people-home__cards > button {
+  background: var(--wn-surface-soft);
+  border-color: var(--wn-border);
+}
+
+[data-theme="dark"] .wn-admin-app.wn-admin-calm .wn-admin-people-home__cards > button:hover {
+  background: color-mix(in srgb, var(--wn-emerald) 18%, var(--wn-surface));
+  border-color: var(--wn-emerald);
 }
