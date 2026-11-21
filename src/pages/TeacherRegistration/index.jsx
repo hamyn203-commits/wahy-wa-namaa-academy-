@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Info, Lock, Mail, Eye, EyeOff, ArrowLeft, ArrowRight,
-  CheckCircle2, Clock, Shield, Video, AlertTriangle, Loader2,
+  CheckCircle2, Clock, Shield, Video, AlertTriangle, Loader2, ChevronDown, ChevronUp, RotateCcw,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -51,6 +51,7 @@ export default function TeacherRegistration() {
   const { locale, dir, isRTL, t } = useI18n();
   const tr = t?.teacherRegistration || {};
   const [showPass, setShowPass] = useState(false);
+  const [showOptionalUploads, setShowOptionalUploads] = useState(false);
   const f = useTeacherForm();
 
   const PrevIcon = isRTL ? ArrowRight : ArrowLeft;
@@ -222,6 +223,31 @@ export default function TeacherRegistration() {
           </div>
 
           <StepProgress current={f.step} />
+
+          {(f.draftSaved || f.draftRestored) && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] px-4 py-2.5 text-xs text-[var(--wn-badge-emerald-text)]">
+              <span className="inline-flex items-center gap-2 font-semibold">
+                <CheckCircle2 size={15} className="shrink-0" aria-hidden="true" />
+                <span>
+                  {f.draftRestored
+                    ? (isRTL
+                      ? 'تم استرجاع بياناتك وملفاتك المحفوظة تلقائياً — يمكنك الإكمال من حيث توقفت'
+                      : 'Your saved form data and files were restored automatically — continue where you left off')
+                    : (isRTL
+                      ? 'يتم حفظ بياناتك وملفاتك تلقائياً على جهازك — لن يضيع شيء لو انقطع الإنترنت'
+                      : 'Your progress and files are auto-saved locally — nothing is lost if the connection drops')}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={f.clearDraft}
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-2.5 py-1 text-xs font-bold text-[var(--wn-heading)] hover:bg-[var(--wn-surface-soft)]"
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+                <span>{isRTL ? 'البدء من جديد' : 'Start fresh'}</span>
+              </button>
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
             <motion.div
@@ -572,168 +598,69 @@ export default function TeacherRegistration() {
 
               {f.step === 4 && (
                 <div className="space-y-5">
-                  <FileBox
-                    id="profilePhoto"
-                    label={s4.profilePhotoLabel || 'صورة شخصية 4×6 *'}
-                    hint={s4.imageHint || 'JPG أو PNG فقط'}
-                    accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
-                    allowedMimeTypes={['image/jpeg', 'image/png']}
-                    allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
-                    maxBytes={100 * 1024 * 1024}
-                    captureKind="image"
-                    file={f.files.profilePhoto}
-                    onChange={(file) => f.setFile('profilePhoto', file)}
-                    preview={(file) => <ProfilePhotoPreview file={file} alt={s4.profilePhotoAlt || 'معاينة الصورة الشخصية'} />}
-                  />
-
-                  <div className="border-t border-[var(--wn-border)] pt-4">
-                    <p className="font-semibold text-[var(--wn-heading)] mb-1">{s4.identityTitle || 'إثبات الهوية *'}</p>
-                    <p className="text-sm text-[var(--wn-text-secondary)] mb-3">
-                      {s4.identitySubtitle || 'وجه البطاقة وظهر البطاقة مطلوبان لإكمال الطلب.'}
-                    </p>
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <FileBox
-                        id="idCardFront"
-                        label={s4.idFrontLabel || 'وجه البطاقة الشخصية *'}
-                        hint={s4.imageHint || 'JPG أو PNG فقط'}
-                        accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
-                        allowedMimeTypes={['image/jpeg', 'image/png']}
-                        allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
-                        maxBytes={25 * 1024 * 1024}
-                        captureKind="image"
-                        file={f.files.idCardFront}
-                        onChange={(file) => f.setFile('idCardFront', file)}
-                      />
-                      <FileBox
-                        id="idCardBack"
-                        label={s4.idBackLabel || 'ظهر البطاقة الشخصية *'}
-                        hint={s4.imageHint || 'JPG أو PNG فقط'}
-                        accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
-                        allowedMimeTypes={['image/jpeg', 'image/png']}
-                        allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
-                        maxBytes={25 * 1024 * 1024}
-                        captureKind="image"
-                        file={f.files.idCardBack}
-                        onChange={(file) => f.setFile('idCardBack', file)}
-                      />
+                  <div className="flex gap-2.5 p-3.5 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
+                    <Info size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <p className="font-bold">
+                        {isRTL ? 'بسّطنا التقديم: 3 ملفات أساسية فقط تكفي لإرسال طلبك!' : 'Simplified application: only 3 essential files are needed!'}
+                      </p>
+                      <p className="text-xs mt-1">
+                        {isRTL
+                          ? 'صورة شخصية + وجه البطاقة + فيديو واحد (1–3 دقائق) يجمع تعريفاً سريعاً بنفسك وتلاوة واضحة. باقي المرفقات اختيارية بالكامل.'
+                          : 'Profile photo + ID front + one short video (1–3 min) with a quick intro and clear Quran recitation. All other files are completely optional.'}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="border-t border-[var(--wn-border)] pt-4 space-y-4">
-                    <p className="font-semibold text-[var(--wn-heading)]">{s4.extraDocsTitle || 'المستندات الإضافية'}</p>
-
-                    <AvailabilityChoice
-                      label={s4.gradCertQuestion || 'هل شهادة التخرج موجودة؟'}
-                      yesLabel={s4.yesAvailable || 'موجود'}
-                      noLabel={s4.noUnavailable || 'غير موجود'}
-                      value={f.formData.documentAvailability?.graduationCertificate}
-                      onChange={(value) => {
-                        f.update('documentAvailability', 'graduationCertificate', value);
-                        if (!value) f.setFile('graduationCertificate', null);
-                      }}
-                    />
-                    {f.formData.documentAvailability?.graduationCertificate === true && (
-                      <FileBox
-                        id="gradCert"
-                        label={s4.gradCertLabel || 'شهادة التخرج *'}
-                        hint={s4.gradCertRequiredHint || 'بما أنك اخترت «موجود»، رفع الشهادة أصبح إجباريًا'}
-                        accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
-                        allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
-                        allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
-                        maxBytes={25 * 1024 * 1024}
-                        captureKind="image"
-                        file={f.files.graduationCertificate}
-                        onChange={(file) => f.setFile('graduationCertificate', file)}
-                      />
-                    )}
-
-                    <AvailabilityChoice
-                      label={s4.tajweedCertQuestion || 'هل لديك شهادات تجويد؟'}
-                      yesLabel={s4.yesAvailable || 'موجود'}
-                      noLabel={s4.noUnavailable || 'غير موجود'}
-                      value={f.formData.documentAvailability?.tajweedCertificates}
-                      onChange={(value) => {
-                        f.update('documentAvailability', 'tajweedCertificates', value);
-                        if (!value) f.setFile('tajweedCertificates', []);
-                      }}
-                    />
-                    {f.formData.documentAvailability?.tajweedCertificates === true && (
-                      <FileBox
-                        id="tajweed"
-                        label={s4.tajweedCertLabel || 'شهادات التجويد *'}
-                        hint={s4.atLeastOneHint || 'ارفع شهادة واحدة على الأقل'}
-                        accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
-                        allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
-                        allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
-                        maxBytes={25 * 1024 * 1024}
-                        multiple
-                        files={f.files.tajweedCertificates}
-                        onChange={(selectedFiles) => f.setFile('tajweedCertificates', selectedFiles)}
-                      />
-                    )}
-
-                    <AvailabilityChoice
-                      label={s4.ijazatQuestion || 'هل لديك إجازات؟'}
-                      yesLabel={s4.yesAvailable || 'موجود'}
-                      noLabel={s4.noUnavailable || 'غير موجود'}
-                      value={f.formData.documentAvailability?.ijazat}
-                      onChange={(value) => {
-                        f.update('documentAvailability', 'ijazat', value);
-                        if (!value) f.setFile('ijazat', []);
-                      }}
-                    />
-                    {f.formData.documentAvailability?.ijazat === true && (
-                      <FileBox
-                        id="ijazat"
-                        label={s4.ijazatLabel || 'الإجازات *'}
-                        hint={s4.atLeastOneHint || 'ارفع إجازة واحدة على الأقل'}
-                        accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
-                        allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
-                        allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
-                        maxBytes={25 * 1024 * 1024}
-                        multiple
-                        files={f.files.ijazat}
-                        onChange={(selectedFiles) => f.setFile('ijazat', selectedFiles)}
-                      />
-                    )}
-                  </div>
-
-                  <div className="border-t border-[var(--wn-border)] pt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Video className="text-[var(--wn-emerald)]" size={20} aria-hidden="true" />
-                      <p className="font-semibold text-[var(--wn-heading)]">{s4.introVideoTitle || 'فيديو تعريفي قصير *'}</p>
-                    </div>
-                    <p className="text-sm text-[var(--wn-text-secondary)] mb-3">
-                      {s4.introVideoDesc || 'عرّف بنفسك وخبرتك وطريقتك في التعامل مع الطلاب في فيديو واضح من 60–120 ثانية.'}
-                    </p>
+                  <div className="grid md:grid-cols-2 gap-4">
                     <FileBox
-                      id="introVid"
-                      label={s4.introVideoLabel || 'ارفع الفيديو التعريفي'}
-                      hint={s4.videoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB'}
-                      accept=".mp4,.webm,.mov,video/mp4,video/webm,video/quicktime"
-                      allowedMimeTypes={['video/mp4', 'video/webm', 'video/quicktime']}
-                      allowedExtensions={['.mp4', '.webm', '.mov']}
+                      id="profilePhoto"
+                      label={s4.profilePhotoLabel || 'صورة شخصية 4×6 *'}
+                      hint={s4.imageHint || 'JPG أو PNG فقط'}
+                      accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
+                      allowedMimeTypes={['image/jpeg', 'image/png']}
+                      allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
                       maxBytes={100 * 1024 * 1024}
-                      captureKind="video"
-                      file={f.files.introductionVideo}
-                      onChange={(file) => f.setFile('introductionVideo', file)}
+                      captureKind="image"
+                      file={f.files.profilePhoto}
+                      onChange={(file) => f.setFile('profilePhoto', file)}
+                      preview={(file) => <ProfilePhotoPreview file={file} alt={s4.profilePhotoAlt || 'معاينة الصورة الشخصية'} />}
+                    />
+                    <FileBox
+                      id="idCardFront"
+                      label={s4.idFrontLabel || 'وجه البطاقة الشخصية *'}
+                      hint={s4.imageHint || 'JPG أو PNG فقط — محفوظة بسرية تامة للإدارة فقط'}
+                      accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
+                      allowedMimeTypes={['image/jpeg', 'image/png']}
+                      allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
+                      maxBytes={25 * 1024 * 1024}
+                      captureKind="image"
+                      file={f.files.idCardFront}
+                      onChange={(file) => f.setFile('idCardFront', file)}
                     />
                   </div>
 
                   <div className="border-t border-[var(--wn-border)] pt-4">
                     <div className="flex items-center gap-2 mb-2">
                       <Video className="text-[var(--wn-emerald)]" size={20} aria-hidden="true" />
-                      <p className="font-semibold text-[var(--wn-heading)]">{s4.recitationVideoTitle || 'فيديو تلاوة قرآنية *'}</p>
+                      <p className="font-semibold text-[var(--wn-heading)]">
+                        {isRTL ? 'فيديو التعريف والتلاوة الأساسي (فيديو واحد يكفي) *' : 'Primary Intro & Recitation Video (1 video is enough) *'}
+                      </p>
                     </div>
                     <ul className="text-sm text-[var(--wn-badge-gold-text)] space-y-1 mb-3 bg-[var(--wn-gold-soft)] border border-[var(--wn-gold)]/35 rounded-lg p-3">
-                      {VIDEO_GUIDE_KEYS.map((item) => (
+                      <li>
+                        • {isRTL
+                          ? 'فيديو واحد من دقيقة إلى 3 دقائق: عرّف بنفسك وخبرتك في 30 ثانية ثم اتلُ آيات قصيرة بصوت واضح.'
+                          : 'One 1–3 minute video: briefly introduce yourself (30 sec), then recite a few Quran verses clearly.'}
+                      </li>
+                      {VIDEO_GUIDE_KEYS.slice(0, 2).map((item) => (
                         <li key={item.key}>• {s4.videoGuide?.[item.key] || item.fallback}</li>
                       ))}
                     </ul>
                     <FileBox
                       id="reciteVid"
-                      label={s4.recitationVideoLabel || 'ارفع فيديو/فيديوهات التلاوة (3–5 دقائق)'}
-                      hint={s4.recitationVideoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB لكل فيديو'}
+                      label={isRTL ? 'ارفع فيديو التعريف والتلاوة (1–3 دقائق) *' : 'Upload Intro & Recitation Video (1–3 min) *'}
+                      hint={s4.recitationVideoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB'}
                       accept=".mp4,.webm,.mov,video/mp4,video/webm,video/quicktime"
                       allowedMimeTypes={['video/mp4', 'video/webm', 'video/quicktime']}
                       allowedExtensions={['.mp4', '.webm', '.mov']}
@@ -746,25 +673,112 @@ export default function TeacherRegistration() {
                   </div>
 
                   <div className="border-t border-[var(--wn-border)] pt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Video className="text-[var(--wn-emerald)]" size={20} aria-hidden="true" />
-                      <p className="font-semibold text-[var(--wn-heading)]">{s4.methodVideoTitle || 'فيديو طريقة التدريس *'}</p>
-                    </div>
-                    <p className="text-sm text-[var(--wn-text-secondary)] mb-3">
-                      {s4.methodVideoDesc || 'اشرح أو مثّل جزءًا قصيرًا من حصة لتستطيع الإدارة تقييم أسلوب الشرح والتواصل.'}
-                    </p>
-                    <FileBox
-                      id="methodVid"
-                      label={s4.methodVideoLabel || 'ارفع فيديو طريقة التدريس'}
-                      hint={s4.videoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB'}
-                      accept=".mp4,.webm,.mov,video/mp4,video/webm,video/quicktime"
-                      allowedMimeTypes={['video/mp4', 'video/webm', 'video/quicktime']}
-                      allowedExtensions={['.mp4', '.webm', '.mov']}
-                      maxBytes={100 * 1024 * 1024}
-                      captureKind="video"
-                      file={f.files.teachingMethodVideo}
-                      onChange={(file) => f.setFile('teachingMethodVideo', file)}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOptionalUploads((open) => !open)}
+                      aria-expanded={showOptionalUploads}
+                      className="w-full min-h-[48px] flex items-center justify-between gap-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] px-4 py-3 text-start hover:border-[var(--wn-emerald)] transition"
+                    >
+                      <div>
+                        <strong className="block text-sm text-[var(--wn-heading)]">
+                          {isRTL
+                            ? 'مرفقات إضافية اختيارية (الشهادات، الإجازات، أو فيديوهات إضافية)'
+                            : 'Optional Extra Attachments (Certificates, Ijazat, or Extra Videos)'}
+                        </strong>
+                        <small className="block text-xs text-[var(--wn-text-secondary)] mt-0.5">
+                          {isRTL
+                            ? 'يمكنك تخطي هذا القسم تماماً والانتقال للخطوة التالية، أو رفع أي مرفق متاح لديك الآن لتسريع القبول.'
+                            : 'You can skip this section completely and proceed, or upload any optional documents now.'}
+                        </small>
+                      </div>
+                      {showOptionalUploads ? (
+                        <ChevronUp size={18} className="shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
+                      ) : (
+                        <ChevronDown size={18} className="shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
+                      )}
+                    </button>
+
+                    {showOptionalUploads && (
+                      <div className="mt-4 space-y-4 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-4">
+                        <FileBox
+                          id="idCardBack"
+                          label={isRTL ? 'ظهر البطاقة الشخصية (اختياري)' : 'ID Card Back (Optional)'}
+                          hint={s4.imageHint || 'JPG أو PNG فقط'}
+                          accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
+                          allowedMimeTypes={['image/jpeg', 'image/png']}
+                          allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
+                          maxBytes={25 * 1024 * 1024}
+                          captureKind="image"
+                          file={f.files.idCardBack}
+                          onChange={(file) => f.setFile('idCardBack', file)}
+                        />
+
+                        <FileBox
+                          id="gradCert"
+                          label={isRTL ? 'شهادة التخرج (اختياري)' : 'Graduation Certificate (Optional)'}
+                          hint="JPG / PNG / PDF"
+                          accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
+                          allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
+                          allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
+                          maxBytes={25 * 1024 * 1024}
+                          captureKind="image"
+                          file={f.files.graduationCertificate}
+                          onChange={(file) => f.setFile('graduationCertificate', file)}
+                        />
+
+                        <FileBox
+                          id="tajweed"
+                          label={isRTL ? 'شهادات التجويد (اختياري)' : 'Tajweed Certificates (Optional)'}
+                          hint="JPG / PNG / PDF"
+                          accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
+                          allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
+                          allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
+                          maxBytes={25 * 1024 * 1024}
+                          multiple
+                          files={f.files.tajweedCertificates}
+                          onChange={(selectedFiles) => f.setFile('tajweedCertificates', selectedFiles)}
+                        />
+
+                        <FileBox
+                          id="ijazat"
+                          label={isRTL ? 'الإجازات القرآنية (اختياري)' : 'Quran Ijazat (Optional)'}
+                          hint="JPG / PNG / PDF"
+                          accept=".jpg,.jpeg,.jfif,.png,.pdf,image/jpeg,image/png,application/pdf"
+                          allowedMimeTypes={['image/jpeg', 'image/png', 'application/pdf']}
+                          allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png', '.pdf']}
+                          maxBytes={25 * 1024 * 1024}
+                          multiple
+                          files={f.files.ijazat}
+                          onChange={(selectedFiles) => f.setFile('ijazat', selectedFiles)}
+                        />
+
+                        <FileBox
+                          id="introVid"
+                          label={isRTL ? 'فيديو تعريفي قصير منفصل (اختياري)' : 'Separate Short Intro Video (Optional)'}
+                          hint={s4.videoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB'}
+                          accept=".mp4,.webm,.mov,video/mp4,video/webm,video/quicktime"
+                          allowedMimeTypes={['video/mp4', 'video/webm', 'video/quicktime']}
+                          allowedExtensions={['.mp4', '.webm', '.mov']}
+                          maxBytes={100 * 1024 * 1024}
+                          captureKind="video"
+                          file={f.files.introductionVideo}
+                          onChange={(file) => f.setFile('introductionVideo', file)}
+                        />
+
+                        <FileBox
+                          id="methodVid"
+                          label={isRTL ? 'فيديو طريقة التدريس (اختياري)' : 'Teaching Method Demo Video (Optional)'}
+                          hint={s4.videoHint || 'MP4 أو WebM أو MOV — الحد الأقصى 100 MB'}
+                          accept=".mp4,.webm,.mov,video/mp4,video/webm,video/quicktime"
+                          allowedMimeTypes={['video/mp4', 'video/webm', 'video/quicktime']}
+                          allowedExtensions={['.mp4', '.webm', '.mov']}
+                          maxBytes={100 * 1024 * 1024}
+                          captureKind="video"
+                          file={f.files.teachingMethodVideo}
+                          onChange={(file) => f.setFile('teachingMethodVideo', file)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -805,21 +819,19 @@ export default function TeacherRegistration() {
                       items={[
                         f.files.profilePhoto ? (s5.photoOk || '✓ صورة 4×6') : (s5.photoMissing || '✗ صورة'),
                         f.files.idCardFront ? (s5.idFrontOk || '✓ وجه البطاقة') : (s5.idFrontMissing || '✗ وجه البطاقة'),
-                        f.files.idCardBack ? (s5.idBackOk || '✓ ظهر البطاقة') : (s5.idBackMissing || '✗ ظهر البطاقة'),
-                        f.formData.documentAvailability?.graduationCertificate
-                          ? (f.files.graduationCertificate ? (s5.gradCertOk || '✓ شهادة التخرج') : (s5.gradCertMissing || '✗ شهادة التخرج'))
-                          : (s5.gradCertUnavailable || '— شهادة التخرج: غير موجودة'),
-                        f.formData.documentAvailability?.tajweedCertificates
-                          ? formatMsg(s5.tajweedCertOk || '✓ شهادات تجويد: {count}', { count: f.files.tajweedCertificates?.length || 0 })
-                          : (s5.tajweedCertUnavailable || '— شهادات التجويد: غير موجودة'),
-                        f.formData.documentAvailability?.ijazat
-                          ? formatMsg(s5.ijazatOk || '✓ الإجازات: {count}', { count: f.files.ijazat?.length || 0 })
-                          : (s5.ijazatUnavailable || '— الإجازات: غير موجودة'),
-                        f.files.introductionVideo ? (s5.introVidOk || '✓ فيديو تعريفي') : (s5.introVidMissing || '✗ فيديو تعريفي'),
                         f.files.recitationVideos?.length
-                          ? formatMsg(s5.reciteVidOk || '✓ {count} فيديو تلاوة', { count: f.files.recitationVideos.length })
-                          : (s5.reciteVidMissing || '✗ فيديو تلاوة'),
-                        f.files.teachingMethodVideo ? (s5.methodVidOk || '✓ فيديو طريقة التدريس') : (s5.methodVidMissing || '✗ فيديو طريقة التدريس'),
+                          ? formatMsg(s5.reciteVidOk || '✓ {count} فيديو تلاوة وتعريف', { count: f.files.recitationVideos.length })
+                          : (s5.reciteVidMissing || '✗ فيديو التعريف والتلاوة'),
+                        f.files.idCardBack ? (s5.idBackOk || '✓ ظهر البطاقة (اختياري)') : null,
+                        f.files.graduationCertificate ? (s5.gradCertOk || '✓ شهادة التخرج (اختياري)') : null,
+                        f.files.tajweedCertificates?.length
+                          ? formatMsg(s5.tajweedCertOk || '✓ شهادات تجويد: {count}', { count: f.files.tajweedCertificates.length })
+                          : null,
+                        f.files.ijazat?.length
+                          ? formatMsg(s5.ijazatOk || '✓ الإجازات: {count}', { count: f.files.ijazat.length })
+                          : null,
+                        f.files.introductionVideo ? (s5.introVidOk || '✓ فيديو تعريفي منفصل (اختياري)') : null,
+                        f.files.teachingMethodVideo ? (s5.methodVidOk || '✓ فيديو طريقة التدريس (اختياري)') : null,
                       ]}
                     />
                   </div>
@@ -911,40 +923,6 @@ export default function TeacherRegistration() {
       </div>
       <GlobalFooter />
     </>
-  );
-}
-
-function AvailabilityChoice({ label, yesLabel, noLabel, value, onChange }) {
-  return (
-    <div className="rounded-xl border border-[var(--wn-border)] p-4 bg-[var(--wn-surface-soft)]">
-      <p className="font-medium text-[var(--wn-heading)] mb-3">{label} *</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <button
-          type="button"
-          aria-pressed={value === true}
-          onClick={() => onChange(true)}
-          className={`min-h-[44px] rounded-lg border px-4 py-2 text-sm font-semibold transition ${
-            value === true
-              ? 'border-[var(--wn-emerald)] bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)]'
-              : 'border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] hover:border-[var(--wn-emerald)]'
-          }`}
-        >
-          {yesLabel || 'موجود'}
-        </button>
-        <button
-          type="button"
-          aria-pressed={value === false}
-          onClick={() => onChange(false)}
-          className={`min-h-[44px] rounded-lg border px-4 py-2 text-sm font-semibold transition ${
-            value === false
-              ? 'border-[var(--wn-emerald-deep)] bg-[var(--wn-emerald-deep)] text-[var(--wn-white)]'
-              : 'border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] hover:border-[var(--wn-border-strong)]'
-          }`}
-        >
-          {noLabel || 'غير موجود'}
-        </button>
-      </div>
-    </div>
   );
 }
 

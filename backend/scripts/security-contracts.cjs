@@ -920,13 +920,13 @@ requireContains(
 );
 requireContains(
   'backend/routes/teachers.js',
-  'new teacher applications must require both sides of the identity card',
-  /TEACHER_ID_FRONT_REQUIRED[\s\S]{0,700}TEACHER_ID_BACK_REQUIRED/
+  'new teacher applications must require profile photo, front identity card, and primary recitation video',
+  /TEACHER_PROFILE_PHOTO_REQUIRED[\s\S]{0,700}TEACHER_ID_FRONT_REQUIRED[\s\S]{0,700}TEACHER_RECITATION_VIDEO_REQUIRED/
 );
 requireContains(
   'backend/routes/teachers.js',
-  'optional teacher documents must use explicit availability declarations',
-  /TEACHER_DOCUMENT_DECLARATION_REQUIRED/
+  'declared optional teacher documents must be uploaded when marked available',
+  /TEACHER_GRADUATION_CERTIFICATE_REQUIRED[\s\S]{0,700}TEACHER_TAJWEED_CERTIFICATE_REQUIRED[\s\S]{0,700}TEACHER_IJAZA_REQUIRED/
 );
 requireContains(
   'backend/routes/teachers.js',
@@ -936,13 +936,8 @@ requireContains(
 
 requireContains(
   'backend/routes/teachers.js',
-  'new teacher applications must require a dedicated introduction video',
-  /TEACHER_INTRODUCTION_VIDEO_REQUIRED/
-);
-requireContains(
-  'backend/routes/teachers.js',
-  'new teacher applications must require a dedicated teaching-method video',
-  /TEACHER_TEACHING_METHOD_VIDEO_REQUIRED/
+  'provided teacher media videos must be distinct files',
+  /TEACHER_CORE_MEDIA_MUST_BE_DISTINCT/
 );
 requireContains(
   'src/pages/TeacherRegistration/useTeacherForm.js',

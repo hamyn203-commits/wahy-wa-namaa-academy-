@@ -154,6 +154,42 @@ export default function FileBox({
     : (fb.capturePhoto || 'التقاط بالكاميرا');
 
   const CameraIcon = captureKind === 'video' ? Video : Camera;
+  const isVideoBox = captureKind === 'video';
+  const selectedList = multiple ? (files || []) : (file ? [file] : []);
+
+  const primaryBtnCls = 'relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-hover)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2';
+  const secondaryBtnCls = 'relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-surface)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-soft)] hover:border-[var(--wn-border-mint)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2';
+
+  const libraryPicker = (
+    <label htmlFor={`${id}-library`} className={isVideoBox ? primaryBtnCls : secondaryBtnCls}>
+      <input
+        type="file"
+        id={`${id}-library`}
+        accept={accept}
+        multiple={multiple}
+        className="sr-only"
+        onChange={handleLibraryChange}
+      />
+      {captureKind ? <Images size={16} aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}
+      {captureKind
+        ? (multiple && count ? (fb.addFromGallery || 'إضافة من الألبوم/الجهاز') : (fb.pickFromGallery || 'اختيار من الألبوم/الجهاز'))
+        : (count ? formatMsg(fb.selectedChange || 'تم ({count}) — تغيير', { count }) : (fb.pickFile || 'اختر ملف'))}
+    </label>
+  );
+
+  const cameraPicker = captureKind ? (
+    <label htmlFor={`${id}-camera`} className={isVideoBox ? secondaryBtnCls : primaryBtnCls}>
+      <input
+        type="file"
+        id={`${id}-camera`}
+        accept={isVideoBox ? 'video/*' : 'image/*'}
+        capture="user"
+        className="sr-only"
+        onChange={handleCaptureChange}
+      />
+      <CameraIcon size={16} aria-hidden="true" /> {cameraLabel}
+    </label>
+  ) : null;
 
   return (
     <div className="border-2 border-dashed border-[var(--wn-border)] rounded-xl p-5 hover:border-[var(--wn-emerald)] transition bg-[var(--wn-surface-soft)]">
@@ -181,40 +217,17 @@ export default function FileBox({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {captureKind && (
-          <label
-            htmlFor={`${id}-camera`}
-            className="relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-hover)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2"
-          >
-            <input
-              type="file"
-              id={`${id}-camera`}
-              accept={captureKind === 'video' ? 'video/*' : 'image/*'}
-              capture="user"
-              className="sr-only"
-              onChange={handleCaptureChange}
-            />
-            <CameraIcon size={16} aria-hidden="true" /> {cameraLabel}
-          </label>
+        {isVideoBox ? (
+          <>
+            {libraryPicker}
+            {cameraPicker}
+          </>
+        ) : (
+          <>
+            {cameraPicker}
+            {libraryPicker}
+          </>
         )}
-
-        <label
-          htmlFor={`${id}-library`}
-          className="relative inline-flex min-h-[44px] items-center gap-2 px-4 py-2 bg-[var(--wn-surface)] border border-[var(--wn-border)] text-[var(--wn-text-primary)] rounded-lg text-sm font-medium cursor-pointer hover:bg-[var(--wn-emerald-soft)] hover:border-[var(--wn-border-mint)] focus-within:ring-2 focus-within:ring-[var(--wn-focus)] focus-within:ring-offset-2"
-        >
-          <input
-            type="file"
-            id={`${id}-library`}
-            accept={accept}
-            multiple={multiple}
-            className="sr-only"
-            onChange={handleLibraryChange}
-          />
-          {captureKind ? <Images size={16} aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}
-          {captureKind
-            ? (multiple && count ? (fb.addFromGallery || 'إضافة من الألبوم/الجهاز') : (fb.pickFromGallery || 'اختيار من الألبوم/الجهاز'))
-            : (count ? formatMsg(fb.selectedChange || 'تم ({count}) — تغيير', { count }) : (fb.pickFile || 'اختر ملف'))}
-        </label>
 
         {count > 0 && (
           <button
@@ -227,10 +240,24 @@ export default function FileBox({
         )}
       </div>
 
-      {multiple && count > 0 && (
-        <p className="mt-3 text-xs text-[var(--wn-badge-emerald-text)]">
-          {formatMsg(fb.filesSelectedCount || 'تم اختيار {count} ملف/ملفات.', { count })}
+      {isVideoBox && count === 0 && (
+        <p className="mt-2.5 text-xs text-[var(--wn-text-secondary)]">
+          {fb.mobileVideoTip || 'نصيحة للموبايل: سجّل الفيديو بكاميرا هاتفك أولاً ثم اختره من الألبوم لضمان عدم انقطاع الصفحة.'}
         </p>
+      )}
+
+      {selectedList.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {selectedList.map((item, idx) => (
+            <li
+              key={`${item.name || 'file'}-${item.size || 0}-${idx}`}
+              className="flex items-center justify-between gap-2 rounded-lg bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] px-3 py-1.5 text-xs text-[var(--wn-badge-emerald-text)]"
+            >
+              <span className="truncate font-medium">{item.name}</span>
+              <span className="shrink-0 font-semibold" dir="ltr">{formatMb(item.size)} MB</span>
+            </li>
+          ))}
+        </ul>
       )}
 
       {preview && file && (

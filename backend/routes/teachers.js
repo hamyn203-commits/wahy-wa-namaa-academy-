@@ -558,20 +558,6 @@ router.post(
         });
       }
 
-      if (!hasDirectOrLegacy(uploadedFiles.idCardBack, req.files?.idCardBack)) {
-        return res.status(400).json({
-          error: 'ID card back is required',
-          code: 'TEACHER_ID_BACK_REQUIRED',
-        });
-      }
-
-      if (!hasDirectOrLegacy(uploadedFiles.introductionVideo, req.files?.introductionVideo)) {
-        return res.status(400).json({
-          error: 'Introduction video is required',
-          code: 'TEACHER_INTRODUCTION_VIDEO_REQUIRED',
-        });
-      }
-
       if (!hasDirectOrLegacyList(uploadedFiles.recitationVideo, req.files?.recitationVideo)) {
         return res.status(400).json({
           error: 'At least one recitation video is required',
@@ -579,52 +565,34 @@ router.post(
         });
       }
 
-      if (!hasDirectOrLegacy(uploadedFiles.teachingMethodVideo, req.files?.teachingMethodVideo)) {
-        return res.status(400).json({
-          error: 'Teaching method video is required',
-          code: 'TEACHER_TEACHING_METHOD_VIDEO_REQUIRED',
-        });
-      }
+      const hasGraduationCert = hasDirectOrLegacy(uploadedFiles.graduationCertificate, req.files?.graduationCertificate);
+      const hasTajweedCerts = hasDirectOrLegacyList(uploadedFiles.tajweedCertificates, req.files?.tajweedCertificates);
+      const hasIjazatCerts = hasDirectOrLegacyList(uploadedFiles.ijazat, req.files?.ijazat);
 
-      if (
-        !['graduationCertificate', 'tajweedCertificates', 'ijazat']
-          .every((field) => typeof documentAvailability[field] === 'boolean')
-      ) {
-        return res.status(400).json({
-          error: 'Document availability declarations are required',
-          code: 'TEACHER_DOCUMENT_DECLARATION_REQUIRED',
-        });
-      }
-
-      if (
-        declaredDocuments.graduationCertificate &&
-        !hasDirectOrLegacy(uploadedFiles.graduationCertificate, req.files?.graduationCertificate)
-      ) {
+      if (declaredDocuments.graduationCertificate && !hasGraduationCert) {
         return res.status(400).json({
           error: 'Graduation certificate was marked available but no file was uploaded',
           code: 'TEACHER_GRADUATION_CERTIFICATE_REQUIRED',
         });
       }
 
-      if (
-        declaredDocuments.tajweedCertificates &&
-        !hasDirectOrLegacyList(uploadedFiles.tajweedCertificates, req.files?.tajweedCertificates)
-      ) {
+      if (declaredDocuments.tajweedCertificates && !hasTajweedCerts) {
         return res.status(400).json({
           error: 'Tajweed certificates were marked available but no file was uploaded',
           code: 'TEACHER_TAJWEED_CERTIFICATE_REQUIRED',
         });
       }
 
-      if (
-        declaredDocuments.ijazat &&
-        !hasDirectOrLegacyList(uploadedFiles.ijazat, req.files?.ijazat)
-      ) {
+      if (declaredDocuments.ijazat && !hasIjazatCerts) {
         return res.status(400).json({
           error: 'Ijazat were marked available but no file was uploaded',
           code: 'TEACHER_IJAZA_REQUIRED',
         });
       }
+
+      declaredDocuments.graduationCertificate = declaredDocuments.graduationCertificate || hasGraduationCert;
+      declaredDocuments.tajweedCertificates = declaredDocuments.tajweedCertificates || hasTajweedCerts;
+      declaredDocuments.ijazat = declaredDocuments.ijazat || hasIjazatCerts;
 
       if (!userId && (email || password)) {
         if (!normalizedEmail || !password) {
@@ -785,9 +753,9 @@ router.post(
 
       const media = {
         profilePhoto: profilePhoto || '/default-teacher.png',
-        introductionVideo: directPublic(uploadedFiles.introductionVideo) || publicMediaPath(req.files?.introductionVideo?.[0]),
+        introductionVideo: directPublic(uploadedFiles.introductionVideo) || publicMediaPath(req.files?.introductionVideo?.[0]) || '',
         recitationVideo: mainVideo,
-        teachingMethodVideo: directPublic(uploadedFiles.teachingMethodVideo) || publicMediaPath(req.files?.teachingMethodVideo?.[0]),
+        teachingMethodVideo: directPublic(uploadedFiles.teachingMethodVideo) || publicMediaPath(req.files?.teachingMethodVideo?.[0]) || '',
         additionalVideos: [
           ...directRecitations.slice(1).map(directPublic),
           ...(uploadedFiles.additionalVideos?.map(directPublic) || []),

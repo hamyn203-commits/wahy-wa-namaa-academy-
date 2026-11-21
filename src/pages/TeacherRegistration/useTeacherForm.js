@@ -8,6 +8,15 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { uploadTeacherFiles } from '../../lib/teacherUploadQueue.mjs';
 import { getAccessToken, refreshAccessToken } from '../../lib/authSession';
 import { trackTeacherFunnel, resetTeacherFunnelSessionId } from '../../lib/analytics';
+import {
+  loadTeacherDraft,
+  saveTeacherDraft,
+  loadVerificationSession,
+  saveVerificationSession,
+  loadTeacherDraftFiles,
+  saveTeacherDraftFiles,
+  clearTeacherDraft,
+} from '../../lib/teacherDraftStorage';
 
 const emptyFiles = () => ({
   profilePhoto: null,
@@ -149,6 +158,9 @@ export function useTeacherForm() {
   const [verifiedEmail, setVerifiedEmail] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
   const [fieldError, setFieldError] = useState('');
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -162,30 +174,90 @@ export function useTeacherForm() {
             setCredentials((p) => ({ ...p, email: parsedStatus.email }));
           }
           setSubmitted(true);
+          hydratedRef.current = true;
           return;
         }
       }
     } catch { /* ignore */ }
 
+    let restoredSomething = false;
     try {
-      localStorage.removeItem(DRAFT_KEY);
-      const raw = sessionStorage.getItem(DRAFT_KEY);
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      if (d.formData) {
-        setFormData((prev) => ({
-          ...prev,
-          ...d.formData,
-          personalInfo: { ...prev.personalInfo, ...(d.formData.personalInfo || {}) },
-          academicInfo: { ...prev.academicInfo, ...(d.formData.academicInfo || {}) },
-          quranInfo: { ...prev.quranInfo, ...(d.formData.quranInfo || {}) },
-          languages: Array.isArray(d.formData.languages) && d.formData.languages.length ? d.formData.languages : prev.languages,
-        }));
+      const d = loadTeacherDraft(DRAFT_KEY);
+      if (d) {
+        if (d.formData) {
+          restoredSomething = true;
+          setFormData((prev) => ({
+            ...prev,
+            ...d.formData,
+            personalInfo: { ...prev.personalInfo, ...(d.formData.personalInfo || {}) },
+            academicInfo: { ...prev.academicInfo, ...(d.formData.academicInfo || {}) },
+            quranInfo: { ...prev.quranInfo, ...(d.formData.quranInfo || {}) },
+            documentAvailability: {
+              ...(prev.documentAvailability || {}),
+              ...(d.formData.documentAvailability || {}),
+            },
+            languages: Array.isArray(d.formData.languages) && d.formData.languages.length ? d.formData.languages : prev.languages,
+          }));
+        }
+        if (d.credentials?.email) {
+          restoredSomething = true;
+          setCredentials((p) => ({ ...p, email: d.credentials.email }));
+        }
+
+        const verifySess = loadVerificationSession();
+        const sameEmailVerified = Boolean(
+          verifySess?.emailVerified
+          && verifySess?.verificationToken
+          && normalizeEmail(verifySess.verifiedEmail) === normalizeEmail(d.credentials?.email)
+        );
+        if (sameEmailVerified) {
+          setEmailVerified(true);
+          setVerifiedEmail(normalizeEmail(verifySess.verifiedEmail));
+          setVerificationToken(verifySess.verificationToken);
+        }
+
+        if (d.step) {
+          // If the user returned to Step 3-5 in a new session without active tab OTP token,
+          // keep all saved data & files intact and guide them cleanly to Step 2 (if unauthenticated)
+          // or directly to their saved step if OTP is still valid or authenticated.
+          const savedStep = Number(d.step) || 1;
+          if (authenticatedTeacher || sameEmailVerified || savedStep <= 2) {
+            setStep(savedStep);
+          } else {
+            setStep(2);
+          }
+        }
       }
-      if (d.credentials) setCredentials((p) => ({ ...p, email: d.credentials.email || '' }));
-      if (d.step) setStep(d.step);
-      // Verification proof is intentionally never restored from localStorage.
     } catch { /* ignore */ }
+
+    let cancelled = false;
+    loadTeacherDraftFiles()
+      .then((restoredFiles) => {
+        if (cancelled || !restoredFiles) return;
+        const hasAnyFile = Object.values(restoredFiles).some((v) => (Array.isArray(v) ? v.length > 0 : Boolean(v)));
+        if (hasAnyFile) {
+          setFiles((prev) => ({ ...prev, ...restoredFiles }));
+          restoredSomething = true;
+        }
+        if (restoredSomething) {
+          setDraftRestored(true);
+          setDraftSaved(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          hydratedRef.current = true;
+          if (restoredSomething) {
+            setDraftRestored(true);
+            setDraftSaved(true);
+          }
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [authenticatedTeacher]);
 
   useEffect(() => {
@@ -254,17 +326,71 @@ export function useTeacherForm() {
   }, [submitted, applicationStatusToken, checkApplicationStatus]);
 
   const saveDraft = useCallback(() => {
-    try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-        formData, credentials: { email: credentials.email }, step,
-      }));
-    } catch { /* ignore */ }
-  }, [formData, credentials.email, step]);
+    if (!hydratedRef.current || submitted) return;
+    saveTeacherDraft(DRAFT_KEY, {
+      formData,
+      email: credentials.email,
+      step,
+    });
+    setDraftSaved(true);
+  }, [formData, credentials.email, step, submitted]);
 
   useEffect(() => {
-    const timer = setTimeout(saveDraft, 500);
+    if (!hydratedRef.current || submitted) return undefined;
+    const timer = setTimeout(saveDraft, 350);
     return () => clearTimeout(timer);
-  }, [saveDraft]);
+  }, [saveDraft, submitted]);
+
+  useEffect(() => {
+    if (submitted) return undefined;
+    const flushNow = () => {
+      if (!hydratedRef.current) return;
+      saveTeacherDraft(DRAFT_KEY, {
+        formData,
+        email: credentials.email,
+        step,
+      });
+    };
+    window.addEventListener('pagehide', flushNow);
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flushNow();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flushNow);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [formData, credentials.email, step, submitted]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || submitted) return;
+    saveTeacherDraftFiles(files).catch(() => {});
+  }, [files, submitted]);
+
+  useEffect(() => {
+    saveVerificationSession({ emailVerified, verifiedEmail, verificationToken });
+  }, [emailVerified, verifiedEmail, verificationToken]);
+
+  const clearDraft = useCallback(async () => {
+    await clearTeacherDraft(DRAFT_KEY);
+    setFormData(INITIAL_FORM);
+    setFiles(emptyFiles());
+    setCredentials((prev) => ({
+      email: authenticatedTeacher ? prev.email : '',
+      password: '',
+      confirmPassword: '',
+    }));
+    setVerificationCode('');
+    setIsCodeSent(false);
+    setEmailVerified(false);
+    setVerifiedEmail('');
+    setVerificationToken('');
+    setStep(1);
+    setFieldError('');
+    setDraftRestored(false);
+    setDraftSaved(false);
+    completedUploads.current.files.clear();
+  }, [authenticatedTeacher]);
 
   const countTouchedFields = useCallback((fd, emailValue) => {
     const p = fd?.personalInfo || {};
@@ -512,35 +638,11 @@ export function useTeacherForm() {
         if (credentials.password !== credentials.confirmPassword) return val.passwordMismatch || 'كلمتا المرور غير متطابقتين';
         return null;
       case 4: {
-        const docs = formData.documentAvailability || {};
         if (!files.profilePhoto) return val.photoRequired || 'ارفع صورة شخصية 4×6';
         if (!files.idCardFront) return val.idFrontRequired || 'ارفع صورة وجه البطاقة الشخصية';
-        if (!files.idCardBack) return val.idBackRequired || 'ارفع صورة ظهر البطاقة الشخصية';
-        if (!files.introductionVideo) return val.introVideoRequired || 'ارفع فيديو تعريفي قصير';
-        if (!files.recitationVideos?.length) return val.recitationVideoRequired || 'ارفع فيديو تلاوة واحد على الأقل';
-        if (!files.teachingMethodVideo) return val.methodVideoRequired || 'ارفع فيديو يوضح طريقة التدريس';
-
-        if (typeof docs.graduationCertificate !== 'boolean') {
-          return val.gradAvailabilityRequired || 'حدد هل شهادة التخرج موجودة أم غير موجودة';
+        if (!files.recitationVideos?.length) {
+          return val.recitationVideoRequired || 'ارفع فيديو التعريف والتلاوة الأساسي (1–3 دقائق)';
         }
-        if (docs.graduationCertificate && !files.graduationCertificate) {
-          return val.gradFileRequired || 'ارفع شهادة التخرج لأنك اخترت أنها موجودة';
-        }
-
-        if (typeof docs.tajweedCertificates !== 'boolean') {
-          return val.tajweedAvailabilityRequired || 'حدد هل شهادات التجويد موجودة أم غير موجودة';
-        }
-        if (docs.tajweedCertificates && !files.tajweedCertificates?.length) {
-          return val.tajweedFileRequired || 'ارفع شهادة تجويد واحدة على الأقل';
-        }
-
-        if (typeof docs.ijazat !== 'boolean') {
-          return val.ijazatAvailabilityRequired || 'حدد هل لديك إجازات أم لا';
-        }
-        if (docs.ijazat && !files.ijazat?.length) {
-          return val.ijazatFileRequired || 'ارفع إجازة واحدة على الأقل';
-        }
-
         return validateTeacherFiles(files, tr);
       }
       default:
@@ -589,20 +691,25 @@ export function useTeacherForm() {
       const many = (key, purpose, label, enabled = true) => ({
         key, purpose, label, multiple: true, files: enabled ? files[key] || [] : [],
       });
+      const hasGradCert = Boolean(files.graduationCertificate);
+      const hasTajweedCerts = Boolean(files.tajweedCertificates?.length);
+      const hasIjazatCerts = Boolean(files.ijazat?.length);
+
       const uploadedFiles = await uploadTeacherFiles([
         one('profilePhoto', 'teacher-public', ul.profilePhoto || 'الصورة الشخصية'),
         one('idCardFront', 'teacher-private', ul.idCardFront || 'وجه البطاقة'),
-        one('idCardBack', 'teacher-private', ul.idCardBack || 'ظهر البطاقة'),
-        one('graduationCertificate', 'teacher-private', ul.graduationCertificate || 'شهادة التخرج', formData.documentAvailability.graduationCertificate),
-        many('tajweedCertificates', 'teacher-private', ul.tajweedCertificates || 'شهادات التجويد', formData.documentAvailability.tajweedCertificates),
-        many('ijazat', 'teacher-private', ul.ijazat || 'الإجازات', formData.documentAvailability.ijazat),
-        one('introductionVideo', 'teacher-public', ul.introductionVideo || 'الفيديو التعريفي'),
-        { ...many('recitationVideos', 'teacher-public', ul.recitationVideo || 'فيديو التلاوة'), key: 'recitationVideo' },
-        one('teachingMethodVideo', 'teacher-public', ul.teachingMethodVideo || 'فيديو طريقة التدريس'),
+        one('idCardBack', 'teacher-private', ul.idCardBack || 'ظهر البطاقة', Boolean(files.idCardBack)),
+        one('graduationCertificate', 'teacher-private', ul.graduationCertificate || 'شهادة التخرج', hasGradCert),
+        many('tajweedCertificates', 'teacher-private', ul.tajweedCertificates || 'شهادات التجويد', hasTajweedCerts),
+        many('ijazat', 'teacher-private', ul.ijazat || 'الإجازات', hasIjazatCerts),
+        one('introductionVideo', 'teacher-public', ul.introductionVideo || 'الفيديو التعريفي', Boolean(files.introductionVideo)),
+        { ...many('recitationVideos', 'teacher-public', ul.recitationVideo || 'فيديو التعريف والتلاوة'), key: 'recitationVideo' },
+        one('teachingMethodVideo', 'teacher-public', ul.teachingMethodVideo || 'فيديو طريقة التدريس', Boolean(files.teachingMethodVideo)),
       ], {
         upload: (file, purpose, options) => uploadFileDirect(file, purpose, { ...options, verificationToken }),
         cache: completedUploads.current.files,
         onProgress: setUploadProgress,
+        maxRetries: 2,
       });
       setUploadProgress({ saving: true });
 
@@ -623,7 +730,7 @@ export function useTeacherForm() {
           qualification: 'خريج',
         }),
         quranInfo: JSON.stringify({
-          numberOfIjazat: Math.max(0, Number(qInfo.numberOfIjazat) || (formData.documentAvailability?.ijazat ? (files.ijazat?.length || 1) : 0)),
+          numberOfIjazat: Math.max(0, Number(qInfo.numberOfIjazat) || (hasIjazatCerts ? files.ijazat.length : 0)),
           memorizedParts: Math.min(30, Math.max(1, Number(qInfo.memorizedParts ?? 30))),
           teachingExperience: Math.max(0, Number(qInfo.teachingExperience) || 0),
           specializations: Array.isArray(qInfo.specializations) && qInfo.specializations.length ? qInfo.specializations : ['tajweed'],
@@ -634,9 +741,9 @@ export function useTeacherForm() {
         password: credentials.password,
         verificationToken,
         documentAvailability: {
-          graduationCertificate: formData.documentAvailability.graduationCertificate,
-          tajweedCertificates: formData.documentAvailability.tajweedCertificates,
-          ijazat: formData.documentAvailability.ijazat,
+          graduationCertificate: hasGradCert,
+          tajweedCertificates: hasTajweedCerts,
+          ijazat: hasIjazatCerts,
         },
         uploadedFiles,
       };
@@ -665,10 +772,9 @@ export function useTeacherForm() {
       if (data.success !== true) {
         throw new Error(tr.toasts?.confirmFailed || 'تعذر تأكيد حفظ الطلب من رد الخادم. راجع حالة الطلب مع الإدارة قبل إعادة الإرسال.');
       }
-      try {
-        sessionStorage.removeItem(DRAFT_KEY);
-        localStorage.removeItem(DRAFT_KEY);
-      } catch { /* ignore */ }
+      await clearTeacherDraft(DRAFT_KEY);
+      setDraftRestored(false);
+      setDraftSaved(false);
       const nextStatus = data.applicationStatus || 'pending';
       const nextToken = data.applicationStatusToken || '';
       setApplicationStatus(nextStatus);
@@ -709,7 +815,7 @@ export function useTeacherForm() {
     credentials, setCredentials, authenticatedTeacher,
     formData, files, setFile, update, toggleSpecialization, toggleLanguage,
     verificationCode, setVerificationCode, isCodeSent, emailVerified,
-    verifiedEmail, fieldError,
+    verifiedEmail, fieldError, draftRestored, draftSaved, clearDraft,
     sendCode, verifyCode, resetVerification, next, prev, submit,
   };
 }

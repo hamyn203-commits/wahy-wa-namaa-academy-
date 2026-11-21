@@ -3,11 +3,11 @@ const REVIEW_ITEMS = Object.freeze([
   { key: 'academic-info', label: 'البيانات الأكاديمية', required: true },
   { key: 'quran-profile', label: 'ملف القرآن والخبرة', required: true },
   { key: 'profile-photo', label: 'الصورة الشخصية', required: true },
-  { key: 'introduction-video', label: 'فيديو التعريف', required: true },
   { key: 'recitation-video', label: 'فيديو التلاوة', required: true },
-  { key: 'teaching-method-video', label: 'فيديو طريقة التدريس', required: true },
   { key: 'id-card-front', label: 'وجه بطاقة الهوية', required: true },
-  { key: 'id-card-back', label: 'ظهر بطاقة الهوية', required: true },
+  { key: 'id-card-back', label: 'ظهر بطاقة الهوية (اختياري)', required: false },
+  { key: 'introduction-video', label: 'فيديو تعريفي منفصل (اختياري)', required: false },
+  { key: 'teaching-method-video', label: 'فيديو طريقة التدريس (اختياري)', required: false },
   { key: 'graduation-certificate', label: 'شهادة التخرج', required: false, conditional: 'graduationCertificateAvailable' },
   { key: 'tajweed-certificates', label: 'شهادات التجويد', required: false, conditional: 'tajweedCertificatesAvailable' },
   { key: 'ijazat', label: 'الإجازات', required: false, conditional: 'ijazatAvailable' },
@@ -30,9 +30,9 @@ function coreMediaAreDistinct(media = {}) {
     media.introductionVideo,
     media.recitationVideo,
     media.teachingMethodVideo,
-  ].map((value) => String(value || '').trim()).filter(Boolean);
+  ].map((value) => String(value || '').trim()).filter(provided);
 
-  return refs.length === 3 && new Set(refs).size === 3;
+  return refs.length >= 1 && new Set(refs).size === refs.length;
 }
 
 function checklistMap(teacher) {
