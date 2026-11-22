@@ -1,11 +1,154 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Loader2, MessageCircle, RefreshCw, Send } from 'lucide-react';
+import { CheckCheck, ImagePlus, Loader2, MessageCircle, Mic, RefreshCw, Send, Square, Volume2 } from 'lucide-react';
 import api from '../../lib/api';
+import { uploadFileDirect } from '../../lib/fileUpload';
 import { useI18n } from '../../i18n';
 import { resolveIntlLocale } from '../../lib/locale';
 import EmptyState from '../shared/EmptyState';
 import Skeleton from '../shared/Skeleton';
 import './support.css';
+
+function SupportAudioPlayer({ studentId, messageId, duration }) {
+  const { locale } = useI18n();
+  const [src, setSrc] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const objectUrlRef = useRef('');
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = '';
+      }
+    };
+  }, []);
+
+  const loadAudio = async () => {
+    if (src || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const response = await api.get(
+        `/api/support/${encodeURIComponent(studentId)}/messages/${encodeURIComponent(messageId)}/audio`,
+        { auth: true, json: false }
+      );
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      setSrc(url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (src) {
+    return <audio controls autoPlay src={src} className="w-full max-w-xs mt-1" />;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={loadAudio}
+      disabled={loading}
+      className="inline-flex items-center gap-2 px-3 py-1.5 mt-1 rounded-full text-xs font-semibold border border-current/25 bg-black/5 hover:bg-black/10 min-h-[36px]"
+    >
+      {loading ? <Loader2 size={14} className="animate-spin" /> : <Volume2 size={14} />}
+      <span>
+        {failed
+          ? (locale === 'ar' ? 'تعذر تشغيل الصوت — أعد المحاولة' : 'Audio failed — retry')
+          : (locale === 'ar' ? `تشغيل الرسالة الصوتية (${duration || 1}ث)` : `Play voice note (${duration || 1}s)`)}
+      </span>
+    </button>
+  );
+}
+
+function SupportAttachmentViewer({ studentId, messageId, attachmentType, attachmentName }) {
+  const { locale } = useI18n();
+  const [src, setSrc] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const objectUrlRef = useRef('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setFailed(false);
+    (async () => {
+      try {
+        const response = await api.get(
+          `/api/support/${encodeURIComponent(studentId)}/messages/${encodeURIComponent(messageId)}/attachment?mode=json`,
+          { auth: true, json: false }
+        );
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (active && data?.url) {
+            setSrc(data.url);
+            return;
+          }
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        if (active) setSrc(url);
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = '';
+      }
+    };
+  }, [studentId, messageId]);
+
+  if (loading) {
+    return (
+      <div className="inline-flex items-center gap-2 py-2 text-xs opacity-75">
+        <Loader2 size={14} className="animate-spin" />
+        <span>{locale === 'ar' ? 'جارٍ تحميل المرفق...' : 'Loading attachment...'}</span>
+      </div>
+    );
+  }
+
+  if (failed || !src) {
+    return (
+      <p className="text-xs opacity-75 mt-1">
+        {locale === 'ar' ? 'تعذر عرض المرفق' : 'Attachment unavailable'}
+      </p>
+    );
+  }
+
+  if (attachmentType === 'video') {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={src}
+        className="w-full max-w-sm rounded-xl mt-1.5 bg-black max-h-72"
+      />
+    );
+  }
+
+  return (
+    <a href={src} target="_blank" rel="noopener noreferrer" className="block mt-1.5">
+      <img
+        src={src}
+        alt={attachmentName || (locale === 'ar' ? 'صورة مرفقة' : 'Attachment')}
+        className="w-full max-w-xs max-h-64 object-cover rounded-xl border border-black/10"
+        loading="lazy"
+      />
+    </a>
+  );
+}
 
 export default function SupportChat({ studentId = 'me', admin = false }) {
   const { locale, dir, t } = useI18n();
@@ -20,6 +163,8 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
   const [nextBefore, setNextBefore] = useState(null);
   const [older, setOlder] = useState([]);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -29,6 +174,10 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
   const view = useRef(null);
   const generation = useRef(0);
   const cursorInitialized = useRef(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordStartRef = useRef(0);
+  const fileInputRef = useRef(null);
   const base = `/api/support/${encodeURIComponent(studentId)}`;
 
   const refresh = useCallback(async () => {
@@ -73,7 +222,7 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
     // The parent keys conversations by student, so a new conversation starts with fresh state.
     refresh();
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-    const interval = window.setInterval(onVisible, 5000);
+    const interval = window.setInterval(onVisible, 4000);
     window.addEventListener('focus', onVisible);
     window.addEventListener('wn:realtime-notification', onVisible);
     window.addEventListener('wn:support-changed', onVisible);
@@ -87,6 +236,12 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!recording) return undefined;
+    const id = window.setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [recording]);
 
   const loadOlder = async () => {
     if (loadingOlder) return;
@@ -136,6 +291,122 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
     }
   };
 
+  const toggleVoiceRecording = async () => {
+    if (recording) {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        setRecording(false);
+      }
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+      setError(locale === 'ar' ? 'التسجيل الصوتي غير مدعوم في هذا المتصفح' : 'Voice recording is not supported in this browser');
+      return;
+    }
+
+    setError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = window.MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const recorder = new window.MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      audioChunksRef.current = [];
+      recordStartRef.current = Date.now();
+      setRecordSeconds(0);
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) audioChunksRef.current.push(ev.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((tr) => tr.stop());
+        setRecording(false);
+        const finalType = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: finalType });
+        if (!blob.size) return;
+
+        const durationSeconds = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));
+        const ext = finalType.includes('mp4') ? 'm4a' : finalType.includes('ogg') ? 'ogg' : 'webm';
+        const form = new FormData();
+        form.append('audio', blob, `support-voice.${ext}`);
+        form.append('clientId', `web_aud_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+        form.append('durationSeconds', String(durationSeconds));
+
+        setSending(true);
+        try {
+          const data = await api.post(`${base}/audio`, form, { auth: true });
+          if (data?.message) {
+            setMessages((current) =>
+              current.some((m) => m._id === data.message._id) ? current : [...current, data.message]
+            );
+            requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: 'nearest' }));
+            window.dispatchEvent(new Event('wn:support-changed'));
+          }
+        } catch (err) {
+          setError(err.message || sc.sendError);
+        } finally {
+          setSending(false);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setError(locale === 'ar' ? 'يرجى السماح بصلاحية الميكروفون للتسجيل' : 'Please allow microphone access');
+    }
+  };
+
+  const handleAttachmentSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || sending) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError(locale === 'ar' ? 'الحد الأقصى لحجم الصورة أو الفيديو هو 25 ميجابايت' : 'Max attachment size is 25 MB');
+      return;
+    }
+
+    setSending(true);
+    setError('');
+    const clientId = `web_med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      let data;
+      try {
+        const uploaded = await uploadFileDirect(file, 'support-media');
+        data = await api.post(
+          `${base}/media`,
+          {
+            clientId,
+            attachmentUrl: uploaded.url,
+            attachmentMimeType: uploaded.contentType || file.type,
+            attachmentName: uploaded.name || file.name,
+            text: text.trim() || undefined,
+          },
+          { auth: true }
+        );
+      } catch {
+        const form = new FormData();
+        form.append('media', file, file.name);
+        form.append('clientId', clientId);
+        if (text.trim()) form.append('text', text.trim());
+        data = await api.post(`${base}/media`, form, { auth: true });
+      }
+      if (data?.message) {
+        setMessages((current) =>
+          current.some((m) => m._id === data.message._id) ? current : [...current, data.message]
+        );
+        setText('');
+        requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: 'nearest' }));
+        window.dispatchEvent(new Event('wn:support-changed'));
+      }
+    } catch (err) {
+      setError(err.message || sc.sendError);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const all = [...new Map([...older, ...messages].map((m) => [m._id, m])).values()].sort(
     (a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a._id.localeCompare(b._id)
   );
@@ -174,10 +445,34 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
             return (
               <article key={m._id} className={`wn-support-bubble ${mine ? 'is-mine' : ''}`}>
                 <strong>{m.senderRole === 'admin' ? sc.adminSender : student?.name}</strong>
-                <p>{m.text}</p>
-                <small>
+                {m.hasAudio ? (
+                  <SupportAudioPlayer studentId={studentId} messageId={m._id} duration={m.audioDuration} />
+                ) : null}
+                {m.hasAttachment ? (
+                  <SupportAttachmentViewer
+                    studentId={studentId}
+                    messageId={m._id}
+                    attachmentType={m.attachmentType}
+                    attachmentName={m.attachmentName}
+                  />
+                ) : null}
+                {(!m.hasAudio || (m.text && m.text !== 'رسالة صوتية'))
+                  && (!m.hasAttachment || (m.text && m.text !== 'مرفق صورة' && m.text !== 'مرفق فيديو')) ? (
+                  <p>{m.text}</p>
+                ) : null}
+                <small className="inline-flex items-center gap-1">
                   {new Date(m.createdAt).toLocaleString(intlLocale, { dateStyle: 'short', timeStyle: 'short' })}
-                  {mine && <span> · {m.readAt ? sc.read : sc.sent}</span>}
+                  {mine && (
+                    <span className="inline-flex items-center gap-1" title={m.readAt ? sc.read : sc.sent}>
+                      ·
+                      <CheckCheck
+                        size={14}
+                        aria-hidden="true"
+                        className={m.readAt ? 'text-sky-400' : 'opacity-65'}
+                      />
+                      <span>{m.readAt ? sc.read : sc.sent}</span>
+                    </span>
+                  )}
                 </small>
               </article>
             );
@@ -193,17 +488,46 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
           onChange={(e) => setText(e.target.value)}
           maxLength={2000}
           rows={3}
-          disabled={sending}
+          disabled={sending || recording}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
           placeholder={admin ? sc.placeholderAdmin : sc.placeholderStudent}
         />
         <div>
-          <small>{text.length}/2000</small>
-          <button type="submit" disabled={!text.trim() || sending} className="min-h-[44px]">
-            {sending ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <Send size={17} aria-hidden="true" />}
-            {sending ? sc.sending : sc.send}
-          </button>
+          <small>{recording ? `🎤 ${recordSeconds}s` : `${text.length}/2000`}</small>
+          <div className="inline-flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+              className="hidden"
+              onChange={handleAttachmentSelected}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || recording}
+              className="min-h-[44px]"
+              aria-label={locale === 'ar' ? 'إرفاق صورة أو فيديو' : 'Attach image or video'}
+            >
+              <ImagePlus size={17} aria-hidden="true" />
+              {locale === 'ar' ? 'صورة/فيديو' : 'Media'}
+            </button>
+            <button
+              type="button"
+              onClick={toggleVoiceRecording}
+              disabled={sending}
+              className="min-h-[44px]"
+              aria-label={recording ? (locale === 'ar' ? 'إيقاف وإرسال التسجيل' : 'Stop and send voice note') : (locale === 'ar' ? 'تسجيل رسالة صوتية' : 'Record voice note')}
+            >
+              {recording ? <Square size={16} aria-hidden="true" /> : <Mic size={17} aria-hidden="true" />}
+              {recording ? (locale === 'ar' ? 'إيقاف وإرسال' : 'Stop & Send') : (locale === 'ar' ? 'صوت' : 'Voice')}
+            </button>
+            <button type="submit" disabled={!text.trim() || sending || recording} className="min-h-[44px]">
+              {sending ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <Send size={17} aria-hidden="true" />}
+              {sending ? sc.sending : sc.send}
+            </button>
+          </div>
         </div>
         {error && <p id={errorId} className="wn-support-error" role="alert">{error}</p>}
       </form>

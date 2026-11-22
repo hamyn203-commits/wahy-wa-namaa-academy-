@@ -1,0 +1,92 @@
+{
+  "expo": {
+    "name": "وحي ونماء",
+    "slug": "wahy-wa-namaa-student",
+    "owner": "wahy-wa-namaa",
+    "version": "1.3.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/964071fe-be10-46f0-bd9c-1f0cc4587435",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "orientation": "portrait",
+    "scheme": "wahywanamaa",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#073528"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wahywanamaa.student",
+      "infoPlist": {
+        "NSCameraUsageDescription": "تحتاج الأكاديمية إلى الكاميرا لحضور حلقات القرآن الكريم المباشرة وتصوير إيصال الدفع.",
+        "NSMicrophoneUsageDescription": "تحتاج الأكاديمية إلى الميكروفون للتلاوة والتسميع وتسجيل الواجبات الصوتية.",
+        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق إلى معرض الصور لاختيار صورة إيصال التحويل."
+      }
+    },
+    "android": {
+      "package": "com.wahywanamaa.student",
+      "versionCode": 4,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#073528"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "يحتاج تطبيق وحي ونماء إلى الميكروفون لتسجيل التلاوة والواجبات الصوتية وحضور الحلقات المباشرة."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يحتاج تطبيق وحي ونماء إلى معرض الصور لرفع صورة إيصال التحويل البنكي أو إنستا باي أو فودافون كاش.",
+          "cameraPermission": "يحتاج تطبيق وحي ونماء إلى الكاميرا لتصوير إيصال التحويل."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F6B4F"
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "appAudience": "learner",
+      "apiBaseUrl": "https://api.wahywanamaa.com",
+      "siteUrl": "https://wahywanamaa.com",
+      "supportsRTL": true,
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "964071fe-be10-46f0-bd9c-1f0cc4587435"
+      }
+    }
+  }
+}
