@@ -147,7 +147,8 @@ function pageRoutes() {
       <Route path="kids" element={<StudentPublicRedirect><KidsProgram /></StudentPublicRedirect>} />
       <Route path="tracks" element={<StudentPublicRedirect><TracksPage /></StudentPublicRedirect>} />
       <Route path="leaderboard" element={<StudentShell><LeaderboardPage /></StudentShell>} />
-      <Route path="app" element={<StudentPublicRedirect><MobileAppPage /></StudentPublicRedirect>} />
+      <Route path="app" element={<StudentShell><MobileAppPage /></StudentShell>} />
+      <Route path="mobile" element={<StudentShell><MobileAppPage /></StudentShell>} />
       <Route path="notifications" element={<ProtectedRoute><StudentShell><NotificationsPage /></StudentShell></ProtectedRoute>} />
       <Route path="settings/notifications" element={<ProtectedRoute><StudentShell><NotificationSettings /></StudentShell></ProtectedRoute>} />
     </>
