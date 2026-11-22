@@ -470,6 +470,7 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
                         aria-hidden="true"
                         className={m.readAt ? 'text-sky-400' : 'opacity-65'}
                       />
+                      <span>{m.readAt ? sc.read : sc.sent}</span>
                     </span>
                   )}
                 </small>
