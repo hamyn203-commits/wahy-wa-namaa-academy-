@@ -159,7 +159,10 @@ const PaymentSchema = new mongoose.Schema({
 
 PaymentSchema.index(
   { provider: 1, providerReference: 1 },
-  { unique: true, sparse: true }
+  {
+    unique: true,
+    partialFilterExpression: { providerReference: { $type: 'string' } },
+  }
 );
 PaymentSchema.index({ student: 1, course: 1, status: 1 });
 PaymentSchema.index({ student: 1, subscription: 1, status: 1 });
@@ -252,4 +255,44 @@ PaymentSchema.pre('validate', function paymentRelationValidation(next) {
   return next();
 });
 
-module.exports = mongoose.model('Payment', PaymentSchema);
+const Payment = mongoose.model('Payment', PaymentSchema);
+
+let providerRefIndexReadyPromise = null;
+
+async function ensureProviderReferencePartialIndex() {
+  if (mongoose.connection.readyState !== 1 || !Payment.collection) return false;
+  if (!providerRefIndexReadyPromise) {
+    providerRefIndexReadyPromise = (async () => {
+      try {
+        const indexes = await Payment.collection.indexes();
+        const legacy = indexes.find(
+          (idx) =>
+            idx.name === 'provider_1_providerReference_1'
+            && idx.sparse === true
+            && !idx.partialFilterExpression
+        );
+        if (legacy) {
+          await Payment.collection.dropIndex('provider_1_providerReference_1').catch(() => {});
+          await Payment.collection.createIndex(
+            { provider: 1, providerReference: 1 },
+            {
+              name: 'provider_1_providerReference_1',
+              unique: true,
+              partialFilterExpression: { providerReference: { $type: 'string' } },
+            }
+          );
+          return true;
+        }
+        return false;
+      } catch {
+        providerRefIndexReadyPromise = null;
+        return false;
+      }
+    })();
+  }
+  return providerRefIndexReadyPromise;
+}
+
+Payment.ensureProviderReferencePartialIndex = ensureProviderReferencePartialIndex;
+
+module.exports = Payment;
