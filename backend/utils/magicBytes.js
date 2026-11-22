@@ -58,6 +58,7 @@ function validateMagicBytes(input, expectedContentType) {
     case 'video/mp4':
     case 'video/quicktime':
     case 'audio/mp4':
+    case 'audio/m4a':
     case 'audio/x-m4a': {
       // ISO Base Media File Format: bytes 4..7 == 'ftyp' (66 74 79 70) or 'moov' / 'wide'
       const box = buf.length >= 8 ? buf.subarray(4, 8).toString('ascii') : '';

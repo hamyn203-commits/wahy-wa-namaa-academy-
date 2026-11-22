@@ -101,6 +101,7 @@ test('Support audio upload validates magic bytes and never leaks storage path', 
   SupportMessage.findOneAndUpdate = async (_filter, update) => {
     const doc = update.$setOnInsert;
     if (doc.audioPath) createdPaths.push(doc.audioPath);
+    if (doc.attachmentPath) createdPaths.push(doc.attachmentPath);
     return {
       _id: new mongoose.Types.ObjectId(),
       ...doc,
@@ -136,6 +137,38 @@ test('Support audio upload validates magic bytes and never leaks storage path', 
     assert.equal(goodRes.json?.message?.hasAudio, true);
     assert.equal(goodRes.json?.message?.audioDuration, 7);
     assert.equal(goodRes.json?.message?.audioPath, undefined);
+
+    // 3. Mobile M4A recording declared as audio/m4a MUST be accepted cleanly
+    const validM4a = Buffer.from('00000018667479704d344120000000004d3441206d703432', 'hex');
+    const m4aForm = buildMultipart(
+      { clientId: 'test_audio_m4a_0001', durationSeconds: '4' },
+      { field: 'audio', filename: 'voice.m4a', contentType: 'audio/m4a', buffer: validM4a }
+    );
+    const m4aRes = await postRaw(port, `/api/support/${studentId}/audio`, token, m4aForm);
+    assert.equal(m4aRes.status, 201, `Unexpected m4aRes: ${m4aRes.text}`);
+    assert.equal(m4aRes.json?.message?.hasAudio, true);
+    assert.equal(m4aRes.json?.message?.audioMimeType, 'audio/mp4');
+
+    // 4. Spoofed image in /media MUST be rejected
+    const badImgForm = buildMultipart(
+      { clientId: 'test_media_bad_0001' },
+      { field: 'media', filename: 'fake.png', contentType: 'image/png', buffer: Buffer.from('not-a-png') }
+    );
+    const badImgRes = await postRaw(port, `/api/support/${studentId}/media`, token, badImgForm);
+    assert.equal(badImgRes.status, 400, `Unexpected badImgRes: ${badImgRes.text}`);
+    assert.equal(badImgRes.json?.code, 'INVALID_FILE_MAGIC_BYTES');
+
+    // 5. Valid PNG image in /media MUST succeed and omit attachmentPath
+    const validPng = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de', 'hex');
+    const goodImgForm = buildMultipart(
+      { clientId: 'test_media_good_0001', text: 'صورة المشكلة' },
+      { field: 'media', filename: 'shot.png', contentType: 'image/png', buffer: validPng }
+    );
+    const goodImgRes = await postRaw(port, `/api/support/${studentId}/media`, token, goodImgForm);
+    assert.equal(goodImgRes.status, 201, `Unexpected goodImgRes: ${goodImgRes.text}`);
+    assert.equal(goodImgRes.json?.message?.hasAttachment, true);
+    assert.equal(goodImgRes.json?.message?.attachmentType, 'image');
+    assert.equal(goodImgRes.json?.message?.attachmentPath, undefined);
   } finally {
     server.close();
     User.findOne = origFindOne;

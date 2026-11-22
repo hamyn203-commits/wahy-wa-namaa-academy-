@@ -348,6 +348,10 @@ export interface SupportMessage {
   readAt?: string | null;
   hasAudio?: boolean;
   audioDuration?: number;
+  hasAttachment?: boolean;
+  attachmentType?: 'image' | 'video' | '';
+  attachmentMimeType?: string;
+  attachmentName?: string;
   _optimistic?: boolean;
 }
 

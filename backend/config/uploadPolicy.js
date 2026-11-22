@@ -31,8 +31,13 @@ const PURPOSES = Object.freeze({
   },
   'support-audio': {
     roles: ['student', 'admin'],
-    types: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a'],
+    types: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/m4a', 'audio/x-m4a'],
     maxBytes: 10 * 1024 * 1024,
+  },
+  'support-media': {
+    roles: ['student', 'admin'],
+    types: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'],
+    maxBytes: 25 * 1024 * 1024,
   },
   'teacher-feedback-audio': {
     roles: ['teacher'],
@@ -90,6 +95,7 @@ const EXTENSIONS_BY_CONTENT_TYPE = Object.freeze({
   'audio/webm': ['.webm'],
   'audio/mp4': ['.m4a', '.mp4'],
   'audio/aac': ['.aac'],
+  'audio/m4a': ['.m4a'],
   'audio/x-m4a': ['.m4a'],
 });
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { CheckCheck, Loader2, MessageCircle, Mic, RefreshCw, Send, Square, Volume2 } from 'lucide-react';
+import { CheckCheck, ImagePlus, Loader2, MessageCircle, Mic, RefreshCw, Send, Square, Volume2 } from 'lucide-react';
 import api from '../../lib/api';
+import { uploadFileDirect } from '../../lib/fileUpload';
 import { useI18n } from '../../i18n';
 import { resolveIntlLocale } from '../../lib/locale';
 import EmptyState from '../shared/EmptyState';
@@ -64,6 +65,91 @@ function SupportAudioPlayer({ studentId, messageId, duration }) {
   );
 }
 
+function SupportAttachmentViewer({ studentId, messageId, attachmentType, attachmentName }) {
+  const { locale } = useI18n();
+  const [src, setSrc] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const objectUrlRef = useRef('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setFailed(false);
+    (async () => {
+      try {
+        const response = await api.get(
+          `/api/support/${encodeURIComponent(studentId)}/messages/${encodeURIComponent(messageId)}/attachment?mode=json`,
+          { auth: true, json: false }
+        );
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (active && data?.url) {
+            setSrc(data.url);
+            return;
+          }
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        if (active) setSrc(url);
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = '';
+      }
+    };
+  }, [studentId, messageId]);
+
+  if (loading) {
+    return (
+      <div className="inline-flex items-center gap-2 py-2 text-xs opacity-75">
+        <Loader2 size={14} className="animate-spin" />
+        <span>{locale === 'ar' ? 'جارٍ تحميل المرفق...' : 'Loading attachment...'}</span>
+      </div>
+    );
+  }
+
+  if (failed || !src) {
+    return (
+      <p className="text-xs opacity-75 mt-1">
+        {locale === 'ar' ? 'تعذر عرض المرفق' : 'Attachment unavailable'}
+      </p>
+    );
+  }
+
+  if (attachmentType === 'video') {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={src}
+        className="w-full max-w-sm rounded-xl mt-1.5 bg-black max-h-72"
+      />
+    );
+  }
+
+  return (
+    <a href={src} target="_blank" rel="noopener noreferrer" className="block mt-1.5">
+      <img
+        src={src}
+        alt={attachmentName || (locale === 'ar' ? 'صورة مرفقة' : 'Attachment')}
+        className="w-full max-w-xs max-h-64 object-cover rounded-xl border border-black/10"
+        loading="lazy"
+      />
+    </a>
+  );
+}
+
 export default function SupportChat({ studentId = 'me', admin = false }) {
   const { locale, dir, t } = useI18n();
   const sc = t.supportChat;
@@ -91,6 +177,7 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recordStartRef = useRef(0);
+  const fileInputRef = useRef(null);
   const base = `/api/support/${encodeURIComponent(studentId)}`;
 
   const refresh = useCallback(async () => {
@@ -271,6 +358,55 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
     }
   };
 
+  const handleAttachmentSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || sending) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError(locale === 'ar' ? 'الحد الأقصى لحجم الصورة أو الفيديو هو 25 ميجابايت' : 'Max attachment size is 25 MB');
+      return;
+    }
+
+    setSending(true);
+    setError('');
+    const clientId = `web_med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      let data;
+      try {
+        const uploaded = await uploadFileDirect(file, 'support-media');
+        data = await api.post(
+          `${base}/media`,
+          {
+            clientId,
+            attachmentUrl: uploaded.url,
+            attachmentMimeType: uploaded.contentType || file.type,
+            attachmentName: uploaded.name || file.name,
+            text: text.trim() || undefined,
+          },
+          { auth: true }
+        );
+      } catch {
+        const form = new FormData();
+        form.append('media', file, file.name);
+        form.append('clientId', clientId);
+        if (text.trim()) form.append('text', text.trim());
+        data = await api.post(`${base}/media`, form, { auth: true });
+      }
+      if (data?.message) {
+        setMessages((current) =>
+          current.some((m) => m._id === data.message._id) ? current : [...current, data.message]
+        );
+        setText('');
+        requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: 'nearest' }));
+        window.dispatchEvent(new Event('wn:support-changed'));
+      }
+    } catch (err) {
+      setError(err.message || sc.sendError);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const all = [...new Map([...older, ...messages].map((m) => [m._id, m])).values()].sort(
     (a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a._id.localeCompare(b._id)
   );
@@ -312,7 +448,18 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
                 {m.hasAudio ? (
                   <SupportAudioPlayer studentId={studentId} messageId={m._id} duration={m.audioDuration} />
                 ) : null}
-                {(!m.hasAudio || (m.text && m.text !== 'رسالة صوتية')) ? <p>{m.text}</p> : null}
+                {m.hasAttachment ? (
+                  <SupportAttachmentViewer
+                    studentId={studentId}
+                    messageId={m._id}
+                    attachmentType={m.attachmentType}
+                    attachmentName={m.attachmentName}
+                  />
+                ) : null}
+                {(!m.hasAudio || (m.text && m.text !== 'رسالة صوتية'))
+                  && (!m.hasAttachment || (m.text && m.text !== 'مرفق صورة' && m.text !== 'مرفق فيديو')) ? (
+                  <p>{m.text}</p>
+                ) : null}
                 <small className="inline-flex items-center gap-1">
                   {new Date(m.createdAt).toLocaleString(intlLocale, { dateStyle: 'short', timeStyle: 'short' })}
                   {mine && (
@@ -348,6 +495,23 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
         <div>
           <small>{recording ? `🎤 ${recordSeconds}s` : `${text.length}/2000`}</small>
           <div className="inline-flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+              className="hidden"
+              onChange={handleAttachmentSelected}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || recording}
+              className="min-h-[44px]"
+              aria-label={locale === 'ar' ? 'إرفاق صورة أو فيديو' : 'Attach image or video'}
+            >
+              <ImagePlus size={17} aria-hidden="true" />
+              {locale === 'ar' ? 'صورة/فيديو' : 'Media'}
+            </button>
             <button
               type="button"
               onClick={toggleVoiceRecording}
