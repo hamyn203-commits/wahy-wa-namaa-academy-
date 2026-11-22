@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Image,
@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CheckCircle2, Clock, CreditCard, ShieldAlert, Sparkles, Users, X } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
@@ -108,9 +108,11 @@ export default function PlansScreen() {
     }
   }, [user?.role]);
 
-  useEffect(() => {
-    void loadPlans(false);
-  }, [loadPlans]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadPlans(false);
+    }, [loadPlans])
+  );
 
   const packs = catalog?.allowedSessionCounts?.length ? catalog.allowedSessionCounts : DEFAULT_PACKS;
 

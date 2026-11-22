@@ -487,10 +487,14 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
     const currency = normalizeCurrency(course.currency || 'EGP');
     const amountMinor = toMinorUnits(course.price, currency);
 
+    await Payment.ensureProviderReferencePartialIndex?.().catch(() => {});
+    const manualIdempotencyKey = `manual:${crypto.randomUUID()}`;
+
     const payment = await Payment.create({
       kind: 'course_enrollment',
       provider: 'manual',
-      idempotencyKey: `manual:${crypto.randomUUID()}`,
+      providerReference: manualIdempotencyKey,
+      idempotencyKey: manualIdempotencyKey,
       student: req.user.id,
       course: course._id,
       amountMinor,
@@ -749,14 +753,18 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
       });
     }
 
+    await Payment.ensureProviderReferencePartialIndex?.().catch(() => {});
+
     const dbSession = await mongoose.startSession();
     let payment;
     try {
       await dbSession.withTransaction(async () => {
+        const manualIdempotencyKey = `manual-subscription:${crypto.randomUUID()}`;
         const created = await Payment.create([{
           kind: 'subscription',
           provider: 'manual',
-          idempotencyKey: `manual-subscription:${crypto.randomUUID()}`,
+          providerReference: manualIdempotencyKey,
+          idempotencyKey: manualIdempotencyKey,
           student: req.user.id,
           subscription: subscription._id,
           amountMinor: subscription.totalAmountMinor,
@@ -831,6 +839,14 @@ router.post('/subscription/:id/manual', protect, authorize('student', 'guardian'
           subscription: subscription._id,
           status: 'pending',
         }).select('_id');
+
+        if (!duplicatePayment && (keyPattern.providerReference || String(error?.message || '').includes('providerReference'))) {
+          console.error('Manual subscription payment hit legacy providerReference index conflict:', error.message);
+          return res.status(503).json({
+            error: 'حدث تعارض مؤقت أثناء حفظ الإيصال، يرجى المحاولة مجدداً الآن',
+            code: 'PAYMENT_INDEX_CONFLICT_RETRY',
+          });
+        }
 
         return res.status(409).json({
           error: 'التحويل مرفوع بالفعل وينتظر مراجعة الإدارة',
