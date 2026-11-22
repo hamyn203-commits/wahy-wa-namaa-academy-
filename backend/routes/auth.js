@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Guardian = require('../models/Guardian');
 const { 
+  isNativeMobileClient,
   generateAccessToken, 
   generateRefreshToken, 
   verifyAccessToken, 
@@ -124,6 +125,16 @@ function clearRefreshCookie(res) {
     'Set-Cookie',
     `${cookieName}=; Path=/api/auth; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`
   );
+}
+
+function attachRefreshSession(req, res, user) {
+  const nativeMobile = isNativeMobileClient(req);
+  const refreshToken = generateRefreshToken(user, { mobile: nativeMobile });
+  if (!nativeMobile) {
+    setRefreshCookie(res, refreshToken);
+    return {};
+  }
+  return { refreshToken };
 }
 
 async function presentUser(user) {
@@ -348,8 +359,7 @@ router.post('/register', async (req, res) => {
       }
 
       const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken(user);
-      setRefreshCookie(res, refreshToken);
+      const mobileRefresh = attachRefreshSession(req, res, user);
 
       user.lastLogin = new Date();
       user.failedLoginAttempts = 0;
@@ -359,7 +369,8 @@ router.post('/register', async (req, res) => {
       res.status(201).json({
         message: 'Registration successful',
         user: await presentUser(user),
-        accessToken
+        accessToken,
+        ...mobileRefresh
       });
       return;
     }
@@ -384,13 +395,13 @@ router.post('/register', async (req, res) => {
     });
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-    setRefreshCookie(res, refreshToken);
+    const mobileRefresh = attachRefreshSession(req, res, user);
 
     res.status(201).json({
       message: 'Registration successful',
       user: await presentUser(user),
-      accessToken
+      accessToken,
+      ...mobileRefresh
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -602,9 +613,11 @@ router.post('/google', async (req, res) => {
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
     await user.save();
-    setRefreshCookie(res, generateRefreshToken(user));
+    const accessToken = generateAccessToken(user);
+    const mobileRefresh = attachRefreshSession(req, res, user);
     return res.json({
-      accessToken: generateAccessToken(user),
+      accessToken,
+      ...mobileRefresh,
       user: await presentUser(user),
     });
   } catch (error) {
@@ -685,8 +698,7 @@ router.post('/login', async (req, res) => {
     }
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-    setRefreshCookie(res, refreshToken);
+    const mobileRefresh = attachRefreshSession(req, res, user);
 
     if (!isMockMode || isDBConnected()) {
       user.lastLogin = new Date();
@@ -704,7 +716,8 @@ router.post('/login', async (req, res) => {
     res.json({
       message: 'Login successful',
       user: await presentUser(user),
-      accessToken
+      accessToken,
+      ...mobileRefresh
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -836,11 +849,11 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
     }
 
     const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-    setRefreshCookie(res, refreshToken);
+    const mobileRefresh = attachRefreshSession(req, res, user);
 
     res.json({
-      accessToken
+      accessToken,
+      ...mobileRefresh
     });
   } catch (error) {
     console.error('Refresh error:', error);

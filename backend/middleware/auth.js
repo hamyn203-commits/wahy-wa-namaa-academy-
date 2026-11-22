@@ -96,7 +96,10 @@ const generateAccessToken = (user) => {
   );
 };
 
-const generateRefreshToken = (user) => {
+const generateRefreshToken = (user, options = {}) => {
+  const expiresIn = options && options.mobile
+    ? (process.env.JWT_MOBILE_REFRESH_EXPIRES_IN || '90d')
+    : (process.env.JWT_REFRESH_EXPIRES_IN || '7d');
   return jwt.sign(
     {
       typ: 'refresh',
@@ -106,7 +109,7 @@ const generateRefreshToken = (user) => {
       jti: crypto.randomUUID(),
     },
     refreshSecret(),
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d', algorithm: 'HS256' }
+    { expiresIn, algorithm: 'HS256' }
   );
 };
 
@@ -310,6 +313,19 @@ function readCookie(req, name) {
   return null;
 }
 
+const NATIVE_MOBILE_PLATFORMS = new Set(['android', 'ios']);
+
+function isNativeMobileClient(req) {
+  const platform = String(req?.headers?.['x-client-platform'] || '').trim().toLowerCase();
+  if (!NATIVE_MOBILE_PLATFORMS.has(platform)) return false;
+  // Browsers attach forbidden Sec-Fetch-* headers that JS cannot strip; prevent browser
+  // contexts from receiving or submitting non-cookie refresh tokens.
+  if (req?.headers?.['sec-fetch-mode'] || req?.headers?.['sec-fetch-site'] || req?.headers?.['sec-fetch-dest']) {
+    return false;
+  }
+  return true;
+}
+
 function readRefreshCookie(req) {
   if (process.env.NODE_ENV === 'production') {
     return readCookie(req, '__Secure-wn_refresh') || null;
@@ -317,8 +333,18 @@ function readRefreshCookie(req) {
   return readCookie(req, '__Secure-wn_refresh') || readCookie(req, 'wn_refresh') || null;
 }
 
+function readRefreshTokenFromRequest(req) {
+  if (isNativeMobileClient(req)) {
+    const bodyToken = typeof req?.body?.refreshToken === 'string' ? req.body.refreshToken.trim() : '';
+    if (bodyToken) return bodyToken;
+    const headerToken = typeof req?.headers?.['x-refresh-token'] === 'string' ? req.headers['x-refresh-token'].trim() : '';
+    if (headerToken) return headerToken;
+  }
+  return readRefreshCookie(req);
+}
+
 const verifyRefreshToken = (req, res, next) => {
-  const refreshToken = readRefreshCookie(req);
+  const refreshToken = readRefreshTokenFromRequest(req);
 
   if (!refreshToken) {
     return res.status(401).json({ error: 'Refresh session is required' });
@@ -338,7 +364,7 @@ const verifyRefreshToken = (req, res, next) => {
 };
 
 const readRefreshTokenIfValid = (req, _res, next) => {
-  const refreshToken = readRefreshCookie(req);
+  const refreshToken = readRefreshTokenFromRequest(req);
   if (!refreshToken) return next();
 
   try {
@@ -380,6 +406,7 @@ const attachTeacherProfile = async (req, res, next) => {
 
 module.exports = {
   isWeakProductionSecret,
+  isNativeMobileClient,
   getAccessSecret: accessSecret,
   generateAccessToken,
   generateRefreshToken,

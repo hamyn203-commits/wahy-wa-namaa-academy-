@@ -8,6 +8,7 @@ export default defineConfig([
   globalIgnores([
     'dist',
     'backend',
+    'mobile',
     'deploy-folder',
     'platform',
     'output',

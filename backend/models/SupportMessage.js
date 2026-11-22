@@ -6,6 +6,10 @@ const schema = new mongoose.Schema({
   senderRole: { type: String, enum: ['student', 'admin'], required: true },
   clientId: { type: String, required: true, maxlength: 80 },
   text: { type: String, required: true, maxlength: 2000 },
+  hasAudio: { type: Boolean, default: false },
+  audioDuration: { type: Number, default: 0, min: 0, max: 300 },
+  audioMimeType: { type: String, default: '' },
+  audioPath: { type: String, default: '', select: false },
   readAt: { type: Date, default: null },
 }, { timestamps: true });
 schema.index({ sender: 1, clientId: 1 }, { unique: true });

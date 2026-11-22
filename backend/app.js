@@ -502,6 +502,7 @@ app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/trials', require('./routes/trials'));
 app.use('/api/finance', require('./routes/finance'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/mobile', require('./routes/mobile'));
 app.use('/api/cron', require('./routes/cron'));
 
 app.use((_req, res) => {
