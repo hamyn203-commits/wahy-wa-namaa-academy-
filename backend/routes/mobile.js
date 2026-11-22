@@ -57,7 +57,7 @@ router.get('/config', (req, res) => {
 
   const fallbackDownloadUrl = app === 'learner' && platform === 'android'
     ? DEFAULT_LEARNER_ANDROID_APK_URL
-    : `${DEFAULT_SITE_URL}/ar/mobile`;
+    : `${DEFAULT_SITE_URL}/ar/app`;
   const envUrlKey = platform === 'ios'
     ? `${prefix}_IOS_STORE_URL`
     : `${prefix}_ANDROID_APK_URL`;
@@ -98,7 +98,7 @@ router.get('/download/:platform', (req, res) => {
   const prefix = app === 'teacher' ? 'MOBILE_TEACHER' : 'MOBILE_LEARNER';
   const fallbackDownloadUrl = app === 'learner' && platform === 'android'
     ? DEFAULT_LEARNER_ANDROID_APK_URL
-    : `${DEFAULT_SITE_URL}/ar/mobile`;
+    : `${DEFAULT_SITE_URL}/ar/app`;
   const envUrlKey = platform === 'ios'
     ? `${prefix}_IOS_STORE_URL`
     : `${prefix}_ANDROID_APK_URL`;
