@@ -49,6 +49,16 @@ const TRACKS = [
   { key: 'kids_foundation', ar: 'تأسيس الأطفال والقراءة', en: 'Kids Foundation' },
 ] as const;
 
+function teacherHasIjazah(teacher?: PublicTeacher | null): boolean {
+  if (!teacher?.quranInfo) return false;
+  return Boolean(
+    teacher.quranInfo.ijazah
+    || Number(teacher.quranInfo.numberOfIjazat || 0) > 0
+    || String(teacher.quranInfo.ijazaType || '').trim()
+    || String(teacher.quranInfo.sanad || '').trim()
+  );
+}
+
 export default function TeachersScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string; teacherId?: string }>();
@@ -70,6 +80,7 @@ export default function TeachersScreen() {
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [videoBuffering, setVideoBuffering] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [videoRetryKey, setVideoRetryKey] = useState(0);
   const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
   const videoRef = useRef<Video | null>(null);
   const deepLinkedRef = useRef(false);
@@ -366,7 +377,7 @@ export default function TeachersScreen() {
                       </View>
                       <Text style={[styles.teacherSpec, { textAlign: align }]} numberOfLines={1}>
                         {item.academicInfo?.specialization
-                          || (item.quranInfo?.ijazah
+                          || (teacherHasIjazah(item)
                             ? locale === 'ar' ? 'معلم قرآن مجاز بالسند' : 'Certified Ijazah Teacher'
                             : locale === 'ar' ? 'معلم قرآن وتجويد' : 'Quran & Tajweed Teacher')}
                       </Text>
@@ -383,10 +394,14 @@ export default function TeachersScreen() {
                             </Text>
                           </View>
                         ) : null}
-                        {item.quranInfo?.ijazah ? (
+                        {teacherHasIjazah(item) ? (
                           <View style={styles.metaPill}>
                             <Award size={12} color={colors.emerald} />
-                            <Text style={styles.metaPillText}>{locale === 'ar' ? 'إجازة' : 'Ijazah'}</Text>
+                            <Text style={styles.metaPillText}>
+                              {Number(item.quranInfo?.numberOfIjazat || 0) > 0
+                                ? (locale === 'ar' ? `${item.quranInfo?.numberOfIjazat} إجازة` : `${item.quranInfo?.numberOfIjazat} Ijazah`)
+                                : (locale === 'ar' ? 'مجاز بالسند' : 'Ijazah')}
+                            </Text>
                           </View>
                         ) : null}
                         {videos.length > 0 ? (
@@ -647,11 +662,13 @@ export default function TeachersScreen() {
                     </Text>
                   </View>
                 ) : null}
-                {selectedTeacher?.quranInfo?.ijazah ? (
+                {teacherHasIjazah(selectedTeacher) ? (
                   <View style={styles.metaPill}>
                     <Award size={12} color={colors.emerald} />
                     <Text style={styles.metaPillText}>
-                      {locale === 'ar' ? 'مجاز بالسند' : 'Certified Ijazah'}
+                      {Number(selectedTeacher?.quranInfo?.numberOfIjazat || 0) > 0
+                        ? (locale === 'ar' ? `${selectedTeacher?.quranInfo?.numberOfIjazat} إجازة معتمدة` : `${selectedTeacher?.quranInfo?.numberOfIjazat} Ijazah`)
+                        : (locale === 'ar' ? 'مجاز بالسند' : 'Certified Ijazah')}
                     </Text>
                   </View>
                 ) : null}
@@ -710,6 +727,7 @@ export default function TeachersScreen() {
                             onPress={() => {
                               setVideoError(false);
                               setVideoBuffering(true);
+                              setVideoRetryKey((k) => k + 1);
                             }}
                             style={styles.videoRetryBtn}
                           >
@@ -721,7 +739,7 @@ export default function TeachersScreen() {
                       ) : (
                         <>
                           <Video
-                            key={activeVideo.url}
+                            key={`${activeVideo.url}-${videoRetryKey}`}
                             ref={videoRef}
                             source={{ uri: activeVideo.url }}
                             style={styles.videoPlayer}
@@ -758,6 +776,60 @@ export default function TeachersScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Quran Memorization & Ijazah / Sanad Section */}
+              {(selectedTeacher?.quranInfo?.memorizedParts || teacherHasIjazah(selectedTeacher)) ? (
+                <View style={styles.ijazahBox}>
+                  <View style={[styles.nameRow, { flexDirection: rowDir }]}>
+                    <Award size={16} color={colors.goldDark} />
+                    <Text style={styles.infoBoxTitle}>
+                      {locale === 'ar' ? 'الحفظ والإجازة والسند' : 'Quran Memorization & Ijazah'}
+                    </Text>
+                  </View>
+                  {selectedTeacher?.quranInfo?.memorizedParts ? (
+                    <Text style={[styles.bioText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? `• مقدار الحفظ: ${selectedTeacher.quranInfo.memorizedParts} جزءاً من القرآن الكريم`
+                        : `• Memorized: ${selectedTeacher.quranInfo.memorizedParts} Juz`}
+                    </Text>
+                  ) : null}
+                  {Number(selectedTeacher?.quranInfo?.numberOfIjazat || 0) > 0 ? (
+                    <Text style={[styles.bioText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? `• عدد الإجازات الموثّقة: ${selectedTeacher?.quranInfo?.numberOfIjazat}`
+                        : `• Verified Ijazahs: ${selectedTeacher?.quranInfo?.numberOfIjazat}`}
+                    </Text>
+                  ) : null}
+                  {selectedTeacher?.quranInfo?.ijazaType ? (
+                    <Text style={[styles.bioText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? `• نوع الإجازة والرواية: ${selectedTeacher.quranInfo.ijazaType}`
+                        : `• Ijazah Type: ${selectedTeacher.quranInfo.ijazaType}`}
+                    </Text>
+                  ) : null}
+                  {selectedTeacher?.quranInfo?.sheikhName ? (
+                    <Text style={[styles.bioText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? `• الشيخ المُجيز: ${selectedTeacher.quranInfo.sheikhName}`
+                        : `• Certifying Scholar: ${selectedTeacher.quranInfo.sheikhName}`}
+                    </Text>
+                  ) : null}
+                  {selectedTeacher?.quranInfo?.sanad ? (
+                    <Text style={[styles.bioText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? `• السند: ${selectedTeacher.quranInfo.sanad}`
+                        : `• Chain (Sanad): ${selectedTeacher.quranInfo.sanad}`}
+                    </Text>
+                  ) : null}
+                  {teacherHasIjazah(selectedTeacher) ? (
+                    <Text style={[styles.verifiedDocHint, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? '✓ تمت مراجعة وثائق الإجازة وتوثيقها لدى إدارة الأكاديمية.'
+                        : '✓ Official Ijazah documents verified by Academy Administration.'}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
 
               {/* Academic / Languages / Bio */}
               {selectedTeacher?.academicInfo?.university || selectedTeacher?.academicInfo?.degree ? (
@@ -1089,6 +1161,20 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSoft,
     padding: spacing.md,
     gap: 4,
+  },
+  ijazahBox: {
+    backgroundColor: colors.goldSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    padding: spacing.md,
+    gap: 4,
+  },
+  verifiedDocHint: {
+    fontSize: 12,
+    fontFamily: fonts.bold,
+    color: colors.emeraldDark,
+    marginTop: 4,
   },
   infoBoxTitle: { fontSize: 13, fontFamily: fonts.bold, color: colors.emeraldDark },
   langPill: {

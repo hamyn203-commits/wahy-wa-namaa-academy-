@@ -304,6 +304,19 @@ router.get('/public', async (req, res) => {
       }
     }
 
+    // Streamable public videos/audio must bypass the serverless 4.5 MB proxy cap and
+    // Edge Cache Range-chunking bugs by issuing a short-lived signed CDN redirect with
+    // true HTTP 206 Partial Content, Content-Range, and Content-Length support.
+    const isStreamableMedia = /\.(?:mp4|mov|webm|mp3|wav|m4a|ogg)$/i.test(pathname);
+    if (isStreamableMedia && (storage.getDriver() === 'vercel-blob' || storage.getDriver() === 's3')) {
+      const signed = await storage.createTemporaryReadUrl(reference, { expiresIn: 20 * 60 }).catch(() => null);
+      if (signed?.url) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Vary', 'Range');
+        return res.redirect(302, signed.url);
+      }
+    }
+
     let boundedRangeHeader = null;
     const rawRange = String(req.headers.range || '').trim();
     if (rawRange) {
@@ -336,7 +349,8 @@ router.get('/public', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
-    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    res.setHeader('Cache-Control', boundedRangeHeader ? 'no-store' : 'public, max-age=86400, stale-while-revalidate=604800');
+    res.setHeader('Vary', 'Range');
     if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
     const contentRange = result.headers?.get?.('content-range') || result.blob?.contentRange || null;
     if (result.statusCode === 206 && contentRange) {

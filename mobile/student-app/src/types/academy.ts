@@ -217,6 +217,11 @@ export interface PublicTeacher {
     specializations?: string[];
     teachingExperience?: number;
     ijazah?: boolean;
+    numberOfIjazat?: number;
+    ijazaType?: string;
+    sheikhName?: string;
+    sanad?: string;
+    memorizedParts?: number;
     bio?: string;
     memorizationStatus?: string;
   };
