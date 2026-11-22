@@ -468,7 +468,7 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
                       <CheckCheck
                         size={14}
                         aria-hidden="true"
-                        style={{ color: m.readAt ? '#38bdf8' : 'currentColor', opacity: m.readAt ? 1 : 0.65 }}
+                        className={m.readAt ? 'text-sky-400' : 'opacity-65'}
                       />
                     </span>
                   )}
