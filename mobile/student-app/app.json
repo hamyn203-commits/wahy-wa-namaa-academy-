@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "وحي ونماء — الطالب",
+    "name": "وحي ونماء",
     "slug": "wahy-wa-namaa-student",
     "owner": "wahy-wa-namaa",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -34,7 +34,7 @@
     },
     "android": {
       "package": "com.wahywanamaa.student",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#073528"

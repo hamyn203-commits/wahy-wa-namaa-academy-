@@ -209,6 +209,7 @@ export interface PublicTeacher {
   };
   academicInfo?: {
     specialization?: string;
+    qualification?: string;
     degree?: string;
     university?: string;
   };
@@ -235,6 +236,10 @@ export interface PublicTeacher {
   };
   media?: {
     profilePhoto?: string;
+    introductionVideo?: string;
+    recitationVideo?: string;
+    teachingMethodVideo?: string;
+    additionalVideos?: string[];
   };
 }
 

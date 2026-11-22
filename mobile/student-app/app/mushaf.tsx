@@ -14,6 +14,8 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Audio } from 'expo-av';
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import {
@@ -159,6 +161,7 @@ function SurahCartouche({ surah, night }: { surah: SurahMeta; night: boolean }) 
 }
 
 export default function MushafScreen() {
+  useKeepAwake();
   const router = useRouter();
   const { locale, isRTL, t } = useI18n();
 
@@ -1180,9 +1183,10 @@ export default function MushafScreen() {
             return (
               <Pressable
                 key={dhikr.id}
-                onPress={() =>
-                  setTasbeehCounts((prev) => ({ ...prev, [dhikr.id]: (prev[dhikr.id] || 0) + 1 }))
-                }
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setTasbeehCounts((prev) => ({ ...prev, [dhikr.id]: (prev[dhikr.id] || 0) + 1 }));
+                }}
                 style={({ pressed }) => [
                   styles.dhikrCard,
                   done && styles.dhikrCardDone,

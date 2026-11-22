@@ -81,4 +81,14 @@ test('GET /api/mobile/config computes soft/forced updates and enforces safe HTTP
   assert.equal(teacher.body.app, 'teacher');
   assert.match(teacher.body.downloadUrl, /^https:\/\//);
   assert.doesNotMatch(teacher.body.downloadUrl, /^javascript:/i);
+
+  // 5) Branded download route redirects safely (302) to configured APK URL
+  const dlRedirect = await new Promise((resolve, reject) => {
+    http.get(`${baseUrl}/api/mobile/download/android?app=learner`, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode, location: res.headers.location });
+    }).on('error', reject);
+  });
+  assert.equal(dlRedirect.status, 302);
+  assert.equal(dlRedirect.location, 'https://wahywanamaa.com/downloads/student-v1.2.0.apk');
 });

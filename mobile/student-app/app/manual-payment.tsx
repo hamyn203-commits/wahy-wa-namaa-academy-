@@ -34,6 +34,8 @@ import { uploadPaymentProofDirect } from '../src/lib/directUpload';
 import { IslamicHero } from '../src/components/IslamicHero';
 import { PrimaryButton } from '../src/components/PrimaryButton';
 import { SkeletonCard } from '../src/components/SkeletonCard';
+import { TeacherAvatar } from '../src/components/TeacherAvatar';
+import { resolveTeacherPhotoUrl } from '../src/lib/teacherMedia';
 import { colors, fonts, radius, shadows, spacing, TOUCH_MIN } from '../src/theme/tokens';
 import { PublicTeacher } from '../src/types/academy';
 
@@ -391,17 +393,14 @@ export default function ManualPaymentScreen() {
                       const active = selectedTeacherId === item._id;
                       const name = item.personalInfo?.fullName || item.user?.name || t.sessions.teacherFallback;
                       const rating = Number(item.rating?.average || 5).toFixed(1);
+                      const photoUrl = resolveTeacherPhotoUrl(item);
                       return (
                         <Pressable
                           key={item._id}
                           onPress={() => setSelectedTeacherId(item._id)}
                           style={[styles.teacherChip, active && styles.teacherChipActive]}
                         >
-                          <View style={[styles.teacherAvatar, active && styles.teacherAvatarActive]}>
-                            <Text style={[styles.teacherInitial, active && { color: colors.goldBright }]}>
-                              {name.charAt(0)}
-                            </Text>
-                          </View>
+                          <TeacherAvatar uri={photoUrl} name={name} size={46} highlight={active} />
                           <Text style={[styles.teacherName, active && { color: colors.emeraldDark }]} numberOfLines={1}>
                             {name}
                           </Text>

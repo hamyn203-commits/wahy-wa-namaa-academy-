@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Smartphone, Download, Share, Bell, WifiOff, Sparkles } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import { apiUrl } from '../../config';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
@@ -163,12 +164,26 @@ const MOBILE_COPY = {
   },
 };
 
+const DOWNLOAD_ANDROID_LABEL = {
+  ar: 'تحميل تطبيق أندرويد (Wahy-Wa-Namaa-Academy.apk)',
+  en: 'Download Android App (APK)',
+  fr: 'Télécharger l’application Android (APK)',
+  de: 'Android-App herunterladen (APK)',
+  tr: 'Android Uygulamasını İndir (APK)',
+  ur: 'اینڈرائیڈ ایپ ڈاؤن لوڈ کریں (APK)',
+  id: 'Unduh Aplikasi Android (APK)',
+  ms: 'Muat Turun Aplikasi Android (APK)',
+  ku: 'داگرتنی ئەپی ئەندرۆید (APK)',
+};
+
 const STEP_ICONS = [Download, Share, Bell, WifiOff];
 
 export default function MobileAppPage() {
   const { locale, dir, t } = useI18n();
   const lp = (path) => localizedPath(path, locale);
   const copy = MOBILE_COPY[locale] || MOBILE_COPY.en;
+  const androidDownloadLabel = DOWNLOAD_ANDROID_LABEL[locale] || DOWNLOAD_ANDROID_LABEL.en;
+  const androidDownloadHref = apiUrl('/api/mobile/download/android');
 
   return (
     <>
@@ -187,7 +202,14 @@ export default function MobileAppPage() {
               <h1>{copy.title}</h1>
               <p>{copy.subtitle}</p>
               <div className="flex flex-wrap gap-2 mt-5">
-                <Link to={lp('/register/student')} className="wn-btn wn-btn--accent min-h-[44px]">{t.common?.register || copy.register}</Link>
+                <a
+                  href={androidDownloadHref}
+                  className="wn-btn wn-btn--accent min-h-[44px] inline-flex items-center gap-2"
+                >
+                  <Download size={18} aria-hidden="true" />
+                  <span>{androidDownloadLabel}</span>
+                </a>
+                <Link to={lp('/register/student')} className="wn-btn wn-btn--secondary min-h-[44px]">{t.common?.register || copy.register}</Link>
                 <Link to={lp('/login')} className="wn-btn wn-btn--secondary min-h-[44px]">{t.common?.login || copy.login}</Link>
               </div>
             </div>

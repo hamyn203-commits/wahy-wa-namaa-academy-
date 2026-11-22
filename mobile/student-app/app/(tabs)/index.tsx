@@ -40,6 +40,8 @@ import { ProgressRing } from '../../src/components/ProgressRing';
 import { SkeletonDashboard } from '../../src/components/SkeletonCard';
 import { StateView } from '../../src/components/StateView';
 import { StatTile } from '../../src/components/StatTile';
+import { TeacherAvatar } from '../../src/components/TeacherAvatar';
+import { resolveTeacherPhotoUrl } from '../../src/lib/teacherMedia';
 import { colors, fonts, radius, shadows, spacing } from '../../src/theme/tokens';
 import {
   GuardianFamilyOverview,
@@ -565,15 +567,14 @@ export default function HomeScreen() {
                     {featuredTeachers.map((teacher) => {
                       const tName = teacher.personalInfo?.fullName || teacher.user?.name || t.sessions.teacherFallback;
                       const rating = Number(teacher.rating?.average || 5).toFixed(1);
+                      const photoUrl = resolveTeacherPhotoUrl(teacher);
                       return (
                         <Pressable
                           key={teacher._id}
-                          onPress={() => router.push('/teachers')}
+                          onPress={() => router.push({ pathname: '/teachers', params: { teacherId: teacher._id } })}
                           style={({ pressed }) => [styles.teacherMiniCard, pressed && styles.tilePressed]}
                         >
-                          <View style={styles.teacherMiniAvatar}>
-                            <Text style={styles.teacherMiniInitial}>{tName.charAt(0)}</Text>
-                          </View>
+                          <TeacherAvatar uri={photoUrl} name={tName} size={52} />
                           <View style={[styles.miniNameRow, { flexDirection: rowDir }]}>
                             <Text style={styles.teacherMiniName} numberOfLines={1}>{tName}</Text>
                             {teacher.isVerified ? <UserCheck size={13} color={colors.emerald} /> : null}

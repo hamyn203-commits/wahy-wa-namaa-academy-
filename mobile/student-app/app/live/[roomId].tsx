@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Audio } from 'expo-av';
 import { PhoneOff, Radio } from 'lucide-react-native';
 import { useI18n } from '../../src/i18n/I18nProvider';
@@ -17,6 +18,7 @@ import { colors, fonts, radius, spacing } from '../../src/theme/tokens';
  * right inside the native app shell with automatic microphone permission setup.
  */
 export default function LiveClassroomScreen() {
+  useKeepAwake();
   const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { locale, isRTL, t } = useI18n();
