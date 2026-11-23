@@ -73,7 +73,7 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
   const loadInvites = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/teachers/admin/invites');
+      const data = await api.get('/api/teachers/admin/invites', { auth: true });
       setInvites(Array.isArray(data?.invites) ? data.invites : []);
     } catch {
       toast.error(isRTL ? 'تعذّر تحميل روابط دعوة المعلمين' : 'Failed to load teacher invite links');
@@ -92,13 +92,13 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
     setCreating(true);
     setCopiedFresh(false);
     try {
-      const { data } = await api.post('/teachers/admin/invites', {
+      const data = await api.post('/api/teachers/admin/invites', {
         label: label.trim(),
         expiresInHours: Number(expiresInHours),
         maxUses: Number(maxUses),
         lockToFirstIp: Boolean(lockToFirstIp),
         locale: inviteLocale,
-      });
+      }, { auth: true });
       const builtUrl = data?.invitePath && typeof window !== 'undefined'
         ? `${window.location.origin}${data.invitePath}`
         : (data?.inviteUrl || '');
@@ -110,7 +110,7 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
       toast.success(isRTL ? 'تم إنشاء رابط التسجيل المؤقت بنجاح' : 'Temporary registration link created');
       await loadInvites();
     } catch (err) {
-      toast.error(err?.response?.data?.error || (isRTL ? 'تعذّر إنشاء الرابط المؤقت' : 'Could not create invite link'));
+      toast.error(err?.message || (isRTL ? 'تعذّر إنشاء الرابط المؤقت' : 'Could not create invite link'));
     } finally {
       setCreating(false);
     }
@@ -132,11 +132,11 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
     if (busyId) return;
     setBusyId(inviteId);
     try {
-      await api.post(`/teachers/admin/invites/${encodeURIComponent(inviteId)}/reset-ip`, {});
+      await api.post(`/api/teachers/admin/invites/${encodeURIComponent(inviteId)}/reset-ip`, {}, { auth: true });
       toast.success(isRTL ? 'تم فك قفل الـ IP — سيُربط الرابط بأول جهاز يفتحه الآن' : 'IP lock cleared — next opener will bind it');
       await loadInvites();
     } catch (err) {
-      toast.error(err?.response?.data?.error || (isRTL ? 'تعذّر فك قفل الـ IP' : 'Failed to reset IP lock'));
+      toast.error(err?.message || (isRTL ? 'تعذّر فك قفل الـ IP' : 'Failed to reset IP lock'));
     } finally {
       setBusyId('');
     }
@@ -146,14 +146,14 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
     if (busyId) return;
     setBusyId(inviteId);
     try {
-      await api.post(`/teachers/admin/invites/${encodeURIComponent(inviteId)}/revoke`, {});
+      await api.post(`/api/teachers/admin/invites/${encodeURIComponent(inviteId)}/revoke`, {}, { auth: true });
       toast.success(isRTL ? 'تم إلغاء الرابط فوراً ولن يعمل بعد الآن' : 'Invite link revoked immediately');
       if (freshInvite?.invite?.id === inviteId) {
         setFreshInvite(null);
       }
       await loadInvites();
     } catch (err) {
-      toast.error(err?.response?.data?.error || (isRTL ? 'تعذّر إلغاء الرابط' : 'Failed to revoke link'));
+      toast.error(err?.message || (isRTL ? 'تعذّر إلغاء الرابط' : 'Failed to revoke link'));
     } finally {
       setBusyId('');
     }
@@ -163,14 +163,14 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
     if (busyId) return;
     setBusyId(inviteId);
     try {
-      await api.delete(`/teachers/admin/invites/${encodeURIComponent(inviteId)}`);
+      await api.delete(`/api/teachers/admin/invites/${encodeURIComponent(inviteId)}`, { auth: true });
       toast.success(isRTL ? 'تم حذف سجل الرابط' : 'Invite record deleted');
       if (freshInvite?.invite?.id === inviteId) {
         setFreshInvite(null);
       }
       await loadInvites();
     } catch (err) {
-      toast.error(err?.response?.data?.error || (isRTL ? 'تعذّر حذف الرابط' : 'Failed to delete link'));
+      toast.error(err?.message || (isRTL ? 'تعذّر حذف الرابط' : 'Failed to delete link'));
     } finally {
       setBusyId('');
     }
