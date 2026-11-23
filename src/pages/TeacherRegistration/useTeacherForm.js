@@ -217,14 +217,14 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         }
 
         if (d.step) {
-          // If the user returned to Step 3-5 in a new session without active tab OTP token,
-          // keep all saved data & files intact and guide them cleanly to Step 2 (if unauthenticated)
-          // or directly to their saved step if OTP is still valid or authenticated.
+          // Steps 1-3 (data, account credentials, media) and Step 4 (email verification)
+          // never require an active OTP session. Only Step 5 (final review/submit) needs
+          // a live verification token, so returning users land cleanly on Step 4.
           const savedStep = Number(d.step) || 1;
-          if (authenticatedTeacher || sameEmailVerified || savedStep <= 2) {
+          if (authenticatedTeacher || sameEmailVerified || savedStep <= 4) {
             setStep(savedStep);
           } else {
-            setStep(2);
+            setStep(4);
           }
         }
       }
@@ -563,7 +563,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
       setIsCodeSent(true);
-      trackTeacherFunnel(buildFunnelPayload('otp_sent', { step: 2 }));
+      trackTeacherFunnel(buildFunnelPayload('otp_sent', { step: 4 }));
       toast.success(tr.toasts?.codeSentSuccess || 'تم إرسال كود التحقق إلى بريدك الإلكتروني');
     } catch (e) {
       toast.error(e.message || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
@@ -599,9 +599,9 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       setEmailVerified(true);
       setVerifiedEmail(email);
       setVerificationToken(data.verificationToken);
-      trackTeacherFunnel(buildFunnelPayload('email_verified', { step: 3, emailVerified: true }));
+      trackTeacherFunnel(buildFunnelPayload('email_verified', { step: 5, emailVerified: true }));
       toast.success(tr.toasts?.emailVerifiedSuccess || 'تم تأكيد البريد الإلكتروني');
-      setStep(3);
+      setStep(5);
     } catch (e) {
       toast.error(e.message || tr.toasts?.invalidCode || 'كود غير صحيح');
     } finally {
@@ -628,21 +628,24 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       case 2: {
         const email = normalizeEmail(credentials.email);
         if (!emailLooksValid(email)) return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً';
-        if (!emailVerified || !verificationToken || verifiedEmail !== email) {
-          return val.emailVerifyFirst || 'يجب تأكيد البريد الإلكتروني أولاً';
-        }
-        return null;
-      }
-      case 3:
         if (!credentials.password || credentials.password.length < 8) return val.passwordMin8 || 'كلمة المرور 8+ أحرف';
         if (credentials.password !== credentials.confirmPassword) return val.passwordMismatch || 'كلمتا المرور غير متطابقتين';
         return null;
-      case 4: {
+      }
+      case 3: {
         if (!files.profilePhoto) return val.photoRequired || 'ارفع صورة شخصية 4×6';
         if (!files.recitationVideos?.length) {
           return val.recitationVideoRequired || 'ارفع فيديو التعريف والتلاوة الأساسي (1–3 دقائق)';
         }
         return validateTeacherFiles(files, tr);
+      }
+      case 4: {
+        const email = normalizeEmail(credentials.email);
+        if (!emailLooksValid(email)) return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً';
+        if (!emailVerified || !verificationToken || verifiedEmail !== email) {
+          return val.emailVerifyFirst || 'يجب تأكيد البريد الإلكتروني أولاً';
+        }
+        return null;
       }
       default:
         return null;
@@ -653,20 +656,30 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     const err = validate(step);
     if (err) { setFieldError(err); toast.error(err); return; }
     setFieldError('');
-    if (step < 5) setStep(authenticatedTeacher && step === 1 ? 4 : step + 1);
+    if (step < 5) {
+      if (authenticatedTeacher && step === 1) setStep(3);
+      else if (authenticatedTeacher && step === 3) setStep(5);
+      else setStep(step + 1);
+    }
   };
 
-  const prev = () => { if (step > 1) setStep(authenticatedTeacher && step === 4 ? 1 : step - 1); };
+  const prev = () => {
+    if (step > 1) {
+      if (authenticatedTeacher && step === 5) setStep(3);
+      else if (authenticatedTeacher && step === 3) setStep(1);
+      else setStep(step - 1);
+    }
+  };
 
   const submit = async () => {
     if (submissionLock.current) return;
-    const err = validate(4);
+    const err = validate(3);
     if (err) { toast.error(err); return; }
 
     const verifiedEmailNow = normalizeEmail(authenticatedTeacher ? user.email : credentials.email);
     if (!authenticatedTeacher && (!emailVerified || !verificationToken || verifiedEmail !== verifiedEmailNow)) {
       toast.error(tr.validation?.reverifyEmail || 'يجب إعادة تأكيد البريد الإلكتروني');
-      setStep(2);
+      setStep(4);
       return;
     }
 
