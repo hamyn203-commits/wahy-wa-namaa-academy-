@@ -42,6 +42,7 @@ router.get('/teachers', async (req, res) => {
     const filter = {
       status: 'approved',
       isVerified: true,
+      isPublic: { $ne: false },
       'personalInfo.gender': 'female',
     };
     const specializedFilter = { ...filter, 'quranInfo.specializations': 'women' };

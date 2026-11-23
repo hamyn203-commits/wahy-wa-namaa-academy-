@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, CheckCircle2, History, Loader2, MonitorPlay,
+  AlertTriangle, CheckCircle2, Eye, EyeOff, History, Loader2, MonitorPlay,
   Plus, RefreshCw, ShieldCheck, Trash2, Users,
 } from 'lucide-react';
 import SEOHead from '../../components/SEOHead';
@@ -43,7 +43,7 @@ const ALLOWED_TABS = [
 
 export default function AdminDashboard() {
   const { user, ready, logout } = useRequireAuth(['admin']);
-  const { locale, t } = useI18n();
+  const { locale, isRTL, t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
@@ -89,7 +89,7 @@ export default function AdminDashboard() {
 
   const [replyText, setReplyText] = useState({});
   const [teacherForm, setTeacherForm] = useState({
-    name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true,
+    name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true, isPublic: true,
   });
   const [payoutModal, setPayoutModal] = useState(null);
   const [confirmDeleteModal, setConfirmDeleteModal] = useState(null);
@@ -105,6 +105,7 @@ export default function AdminDashboard() {
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [addingLesson, setAddingLesson] = useState(false);
   const [togglingCourseId, setTogglingCourseId] = useState(null);
+  const [togglingTeacherPublicId, setTogglingTeacherPublicId] = useState(null);
   const [creatingBlog, setCreatingBlog] = useState(false);
   const [togglingBlogId, setTogglingBlogId] = useState(null);
   const [sendingReplyId, setSendingReplyId] = useState(null);
@@ -654,9 +655,9 @@ export default function AdminDashboard() {
     setAddingTeacher(true);
     try {
       const autoApprove = teacherForm.autoApprove !== false;
-      await api.post('/api/admin/teachers', { ...teacherForm, autoApprove }, { auth: true });
+      await api.post('/api/admin/teachers', { ...teacherForm, autoApprove, isPublic: teacherForm.isPublic !== false }, { auth: true });
       toast.success(autoApprove ? tt.teacherCreatedApproved : tt.teacherCreatedReview);
-      setTeacherForm({ name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true });
+      setTeacherForm({ name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true, isPublic: true });
       await load();
     } catch (e) {
       toast.error(e.message || tt.teacherCreateFailed);
@@ -729,11 +730,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const toggleTeacherPublicVisibility = async (teacher) => {
+    if (!teacher?._id || togglingTeacherPublicId) return;
+    const nextPublic = teacher.isPublic === false;
+    setTogglingTeacherPublicId(teacher._id);
+    try {
+      await api.put(`/api/admin/teachers/${teacher._id}`, {
+        isPublic: nextPublic,
+        adminReason: nextPublic
+          ? 'Admin enabled public directory visibility for teacher'
+          : 'Admin hid teacher from public directory',
+      }, { auth: true });
+      setApproved((prev) => prev.map((item) => (
+        item._id === teacher._id ? { ...item, isPublic: nextPublic } : item
+      )));
+      toast.success(
+        nextPublic
+          ? (isRTL ? 'تم إظهار المعلم للعام في صفحة المعلمين والموقع' : 'Teacher is now visible to the public')
+          : (isRTL ? 'تم إخفاء المعلم عن العرض العام (يبقى نشطاً داخلياً للإدارة والطلاب المعينين)' : 'Teacher hidden from public listings (remains active internally)')
+      );
+    } catch (e) {
+      toast.error(e.message || tt.teacherSettingsFailed);
+    } finally {
+      setTogglingTeacherPublicId(null);
+    }
+  };
+
   const updateTeacherAdminSettings = async (teacherId, settings) => {
     try {
       await api.put(`/api/admin/teachers/${teacherId}`, {
         ...settings,
-        adminReason: 'Admin update for teacher settings (hourly rate / gender / featured)',
+        adminReason: 'Admin update for teacher settings (hourly rate / gender / featured / visibility)',
       }, { auth: true });
       toast.success(tt.teacherSettingsUpdated);
       await openTeacherDossier(teacherId);
@@ -1235,6 +1262,15 @@ export default function AdminDashboard() {
                       />
                       <span>{tTeachers.fields.autoApprove}</span>
                     </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-text-primary)] min-h-11 py-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={teacherForm.isPublic !== false}
+                        onChange={(e) => setTeacherForm((p) => ({ ...p, isPublic: e.target.checked }))}
+                        className="w-4 h-4 accent-[var(--wn-emerald)]"
+                      />
+                      <span>{isRTL ? 'ظاهر للعام في صفحة المعلمين والموقع' : 'Visible in public teacher directory'}</span>
+                    </label>
                     <button
                       type="submit"
                       disabled={addingTeacher}
@@ -1283,36 +1319,78 @@ export default function AdminDashboard() {
                       <EmptyState icon={Users} title={tTeachers.noMatches} />
                     ) : (
                       <div className="wn-admin-teachers-list__rows">
-                        {filteredApprovedTeachers.map((teacher) => (
-                          <article key={teacher._id} className="wn-admin-teachers-list__row">
-                            <div>
-                              <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback}</strong>
-                              <small>
-                                {[teacher.personalInfo?.country, teacher.personalInfo?.city].filter(Boolean).join(', ') || tTeachers.locationMissing}
-                                {' · '}
-                                {formatMsg(tTeachers.hourlyRateUnit, { rate: teacher.hourlyRate ?? tc.dash })}
-                              </small>
-                              <small>{teacher.user?.email || tTeachers.noEmail}</small>
-                            </div>
-                            <div className="wn-admin-teachers-list__actions">
-                              <button type="button" className="is-primary min-h-[44px]" onClick={() => openTeacherDossier(teacher._id)}>
-                                {tTeachers.manageBtn}
-                              </button>
-                              <button type="button" className="is-secondary min-h-[44px]" onClick={() => previewPublicTeacher(teacher._id)}>
-                                {tTeachers.publicBtn}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback)}
-                                className="min-h-[44px] px-3 py-1.5 rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] text-xs font-bold inline-flex items-center gap-1"
-                                title={tTeachers.deleteTitle}
-                              >
-                                <Trash2 size={13} aria-hidden="true" />
-                                <span>{tTeachers.deleteBtn}</span>
-                              </button>
-                            </div>
-                          </article>
-                        ))}
+                        {filteredApprovedTeachers.map((teacher) => {
+                          const isPublicTeacher = teacher.isPublic !== false;
+                          const isTogglingPublic = togglingTeacherPublicId === teacher._id;
+                          return (
+                            <article key={teacher._id} className="wn-admin-teachers-list__row">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback}</strong>
+                                  <span
+                                    className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                                      isPublicTeacher
+                                        ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)] border-[var(--wn-border-mint)]'
+                                        : 'bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)] border-[var(--wn-border-strong)]'
+                                    }`}
+                                  >
+                                    {isPublicTeacher
+                                      ? (isRTL ? 'ظاهر للعام' : 'Public')
+                                      : (isRTL ? 'مخفي عن العام' : 'Hidden')}
+                                  </span>
+                                </div>
+                                <small>
+                                  {[teacher.personalInfo?.country, teacher.personalInfo?.city].filter(Boolean).join(', ') || tTeachers.locationMissing}
+                                  {' · '}
+                                  {formatMsg(tTeachers.hourlyRateUnit, { rate: teacher.hourlyRate ?? tc.dash })}
+                                </small>
+                                <small>{teacher.user?.email || tTeachers.noEmail}</small>
+                              </div>
+                              <div className="wn-admin-teachers-list__actions">
+                                <button
+                                  type="button"
+                                  disabled={isTogglingPublic}
+                                  onClick={() => toggleTeacherPublicVisibility(teacher)}
+                                  className={`min-h-11 px-3 py-1.5 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50 ${
+                                    isPublicTeacher
+                                      ? 'border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)]'
+                                      : 'border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)]'
+                                  }`}
+                                >
+                                  {isTogglingPublic ? (
+                                    <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                                  ) : isPublicTeacher ? (
+                                    <EyeOff size={14} aria-hidden="true" />
+                                  ) : (
+                                    <Eye size={14} aria-hidden="true" />
+                                  )}
+                                  <span>
+                                    {isPublicTeacher
+                                      ? (isRTL ? 'إخفاء عن العام' : 'Hide')
+                                      : (isRTL ? 'إظهار للعام' : 'Show')}
+                                  </span>
+                                </button>
+                                <button type="button" className="is-primary min-h-[44px]" onClick={() => openTeacherDossier(teacher._id)}>
+                                  {tTeachers.manageBtn}
+                                </button>
+                                {isPublicTeacher ? (
+                                  <button type="button" className="is-secondary min-h-[44px]" onClick={() => previewPublicTeacher(teacher._id)}>
+                                    {tTeachers.publicBtn}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback)}
+                                  className="min-h-[44px] px-3 py-1.5 rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] text-xs font-bold inline-flex items-center gap-1"
+                                  title={tTeachers.deleteTitle}
+                                >
+                                  <Trash2 size={13} aria-hidden="true" />
+                                  <span>{tTeachers.deleteBtn}</span>
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -192,6 +192,7 @@ function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, 
       languages: raw.languages || [],
       hourlyRate: raw.hourlyRate,
       isFeatured: Boolean(raw.isFeatured),
+      isPublic: raw.isPublic !== false,
       availabilityTimezone: raw.availabilityTimezone,
       availability: raw.availability || [],
       status: raw.status,
@@ -1066,7 +1067,7 @@ router.get('/', async (req, res) => {
       limit = 12
     } = req.query;
 
-    const filter = { status: 'approved', isVerified: true };
+    const filter = { status: 'approved', isVerified: true, isPublic: { $ne: false } };
     let allowedCountries = null;
     let specialties = null;
 
@@ -1129,7 +1130,7 @@ router.get('/', async (req, res) => {
         ? new RegExp(boundedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
         : null;
       const filtered = getMockTeachers().filter((item) => {
-        if (item.status !== 'approved' || item.isVerified !== true) return false;
+        if (item.status !== 'approved' || item.isVerified !== true || item.isPublic === false) return false;
         if (allowedCountries && !allowedCountries.includes(item.personalInfo?.country)) return false;
         if (!allowedCountries && country && item.personalInfo?.country !== country) return false;
         if (gender && item.personalInfo?.gender !== gender) return false;
@@ -1206,7 +1207,7 @@ router.get('/featured', async (req, res) => {
   try {
     if (isMockMode && !isDBConnected() && Teacher.find === mongoose.Model.find) {
       const featured = getMockTeachers()
-        .filter((item) => item.status === 'approved' && item.isVerified === true && Boolean(item.isFeatured))
+        .filter((item) => item.status === 'approved' && item.isVerified === true && item.isPublic !== false && Boolean(item.isFeatured))
         .sort((a, b) => Number(b.rating?.average || 0) - Number(a.rating?.average || 0))
         .slice(0, 6)
         .map(hydrateMockPublicTeacher);
@@ -1217,6 +1218,7 @@ router.get('/featured', async (req, res) => {
     const teachers = await Teacher.find({ 
       status: 'approved', 
       isVerified: true, 
+      isPublic: { $ne: false },
       isFeatured: true 
     })
       .select(PUBLIC_TEACHER_LIST_SELECT)
@@ -2407,7 +2409,7 @@ router.get('/:id', async (req, res) => {
     const teacherId = String(req.params.id || '');
     if (isMockMode && !isDBConnected() && Teacher.findOne === mongoose.Model.findOne) {
       const mockTeacher = findMockTeacherById(teacherId);
-      if (!mockTeacher || mockTeacher.status !== 'approved' || mockTeacher.isVerified !== true) {
+      if (!mockTeacher || mockTeacher.status !== 'approved' || mockTeacher.isVerified !== true || mockTeacher.isPublic === false) {
         return res.status(404).json({ error: 'Teacher not found' });
       }
       res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
@@ -2421,7 +2423,8 @@ router.get('/:id', async (req, res) => {
     const teacher = await Teacher.findOne({ 
       _id: teacherId, 
       status: 'approved', 
-      isVerified: true 
+      isVerified: true,
+      isPublic: { $ne: false }
     })
       .select(PUBLIC_TEACHER_SELECT)
       .populate('user', 'name avatar bio')

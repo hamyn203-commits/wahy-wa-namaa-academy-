@@ -440,6 +440,7 @@ router.post('/favorites/:teacherId', protect, authorize('student'), async (req, 
       _id: teacherId,
       status: 'approved',
       isVerified: true,
+      isPublic: { $ne: false },
     }).select('_id');
 
     if (!teacher) {
@@ -483,6 +484,7 @@ router.get('/matches', protect, authorize('student'), async (req, res) => {
     const teachers = await Teacher.find({
       status: 'approved',
       isVerified: true,
+      isPublic: { $ne: false },
     })
       .select('personalInfo.gender quranInfo.specializations quranInfo.teachingExperience languages rating.average')
       .lean();
