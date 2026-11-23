@@ -1,3 +1,5 @@
+const { normalizePhone, syntheticPhoneEmail } = require('./utils/phone');
+
 const users = [];
 
 function addMockUser(user) {
@@ -17,6 +19,18 @@ function addMockUser(user) {
 function findMockUserByEmail(email) {
   if (!email) return null;
   return users.find((user) => user.email?.toLowerCase() === email.toLowerCase());
+}
+
+function findMockUserByPhone(phone) {
+  const normalized = normalizePhone(phone);
+  const synthetic = syntheticPhoneEmail(phone);
+  if (!normalized && !synthetic) return null;
+  return users.find((user) => {
+    const userPhone = normalizePhone(user.phone || user.phoneNormalized || '');
+    if (normalized && userPhone && userPhone === normalized) return true;
+    if (synthetic && user.email?.toLowerCase() === synthetic) return true;
+    return false;
+  }) || null;
 }
 
 function findMockUserById(id) {
@@ -526,6 +540,7 @@ function getMockSessionRsvp(sessionId) {
 module.exports = {
   addMockUser,
   findMockUserByEmail,
+  findMockUserByPhone,
   findMockUserById,
   updateMockUser,
   getMockUsers,

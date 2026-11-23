@@ -39,8 +39,9 @@ const LOGIN_COPY = {
     roleGroupLabel: 'نوع الحساب',
     roleStudent: 'طالب',
     roleGuardian: 'ولي أمر',
-    roleHint: 'إذا كان لديك حساب بالفعل (طالب، معلم، ولي أمر، أو إدارة)، أدخل البريد وكلمة المرور بالأسفل وسيتم تحويلك مباشرة إلى لوحتك.',
-    emailLabel: 'البريد الإلكتروني',
+    roleHint: 'إذا كان لديك حساب بالفعل (طالب، معلم، ولي أمر، أو إدارة)، أدخل البريد الإلكتروني أو رقم الهاتف وكلمة المرور بالأسفل وسيتم تحويلك مباشرة إلى لوحتك.',
+    emailLabel: 'البريد الإلكتروني أو رقم الهاتف',
+    emailPlaceholder: 'example@email.com أو 010XXXXXXXX',
     passwordLabel: 'كلمة المرور',
     forgotPassword: 'نسيت كلمة المرور؟',
     showPassword: 'إظهار كلمة المرور',
@@ -72,8 +73,9 @@ const LOGIN_COPY = {
     roleGroupLabel: 'Account type',
     roleStudent: 'Student',
     roleGuardian: 'Guardian',
-    roleHint: 'Already have an account (student, teacher, guardian, or admin)? Sign in below with your email and password to go straight to your dashboard.',
-    emailLabel: 'Email',
+    roleHint: 'Already have an account (student, teacher, guardian, or admin)? Sign in below with your email or phone number and password to go straight to your dashboard.',
+    emailLabel: 'Email or phone number',
+    emailPlaceholder: 'example@email.com or +2010XXXXXXXX',
     passwordLabel: 'Password',
     forgotPassword: 'Forgot password?',
     showPassword: 'Show password',
@@ -449,19 +451,19 @@ export default function Login() {
                   <Mail size={18} aria-hidden="true" />
                   <input
                     id="login-email"
-                    type="email"
+                    type="text"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
                     required
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? 'login-error' : undefined}
-                    autoComplete="email"
-                    inputMode="email"
+                    autoComplete="username"
+                    inputMode="text"
                     enterKeyHint="next"
                     autoCapitalize="none"
                     spellCheck={false}
-                    placeholder="example@email.com"
+                    placeholder={copy.emailPlaceholder || 'example@email.com / +2010XXXXXXXX'}
                     dir="auto"
                   />
                 </div>
