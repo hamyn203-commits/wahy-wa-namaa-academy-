@@ -61,6 +61,7 @@ function addMockTeacher(teacher) {
     status: teacher.status || 'approved',
     isVerified: teacher.isVerified !== undefined ? teacher.isVerified : true,
     isFeatured: Boolean(teacher.isFeatured),
+    isPublic: teacher.isPublic !== false,
     rating: { average: 4.9, count: 12 },
     hourlyRate: teacher.hourlyRate ?? 50,
     wallet: { pendingEarnings: 0, totalWithdrawn: 0 },

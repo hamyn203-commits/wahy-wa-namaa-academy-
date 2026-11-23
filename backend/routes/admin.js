@@ -666,7 +666,7 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       ijazaType = '', sheikhName = '', sanad = '',
       specializations = ['tajweed', 'children'],
       languages = ['arabic', 'english'],
-      hourlyRate = 50, isFeatured = false, autoApprove = false,
+      hourlyRate = 50, isFeatured = false, isPublic = true, autoApprove = false,
     } = req.body;
 
     if (!name || !email || !password) {
@@ -741,6 +741,7 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
         isVerified: false,
         hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
         isFeatured: Boolean(isFeatured),
+        isPublic: isPublic !== false,
         languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
       });
       return res.status(201).json({
@@ -808,6 +809,7 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       isVerified: false,
       hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
       isFeatured: Boolean(isFeatured),
+      isPublic: isPublic !== false,
       languages: normalizedLangs.length ? normalizedLangs : ['arabic'],
     });
 
@@ -837,7 +839,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       if (!mockTeacher) return res.status(404).json({ error: 'المعلم غير موجود' });
       const {
         name, fullName, email, newPassword, bio, isActive,
-        hourlyRate, isFeatured, gender, status, isVerified,
+        hourlyRate, isFeatured, isPublic, gender, status, isVerified,
         country, city, address, phone, whatsapp, telegram, age,
         university, faculty, graduationYear, specialization, qualification,
         memorizedParts, teachingExperience, numberOfIjazat, ijazaType, sheikhName, sanad,
@@ -901,6 +903,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       if (availabilityTimezone) mockTeacher.availabilityTimezone = availabilityTimezone;
       if (hourlyRate !== undefined) mockTeacher.hourlyRate = Number(hourlyRate);
       if (typeof isFeatured === 'boolean') mockTeacher.isFeatured = isFeatured;
+      if (typeof isPublic === 'boolean') mockTeacher.isPublic = isPublic;
       if (status && VALID_TEACHER_STATUSES.has(status)) {
         mockTeacher.status = status;
         mockTeacher.isVerified = typeof isVerified === 'boolean' ? isVerified : status === 'approved';
@@ -913,7 +916,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
 
     const {
       name, fullName, email, newPassword, bio, isActive,
-      hourlyRate, isFeatured, gender, status, isVerified,
+      hourlyRate, isFeatured, isPublic, gender, status, isVerified,
       country, city, address, phone, whatsapp, telegram, age,
       university, faculty, graduationYear, specialization, qualification,
       memorizedParts, teachingExperience, numberOfIjazat, ijazaType, sheikhName, sanad,
@@ -1129,6 +1132,7 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
       teacher.hourlyRate = Number(hourlyRate);
     }
     if (typeof isFeatured === 'boolean') teacher.isFeatured = isFeatured;
+    if (typeof isPublic === 'boolean') teacher.isPublic = isPublic;
 
     if (status && VALID_TEACHER_STATUSES.has(status)) {
       teacher.status = status;

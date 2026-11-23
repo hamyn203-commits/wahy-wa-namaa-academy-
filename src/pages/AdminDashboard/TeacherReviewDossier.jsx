@@ -133,6 +133,7 @@ export default function TeacherReviewDossier({
     status: 'pending',
     isVerified: false,
     isFeatured: false,
+    isPublic: true,
     isActive: true,
   });
 
@@ -178,6 +179,7 @@ export default function TeacherReviewDossier({
       status: teacher.status || 'pending',
       isVerified: Boolean(teacher.isVerified),
       isFeatured: Boolean(teacher.isFeatured),
+      isPublic: teacher.isPublic !== false,
       isActive: teacher.user?.isActive !== false,
     });
   }, [teacher]);
@@ -323,7 +325,11 @@ export default function TeacherReviewDossier({
             <p>{teacher?.user?.email || dash} · {teacher?.personalInfo?.phone || dash}</p>
           </div>
           <div className="wn-admin-dossier__header-actions">
-            {approved ? (
+            {approved && teacher?.isPublic === false ? (
+              <span className="inline-flex items-center rounded-full border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] px-3 py-1 text-xs font-bold text-[var(--wn-badge-gold-text)]">
+                {dir === 'rtl' ? 'مخفي عن العام' : 'Hidden from public'}
+              </span>
+            ) : approved ? (
               <button type="button" onClick={() => onPreviewPublic?.(teacher._id)} className="wn-admin-teacher-public-link">
                 {t360.previewPublic}
               </button>
@@ -816,6 +822,10 @@ export default function TeacherReviewDossier({
                         <option value="suspended">{ef.statuses.suspended}</option>
                         <option value="rejected">{ef.statuses.rejected}</option>
                       </select>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-heading)] py-2 cursor-pointer min-h-11">
+                      <input type="checkbox" checked={editForm.isPublic} onChange={(e) => setEditForm((p) => ({ ...p, isPublic: e.target.checked }))} className="w-4 h-4 accent-[var(--wn-emerald)]" />
+                      <span>{dir === 'rtl' ? 'ظاهر للعام (في صفحة المعلمين والموقع)' : 'Visible to the public (directory & profile)'}</span>
                     </label>
                     <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-heading)] py-2 cursor-pointer min-h-[44px]">
                       <input type="checkbox" checked={editForm.isFeatured} onChange={(e) => setEditForm((p) => ({ ...p, isFeatured: e.target.checked }))} className="w-4 h-4 accent-[var(--wn-emerald)]" />
