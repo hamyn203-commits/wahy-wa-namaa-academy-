@@ -501,6 +501,7 @@ router.post(
 
       let userId = req.user?.id;
       let uploadOwner = req.user?.id || null;
+      let verifiedEmailViaOtp = false;
       const parsedPersonalForVerification = parseSafeMultipartJson(personalInfo, {});
 
       if (!userId) {
@@ -513,49 +514,54 @@ router.post(
           });
         }
 
-        const teacherVerificationToken = verificationToken;
-        if (!teacherVerificationToken) {
-          return res.status(400).json({ error: 'Email verification is required' });
-        }
-
-        let verifiedJti = null;
-        let verifiedExp = null;
-        try {
-          const verification = jwt.verify(
-            teacherVerificationToken,
-            getAccessSecret(),
-            { algorithms: ['HS256'] }
-          );
-
-          if (verification.purpose === 'teacher-email-verification') {
-            if (!normalizedEmail || verification.email !== normalizedEmail) {
-              return res.status(400).json({ error: 'Email verification does not match this application' });
-            }
-            uploadOwner = verification.email;
-            verifiedJti = verification.jti || null;
-            verifiedExp = verification.exp || null;
-          } else {
-            return res.status(400).json({ error: 'Verification does not match this application' });
-          }
-        } catch {
-          return res.status(400).json({ error: 'Email verification is invalid or expired' });
-        }
-
-        if (verifiedJti) {
-          const consumedOk = await consumeVerificationTokenJti(verifiedJti, verifiedExp);
-          if (!consumedOk) {
-            return res.status(409).json({
-              error: 'Verification token has already been used. Please request a fresh verification code.',
-              code: 'VERIFICATION_TOKEN_ALREADY_USED',
-            });
-          }
-        }
-
         if (!normalizedEmail || !password) {
           return res.status(400).json({ error: 'Email and password are required' });
         }
+        if (normalizedEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(normalizedEmail)) {
+          return res.status(400).json({ error: 'Valid email address is required' });
+        }
         if (String(password).length < 8) {
           return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        }
+
+        const teacherVerificationToken = verificationToken;
+        if (teacherVerificationToken) {
+          let verifiedJti = null;
+          let verifiedExp = null;
+          try {
+            const verification = jwt.verify(
+              teacherVerificationToken,
+              getAccessSecret(),
+              { algorithms: ['HS256'] }
+            );
+
+            if (verification.purpose === 'teacher-email-verification') {
+              if (!normalizedEmail || verification.email !== normalizedEmail) {
+                return res.status(400).json({ error: 'Email verification does not match this application' });
+              }
+              uploadOwner = verification.email;
+              verifiedJti = verification.jti || null;
+              verifiedExp = verification.exp || null;
+              verifiedEmailViaOtp = true;
+            } else {
+              return res.status(400).json({ error: 'Verification does not match this application' });
+            }
+          } catch {
+            return res.status(400).json({ error: 'Email verification is invalid or expired' });
+          }
+
+          if (verifiedJti) {
+            const consumedOk = await consumeVerificationTokenJti(verifiedJti, verifiedExp);
+            if (!consumedOk) {
+              return res.status(409).json({
+                error: 'Verification token has already been used. Please request a fresh verification code.',
+                code: 'VERIFICATION_TOKEN_ALREADY_USED',
+              });
+            }
+          }
+        } else {
+          // Valid admin-issued temporary invite authorizes registration without email OTP.
+          uploadOwner = normalizedEmail;
         }
       }
 
@@ -659,7 +665,7 @@ router.post(
             password,
             phone: parsedPersonal.phone,
             role: 'teacher',
-            emailVerified: true,
+            emailVerified: verifiedEmailViaOtp,
             isActive: true,
           });
 
@@ -687,7 +693,7 @@ router.post(
             password,
             phone: parsedPersonal.phone,
             role: 'teacher',
-            emailVerified: true,
+            emailVerified: verifiedEmailViaOtp,
           });
 
           userId = user._id;

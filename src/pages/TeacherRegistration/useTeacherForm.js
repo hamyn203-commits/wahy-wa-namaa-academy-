@@ -133,6 +133,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
   const tr = t?.teacherRegistration || {};
   const { user } = useAuth();
   const authenticatedTeacher = user?.role === 'teacher';
+  const skipEmailVerification = Boolean(inviteToken) && !authenticatedTeacher;
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -217,11 +218,11 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         }
 
         if (d.step) {
-          // Steps 1-3 (data, account credentials, media) and Step 4 (email verification)
-          // never require an active OTP session. Only Step 5 (final review/submit) needs
-          // a live verification token, so returning users land cleanly on Step 4.
+          // Invited applicants skip email OTP verification (Step 4) completely.
           const savedStep = Number(d.step) || 1;
-          if (authenticatedTeacher || sameEmailVerified || savedStep <= 4) {
+          if (skipEmailVerification) {
+            setStep(savedStep === 4 ? 5 : savedStep);
+          } else if (authenticatedTeacher || sameEmailVerified || savedStep <= 4) {
             setStep(savedStep);
           } else {
             setStep(4);
@@ -258,7 +259,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [authenticatedTeacher]);
+  }, [authenticatedTeacher, skipEmailVerification]);
 
   useEffect(() => {
     if (!authenticatedTeacher) return;
@@ -658,14 +659,14 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     setFieldError('');
     if (step < 5) {
       if (authenticatedTeacher && step === 1) setStep(3);
-      else if (authenticatedTeacher && step === 3) setStep(5);
+      else if ((authenticatedTeacher || skipEmailVerification) && step === 3) setStep(5);
       else setStep(step + 1);
     }
   };
 
   const prev = () => {
     if (step > 1) {
-      if (authenticatedTeacher && step === 5) setStep(3);
+      if ((authenticatedTeacher || skipEmailVerification) && step === 5) setStep(3);
       else if (authenticatedTeacher && step === 3) setStep(1);
       else setStep(step - 1);
     }
@@ -677,9 +678,14 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     if (err) { toast.error(err); return; }
 
     const verifiedEmailNow = normalizeEmail(authenticatedTeacher ? user.email : credentials.email);
-    if (!authenticatedTeacher && (!emailVerified || !verificationToken || verifiedEmail !== verifiedEmailNow)) {
+    if (!authenticatedTeacher && !skipEmailVerification && (!emailVerified || !verificationToken || verifiedEmail !== verifiedEmailNow)) {
       toast.error(tr.validation?.reverifyEmail || 'يجب إعادة تأكيد البريد الإلكتروني');
       setStep(4);
+      return;
+    }
+    if (!authenticatedTeacher && (!emailLooksValid(verifiedEmailNow) || !credentials.password || credentials.password.length < 8)) {
+      toast.error(tr.validation?.invalidEmail || 'تحقق من البريد الإلكتروني وكلمة المرور أولاً');
+      setStep(2);
       return;
     }
 
@@ -692,7 +698,9 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     let saveTimedOut = false;
 
     try {
-      const scope = authenticatedTeacher ? String(user.id || user._id || user.email) : verificationToken;
+      const scope = authenticatedTeacher
+        ? String(user.id || user._id || user.email)
+        : (verificationToken || `invite:${inviteToken}:${verifiedEmailNow}`);
       if (completedUploads.current.scope !== scope) {
         completedUploads.current = { scope, files: new Map() };
       }
@@ -718,7 +726,12 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         { ...many('recitationVideos', 'teacher-public', ul.recitationVideo || 'فيديو التعريف والتلاوة'), key: 'recitationVideo' },
         one('teachingMethodVideo', 'teacher-public', ul.teachingMethodVideo || 'فيديو طريقة التدريس', Boolean(files.teachingMethodVideo)),
       ], {
-        upload: (file, purpose, options) => uploadFileDirect(file, purpose, { ...options, verificationToken }),
+        upload: (file, purpose, options) => uploadFileDirect(file, purpose, {
+          ...options,
+          verificationToken: verificationToken || undefined,
+          inviteToken: (!authenticatedTeacher && inviteToken) ? inviteToken : undefined,
+          ownerEmail: verifiedEmailNow,
+        }),
         cache: completedUploads.current.files,
         onProgress: setUploadProgress,
         maxRetries: 2,
@@ -751,7 +764,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         availability: JSON.stringify([]),
         email: verifiedEmailNow,
         password: credentials.password,
-        verificationToken,
+        ...(verificationToken ? { verificationToken } : {}),
         ...(!authenticatedTeacher && inviteToken ? { inviteToken } : {}),
         documentAvailability: {
           graduationCertificate: hasGradCert,
