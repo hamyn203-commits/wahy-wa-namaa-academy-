@@ -129,7 +129,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
 
     await expect(studentPage).toHaveURL(/\/ar\/payment\/manual\?subscription=/);
     await expect(studentPage.getByRole('heading', { name: 'إتمام الاشتراك والتحويل' })).toBeVisible();
-    await expect(studentPage.getByText(/480 EGP/)).toBeVisible();
+    await expect(studentPage.getByText(/(?:480|٤٨٠)\s*EGP/)).toBeVisible();
     await expect(studentPage.getByText('e2e@instapay', { exact: true })).toBeVisible();
     await expect(studentPage.getByText('عايز تدرس مع مين؟', { exact: true })).toBeVisible();
     const teacherSelect = studentPage.getByRole('combobox', { name: 'اختيار الشيخ أو المعلمة' });
