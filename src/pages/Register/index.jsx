@@ -905,7 +905,7 @@ export default function Register() {
                     inputMode="tel"
                     value={formData.phone}
                     onChange={handleChange}
-                    required={role === 'guardian' || !formData.email.trim()}
+                    required={role === 'guardian'}
                     placeholder="+20 123 456 7890"
                     className={iconFieldClass}
                   />
