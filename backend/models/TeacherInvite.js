@@ -23,6 +23,11 @@ const TeacherInviteSchema = new mongoose.Schema({
     trim: true,
     maxlength: 16,
   },
+  encryptedToken: {
+    type: String,
+    default: '',
+    select: false,
+  },
   label: {
     type: String,
     trim: true,

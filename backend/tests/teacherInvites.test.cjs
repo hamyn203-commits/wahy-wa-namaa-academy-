@@ -133,7 +133,7 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
     assert.equal(returnOpen.status, 200);
     assert.equal(returnOpen.body?.valid, true);
 
-    // Admin sees masked IP (never raw IP or hash)
+    // Admin sees masked IP (never raw IP, hash, or ciphertext)
     const adminList = await requestJson(server, 'GET', '/api/teachers/admin/invites', {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
@@ -142,6 +142,39 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
     assert.equal(adminList.body?.invites?.[0]?.boundIpMasked, '197.45.*.*');
     assert.equal(adminList.body?.invites?.[0]?.boundIpHash, undefined);
     assert.equal(adminList.body?.invites?.[0]?.tokenHash, undefined);
+    assert.equal(adminList.body?.invites?.[0]?.encryptedToken, undefined);
+
+    // 5b. Admin can click-to-reveal the full temporary link; non-admin is blocked (403)
+    const studentReveal = await requestJson(server, 'GET', `/api/teachers/admin/invites/${inviteId}/link`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    assert.equal(studentReveal.status, 403);
+
+    const adminReveal = await requestJson(server, 'GET', `/api/teachers/admin/invites/${inviteId}/link`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(adminReveal.status, 200);
+    assert.equal(adminReveal.body?.success, true);
+    assert.equal(adminReveal.body?.inviteToken, rawToken);
+    assert.equal(adminReveal.body?.invitePath, `/ar/teacher/register?invite=${encodeURIComponent(rawToken)}`);
+    assert.match(String(adminReveal.body?.inviteUrl || ''), new RegExp(`/ar/teacher/register\\?invite=${encodeURIComponent(rawToken)}$`));
+    assert.match(String(adminReveal.headers['cache-control'] || ''), /no-store/i);
+
+    const missingReveal = await requestJson(
+      server,
+      'GET',
+      `/api/teachers/admin/invites/${new mongoose.Types.ObjectId().toString()}/link`,
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert.equal(missingReveal.status, 404);
+
+    const badIdReveal = await requestJson(
+      server,
+      'GET',
+      '/api/teachers/admin/invites/not-an-object-id/link',
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert.equal(badIdReveal.status, 400);
 
     // 6. Another person opens the shared link from IP B -> BLOCKED on status, OTP, AND register!
     const otherIpStatus = await requestJson(server, 'GET', `/api/teachers/invite-status?token=${encodeURIComponent(rawToken)}`, {

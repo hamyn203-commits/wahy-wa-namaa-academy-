@@ -38,6 +38,7 @@ const {
   consumeTeacherInviteAtomic,
   finalizeTeacherInviteUsage,
   rollbackTeacherInviteReservation,
+  revealTeacherInviteLink,
   resetTeacherInviteIpLock,
   revokeTeacherInvite,
   deleteTeacherInvite,
@@ -1966,6 +1967,30 @@ router.post('/admin/invites', protect, authorize('admin'), async (req, res) => {
     });
   } catch (error) {
     return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.get('/admin/invites/:inviteId/link', protect, authorize('admin'), async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    const inviteId = String(req.params.inviteId || '').trim();
+    const rawOrigin = String(req.headers?.origin || '').trim();
+    const safeOrigin = /^https?:\/\/[^/\s]+$/i.test(rawOrigin) ? rawOrigin : '';
+    const result = await revealTeacherInviteLink(inviteId, {
+      origin: process.env.FRONTEND_URL || safeOrigin || 'https://wahywanamaa.com',
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error, code: result.code });
+    }
+    return res.json({
+      success: true,
+      inviteToken: result.inviteToken,
+      invitePath: result.invitePath,
+      inviteUrl: result.inviteUrl,
+      status: result.status,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import {
-  Ban, Check, Clock, Copy, ExternalLink, KeyRound, Link2, Lock, Unlock,
+  Ban, Check, Clock, Copy, ExternalLink, Eye, EyeOff, KeyRound, Link2, Lock, Unlock,
   Loader2, MessageCircle, Plus, RefreshCw, ShieldCheck, Trash2, Users,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastProvider';
@@ -62,6 +62,10 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState('');
   const [copiedFresh, setCopiedFresh] = useState(false);
+  const [expandedId, setExpandedId] = useState('');
+  const [loadingLinkId, setLoadingLinkId] = useState('');
+  const [copiedId, setCopiedId] = useState('');
+  const [revealedLinks, setRevealedLinks] = useState({});
 
   const [label, setLabel] = useState('');
   const [expiresInHours, setExpiresInHours] = useState(24);
@@ -102,10 +106,17 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
       const builtUrl = data?.invitePath && typeof window !== 'undefined'
         ? `${window.location.origin}${data.invitePath}`
         : (data?.inviteUrl || '');
+      const createdId = data?.invite?.id || '';
       setFreshInvite({
         url: builtUrl,
         invite: data?.invite || null,
       });
+      if (createdId && builtUrl) {
+        setRevealedLinks((prev) => ({
+          ...prev,
+          [createdId]: { url: builtUrl, error: '' },
+        }));
+      }
       setLabel('');
       toast.success(isRTL ? 'تم إنشاء رابط التسجيل المؤقت بنجاح' : 'Temporary registration link created');
       await loadInvites();
@@ -116,15 +127,63 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
     }
   };
 
-  const handleCopyFresh = async () => {
-    if (!freshInvite?.url) return;
+  const buildWhatsAppShareUrl = (url) => {
+    if (!url) return '';
+    return `https://wa.me/?text=${encodeURIComponent(
+      isRTL
+        ? `السلام عليكم ورحمة الله وبركاته 🌿\nإليك رابط التسجيل المؤقت للانضمام لهيئة التدريس في أكاديمية وَحْيٌ وَنَمَاء:\n${url}`
+        : `Assalamu Alaikum! Here is your temporary teacher registration link for Wahy Wa Namaa Academy:\n${url}`
+    )}`;
+  };
+
+  const handleCopyText = async (url, targetId = '') => {
+    if (!url) return;
     try {
-      await navigator.clipboard.writeText(freshInvite.url);
-      setCopiedFresh(true);
+      await navigator.clipboard.writeText(url);
+      if (targetId) {
+        setCopiedId(targetId);
+        setTimeout(() => setCopiedId((curr) => (curr === targetId ? '' : curr)), 2500);
+      } else {
+        setCopiedFresh(true);
+        setTimeout(() => setCopiedFresh(false), 2500);
+      }
       toast.success(isRTL ? 'تم نسخ رابط الدعوة المؤقت' : 'Temporary invite link copied');
-      setTimeout(() => setCopiedFresh(false), 2500);
     } catch {
       toast.error(isRTL ? 'تعذّر النسخ، انسخ الرابط يدوياً' : 'Copy failed — please copy manually');
+    }
+  };
+
+  const handleCopyFresh = () => handleCopyText(freshInvite?.url, '');
+
+  const handleToggleReveal = async (invite) => {
+    const inviteId = invite?.id;
+    if (!inviteId) return;
+    if (expandedId === inviteId) {
+      setExpandedId('');
+      return;
+    }
+    setExpandedId(inviteId);
+    if (revealedLinks[inviteId]?.url) return;
+    setLoadingLinkId(inviteId);
+    try {
+      const data = await api.get(`/api/teachers/admin/invites/${encodeURIComponent(inviteId)}/link`, { auth: true });
+      const builtUrl = data?.invitePath && typeof window !== 'undefined'
+        ? `${window.location.origin}${data.invitePath}`
+        : (data?.inviteUrl || '');
+      setRevealedLinks((prev) => ({
+        ...prev,
+        [inviteId]: { url: builtUrl, error: '' },
+      }));
+    } catch (err) {
+      const fallbackMsg = isRTL
+        ? 'هذا الرابط أُنشئ قبل تفعيل عرض الروابط المحفوظة — أنشئ رابطاً مؤقتاً جديداً ليظهر عند الضغط عليه.'
+        : 'This link was created before saved link reveal was enabled — please create a new temporary link.';
+      setRevealedLinks((prev) => ({
+        ...prev,
+        [inviteId]: { url: '', error: err?.message || fallbackMsg },
+      }));
+    } finally {
+      setLoadingLinkId((curr) => (curr === inviteId ? '' : curr));
     }
   };
 
@@ -151,6 +210,9 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
       if (freshInvite?.invite?.id === inviteId) {
         setFreshInvite(null);
       }
+      if (expandedId === inviteId) {
+        setExpandedId('');
+      }
       await loadInvites();
     } catch (err) {
       toast.error(err?.message || (isRTL ? 'تعذّر إلغاء الرابط' : 'Failed to revoke link'));
@@ -168,6 +230,14 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
       if (freshInvite?.invite?.id === inviteId) {
         setFreshInvite(null);
       }
+      if (expandedId === inviteId) {
+        setExpandedId('');
+      }
+      setRevealedLinks((prev) => {
+        const next = { ...prev };
+        delete next[inviteId];
+        return next;
+      });
       await loadInvites();
     } catch (err) {
       toast.error(err?.message || (isRTL ? 'تعذّر حذف الرابط' : 'Failed to delete link'));
@@ -177,13 +247,7 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
   };
 
   const activeCount = invites.filter((item) => item.status === 'active').length;
-  const whatsappShareUrl = freshInvite?.url
-    ? `https://wa.me/?text=${encodeURIComponent(
-      isRTL
-        ? `السلام عليكم ورحمة الله وبركاته 🌿\nإليك رابط التسجيل المؤقت للانضمام لهيئة التدريس في أكاديمية وَحْيٌ وَنَمَاء:\n${freshInvite.url}`
-        : `Assalamu Alaikum! Here is your temporary teacher registration link for Wahy Wa Namaa Academy:\n${freshInvite.url}`
-    )}`
-    : '';
+  const whatsappShareUrl = buildWhatsAppShareUrl(freshInvite?.url);
 
   return (
     <section className="wn-dashboard-surface space-y-5">
@@ -331,7 +395,7 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-bold text-[var(--wn-emerald-dark)]">
               <Link2 size={16} aria-hidden="true" />
-              <span>{isRTL ? 'تم توليد الرابط المؤقت — انسخه الآن (يظهر مرة واحدة فقط لأمان النظام)' : 'Temporary link generated — copy it now (shown only once)'}</span>
+              <span>{isRTL ? 'تم توليد الرابط المؤقت — انسخه الآن أو اضغط على أي رابط في القائمة لعرضه لاحقاً' : 'Temporary link generated — copy it now or click any invite below to reveal it later'}</span>
             </div>
             {freshInvite.invite?.expiresAt ? (
               <span className="text-xs font-semibold text-[var(--wn-emerald-dark)]">
@@ -387,110 +451,194 @@ export default function TeacherInviteLinksPanel({ onOpenDossier }) {
           {invites.map((item) => {
             const meta = statusMeta(item.status, isRTL);
             const isBusy = busyId === item.id;
+            const isExpanded = expandedId === item.id;
+            const isLoadingLink = loadingLinkId === item.id;
+            const revealed = revealedLinks[item.id];
+            const isCopied = copiedId === item.id;
+            const itemWhatsappUrl = buildWhatsAppShareUrl(revealed?.url);
+
             return (
               <article
                 key={item.id}
-                className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3.5 flex flex-wrap items-center justify-between gap-3"
+                className={`rounded-xl border bg-[var(--wn-surface-soft)] p-3.5 space-y-3 transition-colors ${
+                  isExpanded
+                    ? 'border-[var(--wn-emerald)]'
+                    : 'border-[var(--wn-border)] hover:border-[var(--wn-border-mint)]'
+                }`}
               >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${meta.cls}`}>
-                      {meta.label}
-                    </span>
-                    <strong className="text-sm text-[var(--wn-heading)] truncate">
-                      {item.label || (isRTL ? 'دعوة تسجيل معلم' : 'Teacher registration invite')}
-                    </strong>
-                    <span dir="ltr" className="text-xs font-mono text-[var(--wn-text-tertiary)]">
-                      ({item.tokenPreview})
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--wn-text-secondary)]">
-                    <span className="inline-flex items-center gap-1">
-                      <Users size={13} aria-hidden="true" />
-                      <span>
-                        {isRTL
-                          ? `الاستخدام: ${item.usedCount} / ${item.maxUses}`
-                          : `Used: ${item.usedCount} / ${item.maxUses}`}
-                      </span>
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Clock size={13} aria-hidden="true" />
-                      <span>
-                        {isRTL ? 'ينتهي: ' : 'Expires: '}
-                        {item.expiresAt ? new Date(item.expiresAt).toLocaleString(intlLocale) : '—'}
-                      </span>
-                    </span>
-                    {item.lockToFirstIp ? (
-                      <span className="inline-flex items-center gap-1 text-[var(--wn-emerald-dark)] font-semibold">
-                        <Lock size={12} aria-hidden="true" />
-                        <span>
-                          {item.ipBound
-                            ? (isRTL ? `مربوط بـ IP (${item.boundIpMasked})` : `Locked to IP (${item.boundIpMasked})`)
-                            : (isRTL ? 'مقفول على أول IP يفتحه' : 'Locks to first IP')}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleReveal(item)}
+                      aria-expanded={isExpanded}
+                      className="w-full text-start space-y-1 rounded-lg p-1 -m-1 hover:bg-[var(--wn-surface)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-emerald)]"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${meta.cls}`}>
+                          {meta.label}
                         </span>
-                      </span>
+                        <strong className="text-sm text-[var(--wn-heading)] truncate">
+                          {item.label || (isRTL ? 'دعوة تسجيل معلم' : 'Teacher registration invite')}
+                        </strong>
+                        <span dir="ltr" className="text-xs font-mono text-[var(--wn-text-tertiary)]">
+                          ({item.tokenPreview})
+                        </span>
+                        <span className="text-xs font-semibold text-[var(--wn-emerald-dark)] inline-flex items-center gap-1">
+                          {isExpanded ? <EyeOff size={12} aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
+                          <span>{isExpanded ? (isRTL ? 'إخفاء الرابط' : 'Hide link') : (isRTL ? 'اضغط لعرض الرابط' : 'Click to show link')}</span>
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--wn-text-secondary)]">
+                        <span className="inline-flex items-center gap-1">
+                          <Users size={13} aria-hidden="true" />
+                          <span>
+                            {isRTL
+                              ? `الاستخدام: ${item.usedCount} / ${item.maxUses}`
+                              : `Used: ${item.usedCount} / ${item.maxUses}`}
+                          </span>
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock size={13} aria-hidden="true" />
+                          <span>
+                            {isRTL ? 'ينتهي: ' : 'Expires: '}
+                            {item.expiresAt ? new Date(item.expiresAt).toLocaleString(intlLocale) : '—'}
+                          </span>
+                        </span>
+                        {item.lockToFirstIp ? (
+                          <span className="inline-flex items-center gap-1 text-[var(--wn-emerald-dark)] font-semibold">
+                            <Lock size={12} aria-hidden="true" />
+                            <span>
+                              {item.ipBound
+                                ? (isRTL ? `مربوط بـ IP (${item.boundIpMasked})` : `Locked to IP (${item.boundIpMasked})`)
+                                : (isRTL ? 'مقفول على أول IP يفتحه' : 'Locks to first IP')}
+                            </span>
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+
+                    {Array.isArray(item.usedBy) && item.usedBy.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {item.usedBy.map((u, idx) => (
+                          <span
+                            key={`${item.id}-u-${idx}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--wn-surface)] border border-[var(--wn-border)] px-2.5 py-1 text-xs text-[var(--wn-text-primary)]"
+                          >
+                            <span>{u.name || u.email || (isRTL ? 'معلم مسجّل' : 'Registered teacher')}</span>
+                            {u.teacherId && typeof onOpenDossier === 'function' ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenDossier(u.teacherId)}
+                                className="text-[var(--wn-emerald)] hover:underline inline-flex items-center gap-0.5 font-bold"
+                              >
+                                <ExternalLink size={12} aria-hidden="true" />
+                                <span>{isRTL ? 'الملف' : 'Dossier'}</span>
+                              </button>
+                            ) : null}
+                          </span>
+                        ))}
+                      </div>
                     ) : null}
                   </div>
 
-                  {Array.isArray(item.usedBy) && item.usedBy.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      {item.usedBy.map((u, idx) => (
-                        <span
-                          key={`${item.id}-u-${idx}`}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--wn-surface)] border border-[var(--wn-border)] px-2.5 py-1 text-xs text-[var(--wn-text-primary)]"
-                        >
-                          <span>{u.name || u.email || (isRTL ? 'معلم مسجّل' : 'Registered teacher')}</span>
-                          {u.teacherId && typeof onOpenDossier === 'function' ? (
-                            <button
-                              type="button"
-                              onClick={() => onOpenDossier(u.teacherId)}
-                              className="text-[var(--wn-emerald)] hover:underline inline-flex items-center gap-0.5 font-bold"
-                            >
-                              <ExternalLink size={12} aria-hidden="true" />
-                              <span>{isRTL ? 'الملف' : 'Dossier'}</span>
-                            </button>
-                          ) : null}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleReveal(item)}
+                      disabled={isLoadingLink}
+                      className="min-h-10 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] text-[var(--wn-emerald-dark)] hover:bg-[var(--wn-emerald-soft)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isLoadingLink ? (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      ) : isExpanded ? (
+                        <EyeOff size={14} aria-hidden="true" />
+                      ) : (
+                        <Link2 size={14} aria-hidden="true" />
+                      )}
+                      <span>{isExpanded ? (isRTL ? 'إخفاء الرابط' : 'Hide link') : (isRTL ? 'عرض الرابط' : 'Show link')}</span>
+                    </button>
+                    {item.status === 'active' && item.lockToFirstIp && item.ipBound ? (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleResetIp(item.id)}
+                        className="min-h-[40px] rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50"
+                      >
+                        <Unlock size={14} aria-hidden="true" />
+                        <span>{isRTL ? 'فك قفل IP' : 'Reset IP'}</span>
+                      </button>
+                    ) : null}
+                    {item.status === 'active' ? (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleRevoke(item.id)}
+                        className="min-h-[40px] rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50"
+                      >
+                        {isBusy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Ban size={14} aria-hidden="true" />}
+                        <span>{isRTL ? 'إلغاء الرابط' : 'Revoke'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleDelete(item.id)}
+                        className="min-h-[40px] rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-secondary)] hover:text-[var(--wn-text-danger)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {isBusy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                        <span>{isRTL ? 'حذف' : 'Delete'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  {item.status === 'active' && item.lockToFirstIp && item.ipBound ? (
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleResetIp(item.id)}
-                      className="min-h-[40px] rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald-dark)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50"
-                    >
-                      <Unlock size={14} aria-hidden="true" />
-                      <span>{isRTL ? 'فك قفل IP' : 'Reset IP'}</span>
-                    </button>
-                  ) : null}
-                  {item.status === 'active' ? (
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleRevoke(item.id)}
-                      className="min-h-[40px] rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-danger-soft)] text-[var(--wn-text-danger)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50"
-                    >
-                      {isBusy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Ban size={14} aria-hidden="true" />}
-                      <span>{isRTL ? 'إلغاء الرابط' : 'Revoke'}</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleDelete(item.id)}
-                      className="min-h-[40px] rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-secondary)] hover:text-[var(--wn-text-danger)] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      {isBusy ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-                      <span>{isRTL ? 'حذف' : 'Delete'}</span>
-                    </button>
-                  )}
-                </div>
+                {isExpanded ? (
+                  <div className="pt-3 border-t border-[var(--wn-border)]">
+                    {isLoadingLink ? (
+                      <div className="flex items-center gap-2 text-xs text-[var(--wn-text-secondary)] py-1">
+                        <Loader2 size={14} className="animate-spin text-[var(--wn-emerald)]" aria-hidden="true" />
+                        <span>{isRTL ? 'جارٍ إحضار الرابط...' : 'Loading invite link...'}</span>
+                      </div>
+                    ) : revealed?.url ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          dir="ltr"
+                          value={revealed.url}
+                          onFocus={(e) => e.target.select()}
+                          onClick={(e) => e.currentTarget.select()}
+                          className="flex-1 min-w-60 min-h-11 rounded-lg border border-[var(--wn-border-mint)] bg-[var(--wn-surface)] px-3 py-2 text-xs font-mono text-[var(--wn-text-primary)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(revealed.url, item.id)}
+                          className="min-h-11 rounded-lg bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5"
+                        >
+                          {isCopied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                          <span>{isCopied ? (isRTL ? 'تم النسخ' : 'Copied') : (isRTL ? 'نسخ الرابط' : 'Copy link')}</span>
+                        </button>
+                        <a
+                          href={itemWhatsappUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-h-11 rounded-lg border border-[var(--wn-emerald)] bg-[var(--wn-surface)] text-[var(--wn-emerald-dark)] hover:bg-[var(--wn-emerald-soft)] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5"
+                        >
+                          <MessageCircle size={15} aria-hidden="true" />
+                          <span>{isRTL ? 'إرسال عبر واتساب' : 'Share via WhatsApp'}</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)] px-3 py-2 text-xs font-semibold">
+                        {revealed?.error || (isRTL
+                          ? 'هذا الرابط أُنشئ قبل تفعيل عرض الروابط المحفوظة — أنشئ رابطاً مؤقتاً جديداً ليظهر لك عند الضغط عليه.'
+                          : 'This link was created before saved link reveal was enabled — create a new temporary link.')}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </article>
             );
           })}
