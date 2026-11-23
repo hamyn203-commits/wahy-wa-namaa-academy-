@@ -48,14 +48,15 @@ const REGISTER_COPY = {
     guardianTitle: 'إنشاء حساب ولي أمر',
     studentTitle: 'إنشاء حساب طالب',
     guardianSubtitle: 'تابع مسيرة أبنائك في حفظ القرآن وتقارير حضورهم وتقييماتهم',
-    studentSubtitle: 'دقيقة واحدة وتبدأ: الاسم والبريد وكلمة المرور تكفي الآن.',
+    studentSubtitle: 'دقيقة واحدة وتبدأ: الاسم ورقم الهاتف (أو البريد الإلكتروني) وكلمة المرور تكفي الآن.',
     fullNameLabel: 'الاسم الكامل',
     fullNamePlaceholder: 'أدخل اسمك الكامل',
-    emailLabel: 'البريد الإلكتروني',
+    emailLabel: 'البريد الإلكتروني (اختياري)',
     guardianPhoneLabel: 'رقم هاتف ولي الأمر',
-    studentPhoneLabel: 'رقم الهاتف (اختياري)',
-    guardianPhoneNote: 'نستخدم الرقم فقط لمطابقة طلبات ربط أبنائك. لا يتم الربط إلا بعد موافقتك داخل حسابك.',
-    studentPhoneNote: 'نحتاجه فقط لتأكيد مواعيد حصصك، ويمكنك إضافته لاحقًا.',
+    studentPhoneLabel: 'رقم الهاتف',
+    guardianPhoneNote: 'نستخدم الرقم لتسجيل الدخول ومطابقة طلبات ربط أبنائك. لا يتم الربط إلا بعد موافقتك داخل حسابك.',
+    studentPhoneNote: 'يمكنك إنشاء الحساب والدخول برقم الهاتف مباشرة بدون الحاجة لبريد إلكتروني.',
+    contactRequiredErr: 'أدخل رقم الهاتف أو البريد الإلكتروني على الأقل لإنشاء الحساب',
     whatsappSameLabel: 'هذا الرقم عليه واتساب',
     whatsappNumberLabel: 'رقم الواتساب',
     passwordLabel: 'كلمة المرور',
@@ -118,7 +119,7 @@ const REGISTER_COPY = {
     backHome: 'العودة للصفحة الرئيسية',
     errNetwork: 'تعذر الاتصال بالخادم. تأكد من اتصالك بالإنترنت ثم حاول مرة أخرى.',
     errRate: 'تمت محاولات تسجيل كثيرة خلال وقت قصير. انتظر بضع دقائق ثم حاول مرة أخرى.',
-    errConflict: 'هذا البريد الإلكتروني مسجل بالفعل. سجّل الدخول إلى حسابك، أو استخدم "نسيت كلمة المرور".',
+    errConflict: 'هذا البريد الإلكتروني أو رقم الهاتف مسجل بالفعل. سجّل الدخول إلى حسابك، أو استخدم "نسيت كلمة المرور".',
     errServer: 'حدث خطأ مؤقت لدينا أثناء إنشاء الحساب. لم يتم حفظ أي شيء، حاول مرة أخرى بعد قليل.',
     errGeneric: 'تعذر إنشاء الحساب. راجع البيانات وحاول مرة أخرى.',
   },
@@ -152,14 +153,15 @@ const REGISTER_COPY = {
     guardianTitle: 'Create Guardian Account',
     studentTitle: 'Create Student Account',
     guardianSubtitle: 'Monitor your children’s Quran progress, attendance & teacher reports',
-    studentSubtitle: 'One minute to start: name, email and password are enough for now.',
+    studentSubtitle: 'One minute to start: name, phone number (or email), and password are enough for now.',
     fullNameLabel: 'Full Name',
     fullNamePlaceholder: 'Enter your full name',
-    emailLabel: 'Email Address',
+    emailLabel: 'Email Address (Optional)',
     guardianPhoneLabel: 'Guardian Phone Number',
-    studentPhoneLabel: 'Phone Number (Optional)',
-    guardianPhoneNote: 'This number is used only to match child-link requests. Nothing is linked until you confirm it.',
-    studentPhoneNote: 'Only used to confirm your session times. You can add it later.',
+    studentPhoneLabel: 'Phone Number',
+    guardianPhoneNote: 'Used for signing in and matching child-link requests. Nothing is linked until you confirm it.',
+    studentPhoneNote: 'You can sign up and sign in directly with your phone number — no email required.',
+    contactRequiredErr: 'Please enter a phone number or an email address to create your account',
     whatsappSameLabel: 'This number is on WhatsApp',
     whatsappNumberLabel: 'WhatsApp number',
     passwordLabel: 'Password',
@@ -222,7 +224,7 @@ const REGISTER_COPY = {
     backHome: 'Back to Homepage',
     errNetwork: 'We could not reach the server. Check your connection and try again.',
     errRate: 'Too many sign-up attempts in a short time. Please wait a few minutes and try again.',
-    errConflict: 'This email is already registered. Sign in instead, or use "Forgot password".',
+    errConflict: 'This email or phone number is already registered. Sign in instead, or use "Forgot password".',
     errServer: 'A temporary server error occurred. Nothing was saved — please try again shortly.',
     errGeneric: 'Registration failed. Please review your details and try again.',
   },
@@ -502,6 +504,12 @@ export default function Register() {
     setLoading(true);
     setError('');
     setErrorStatus(null);
+
+    if (!formData.phone.trim() && !formData.email.trim()) {
+      setError(copy.contactRequiredErr || (isRTL ? 'أدخل رقم الهاتف أو البريد الإلكتروني على الأقل' : 'Please enter a phone number or email address'));
+      setLoading(false);
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
       setError(copy.pwMismatchErr);
@@ -882,31 +890,7 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Email Address */}
-              <div>
-                <label htmlFor="register-email" className="block text-xs font-bold text-[var(--wn-text-primary)] mb-2">
-                  {copy.emailLabel}
-                </label>
-                <div className="relative">
-                  <Mail size={18} className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none" aria-hidden="true" />
-                  <input
-                    id="register-email"
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    inputMode="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                    aria-invalid={Boolean(error)}
-                    aria-describedby={error ? 'register-error' : undefined}
-                    placeholder="example@email.com"
-                    className={iconFieldClass}
-                  />
-                </div>
-              </div>
-
-              {/* Phone Number */}
+              {/* Phone Number (Primary — allows registration without email) */}
               <div>
                 <label htmlFor="register-phone" className="block text-xs font-bold text-[var(--wn-text-primary)] mb-2">
                   {role === 'guardian' ? copy.guardianPhoneLabel : copy.studentPhoneLabel}
@@ -955,6 +939,30 @@ export default function Register() {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Email Address (Optional when phone is provided) */}
+              <div>
+                <label htmlFor="register-email" className="block text-xs font-bold text-[var(--wn-text-primary)] mb-2">
+                  {copy.emailLabel}
+                </label>
+                <div className="relative">
+                  <Mail size={18} className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none" aria-hidden="true" />
+                  <input
+                    id="register-email"
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    inputMode="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required={!formData.phone.trim()}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? 'register-error' : undefined}
+                    placeholder="example@email.com"
+                    className={iconFieldClass}
+                  />
+                </div>
               </div>
 
               {/* Password */}

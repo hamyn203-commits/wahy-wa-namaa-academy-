@@ -423,6 +423,58 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
       body: { email: uniqueLocalPhone, password: 'WrongPassword123!' },
     });
     assert.equal(wrongPassPhoneLogin.status, 401);
+
+    // 13. Public student & guardian phone-only registration (email optional) + phone login
+    const studentPhone = `011${String(Date.now()).slice(-8)}`;
+    const studentPhoneReg = await requestJson(server, 'POST', '/api/auth/register', {
+      body: {
+        name: 'طالب برقم الهاتف',
+        email: '',
+        phone: studentPhone,
+        password: 'StudentPhonePass123!',
+        role: 'student',
+      },
+    });
+    assert.equal(studentPhoneReg.status, 201, `Expected 201 for student phone-only register, got ${studentPhoneReg.status}: ${studentPhoneReg.text}`);
+    assert.ok(studentPhoneReg.body?.accessToken);
+
+    const studentPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: studentPhone, password: 'StudentPhonePass123!' },
+    });
+    assert.equal(studentPhoneLogin.status, 200);
+    assert.ok(studentPhoneLogin.body?.accessToken);
+
+    const guardianPhone = `012${String(Date.now()).slice(-8)}`;
+    const guardianPhoneReg = await requestJson(server, 'POST', '/api/auth/register', {
+      body: {
+        name: 'ولي أمر برقم الهاتف',
+        email: '',
+        phone: guardianPhone,
+        password: 'GuardianPhonePass123!',
+        role: 'guardian',
+      },
+    });
+    assert.equal(guardianPhoneReg.status, 201, `Expected 201 for guardian phone-only register, got ${guardianPhoneReg.status}: ${guardianPhoneReg.text}`);
+    assert.ok(guardianPhoneReg.body?.accessToken);
+
+    const guardianPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: guardianPhone, password: 'GuardianPhonePass123!' },
+    });
+    assert.equal(guardianPhoneLogin.status, 200);
+    assert.ok(guardianPhoneLogin.body?.accessToken);
+
+    // 14. Admin add-teacher phone-only (email optional)
+    const adminTeacherPhone = `015${String(Date.now()).slice(-8)}`;
+    const adminAddTeacherRes = await requestJson(server, 'POST', '/api/admin/teachers', {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        name: 'معلمة من لوحة الإدارة',
+        email: '',
+        phone: adminTeacherPhone,
+        password: 'AdminTeacherPass123!',
+      },
+    });
+    assert.equal(adminAddTeacherRes.status, 201, `Expected 201 for admin phone-only teacher create, got ${adminAddTeacherRes.status}: ${adminAddTeacherRes.text}`);
   } finally {
     clearMockInvites();
     await new Promise((resolve) => server.close(resolve));

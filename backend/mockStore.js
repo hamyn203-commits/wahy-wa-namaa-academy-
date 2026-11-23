@@ -1,4 +1,4 @@
-const { normalizePhone, syntheticPhoneEmail } = require('./utils/phone');
+const { normalizePhone, allSyntheticPhoneEmails } = require('./utils/phone');
 
 const users = [];
 
@@ -23,12 +23,12 @@ function findMockUserByEmail(email) {
 
 function findMockUserByPhone(phone) {
   const normalized = normalizePhone(phone);
-  const synthetic = syntheticPhoneEmail(phone);
-  if (!normalized && !synthetic) return null;
+  const synthetics = new Set(allSyntheticPhoneEmails(phone));
+  if (!normalized && synthetics.size === 0) return null;
   return users.find((user) => {
     const userPhone = normalizePhone(user.phone || user.phoneNormalized || '');
     if (normalized && userPhone && userPhone === normalized) return true;
-    if (synthetic && user.email?.toLowerCase() === synthetic) return true;
+    if (user.email && synthetics.has(user.email.toLowerCase())) return true;
     return false;
   }) || null;
 }

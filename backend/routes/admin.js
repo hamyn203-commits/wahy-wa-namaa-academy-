@@ -31,6 +31,7 @@ const {
 } = require('../services/teacherFinance');
 const { settleSubscriptionUsageForSession } = require('../services/subscriptionUsage');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const { normalizePhone, syntheticPhoneEmail } = require('../utils/phone');
 
 const coursesUploadDir = path.join(__dirname, '..', 'uploads', 'courses');
 if (process.env.FILE_STORAGE_DRIVER !== 'external') {
@@ -65,6 +66,7 @@ const isDBConnected = () => mongoose.connection.readyState === 1;
 const {
   addMockUser,
   findMockUserByEmail,
+  findMockUserByPhone,
   findMockUserById,
   updateMockUser,
   getMockUsers,
@@ -669,8 +671,15 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       hourlyRate = 50, isFeatured = false, isPublic = true, autoApprove = false,
     } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'الاسم والبريد وكلمة المرور مطلوبة' });
+    const rawEmail = String(email || '').trim().toLowerCase();
+    const normalizedPhone = normalizePhone(phone);
+    if (rawEmail && (rawEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(rawEmail))) {
+      return res.status(400).json({ error: 'البريد الإلكتروني غير صالح' });
+    }
+    const effectiveEmail = rawEmail || (normalizedPhone ? syntheticPhoneEmail(normalizedPhone, 'teacher') : '');
+
+    if (!name || !effectiveEmail || !password) {
+      return res.status(400).json({ error: 'الاسم ورقم الهاتف (أو البريد الإلكتروني) وكلمة المرور مطلوبة' });
     }
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
@@ -684,15 +693,14 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       : ['arabic', 'english'];
 
     if (isMockMode && !isDBConnected()) {
-      const normalizedEmail = String(email).toLowerCase().trim();
-      if (findMockUserByEmail(normalizedEmail)) {
-        return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
+      if (findMockUserByEmail(effectiveEmail) || (!rawEmail && normalizedPhone && findMockUserByPhone(normalizedPhone))) {
+        return res.status(409).json({ error: 'البريد أو رقم الهاتف مسجل مسبقاً' });
       }
       const mockUser = addMockUser({
         name: String(name).trim(),
-        email: normalizedEmail,
+        email: effectiveEmail,
         password,
-        phone: String(phone || '+201000000000').trim(),
+        phone: normalizedPhone || String(phone || '+201000000000').trim(),
         whatsappPhone: String(whatsapp || phone || '').trim(),
         gender: gender === 'female' ? 'female' : 'male',
         age: Math.min(80, Math.max(18, Number(age) || 30)),
@@ -751,15 +759,21 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       });
     }
 
-    if (await User.findOne({ email: String(email).toLowerCase().trim() })) {
-      return res.status(409).json({ error: 'البريد مسجل مسبقاً' });
+    const existingTeacherUser = await User.findOne({
+      $or: [
+        { email: effectiveEmail },
+        ...(normalizedPhone ? [{ role: 'teacher', phoneNormalized: normalizedPhone }] : []),
+      ],
+    });
+    if (existingTeacherUser) {
+      return res.status(409).json({ error: 'البريد أو رقم الهاتف مسجل مسبقاً' });
     }
 
     const user = await User.create({
       name: String(name).trim(),
-      email: String(email).toLowerCase().trim(),
+      email: effectiveEmail,
       password,
-      phone: String(phone || '+201000000000').trim(),
+      phone: normalizedPhone || String(phone || '+201000000000').trim(),
       whatsappPhone: String(whatsapp || phone || '').trim(),
       gender: gender === 'female' ? 'female' : 'male',
       age: Math.min(80, Math.max(18, Number(age) || 30)),

@@ -927,9 +927,14 @@ export default function AdminDashboard() {
 
   const teacherFormFields = [
     { key: 'name', type: 'text', required: true, label: tTeachers.fields.name },
-    { key: 'email', type: 'email', required: true, label: tTeachers.fields.email },
+    { key: 'phone', type: 'tel', required: !teacherForm.email?.trim(), label: tTeachers.fields.phone },
+    {
+      key: 'email',
+      type: 'email',
+      required: !teacherForm.phone?.trim(),
+      label: isRTL ? 'البريد الإلكتروني (اختياري — يكفي رقم الهاتف)' : 'Email (optional — phone is enough)',
+    },
     { key: 'password', type: 'password', required: true, label: tTeachers.fields.password },
-    { key: 'phone', type: 'text', required: false, label: tTeachers.fields.phone },
   ];
 
   const actionCountById = Object.fromEntries(
