@@ -459,7 +459,11 @@ export default function TeacherRegistration() {
                 <div className="space-y-5">
                   <div className="flex gap-2 p-3 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
                     <Info size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>{s1.infoNotice || 'أدخل بياناتك الأساسية والقرآنية بدقة — سيتم تأكيد البريد الإلكتروني في الخطوة التالية'}</span>
+                    <span>
+                      {isRTL
+                        ? 'أدخل بياناتك الأساسية والقرآنية بدقة — أكمل حسابك وملفاتك أولاً، وسيكون تأكيد البريد الإلكتروني في الخطوة الأخيرة قبل الإرسال.'
+                        : 'Enter your personal and Quran profile details — complete your account and files first; email verification comes at the final step before submission.'}
+                    </span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <Field htmlFor="reg-full-name" label={s1.fullNameLabel || 'الاسم الكامل *'}>
@@ -663,12 +667,16 @@ export default function TeacherRegistration() {
               )}
 
               {f.step === 2 && (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div className="flex gap-2 p-3 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
-                    <Mail size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>{s2.infoNotice || 'سنرسل كود تحقق من 6 أرقام إلى بريدك الإلكتروني. الكود صالح لمدة 10 دقائق.'}</span>
+                    <Lock size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+                    <span>
+                      {isRTL
+                        ? 'أدخل البريد الإلكتروني وكلمة المرور الآن — سيتم إرسال كود تأكيد البريد في الخطوة الأخيرة بعد تجهيز الصورة وفيديو التلاوة.'
+                        : 'Enter your email and password now — the email verification code will be sent at the final step after preparing your photo and video.'}
+                    </span>
                   </div>
-                  <Field htmlFor="reg-email" label={s2.emailLabel || 'البريد الإلكتروني *'}>
+                  <Field htmlFor="reg-email-account" label={s2.emailLabel || 'البريد الإلكتروني *'}>
                     <div className="relative">
                       <Mail
                         className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none"
@@ -676,78 +684,22 @@ export default function TeacherRegistration() {
                         aria-hidden="true"
                       />
                       <input
-                        id="reg-email"
+                        id="reg-email-account"
                         type="email"
                         dir="ltr"
                         className={`${inputCls} ps-10`}
                         value={f.credentials.email}
-                        disabled={f.isCodeSent || f.sendingCode}
-                        onChange={(e) => f.setCredentials((p) => ({ ...p, email: e.target.value }))}
+                        onChange={(e) => {
+                          const nextEmail = e.target.value;
+                          f.setCredentials((p) => ({ ...p, email: nextEmail }));
+                          if (f.emailVerified && nextEmail.trim().toLowerCase() !== f.verifiedEmail) {
+                            f.resetVerification();
+                          }
+                        }}
                         placeholder={s2.emailPlaceholder || 'name@example.com'}
                       />
                     </div>
                   </Field>
-                  {!f.isCodeSent ? (
-                    <button
-                      type="button"
-                      onClick={f.sendCode}
-                      disabled={f.sendingCode}
-                      className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {f.sendingCode && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-                      <span>{f.sendingCode ? (s2.sendingCodeBtn || 'جاري إرسال الكود…') : (s2.sendCodeBtn || 'إرسال كود التحقق إلى البريد')}</span>
-                    </button>
-                  ) : (
-                    <div className="space-y-3">
-                      <p className="text-sm text-[var(--wn-text-secondary)] text-center">
-                        {s2.codeSentTo || 'تم إرسال الكود إلى'} <strong dir="ltr">{f.credentials.email}</strong>
-                      </p>
-                      <label htmlFor="reg-otp" className="sr-only">
-                        {s2.otpLabel || 'كود التحقق المكون من 6 أرقام'}
-                      </label>
-                      <input
-                        id="reg-otp"
-                        dir="ltr"
-                        className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
-                        placeholder={s2.otpPlaceholder || '000000'}
-                        aria-label={s2.otpLabel || 'كود التحقق المكون من 6 أرقام'}
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        maxLength={6}
-                        value={f.verificationCode}
-                        onChange={(e) => f.setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      />
-                      <button
-                        type="button"
-                        onClick={f.verifyCode}
-                        disabled={f.verifyingCode}
-                        className="btn-primary w-full min-h-[44px] inline-flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        {f.verifyingCode && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-                        <span>{f.verifyingCode ? (s2.verifyingCodeBtn || 'جاري التحقق…') : (s2.verifyCodeBtn || 'تأكيد البريد')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={f.resetVerification}
-                        disabled={f.verifyingCode}
-                        className="text-sm text-[var(--wn-text-secondary)] hover:text-[var(--wn-heading)] w-full min-h-[44px] inline-flex items-center justify-center"
-                      >
-                        {s2.changeEmailBtn || 'تغيير البريد أو إعادة الإرسال'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {f.step === 3 && (
-                <div className="space-y-4">
-                  <div className="flex gap-2 p-3 bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
-                    <CheckCircle2 size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>
-                      {s3.verifiedNotice || 'تم تأكيد البريد وسيُستخدم للحساب والإشعارات:'}{' '}
-                      <strong dir="ltr">{f.verifiedEmail}</strong>
-                    </span>
-                  </div>
                   <Field htmlFor="reg-password" label={s3.passwordLabel || 'كلمة المرور *'}>
                     <div className="relative">
                       <Lock
@@ -784,7 +736,7 @@ export default function TeacherRegistration() {
                 </div>
               )}
 
-              {f.step === 4 && (
+              {f.step === 3 && (
                 <div className="space-y-5">
                   <div className="flex gap-2.5 p-3.5 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
                     <Info size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
@@ -969,6 +921,104 @@ export default function TeacherRegistration() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {f.step === 4 && (
+                <div className="space-y-5">
+                  {f.emailVerified && f.verifiedEmail === f.credentials.email.trim().toLowerCase() ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-2 p-3.5 bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
+                        <CheckCircle2 size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+                        <span>
+                          {s3.verifiedNotice || 'تم تأكيد البريد وسيُستخدم للحساب والإشعارات:'}{' '}
+                          <strong dir="ltr">{f.verifiedEmail}</strong>
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={f.resetVerification}
+                        className="text-sm text-[var(--wn-text-secondary)] hover:text-[var(--wn-heading)] w-full min-h-11 inline-flex items-center justify-center"
+                      >
+                        {s2.changeEmailBtn || 'تغيير البريد أو إعادة الإرسال'}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2 p-3 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
+                        <Mail size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
+                        <span>{s2.infoNotice || 'سنرسل كود تحقق من 6 أرقام إلى بريدك الإلكتروني. الكود صالح لمدة 10 دقائق.'}</span>
+                      </div>
+                      <Field htmlFor="reg-email" label={s2.emailLabel || 'البريد الإلكتروني *'}>
+                        <div className="relative">
+                          <Mail
+                            className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none"
+                            size={18}
+                            aria-hidden="true"
+                          />
+                          <input
+                            id="reg-email"
+                            type="email"
+                            dir="ltr"
+                            className={`${inputCls} ps-10`}
+                            value={f.credentials.email}
+                            disabled={f.isCodeSent || f.sendingCode}
+                            onChange={(e) => f.setCredentials((p) => ({ ...p, email: e.target.value }))}
+                            placeholder={s2.emailPlaceholder || 'name@example.com'}
+                          />
+                        </div>
+                      </Field>
+                      {!f.isCodeSent ? (
+                        <button
+                          type="button"
+                          onClick={f.sendCode}
+                          disabled={f.sendingCode}
+                          className="btn-primary w-full min-h-11 inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {f.sendingCode && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                          <span>{f.sendingCode ? (s2.sendingCodeBtn || 'جاري إرسال الكود…') : (s2.sendCodeBtn || 'إرسال كود التحقق إلى البريد')}</span>
+                        </button>
+                      ) : (
+                        <div className="space-y-3">
+                          <p className="text-sm text-[var(--wn-text-secondary)] text-center">
+                            {s2.codeSentTo || 'تم إرسال الكود إلى'} <strong dir="ltr">{f.credentials.email}</strong>
+                          </p>
+                          <label htmlFor="reg-otp" className="sr-only">
+                            {s2.otpLabel || 'كود التحقق المكون من 6 أرقام'}
+                          </label>
+                          <input
+                            id="reg-otp"
+                            dir="ltr"
+                            className={`${inputCls} text-center text-2xl tracking-[0.5em]`}
+                            placeholder={s2.otpPlaceholder || '000000'}
+                            aria-label={s2.otpLabel || 'كود التحقق المكون من 6 أرقام'}
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            maxLength={6}
+                            value={f.verificationCode}
+                            onChange={(e) => f.setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          />
+                          <button
+                            type="button"
+                            onClick={f.verifyCode}
+                            disabled={f.verifyingCode}
+                            className="btn-primary w-full min-h-11 inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            {f.verifyingCode && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                            <span>{f.verifyingCode ? (s2.verifyingCodeBtn || 'جاري التحقق…') : (s2.verifyCodeBtn || 'تأكيد البريد')}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={f.resetVerification}
+                            disabled={f.verifyingCode}
+                            className="text-sm text-[var(--wn-text-secondary)] hover:text-[var(--wn-heading)] w-full min-h-11 inline-flex items-center justify-center"
+                          >
+                            {s2.changeEmailBtn || 'تغيير البريد أو إعادة الإرسال'}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 

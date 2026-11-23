@@ -2,9 +2,9 @@ import { User, Mail, Lock, Video, CheckCircle } from 'lucide-react';
 
 export const STEPS = [
   { id: 1, shortKey: 's1Short', fullKey: 's1Full', title: 'بياناتك', fullTitle: 'البيانات الشخصية والأكاديمية والقرآنية', icon: User },
-  { id: 2, shortKey: 's2Short', fullKey: 's2Full', title: 'تحقق', fullTitle: 'تأكيد البريد الإلكتروني', icon: Mail },
-  { id: 3, shortKey: 's3Short', fullKey: 's3Full', title: 'حسابك', fullTitle: 'إنشاء كلمة المرور', icon: Lock },
-  { id: 4, shortKey: 's4Short', fullKey: 's4Full', title: 'صورة وفيديو', fullTitle: 'الصورة وفيديو التلاوة', icon: Video },
+  { id: 2, shortKey: 's3Short', fullKey: 's3Full', title: 'حسابك', fullTitle: 'البريد الإلكتروني وكلمة المرور', icon: Lock },
+  { id: 3, shortKey: 's4Short', fullKey: 's4Full', title: 'صورة وفيديو', fullTitle: 'الصورة وفيديو التلاوة', icon: Video },
+  { id: 4, shortKey: 's2Short', fullKey: 's2Full', title: 'تأكيد البريد', fullTitle: 'تأكيد البريد الإلكتروني', icon: Mail },
   { id: 5, shortKey: 's5Short', fullKey: 's5Full', title: 'إرسال', fullTitle: 'المراجعة والإرسال', icon: CheckCircle },
 ];
 
