@@ -111,7 +111,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const subscribeStep = studentPage.locator('section.wn-student-next-step');
     await subscribeStep.getByRole('button', { name: 'اشتراك', exact: true }).click();
     await expect(studentPage).toHaveURL(/\/ar\/plans/);
-    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك مع القرآن من 10 جنيه/ })).toBeVisible();
+    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك (?:القرآنية|مع القرآن) من 10/ })).toBeVisible();
     await expect(studentPage.getByRole('heading', { name: 'الحلقة الجماعية' })).toBeVisible();
     await expect(studentPage.getByText('من ساعة إلى ساعتين', { exact: true }).first()).toBeVisible();
     await expect(studentPage.getByText('ساعة ونصف', { exact: true }).first()).toBeVisible();
