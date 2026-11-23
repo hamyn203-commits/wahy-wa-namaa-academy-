@@ -4,7 +4,7 @@ const REVIEW_ITEMS = Object.freeze([
   { key: 'quran-profile', label: 'ملف القرآن والخبرة', required: true },
   { key: 'profile-photo', label: 'الصورة الشخصية', required: true },
   { key: 'recitation-video', label: 'فيديو التلاوة', required: true },
-  { key: 'id-card-front', label: 'وجه بطاقة الهوية', required: true },
+  { key: 'id-card-front', label: 'وجه بطاقة الهوية (اختياري)', required: false },
   { key: 'id-card-back', label: 'ظهر بطاقة الهوية (اختياري)', required: false },
   { key: 'introduction-video', label: 'فيديو تعريفي منفصل (اختياري)', required: false },
   { key: 'teaching-method-video', label: 'فيديو طريقة التدريس (اختياري)', required: false },

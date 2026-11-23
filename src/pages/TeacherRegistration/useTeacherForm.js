@@ -639,7 +639,6 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         return null;
       case 4: {
         if (!files.profilePhoto) return val.photoRequired || 'ارفع صورة شخصية 4×6';
-        if (!files.idCardFront) return val.idFrontRequired || 'ارفع صورة وجه البطاقة الشخصية';
         if (!files.recitationVideos?.length) {
           return val.recitationVideoRequired || 'ارفع فيديو التعريف والتلاوة الأساسي (1–3 دقائق)';
         }
@@ -697,7 +696,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
 
       const uploadedFiles = await uploadTeacherFiles([
         one('profilePhoto', 'teacher-public', ul.profilePhoto || 'الصورة الشخصية'),
-        one('idCardFront', 'teacher-private', ul.idCardFront || 'وجه البطاقة'),
+        one('idCardFront', 'teacher-private', ul.idCardFront || 'وجه البطاقة', Boolean(files.idCardFront)),
         one('idCardBack', 'teacher-private', ul.idCardBack || 'ظهر البطاقة', Boolean(files.idCardBack)),
         one('graduationCertificate', 'teacher-private', ul.graduationCertificate || 'شهادة التخرج', hasGradCert),
         many('tajweedCertificates', 'teacher-private', ul.tajweedCertificates || 'شهادات التجويد', hasTajweedCerts),
