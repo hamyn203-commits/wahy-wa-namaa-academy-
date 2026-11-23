@@ -19,7 +19,7 @@ const { addMockUser, findMockUserByEmail, findMockUserByPhone, findMockUserById,
 const { sendEmail } = require('../services/notificationDispatcher');
 const { getEmailProviderStatus } = require('../config/emailProvider');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
-const { normalizePhone, syntheticPhoneEmail } = require('../utils/phone');
+const { normalizePhone, syntheticPhoneEmail, allSyntheticPhoneEmails } = require('../utils/phone');
 const { isSection } = require('../config/subscriptionPlans');
 const storage = require('../services/objectStorage');
 const { createGuardianInvitation } = require('../services/guardianInvitations');
@@ -210,17 +210,30 @@ function sanitizePreferencesInput(raw) {
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, phone, role, guardianPhone, guardianRelationship, whatsappPhone, age, gender, currentLevel, preferredTrack, memorizedJuz, memorizationDetails, customLevel, enrollmentSection } = req.body;
-    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const rawEmail = String(email || '').trim().toLowerCase();
     const allowedRoles = ['student', 'guardian'];
 
-    if (!name || !normalizedEmail || !password || typeof password !== 'string' || typeof name !== 'string') {
+    if (!name || !password || typeof password !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ 
-        error: 'Name, email, and password are required' 
+        error: 'Name and password are required' 
       });
     }
 
-    if (normalizedEmail.length > 254) {
-      return res.status(400).json({ error: 'Email cannot exceed 254 characters' });
+    if (role && !allowedRoles.includes(role)) {
+      return res.status(400).json({ error: 'This role cannot be self-registered' });
+    }
+    const assignedRole = role || 'student';
+    const normalizedPhone = normalizePhone(phone);
+
+    if (rawEmail && (rawEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(rawEmail))) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    const normalizedEmail = rawEmail || (normalizedPhone ? syntheticPhoneEmail(normalizedPhone, assignedRole) : '');
+    if (!normalizedEmail) {
+      return res.status(400).json({ 
+        error: 'يرجى إدخال رقم هاتف صحيح أو بريد إلكتروني لإنشاء الحساب' 
+      });
     }
 
     if (password.length < 8 || password.length > MAX_PASSWORD_LENGTH) {
@@ -229,10 +242,6 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    if (role && !allowedRoles.includes(role)) {
-      return res.status(400).json({ error: 'This role cannot be self-registered' });
-    }
-    const assignedRole = role || 'student';
     // A guardian may manage children from both divisions, so do not bind guardians.
     const normalizedGender = ['male', 'female'].includes(String(gender || '').trim().toLowerCase())
       ? String(gender).trim().toLowerCase()
@@ -243,7 +252,6 @@ router.post('/register', async (req, res) => {
     if (assignedRole === 'student' && enrollmentSection === 'ladies' && normalizedGender === 'male') {
       return res.status(400).json({ error: 'قسم السيدات متاح للطالبات فقط', code: 'SECTION_GENDER_MISMATCH' });
     }
-    const normalizedPhone = normalizePhone(phone);
 
     if (assignedRole === 'guardian' && !normalizedPhone) {
       return res.status(400).json({ error: 'رقم هاتف ولي الأمر مطلوب لإنشاء الحساب' });
@@ -285,20 +293,22 @@ router.post('/register', async (req, res) => {
       const existingUser = await User.findOne({ email: normalizedEmail });
       if (existingUser) {
         return res.status(409).json({ 
-          error: 'Email already registered' 
+          error: rawEmail ? 'Email already registered' : 'رقم الهاتف مسجل بالفعل. سجّل الدخول إلى حسابك الحالي.' 
         });
       }
 
-      if (assignedRole === 'guardian') {
-        const guardianPhoneOwner = await User.findOne({
-          role: 'guardian',
+      if (assignedRole === 'guardian' || (!rawEmail && normalizedPhone)) {
+        const phoneOwner = await User.findOne({
+          role: assignedRole,
           phoneNormalized: normalizedPhone,
           isActive: { $ne: false },
         }).select('_id');
-        if (guardianPhoneOwner) {
+        if (phoneOwner) {
           return res.status(409).json({
-            error: 'يوجد حساب ولي أمر مسجل بالفعل بهذا الرقم. سجل الدخول إلى الحساب الحالي.',
-            code: 'GUARDIAN_PHONE_ALREADY_REGISTERED',
+            error: assignedRole === 'guardian'
+              ? 'يوجد حساب ولي أمر مسجل بالفعل بهذا الرقم. سجل الدخول إلى الحساب الحالي.'
+              : 'يوجد حساب مسجل بالفعل بهذا الرقم. سجل الدخول إلى حسابك الحالي.',
+            code: assignedRole === 'guardian' ? 'GUARDIAN_PHONE_ALREADY_REGISTERED' : 'PHONE_ALREADY_REGISTERED',
           });
         }
       }
@@ -307,7 +317,7 @@ router.post('/register', async (req, res) => {
         name: name.trim().slice(0, 100),
         email: normalizedEmail,
         password,
-        phone,
+        phone: normalizedPhone || phone,
         phoneNormalized: normalizedPhone || undefined,
         phoneVerified: false,
         role: assignedRole,
@@ -375,10 +385,11 @@ router.post('/register', async (req, res) => {
       return;
     }
 
-    const existingUser = findMockUserByEmail(normalizedEmail);
+    const existingUser = findMockUserByEmail(normalizedEmail)
+      || (!rawEmail && normalizedPhone ? findMockUserByPhone(normalizedPhone) : null);
     if (existingUser) {
       return res.status(409).json({
-        error: 'Email already registered'
+        error: rawEmail ? 'Email already registered' : 'رقم الهاتف مسجل بالفعل. سجّل الدخول إلى حسابك الحالي.'
       });
     }
 
@@ -387,7 +398,7 @@ router.post('/register', async (req, res) => {
       email: normalizedEmail,
       password,
       name,
-      phone,
+      phone: normalizedPhone || phone,
       role: assignedRole,
       ...(assignedRole === 'student' && enrollmentSection ? { enrollmentSection } : {}),
       isActive: true,
@@ -654,10 +665,10 @@ router.post('/login', async (req, res) => {
         .select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
     } else {
       const normalizedPhone = normalizePhone(identifier);
-      const syntheticEmail = syntheticPhoneEmail(identifier);
+      const syntheticEmails = allSyntheticPhoneEmails(identifier);
       const phoneFilters = [];
       if (normalizedPhone) phoneFilters.push({ phoneNormalized: normalizedPhone });
-      if (syntheticEmail) phoneFilters.push({ email: syntheticEmail });
+      if (syntheticEmails.length) phoneFilters.push({ email: { $in: syntheticEmails } });
       if (phoneFilters.length) {
         const candidates = await User.find({ $or: phoneFilters })
           .select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil')

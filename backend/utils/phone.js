@@ -47,12 +47,20 @@ function maskPhone(value) {
   return `${prefix}••••${suffix}`;
 }
 
-function syntheticPhoneEmail(value) {
+function syntheticPhoneEmail(value, role = 'teacher') {
   const normalized = normalizePhone(value);
   if (!normalized) return '';
   const digits = normalized.replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) return '';
-  return `teacher-phone-${digits}@phone.wahywanamaa.local`;
+  const safeRole = ['teacher', 'student', 'guardian'].includes(String(role || '').toLowerCase())
+    ? String(role).toLowerCase()
+    : 'user';
+  return `${safeRole}-phone-${digits}@phone.wahywanamaa.local`;
 }
 
-module.exports = { normalizePhone, maskPhone, syntheticPhoneEmail };
+function allSyntheticPhoneEmails(value) {
+  const roles = ['teacher', 'student', 'guardian', 'user'];
+  return Array.from(new Set(roles.map((r) => syntheticPhoneEmail(value, r)).filter(Boolean)));
+}
+
+module.exports = { normalizePhone, maskPhone, syntheticPhoneEmail, allSyntheticPhoneEmails };
