@@ -475,6 +475,68 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
       },
     });
     assert.equal(adminAddTeacherRes.status, 201, `Expected 201 for admin phone-only teacher create, got ${adminAddTeacherRes.status}: ${adminAddTeacherRes.text}`);
+
+    // 15. Explicit inviteToken creates a NEW teacher even when an already-approved teacher's
+    // Authorization header is present on the same browser (prevents "Teacher profile already exists").
+    const secondInvite = await createTeacherInvite({
+      createdBy: adminId,
+      label: 'second-teacher-same-browser',
+      expiresInHours: 6,
+      maxUses: 1,
+      lockToFirstIp: true,
+    });
+    const secondTeacherPhone = `010${String(Date.now() + 777).slice(-8)}`;
+    const expectedSecondOwner = `teacher-phone-20${secondTeacherPhone.slice(1)}@phone.wahywanamaa.local`;
+    const sanitizedSecondOwner = expectedSecondOwner.replace(/[^a-z0-9._-]+/g, '-');
+
+    const origIsOwned3 = objectStorage.isOwnedObjectReference;
+    objectStorage.isOwnedObjectReference = (ref, purpose, owner) => objectStorage.referenceMatches(ref, purpose, owner);
+    let secondTeacherReg;
+    try {
+      secondTeacherReg = await requestJson(server, 'POST', '/api/teachers/register', {
+        headers: {
+          'X-Forwarded-For': ipA,
+          Authorization: `Bearer ${localPhoneLogin.body.accessToken}`,
+        },
+        body: {
+          email: '',
+          phone: secondTeacherPhone,
+          password: 'SecondTeacherPass123!',
+          inviteToken: secondInvite.inviteToken,
+          personalInfo: JSON.stringify({
+            fullName: 'الأستاذة بسمة أحمد',
+            phone: secondTeacherPhone,
+            age: 22,
+            gender: 'female',
+            country: 'مصر',
+            city: 'أسيوط',
+            address: 'أسيوط',
+          }),
+          academicInfo: JSON.stringify({
+            university: 'معهد أزهري',
+            faculty: 'الدراسات الإسلامية',
+            graduationYear: 2026,
+            specialization: 'تحفيظ قرآن',
+            qualification: 'خريج',
+          }),
+          quranInfo: JSON.stringify({
+            memorizedParts: 30,
+            teachingExperience: 2,
+            specializations: ['women'],
+          }),
+          languages: JSON.stringify(['arabic']),
+          uploadedFiles: JSON.stringify({
+            profilePhoto: { pathname: `uploads/teacher-public/${sanitizedSecondOwner}/photo.jpg` },
+            recitationVideo: [{ pathname: `uploads/teacher-public/${sanitizedSecondOwner}/recite.mp4` }],
+          }),
+        },
+      });
+    } finally {
+      objectStorage.isOwnedObjectReference = origIsOwned3;
+    }
+    assert.equal(secondTeacherReg.status, 201, `Expected 201 for new invite registration while another teacher is signed in, got ${secondTeacherReg.status}: ${secondTeacherReg.text}`);
+    assert.equal(secondTeacherReg.body?.success, true);
+    assert.notEqual(String(secondTeacherReg.body?.teacher?._id), String(phoneOnlyReg.body?.teacher?._id));
   } finally {
     clearMockInvites();
     await new Promise((resolve) => server.close(resolve));

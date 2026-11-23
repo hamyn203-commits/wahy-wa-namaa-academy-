@@ -205,7 +205,11 @@ export default function TeacherRegistration() {
                     : (
                       <>
                         {pollingBefore}
-                        <strong dir="ltr">{f.credentials?.email || f.formData?.personalInfo?.phone || ''}</strong>
+                        <strong dir="ltr">
+                          {(f.credentials?.email && !String(f.credentials.email).endsWith('@phone.wahywanamaa.local'))
+                            ? f.credentials.email
+                            : (f.formData?.personalInfo?.phone || '')}
+                        </strong>
                         {pollingAfter}
                       </>
                     )}
@@ -1073,7 +1077,9 @@ export default function TeacherRegistration() {
                     <ReviewBlock
                       title={s5.accountBlock || 'الحساب'}
                       items={[
-                        f.credentials.email || null,
+                        (f.credentials?.email && !String(f.credentials.email).endsWith('@phone.wahywanamaa.local'))
+                          ? f.credentials.email
+                          : null,
                         f.formData.personalInfo.phone
                           ? (isRTL ? `الدخول بالهاتف: ${f.formData.personalInfo.phone}` : `Phone login: ${f.formData.personalInfo.phone}`)
                           : null,

@@ -506,8 +506,11 @@ router.post(
         }
       }
 
-      let userId = req.user?.id;
-      let uploadOwner = req.user?.id || null;
+      // When an explicit inviteToken is provided for a new teacher registration, do not
+      // hijack the submission with an unrelated logged-in session header/cookie.
+      const useAuthenticatedSession = Boolean(req.user?.id && !rawInviteToken);
+      let userId = useAuthenticatedSession ? req.user.id : null;
+      let uploadOwner = useAuthenticatedSession ? req.user.id : null;
       let verifiedEmailViaOtp = false;
 
       if (!userId) {
@@ -780,7 +783,7 @@ router.post(
       const canResubmitExisting = Boolean(existingTeacher && req.user?.id && String(req.user.id) === String(userId) && ['pending', 'under-review', 'rejected'].includes(existingTeacher.status));
       if (existingTeacher && !canResubmitExisting) {
         await rollbackInvite();
-        return res.status(400).json({ error: 'Teacher profile already exists' });
+        return res.status(400).json({ error: 'يوجد ملف معلم مسجل بالفعل لهذا الحساب. لتسجيل معلم جديد استخدم رابط دعوة جديد.' });
       }
 
       const directRef = directReference;
