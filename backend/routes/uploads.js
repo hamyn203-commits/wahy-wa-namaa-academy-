@@ -11,6 +11,7 @@ const { getTeacherAccessDecision } = require('../utils/teacherAccess');
 const storage = require('../services/objectStorage');
 const { validateUploadMetadata } = require('../config/uploadPolicy');
 const { registerVerificationTokenUpload } = require('./verification');
+const { validateTeacherInvite, extractClientIp } = require('../services/teacherInvite');
 
 const MAX_PUBLIC_MEDIA_RANGE_CHUNK = Math.floor(3.5 * 1024 * 1024);
 
@@ -64,7 +65,7 @@ const SAFE_PUBLIC_CONTENT_TYPES = new Set([
   'application/pdf',
 ]);
 
-async function verifyClientIdentity(payload = {}) {
+async function verifyClientIdentity(payload = {}, req = null) {
   const secret = getAccessSecret();
 
   if (payload.accessToken) {
@@ -98,6 +99,30 @@ async function verifyClientIdentity(payload = {}) {
     }
 
     throw new Error('Invalid teacher verification proof');
+  }
+
+  const teacherInviteToken = String(payload.inviteToken || '').trim();
+  if (teacherInviteToken) {
+    const inviteEmail = String(payload.email || '').trim().toLowerCase();
+    if (!inviteEmail || inviteEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(inviteEmail)) {
+      throw new Error('Valid email is required for invited teacher upload');
+    }
+    const inviteCheck = await validateTeacherInvite(teacherInviteToken, {
+      clientIp: extractClientIp(req),
+      bindIfUnbound: false,
+    });
+    if (!inviteCheck.valid) {
+      throw new Error(inviteCheck.error || 'Invalid teacher invitation link');
+    }
+    const inviteExpSeconds = inviteCheck.invite?.expiresAt
+      ? Math.floor(new Date(inviteCheck.invite.expiresAt).getTime() / 1000)
+      : Math.floor(Date.now() / 1000) + 3600;
+    const quotaKey = `invite-upload:${inviteCheck.invite.id}:${inviteEmail}`;
+    const allowedQuota = await registerVerificationTokenUpload(quotaKey, inviteExpSeconds);
+    if (!allowedQuota) {
+      throw new Error('Invitation upload quota exceeded');
+    }
+    return { role: 'teacher-registration', owner: inviteEmail };
   }
 
   throw new Error('Authentication required');
@@ -139,7 +164,7 @@ router.post('/blob', blobUploadLimiter, async (req, res) => {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = JSON.parse(clientPayload || '{}');
-        const identity = await verifyClientIdentity(payload);
+        const identity = await verifyClientIdentity(payload, req);
         const metadata = validateUploadMetadata({
           purpose: payload.purpose,
           role: identity.role,

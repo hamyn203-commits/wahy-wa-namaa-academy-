@@ -1,13 +1,18 @@
 import { STEPS } from './constants';
 import { useI18n } from '../../i18n';
 
-export default function StepProgress({ current }) {
+export default function StepProgress({ current, skipEmailVerification = false }) {
   const { t } = useI18n();
   const trSteps = t?.teacherRegistration?.steps || {};
-  const pct = Math.round(((current - 1) / (STEPS.length - 1)) * 100);
+  const visibleSteps = skipEmailVerification ? STEPS.filter((s) => s.id !== 4) : STEPS;
+  const currentIdx = Math.max(0, visibleSteps.findIndex((s) => s.id === current));
+  const displayStep = currentIdx + 1;
+  const pct = visibleSteps.length > 1
+    ? Math.round((currentIdx / (visibleSteps.length - 1)) * 100)
+    : 100;
   const stepLabel = String(trSteps.stepOf || 'الخطوة {current} من {total}')
-    .replace('{current}', String(current))
-    .replace('{total}', String(STEPS.length));
+    .replace('{current}', String(displayStep))
+    .replace('{total}', String(visibleSteps.length));
 
   return (
     <div className="mb-8">
@@ -18,18 +23,18 @@ export default function StepProgress({ current }) {
       <div
         className="h-2 bg-[var(--wn-surface-sunken)] rounded-full overflow-hidden mb-6"
         role="progressbar"
-        aria-valuenow={current}
+        aria-valuenow={displayStep}
         aria-valuemin={1}
-        aria-valuemax={STEPS.length}
+        aria-valuemax={visibleSteps.length}
         aria-label={stepLabel}
       >
         <div className="h-full bg-[var(--wn-emerald)] transition-all duration-300" style={{ width: `${pct}%` }} />
       </div>
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        {STEPS.map((s) => {
+        {visibleSteps.map((s, idx) => {
           const Icon = s.icon;
-          const active = current === s.id;
-          const done = current > s.id;
+          const active = idx === currentIdx;
+          const done = idx < currentIdx;
           return (
             <div
               key={s.id}

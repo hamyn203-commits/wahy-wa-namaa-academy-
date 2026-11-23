@@ -31,6 +31,8 @@ export async function uploadFileDirect(file, purpose, options = {}) {
   let accessToken = options.accessToken || currentAccessToken();
   const verificationToken = options.verificationToken || '';
   const phoneVerificationToken = options.phoneVerificationToken || '';
+  const inviteToken = options.inviteToken || '';
+  const ownerEmail = String(options.ownerEmail || '').trim().toLowerCase();
 
   if (accessToken && !options.accessToken) {
     const claims = decodeJwt(accessToken);
@@ -50,6 +52,7 @@ export async function uploadFileDirect(file, purpose, options = {}) {
     owner = proof.email || proof.phone || '';
   }
   if (!owner && phoneVerificationToken) owner = decodeJwt(phoneVerificationToken).phone || '';
+  if (!owner && inviteToken && ownerEmail) owner = ownerEmail;
   if (!owner) throw new Error('Upload authorization is missing');
 
   // Parallel uploads can share the same millisecond and filename (for example
@@ -73,6 +76,8 @@ export async function uploadFileDirect(file, purpose, options = {}) {
       accessToken: accessToken || undefined,
       verificationToken: verificationToken || undefined,
       phoneVerificationToken: phoneVerificationToken || undefined,
+      inviteToken: (!accessToken && !verificationToken && inviteToken) ? inviteToken : undefined,
+      email: (!accessToken && !verificationToken && inviteToken && ownerEmail) ? ownerEmail : undefined,
     }),
   });
 

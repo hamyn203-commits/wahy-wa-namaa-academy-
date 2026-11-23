@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
 const app = require('../app');
+const objectStorage = require('../services/objectStorage');
 const { generateAccessToken, getAccessSecret } = require('../middleware/auth');
 const {
   createTeacherInvite,
@@ -275,6 +276,68 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
     );
     assert.equal(recheckAfterRollback.status, 200);
     assert.equal(recheckAfterRollback.body?.valid, true);
+
+    // 11. Invited applicant can register directly WITHOUT email OTP verificationToken
+    const noOtpEmail = `invited-no-otp-${Date.now()}@example.com`;
+    const sanitizedOwner = noOtpEmail.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+    const origIsOwned = objectStorage.isOwnedObjectReference;
+    const seenOwners = [];
+    objectStorage.isOwnedObjectReference = (ref, purpose, owner) => {
+      seenOwners.push(owner);
+      return objectStorage.referenceMatches(ref, purpose, owner);
+    };
+    let directNoOtpRes;
+    try {
+      directNoOtpRes = await requestJson(server, 'POST', '/api/teachers/register', {
+        headers: { 'X-Forwarded-For': ipA },
+        body: {
+          email: noOtpEmail,
+          password: 'StrongPassword123!',
+          inviteToken: singleUse.inviteToken,
+          personalInfo: JSON.stringify({
+            fullName: 'الأستاذة سارة محمود',
+            phone: '+201012345678',
+            age: 27,
+            gender: 'female',
+            country: 'مصر',
+            city: 'القاهرة',
+            address: 'القاهرة',
+          }),
+          academicInfo: JSON.stringify({
+            university: 'جامعة الأزهر',
+            faculty: 'الدراسات الإسلامية',
+            graduationYear: 2021,
+            specialization: 'تحفيظ قرآن',
+            qualification: 'خريج',
+          }),
+          quranInfo: JSON.stringify({
+            memorizedParts: 30,
+            teachingExperience: 4,
+            specializations: ['women', 'tajweed'],
+          }),
+          languages: JSON.stringify(['arabic']),
+          uploadedFiles: JSON.stringify({
+            profilePhoto: { pathname: `uploads/teacher-public/${sanitizedOwner}/photo.jpg` },
+            recitationVideo: [{ pathname: `uploads/teacher-public/${sanitizedOwner}/recite.mp4` }],
+          }),
+        },
+      });
+    } finally {
+      objectStorage.isOwnedObjectReference = origIsOwned;
+    }
+    assert.equal(directNoOtpRes.status, 201, `Expected 201 for invite-backed no-OTP registration, got ${directNoOtpRes.status}: ${directNoOtpRes.text}`);
+    assert.equal(directNoOtpRes.body?.success, true);
+    assert.ok(seenOwners.length >= 2 && seenOwners.every((owner) => owner === noOtpEmail));
+
+    // Invite is now exhausted after the single-use registration completed
+    const afterUseCheck = await requestJson(
+      server,
+      'GET',
+      `/api/teachers/invite-status?token=${encodeURIComponent(singleUse.inviteToken)}`,
+      { headers: { 'X-Forwarded-For': ipA } }
+    );
+    assert.equal(afterUseCheck.status, 403);
+    assert.equal(afterUseCheck.body?.code, 'INVITE_EXHAUSTED');
   } finally {
     clearMockInvites();
     await new Promise((resolve) => server.close(resolve));

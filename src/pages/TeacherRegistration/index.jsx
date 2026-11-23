@@ -348,6 +348,7 @@ export default function TeacherRegistration() {
 
   const stepMeta = STEPS.find((s) => s.id === f.step);
   const stepTitle = (stepMeta && tr.steps?.[stepMeta.fullKey]) || stepMeta?.fullTitle;
+  const skipEmailVerification = Boolean(inviteToken) && !f.authenticatedTeacher;
   const s1 = tr.step1 || {};
   const s2 = tr.step2 || {};
   const s3 = tr.step3 || {};
@@ -376,7 +377,11 @@ export default function TeacherRegistration() {
               {hdr.title || 'سجّل كمعلم قرآن'}
             </h1>
             <p className="text-[var(--wn-text-secondary)] mt-2">
-              {hdr.subtitle || '5 خطوات واضحة لإكمال ملف التقديم'}
+              {skipEmailVerification
+                ? (isRTL
+                  ? '4 خطوات سهلة لإكمال ملف التقديم — بدون الحاجة لتأكيد البريد الإلكتروني'
+                  : '4 simple steps to complete your application — no email verification code needed')
+                : (hdr.subtitle || '5 خطوات واضحة لإكمال ملف التقديم')}
             </p>
           </div>
 
@@ -410,7 +415,7 @@ export default function TeacherRegistration() {
             </div>
           ) : null}
 
-          <StepProgress current={f.step} />
+          <StepProgress current={f.step} skipEmailVerification={skipEmailVerification} />
 
           {(f.draftSaved || f.draftRestored) && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] px-4 py-2.5 text-xs text-[var(--wn-badge-emerald-text)]">
@@ -460,9 +465,13 @@ export default function TeacherRegistration() {
                   <div className="flex gap-2 p-3 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
                     <Info size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
                     <span>
-                      {isRTL
-                        ? 'أدخل بياناتك الأساسية والقرآنية بدقة — أكمل حسابك وملفاتك أولاً، وسيكون تأكيد البريد الإلكتروني في الخطوة الأخيرة قبل الإرسال.'
-                        : 'Enter your personal and Quran profile details — complete your account and files first; email verification comes at the final step before submission.'}
+                      {skipEmailVerification
+                        ? (isRTL
+                          ? 'أدخل بياناتك الأساسية والقرآنية بدقة — لا تحتاج لتأكيد البريد الإلكتروني بكود لأنك تسجّل برابط دعوة مباشر من الإدارة.'
+                          : 'Enter your personal and Quran profile details — no email verification code is needed with your direct admin invitation link.')
+                        : (isRTL
+                          ? 'أدخل بياناتك الأساسية والقرآنية بدقة — أكمل حسابك وملفاتك أولاً، وسيكون تأكيد البريد الإلكتروني في الخطوة الأخيرة قبل الإرسال.'
+                          : 'Enter your personal and Quran profile details — complete your account and files first; email verification comes at the final step before submission.')}
                     </span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
@@ -671,9 +680,13 @@ export default function TeacherRegistration() {
                   <div className="flex gap-2 p-3 bg-[var(--wn-surface-mint)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
                     <Lock size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
                     <span>
-                      {isRTL
-                        ? 'أدخل البريد الإلكتروني وكلمة المرور الآن — سيتم إرسال كود تأكيد البريد في الخطوة الأخيرة بعد تجهيز الصورة وفيديو التلاوة.'
-                        : 'Enter your email and password now — the email verification code will be sent at the final step after preparing your photo and video.'}
+                      {skipEmailVerification
+                        ? (isRTL
+                          ? 'أدخل البريد الإلكتروني وكلمة المرور للدخول إلى حسابك بعد اعتماد الإدارة — بدون الحاجة لكود تحقق.'
+                          : 'Enter the email and password you will use to sign in after admin approval — no verification code required.')
+                        : (isRTL
+                          ? 'أدخل البريد الإلكتروني وكلمة المرور الآن — سيتم إرسال كود تأكيد البريد في الخطوة الأخيرة بعد تجهيز الصورة وفيديو التلاوة.'
+                          : 'Enter your email and password now — the email verification code will be sent at the final step after preparing your photo and video.')}
                     </span>
                   </div>
                   <Field htmlFor="reg-email-account" label={s2.emailLabel || 'البريد الإلكتروني *'}>
