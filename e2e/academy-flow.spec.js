@@ -104,8 +104,8 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     await studentPage.goto('/ar/student/dashboard?tab=evaluations');
     await expect(studentPage.getByText('السورة / المقطع: سورة الفاتحة', { exact: true })).toBeVisible();
     await expect(studentPage.getByText('الواجب القادم: مراجعة سورة الفاتحة', { exact: true })).toBeVisible();
-    await expect(studentPage.getByText('تقرير Playwright آلي للتحقق من دورة الحصة')).toBeVisible();
-    await expect(studentPage.getByText(/Africa\/Cairo/)).toBeVisible();
+    await expect(studentPage.getByText('تقرير Playwright آلي للتحقق من دورة الحصة').first()).toBeVisible();
+    await expect(studentPage.getByText(/Africa\/Cairo/).first()).toBeVisible();
 
     await studentPage.goto('/ar/student/dashboard');
     const subscribeStep = studentPage.locator('section.wn-student-next-step');
