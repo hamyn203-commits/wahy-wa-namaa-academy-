@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 
 const app = require('../app');
 const objectStorage = require('../services/objectStorage');
+const { updateMockTeacher } = require('../mockStore');
 const { generateAccessToken, getAccessSecret } = require('../middleware/auth');
 const {
   createTeacherInvite,
@@ -338,6 +339,90 @@ test('temporary teacher invite links: fail-closed public gate, admin RBAC, IP lo
     );
     assert.equal(afterUseCheck.status, 403);
     assert.equal(afterUseCheck.body?.code, 'INVITE_EXHAUSTED');
+
+    // 12. Phone-only registration (NO email, NO OTP) + login with local or international phone number
+    const phoneOnlyInvite = await createTeacherInvite({
+      createdBy: adminId,
+      label: 'phone-only-teacher',
+      expiresInHours: 6,
+      maxUses: 1,
+      lockToFirstIp: true,
+    });
+    const uniqueLocalPhone = `010${String(Date.now()).slice(-8)}`;
+    const expectedPhoneOwner = `teacher-phone-20${uniqueLocalPhone.slice(1)}@phone.wahywanamaa.local`;
+    const sanitizedPhoneOwner = expectedPhoneOwner.replace(/[^a-z0-9._-]+/g, '-');
+
+    const origIsOwned2 = objectStorage.isOwnedObjectReference;
+    objectStorage.isOwnedObjectReference = (ref, purpose, owner) => objectStorage.referenceMatches(ref, purpose, owner);
+    let phoneOnlyReg;
+    try {
+      phoneOnlyReg = await requestJson(server, 'POST', '/api/teachers/register', {
+        headers: { 'X-Forwarded-For': ipA },
+        body: {
+          email: '',
+          phone: uniqueLocalPhone,
+          password: 'PhoneOnlyPass123!',
+          inviteToken: phoneOnlyInvite.inviteToken,
+          personalInfo: JSON.stringify({
+            fullName: 'الأستاذة فاطمة علي',
+            phone: uniqueLocalPhone,
+            age: 32,
+            gender: 'female',
+            country: 'مصر',
+            city: 'الجيزة',
+            address: 'الجيزة',
+          }),
+          academicInfo: JSON.stringify({
+            university: 'جامعة الأزهر',
+            faculty: 'الدراسات الإسلامية',
+            graduationYear: 2017,
+            specialization: 'تحفيظ قرآن',
+            qualification: 'خريج',
+          }),
+          quranInfo: JSON.stringify({
+            memorizedParts: 30,
+            teachingExperience: 7,
+            specializations: ['women'],
+          }),
+          languages: JSON.stringify(['arabic']),
+          uploadedFiles: JSON.stringify({
+            profilePhoto: { pathname: `uploads/teacher-public/${sanitizedPhoneOwner}/photo.jpg` },
+            recitationVideo: [{ pathname: `uploads/teacher-public/${sanitizedPhoneOwner}/recite.mp4` }],
+          }),
+        },
+      });
+    } finally {
+      objectStorage.isOwnedObjectReference = origIsOwned2;
+    }
+    assert.equal(phoneOnlyReg.status, 201, `Expected 201 for phone-only registration, got ${phoneOnlyReg.status}: ${phoneOnlyReg.text}`);
+    assert.equal(phoneOnlyReg.body?.success, true);
+
+    // Pending teacher gets 403 approval gate when logging in by phone
+    const pendingPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: uniqueLocalPhone, password: 'PhoneOnlyPass123!' },
+    });
+    assert.equal(pendingPhoneLogin.status, 403);
+    assert.equal(pendingPhoneLogin.body?.code, 'TEACHER_APPROVAL_PENDING');
+
+    // Once admin approves, teacher logs in smoothly with local phone OR international phone
+    updateMockTeacher(phoneOnlyReg.body.teacher._id, { status: 'approved', isVerified: true });
+
+    const localPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: uniqueLocalPhone, password: 'PhoneOnlyPass123!' },
+    });
+    assert.equal(localPhoneLogin.status, 200);
+    assert.ok(localPhoneLogin.body?.accessToken);
+
+    const intlPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: `+20${uniqueLocalPhone.slice(1)}`, password: 'PhoneOnlyPass123!' },
+    });
+    assert.equal(intlPhoneLogin.status, 200);
+    assert.ok(intlPhoneLogin.body?.accessToken);
+
+    const wrongPassPhoneLogin = await requestJson(server, 'POST', '/api/auth/login', {
+      body: { email: uniqueLocalPhone, password: 'WrongPassword123!' },
+    });
+    assert.equal(wrongPassPhoneLogin.status, 401);
   } finally {
     clearMockInvites();
     await new Promise((resolve) => server.close(resolve));

@@ -15,11 +15,11 @@ const {
   readAccessTokenIfValid,
   requireRole 
 } = require('../middleware/auth');
-const { addMockUser, findMockUserByEmail, findMockUserById, updateMockUser, getMockUsers } = require('../mockStore');
+const { addMockUser, findMockUserByEmail, findMockUserByPhone, findMockUserById, updateMockUser, getMockUsers } = require('../mockStore');
 const { sendEmail } = require('../services/notificationDispatcher');
 const { getEmailProviderStatus } = require('../config/emailProvider');
 const { getTeacherAccessDecision } = require('../utils/teacherAccess');
-const { normalizePhone } = require('../utils/phone');
+const { normalizePhone, syntheticPhoneEmail } = require('../utils/phone');
 const { isSection } = require('../config/subscriptionPlans');
 const storage = require('../services/objectStorage');
 const { createGuardianInvitation } = require('../services/guardianInvitations');
@@ -629,21 +629,52 @@ router.post('/google', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const rawIdentifier = req.body?.identifier ?? req.body?.email ?? req.body?.phone;
+    const { password } = req.body;
 
-    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+    if (!rawIdentifier || !password || typeof rawIdentifier !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ 
-        error: 'Email and password are required' 
+        error: 'Email or phone number and password are required' 
       });
     }
 
-    if (email.length > 254 || password.length > MAX_PASSWORD_LENGTH) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    const identifier = rawIdentifier.trim();
+    if (!identifier || identifier.length > 254 || password.length > MAX_PASSWORD_LENGTH) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const user = isMockMode && !isDBConnected()
-      ? findMockUserByEmail(email)
-      : await User.findOne({ email: email.trim().toLowerCase() }).select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
+    const isEmailLogin = identifier.includes('@');
+    let user = null;
+    if (isMockMode && !isDBConnected()) {
+      user = isEmailLogin
+        ? findMockUserByEmail(identifier.toLowerCase())
+        : findMockUserByPhone(identifier);
+    } else if (isEmailLogin) {
+      user = await User.findOne({ email: identifier.toLowerCase() })
+        .select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil');
+    } else {
+      const normalizedPhone = normalizePhone(identifier);
+      const syntheticEmail = syntheticPhoneEmail(identifier);
+      const phoneFilters = [];
+      if (normalizedPhone) phoneFilters.push({ phoneNormalized: normalizedPhone });
+      if (syntheticEmail) phoneFilters.push({ email: syntheticEmail });
+      if (phoneFilters.length) {
+        const candidates = await User.find({ $or: phoneFilters })
+          .select('+password +refreshTokenVersion +phoneNormalized +failedLoginAttempts +lockUntil')
+          .limit(5);
+        if (candidates.length === 1) {
+          user = candidates[0];
+        } else if (candidates.length > 1) {
+          for (const candidate of candidates) {
+            if (candidate.isActive && await candidate.comparePassword(password).catch(() => false)) {
+              user = candidate;
+              break;
+            }
+          }
+          if (!user) user = candidates[0];
+        }
+      }
+    }
     
     if (!user) {
       if (!isMockMode || isDBConnected()) {

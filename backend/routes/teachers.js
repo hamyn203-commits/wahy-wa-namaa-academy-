@@ -44,6 +44,7 @@ const {
   deleteTeacherInvite,
 } = require('../services/teacherInvite');
 const { validateMagicBytes } = require('../utils/magicBytes');
+const { normalizePhone, syntheticPhoneEmail } = require('../utils/phone');
 
 const inviteStatusLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -56,6 +57,7 @@ const multer = require('multer');
 const {
   addMockUser,
   findMockUserByEmail,
+  findMockUserByPhone,
   findMockUserById,
   addMockTeacher,
   findMockTeacherByUserId,
@@ -479,7 +481,12 @@ router.post(
         email, password, verificationToken, phoneVerificationToken, inviteToken
       } = req.body;
       const rawInviteToken = String(inviteToken || req.headers?.['x-teacher-invite'] || '').trim();
-      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const parsedPersonalForVerification = parseSafeMultipartJson(personalInfo, {});
+      const rawEmailInput = String(email || '').trim().toLowerCase();
+      const rawPhoneInput = String(req.body?.phone || parsedPersonalForVerification?.phone || '').trim();
+      const normalizedPhone = normalizePhone(rawPhoneInput);
+      const derivedPhoneEmail = !rawEmailInput && normalizedPhone ? syntheticPhoneEmail(normalizedPhone) : '';
+      const normalizedEmail = rawEmailInput || derivedPhoneEmail;
       const uploadedFiles = parseSafeMultipartJson(req.body.uploadedFiles, {});
       const documentAvailability = parseSafeMultipartJson(req.body.documentAvailability, {});
       const declaredDocuments = {
@@ -502,7 +509,6 @@ router.post(
       let userId = req.user?.id;
       let uploadOwner = req.user?.id || null;
       let verifiedEmailViaOtp = false;
-      const parsedPersonalForVerification = parseSafeMultipartJson(personalInfo, {});
 
       if (!userId) {
         const clientIp = extractClientIp(req);
@@ -515,10 +521,10 @@ router.post(
         }
 
         if (!normalizedEmail || !password) {
-          return res.status(400).json({ error: 'Email and password are required' });
+          return res.status(400).json({ error: 'Email or phone number and password are required' });
         }
         if (normalizedEmail.length > 254 || !/^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/.test(normalizedEmail)) {
-          return res.status(400).json({ error: 'Valid email address is required' });
+          return res.status(400).json({ error: 'Valid email address or phone number is required' });
         }
         if (String(password).length < 8) {
           return res.status(400).json({ error: 'Password must be at least 8 characters' });
@@ -634,22 +640,23 @@ router.post(
       declaredDocuments.tajweedCertificates = declaredDocuments.tajweedCertificates || hasTajweedCerts;
       declaredDocuments.ijazat = declaredDocuments.ijazat || hasIjazatCerts;
 
-      if (!userId && (email || password)) {
+      if (!userId && (normalizedEmail || password)) {
         if (!normalizedEmail || !password) {
-          return res.status(400).json({ error: 'Email and password are required' });
+          return res.status(400).json({ error: 'Email or phone number and password are required' });
         }
         if (String(password).length < 8) {
           return res.status(400).json({ error: 'Password must be at least 8 characters' });
         }
 
         if (isMockMode && !isDBConnected()) {
-          const existingUser = findMockUserByEmail(normalizedEmail);
+          const existingUser = findMockUserByEmail(normalizedEmail)
+            || (normalizedPhone && !rawEmailInput ? findMockUserByPhone(normalizedPhone) : null);
           if (existingUser) {
-            return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
+            return res.status(409).json({ error: 'البريد الإلكتروني أو رقم الهاتف مسجل مسبقاً' });
           }
 
           const consumed = await consumeTeacherInviteAtomic(rawInviteToken, {
-            email: normalizedEmail,
+            email: rawEmailInput || normalizedPhone || normalizedEmail,
             name: parsedPersonalForVerification.fullName || '',
             clientIp: extractClientIp(req),
           });
@@ -663,7 +670,7 @@ router.post(
             name: parsedPersonal.fullName || 'معلم أزهري',
             email: normalizedEmail,
             password,
-            phone: parsedPersonal.phone,
+            phone: normalizedPhone || parsedPersonal.phone,
             role: 'teacher',
             emailVerified: verifiedEmailViaOtp,
             isActive: true,
@@ -671,13 +678,17 @@ router.post(
 
           userId = user._id || user.id;
         } else {
-          const existingUser = await User.findOne({ email: normalizedEmail });
+          const dupQuery = [{ email: normalizedEmail }];
+          if (normalizedPhone) {
+            dupQuery.push({ role: 'teacher', phoneNormalized: normalizedPhone });
+          }
+          const existingUser = await User.findOne({ $or: dupQuery });
           if (existingUser) {
-            return res.status(409).json({ error: 'Email already registered' });
+            return res.status(409).json({ error: 'البريد الإلكتروني أو رقم الهاتف مسجل مسبقاً' });
           }
 
           const consumed = await consumeTeacherInviteAtomic(rawInviteToken, {
-            email: normalizedEmail,
+            email: rawEmailInput || normalizedPhone || normalizedEmail,
             name: parsedPersonalForVerification.fullName || '',
             clientIp: extractClientIp(req),
           });
@@ -691,7 +702,7 @@ router.post(
             name: parsedPersonal.fullName,
             email: normalizedEmail,
             password,
-            phone: parsedPersonal.phone,
+            phone: normalizedPhone || parsedPersonal.phone,
             role: 'teacher',
             emailVerified: verifiedEmailViaOtp,
           });

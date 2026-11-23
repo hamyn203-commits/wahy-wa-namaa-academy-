@@ -682,14 +682,19 @@ export default function TeacherRegistration() {
                     <span>
                       {skipEmailVerification
                         ? (isRTL
-                          ? 'أدخل البريد الإلكتروني وكلمة المرور للدخول إلى حسابك بعد اعتماد الإدارة — بدون الحاجة لكود تحقق.'
-                          : 'Enter the email and password you will use to sign in after admin approval — no verification code required.')
+                          ? `يمكنك تسجيل الدخول لاحقاً برقم هاتفك (${f.formData.personalInfo.phone || 'المدخل في الخطوة 1'}) وكلمة المرور — ولا يُشترط وجود بريد إلكتروني أو كود تحقق.`
+                          : `You can sign in later using your phone number (${f.formData.personalInfo.phone || 'from Step 1'}) and password — email and OTP code are completely optional.`)
                         : (isRTL
                           ? 'أدخل البريد الإلكتروني وكلمة المرور الآن — سيتم إرسال كود تأكيد البريد في الخطوة الأخيرة بعد تجهيز الصورة وفيديو التلاوة.'
                           : 'Enter your email and password now — the email verification code will be sent at the final step after preparing your photo and video.')}
                     </span>
                   </div>
-                  <Field htmlFor="reg-email-account" label={s2.emailLabel || 'البريد الإلكتروني *'}>
+                  <Field
+                    htmlFor="reg-email-account"
+                    label={skipEmailVerification
+                      ? (isRTL ? 'البريد الإلكتروني (اختياري — اتركه فارغاً للتسجيل برقم الهاتف فقط)' : 'Email (optional — leave blank to register with phone only)')
+                      : (s2.emailLabel || 'البريد الإلكتروني *')}
+                  >
                     <div className="relative">
                       <Mail
                         className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--wn-text-tertiary)] pointer-events-none"
@@ -1065,7 +1070,15 @@ export default function TeacherRegistration() {
                         }),
                       ]}
                     />
-                    <ReviewBlock title={s5.accountBlock || 'الحساب'} items={[f.credentials.email]} />
+                    <ReviewBlock
+                      title={s5.accountBlock || 'الحساب'}
+                      items={[
+                        f.credentials.email || null,
+                        f.formData.personalInfo.phone
+                          ? (isRTL ? `الدخول بالهاتف: ${f.formData.personalInfo.phone}` : `Phone login: ${f.formData.personalInfo.phone}`)
+                          : null,
+                      ]}
+                    />
                     <ReviewBlock
                       title={s5.filesBlock || 'الملفات'}
                       items={[

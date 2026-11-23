@@ -33,6 +33,27 @@ const emptyFiles = () => ({
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const emailLooksValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
 
+function normalizePhoneClient(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let compact = raw.replace(/[\s().-]/g, '');
+  if (compact.startsWith('00')) compact = `+${compact.slice(2)}`;
+  const digits = compact.replace(/\D/g, '');
+  if (!digits) return '';
+  if (/^2001\d{9}$/.test(digits)) return `+20${digits.slice(3)}`;
+  if (/^201\d{9}$/.test(digits)) return `+${digits}`;
+  if (/^01\d{9}$/.test(digits)) return `+20${digits.slice(1)}`;
+  return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : '';
+}
+
+function syntheticPhoneEmailClient(value) {
+  const normalized = normalizePhoneClient(value);
+  if (!normalized) return '';
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) return '';
+  return `teacher-phone-${digits}@phone.wahywanamaa.local`;
+}
+
 const MB = 1024 * 1024;
 const FILE_RULE_SPECS = {
   publicImage: {
@@ -624,11 +645,20 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         if (!a.university?.trim()) return val.universityRequired || 'اسم الجامعة / خريج أي مطلوب';
         if (!a.graduationYear) return val.gradYearRequired || 'سنة التخرج مطلوبة';
         if (!p.country) return val.countryRequired || 'اختر الدولة';
-        if (!p.phone?.trim()) return val.phoneRequired || 'رقم الهاتف مطلوب';
+        if (!p.phone?.trim() || !normalizePhoneClient(p.phone)) return val.phoneRequired || 'أدخل رقم هاتف صحيح';
         return null;
       case 2: {
         const email = normalizeEmail(credentials.email);
-        if (!emailLooksValid(email)) return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً';
+        if (skipEmailVerification) {
+          if (email && !emailLooksValid(email)) {
+            return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أو اتركه فارغًا للتسجيل برقم الهاتف';
+          }
+          if (!email && !normalizePhoneClient(p.phone)) {
+            return val.phoneRequired || 'أدخل رقم هاتف صحيح أو بريد إلكتروني';
+          }
+        } else if (!emailLooksValid(email)) {
+          return val.invalidEmail || 'أدخل بريدًا إلكترونيًا صحيحًا أولاً';
+        }
         if (!credentials.password || credentials.password.length < 8) return val.passwordMin8 || 'كلمة المرور 8+ أحرف';
         if (credentials.password !== credentials.confirmPassword) return val.passwordMismatch || 'كلمتا المرور غير متطابقتين';
         return null;
@@ -677,14 +707,18 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     const err = validate(3);
     if (err) { toast.error(err); return; }
 
-    const verifiedEmailNow = normalizeEmail(authenticatedTeacher ? user.email : credentials.email);
-    if (!authenticatedTeacher && !skipEmailVerification && (!emailVerified || !verificationToken || verifiedEmail !== verifiedEmailNow)) {
+    const rawAccountEmail = normalizeEmail(authenticatedTeacher ? user.email : credentials.email);
+    const derivedPhoneEmail = !rawAccountEmail && skipEmailVerification
+      ? syntheticPhoneEmailClient(formData.personalInfo.phone)
+      : '';
+    const effectiveOwnerEmail = rawAccountEmail || derivedPhoneEmail;
+    if (!authenticatedTeacher && !skipEmailVerification && (!emailVerified || !verificationToken || verifiedEmail !== rawAccountEmail)) {
       toast.error(tr.validation?.reverifyEmail || 'يجب إعادة تأكيد البريد الإلكتروني');
       setStep(4);
       return;
     }
-    if (!authenticatedTeacher && (!emailLooksValid(verifiedEmailNow) || !credentials.password || credentials.password.length < 8)) {
-      toast.error(tr.validation?.invalidEmail || 'تحقق من البريد الإلكتروني وكلمة المرور أولاً');
+    if (!authenticatedTeacher && (!effectiveOwnerEmail || (rawAccountEmail && !emailLooksValid(rawAccountEmail)) || !credentials.password || credentials.password.length < 8)) {
+      toast.error(tr.validation?.invalidEmail || 'تحقق من رقم الهاتف أو البريد الإلكتروني وكلمة المرور أولاً');
       setStep(2);
       return;
     }
@@ -700,7 +734,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     try {
       const scope = authenticatedTeacher
         ? String(user.id || user._id || user.email)
-        : (verificationToken || `invite:${inviteToken}:${verifiedEmailNow}`);
+        : (verificationToken || `invite:${inviteToken}:${effectiveOwnerEmail}`);
       if (completedUploads.current.scope !== scope) {
         completedUploads.current = { scope, files: new Map() };
       }
@@ -730,7 +764,8 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
           ...options,
           verificationToken: verificationToken || undefined,
           inviteToken: (!authenticatedTeacher && inviteToken) ? inviteToken : undefined,
-          ownerEmail: verifiedEmailNow,
+          ownerEmail: effectiveOwnerEmail,
+          ownerPhone: formData.personalInfo.phone,
         }),
         cache: completedUploads.current.files,
         onProgress: setUploadProgress,
@@ -762,7 +797,8 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
         }),
         languages: JSON.stringify(Array.isArray(formData.languages) && formData.languages.length ? formData.languages : ['arabic']),
         availability: JSON.stringify([]),
-        email: verifiedEmailNow,
+        email: rawAccountEmail,
+        phone: formData.personalInfo.phone,
         password: credentials.password,
         ...(verificationToken ? { verificationToken } : {}),
         ...(!authenticatedTeacher && inviteToken ? { inviteToken } : {}),
@@ -810,7 +846,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
           sessionStorage.setItem(STATUS_TOKEN_KEY, JSON.stringify({
             token: nextToken,
             status: nextStatus,
-            email: verifiedEmailNow,
+            email: rawAccountEmail || formData.personalInfo.phone,
           }));
         }
       } catch { /* ignore */ }

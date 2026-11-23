@@ -47,4 +47,12 @@ function maskPhone(value) {
   return `${prefix}••••${suffix}`;
 }
 
-module.exports = { normalizePhone, maskPhone };
+function syntheticPhoneEmail(value) {
+  const normalized = normalizePhone(value);
+  if (!normalized) return '';
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) return '';
+  return `teacher-phone-${digits}@phone.wahywanamaa.local`;
+}
+
+module.exports = { normalizePhone, maskPhone, syntheticPhoneEmail };

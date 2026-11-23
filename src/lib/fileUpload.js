@@ -33,6 +33,7 @@ export async function uploadFileDirect(file, purpose, options = {}) {
   const phoneVerificationToken = options.phoneVerificationToken || '';
   const inviteToken = options.inviteToken || '';
   const ownerEmail = String(options.ownerEmail || '').trim().toLowerCase();
+  const ownerPhone = String(options.ownerPhone || '').trim();
 
   if (accessToken && !options.accessToken) {
     const claims = decodeJwt(accessToken);
@@ -78,6 +79,7 @@ export async function uploadFileDirect(file, purpose, options = {}) {
       phoneVerificationToken: phoneVerificationToken || undefined,
       inviteToken: (!accessToken && !verificationToken && inviteToken) ? inviteToken : undefined,
       email: (!accessToken && !verificationToken && inviteToken && ownerEmail) ? ownerEmail : undefined,
+      phone: (!accessToken && !verificationToken && inviteToken && ownerPhone) ? ownerPhone : undefined,
     }),
   });
 
