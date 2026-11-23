@@ -205,7 +205,7 @@ export default function TeacherRegistration() {
                     : (
                       <>
                         {pollingBefore}
-                        <strong dir="ltr">{f.credentials.email}</strong>
+                        <strong dir="ltr">{f.credentials?.email || f.formData?.personalInfo?.phone || ''}</strong>
                         {pollingAfter}
                       </>
                     )}
@@ -944,7 +944,7 @@ export default function TeacherRegistration() {
 
               {f.step === 4 && (
                 <div className="space-y-5">
-                  {f.emailVerified && f.verifiedEmail === f.credentials.email.trim().toLowerCase() ? (
+                  {f.emailVerified && f.verifiedEmail === String(f.credentials?.email || '').trim().toLowerCase() ? (
                     <div className="space-y-3">
                       <div className="flex gap-2 p-3.5 bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] rounded-xl text-sm text-[var(--wn-badge-emerald-text)]">
                         <CheckCircle2 size={18} className="shrink-0 mt-0.5" aria-hidden="true" />

@@ -7,6 +7,7 @@ import {
   isValidLocale,
   localizedPath,
 } from '../../lib/locale';
+import { isChunkLoadError, reloadOnceForChunkError } from '../../lib/chunkRecovery';
 
 const ERROR_COPY = {
   ar: {
@@ -88,16 +89,20 @@ export default class ErrorBoundary extends Component {
     this.setState({ errorInfo });
 
     console.error('ErrorBoundary caught an error:', {
-      error: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
+      error: error?.message,
+      stack: error?.stack,
+      componentStack: errorInfo?.componentStack,
     });
 
     if (typeof window !== 'undefined' && window.gtag) {
       window.gtag('event', 'exception', {
-        description: error.message,
+        description: error?.message || 'Unknown error',
         fatal: true,
       });
+    }
+
+    if (isChunkLoadError(error)) {
+      reloadOnceForChunkError();
     }
   }
 
@@ -115,6 +120,9 @@ export default class ErrorBoundary extends Component {
   }
 
   handleRetry = () => {
+    if (isChunkLoadError(this.state.error) && reloadOnceForChunkError({ force: true })) {
+      return;
+    }
     this.setState({ hasError: false, error: null, errorInfo: null });
   };
 

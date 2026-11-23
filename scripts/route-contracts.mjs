@@ -12,6 +12,11 @@ import {
   postAuthDestination,
 } from '../src/lib/navigation.js';
 import { localizedLocation } from '../src/lib/locale.js';
+import {
+  isChunkLoadError,
+  reloadOnceForChunkError,
+  withChunkRetry,
+} from '../src/lib/chunkRecovery.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -609,5 +614,43 @@ assert.match(plansPage, /searchParams\.get\(['"]sessions['"]\)/);
 assert.match(plansPage, /searchParams\.get\(['"]plan['"]\)/);
 assert.match(plansPage, /searchParams\.get\(['"]program['"]\)/);
 
+// Stale deploy chunk recovery behavioral & wiring contracts
+assert.equal(isChunkLoadError(new TypeError('Failed to fetch dynamically imported module: https://wahywanamaa.com/assets/TeacherDashboardGate-123.js')), true);
+assert.equal(isChunkLoadError(new TypeError('Importing a module script failed.')), true);
+assert.equal(isChunkLoadError({ name: 'ChunkLoadError', message: 'Loading chunk 12 failed' }), true);
+assert.equal(isChunkLoadError(new Error('Normal runtime failure')), false);
 
+{
+  const mem = new Map();
+  const fakeStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+  };
+  let reloads = 0;
+  const reload = () => { reloads += 1; };
 
+  assert.equal(reloadOnceForChunkError({ storage: fakeStorage, reload, now: 1000 }), true);
+  assert.equal(reloads, 1);
+  assert.equal(reloadOnceForChunkError({ storage: fakeStorage, reload, now: 15000 }), false);
+  assert.equal(reloads, 1);
+  assert.equal(reloadOnceForChunkError({ storage: fakeStorage, reload, now: 16000, force: true }), true);
+  assert.equal(reloads, 2);
+  assert.equal(reloadOnceForChunkError({ storage: fakeStorage, reload, now: 50000 }), true);
+  assert.equal(reloads, 3);
+
+  let nonChunkReloads = 0;
+  const failingNonChunk = withChunkRetry(
+    () => Promise.reject(new Error('Invalid prop')),
+    { storage: fakeStorage, reload: () => { nonChunkReloads += 1; }, now: 90000 }
+  );
+  await assert.rejects(failingNonChunk, /Invalid prop/);
+  assert.equal(nonChunkReloads, 0);
+}
+
+const mainEntry = read('src/main.jsx');
+const appEntry = read('src/App.jsx');
+const errorBoundarySrc = read('src/components/shared/ErrorBoundary.jsx');
+assert.match(mainEntry, /installVitePreloadRecovery/);
+assert.match(appEntry, /withChunkRetry/);
+assert.match(errorBoundarySrc, /isChunkLoadError/);
+assert.match(errorBoundarySrc, /reloadOnceForChunkError/);
