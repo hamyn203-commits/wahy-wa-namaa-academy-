@@ -790,17 +790,17 @@ export default function TeacherRegistration() {
                     <Info size={18} className="shrink-0 mt-0.5" aria-hidden="true" />
                     <div>
                       <p className="font-bold">
-                        {isRTL ? 'بسّطنا التقديم: 3 ملفات أساسية فقط تكفي لإرسال طلبك!' : 'Simplified application: only 3 essential files are needed!'}
+                        {isRTL ? 'بسّطنا التقديم: ملفان أساسيان فقط يكفيان لإرسال طلبك!' : 'Simplified application: only 2 essential files are needed!'}
                       </p>
                       <p className="text-xs mt-1">
                         {isRTL
-                          ? 'صورة شخصية + وجه البطاقة + فيديو واحد (1–3 دقائق) يجمع تعريفاً سريعاً بنفسك وتلاوة واضحة. باقي المرفقات اختيارية بالكامل.'
-                          : 'Profile photo + ID front + one short video (1–3 min) with a quick intro and clear Quran recitation. All other files are completely optional.'}
+                          ? 'صورة شخصية + فيديو واحد (1–3 دقائق) يجمع تعريفاً سريعاً بنفسك وتلاوة واضحة. البطاقة الشخصية وباقي المرفقات اختيارية بالكامل.'
+                          : 'Profile photo + one short video (1–3 min) with a quick intro and clear Quran recitation. ID card and all other files are completely optional.'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div>
                     <FileBox
                       id="profilePhoto"
                       label={s4.profilePhotoLabel || 'صورة شخصية 4×6 *'}
@@ -813,18 +813,6 @@ export default function TeacherRegistration() {
                       file={f.files.profilePhoto}
                       onChange={(file) => f.setFile('profilePhoto', file)}
                       preview={(file) => <ProfilePhotoPreview file={file} alt={s4.profilePhotoAlt || 'معاينة الصورة الشخصية'} />}
-                    />
-                    <FileBox
-                      id="idCardFront"
-                      label={s4.idFrontLabel || 'وجه البطاقة الشخصية *'}
-                      hint={s4.imageHint || 'JPG أو PNG فقط — محفوظة بسرية تامة للإدارة فقط'}
-                      accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
-                      allowedMimeTypes={['image/jpeg', 'image/png']}
-                      allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
-                      maxBytes={25 * 1024 * 1024}
-                      captureKind="image"
-                      file={f.files.idCardFront}
-                      onChange={(file) => f.setFile('idCardFront', file)}
                     />
                   </div>
 
@@ -870,8 +858,8 @@ export default function TeacherRegistration() {
                       <div>
                         <strong className="block text-sm text-[var(--wn-heading)]">
                           {isRTL
-                            ? 'مرفقات إضافية اختيارية (الشهادات، الإجازات، أو فيديوهات إضافية)'
-                            : 'Optional Extra Attachments (Certificates, Ijazat, or Extra Videos)'}
+                            ? 'مرفقات إضافية اختيارية (البطاقة الشخصية، الشهادات، الإجازات، أو فيديوهات إضافية)'
+                            : 'Optional Extra Attachments (ID Card, Certificates, Ijazat, or Extra Videos)'}
                         </strong>
                         <small className="block text-xs text-[var(--wn-text-secondary)] mt-0.5">
                           {isRTL
@@ -888,6 +876,19 @@ export default function TeacherRegistration() {
 
                     {showOptionalUploads && (
                       <div className="mt-4 space-y-4 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-4">
+                        <FileBox
+                          id="idCardFront"
+                          label={isRTL ? 'وجه البطاقة الشخصية (اختياري)' : 'ID Card Front (Optional)'}
+                          hint={s4.imageHint || 'JPG أو PNG فقط — محفوظة بسرية تامة للإدارة فقط'}
+                          accept=".jpg,.jpeg,.jfif,.png,image/jpeg,image/png"
+                          allowedMimeTypes={['image/jpeg', 'image/png']}
+                          allowedExtensions={['.jpg', '.jpeg', '.jfif', '.png']}
+                          maxBytes={25 * 1024 * 1024}
+                          captureKind="image"
+                          file={f.files.idCardFront}
+                          onChange={(file) => f.setFile('idCardFront', file)}
+                        />
+
                         <FileBox
                           id="idCardBack"
                           label={isRTL ? 'ظهر البطاقة الشخصية (اختياري)' : 'ID Card Back (Optional)'}
@@ -1006,10 +1007,10 @@ export default function TeacherRegistration() {
                       title={s5.filesBlock || 'الملفات'}
                       items={[
                         f.files.profilePhoto ? (s5.photoOk || '✓ صورة 4×6') : (s5.photoMissing || '✗ صورة'),
-                        f.files.idCardFront ? (s5.idFrontOk || '✓ وجه البطاقة') : (s5.idFrontMissing || '✗ وجه البطاقة'),
                         f.files.recitationVideos?.length
                           ? formatMsg(s5.reciteVidOk || '✓ {count} فيديو تلاوة وتعريف', { count: f.files.recitationVideos.length })
                           : (s5.reciteVidMissing || '✗ فيديو التعريف والتلاوة'),
+                        f.files.idCardFront ? (isRTL ? '✓ وجه البطاقة (اختياري)' : '✓ ID Front (Optional)') : null,
                         f.files.idCardBack ? (s5.idBackOk || '✓ ظهر البطاقة (اختياري)') : null,
                         f.files.graduationCertificate ? (s5.gradCertOk || '✓ شهادة التخرج (اختياري)') : null,
                         f.files.tajweedCertificates?.length

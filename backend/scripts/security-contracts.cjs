@@ -920,8 +920,8 @@ requireContains(
 );
 requireContains(
   'backend/routes/teachers.js',
-  'new teacher applications must require profile photo, front identity card, and primary recitation video',
-  /TEACHER_PROFILE_PHOTO_REQUIRED[\s\S]{0,700}TEACHER_ID_FRONT_REQUIRED[\s\S]{0,700}TEACHER_RECITATION_VIDEO_REQUIRED/
+  'new teacher applications must require profile photo and primary recitation video',
+  /TEACHER_PROFILE_PHOTO_REQUIRED[\s\S]{0,700}TEACHER_RECITATION_VIDEO_REQUIRED/
 );
 requireContains(
   'backend/routes/teachers.js',

@@ -38,7 +38,7 @@ test('coreMediaAreDistinct accepts single primary video and rejects duplicates a
   );
 });
 
-test('buildTeacherReviewGate allows approval for streamlined 1-video application without optional videos or back ID', () => {
+test('buildTeacherReviewGate allows approval for streamlined 1-video application without optional videos or ID card', () => {
   const teacher = {
     personalInfo: {
       fullName: 'الشيخ عبد الله محمود',
@@ -60,7 +60,7 @@ test('buildTeacherReviewGate allows approval for streamlined 1-video application
       teachingExperience: 5,
     },
     documents: {
-      idCardFront: 'private/teachers/id-front.jpg',
+      idCardFront: 'not-provided',
       idCardBack: 'not-provided',
       graduationCertificateAvailable: false,
       tajweedCertificatesAvailable: false,
@@ -78,19 +78,18 @@ test('buildTeacherReviewGate allows approval for streamlined 1-video application
       { key: 'quran-profile', status: 'approved' },
       { key: 'profile-photo', status: 'approved' },
       { key: 'recitation-video', status: 'approved' },
-      { key: 'id-card-front', status: 'approved' },
     ],
   };
 
   const gate = buildTeacherReviewGate(teacher);
-  assert.equal(gate.requiredCount, 6);
-  assert.equal(gate.completedRequired, 6);
+  assert.equal(gate.requiredCount, 5);
+  assert.equal(gate.completedRequired, 5);
   assert.equal(gate.readiness, 100);
   assert.equal(gate.approvalReady, true);
   assert.deepEqual(gate.blockers, []);
 });
 
-test('buildTeacherReviewGate still blocks approval if primary recitation video or front ID is missing', () => {
+test('buildTeacherReviewGate still blocks approval if primary recitation video is missing while ID card stays optional', () => {
   const teacher = {
     personalInfo: {
       fullName: 'الشيخ عمر خالد',
@@ -124,7 +123,6 @@ test('buildTeacherReviewGate still blocks approval if primary recitation video o
       { key: 'quran-profile', status: 'approved' },
       { key: 'profile-photo', status: 'approved' },
       { key: 'recitation-video', status: 'approved' },
-      { key: 'id-card-front', status: 'approved' },
     ],
   };
 
@@ -132,5 +130,5 @@ test('buildTeacherReviewGate still blocks approval if primary recitation video o
   assert.equal(gate.approvalReady, false);
   const blockerKeys = gate.blockers.map((b) => b.key);
   assert.ok(blockerKeys.includes('recitation-video'));
-  assert.ok(blockerKeys.includes('id-card-front'));
+  assert.equal(blockerKeys.includes('id-card-front'), false);
 });

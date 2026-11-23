@@ -591,13 +591,6 @@ router.post(
         });
       }
 
-      if (!hasDirectOrLegacy(uploadedFiles.idCardFront, req.files?.idCardFront)) {
-        return res.status(400).json({
-          error: 'ID card front is required',
-          code: 'TEACHER_ID_FRONT_REQUIRED',
-        });
-      }
-
       if (!hasDirectOrLegacyList(uploadedFiles.recitationVideo, req.files?.recitationVideo)) {
         return res.status(400).json({
           error: 'At least one recitation video is required',
