@@ -153,8 +153,11 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
   const { locale, t } = useI18n();
   const tr = t?.teacherRegistration || {};
   const { user } = useAuth();
-  const authenticatedTeacher = user?.role === 'teacher';
-  const skipEmailVerification = Boolean(inviteToken) && !authenticatedTeacher;
+  // An explicit ?invite=... link always starts a fresh teacher registration flow
+  // (including Step 2 password creation), even if another teacher is currently signed in
+  // on the same browser.
+  const authenticatedTeacher = user?.role === 'teacher' && !inviteToken;
+  const skipEmailVerification = Boolean(inviteToken);
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -221,16 +224,18 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
             languages: Array.isArray(d.formData.languages) && d.formData.languages.length ? d.formData.languages : prev.languages,
           }));
         }
-        if (d.credentials?.email) {
+        const restoredEmail = String(d.credentials?.email || '').trim();
+        const isSyntheticEmail = restoredEmail.toLowerCase().endsWith('@phone.wahywanamaa.local');
+        if (restoredEmail && !isSyntheticEmail) {
           restoredSomething = true;
-          setCredentials((p) => ({ ...p, email: d.credentials.email }));
+          setCredentials((p) => ({ ...p, email: restoredEmail }));
         }
 
         const verifySess = loadVerificationSession();
         const sameEmailVerified = Boolean(
           verifySess?.emailVerified
           && verifySess?.verificationToken
-          && normalizeEmail(verifySess.verifiedEmail) === normalizeEmail(d.credentials?.email)
+          && normalizeEmail(verifySess.verifiedEmail) === normalizeEmail(isSyntheticEmail ? '' : restoredEmail)
         );
         if (sameEmailVerified) {
           setEmailVerified(true);
@@ -240,11 +245,13 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
 
         if (d.step) {
           // Invited applicants skip email OTP verification (Step 4) completely.
+          // Passwords are never persisted in localStorage, so if an unauthenticated
+          // draft was saved on Step 5, return to Step 2 to set the password cleanly.
           const savedStep = Math.min(5, Math.max(1, Number(d.step) || 1));
           if (skipEmailVerification) {
-            setStep(savedStep === 4 ? 5 : savedStep);
+            setStep(savedStep >= 4 ? 2 : savedStep);
           } else if (authenticatedTeacher || sameEmailVerified || savedStep <= 4) {
-            setStep(savedStep);
+            setStep(!authenticatedTeacher && savedStep === 5 ? 2 : savedStep);
           } else {
             setStep(4);
           }
@@ -347,15 +354,19 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
     };
   }, [submitted, applicationStatusToken, checkApplicationStatus]);
 
+  const persistableEmail = String(credentials.email || '').trim().toLowerCase().endsWith('@phone.wahywanamaa.local')
+    ? ''
+    : credentials.email;
+
   const saveDraft = useCallback(() => {
     if (!hydratedRef.current || submitted) return;
     saveTeacherDraft(DRAFT_KEY, {
       formData,
-      email: credentials.email,
+      email: persistableEmail,
       step,
     });
     setDraftSaved(true);
-  }, [formData, credentials.email, step, submitted]);
+  }, [formData, persistableEmail, step, submitted]);
 
   useEffect(() => {
     if (!hydratedRef.current || submitted) return undefined;
@@ -369,7 +380,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       if (!hydratedRef.current) return;
       saveTeacherDraft(DRAFT_KEY, {
         formData,
-        email: credentials.email,
+        email: persistableEmail,
         step,
       });
     };
@@ -382,7 +393,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       window.removeEventListener('pagehide', flushNow);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [formData, credentials.email, step, submitted]);
+  }, [formData, persistableEmail, step, submitted]);
 
   useEffect(() => {
     if (!hydratedRef.current || submitted) return;
@@ -762,6 +773,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
       ], {
         upload: (file, purpose, options) => uploadFileDirect(file, purpose, {
           ...options,
+          ignoreSessionAuth: !authenticatedTeacher,
           verificationToken: verificationToken || undefined,
           inviteToken: (!authenticatedTeacher && inviteToken) ? inviteToken : undefined,
           ownerEmail: effectiveOwnerEmail,

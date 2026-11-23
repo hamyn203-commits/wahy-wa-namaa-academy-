@@ -28,7 +28,10 @@ function currentAccessToken() {
 export async function uploadFileDirect(file, purpose, options = {}) {
   if (!file) throw new Error('No file selected');
 
-  let accessToken = options.accessToken || currentAccessToken();
+  const hasExplicitRegistrationProof = Boolean(
+    options.ignoreSessionAuth || options.inviteToken || options.verificationToken || options.phoneVerificationToken
+  );
+  let accessToken = options.accessToken || (hasExplicitRegistrationProof ? '' : currentAccessToken());
   const verificationToken = options.verificationToken || '';
   const phoneVerificationToken = options.phoneVerificationToken || '';
   const inviteToken = options.inviteToken || '';
