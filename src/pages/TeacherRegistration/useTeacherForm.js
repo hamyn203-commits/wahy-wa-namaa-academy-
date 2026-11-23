@@ -240,7 +240,7 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
 
         if (d.step) {
           // Invited applicants skip email OTP verification (Step 4) completely.
-          const savedStep = Number(d.step) || 1;
+          const savedStep = Math.min(5, Math.max(1, Number(d.step) || 1));
           if (skipEmailVerification) {
             setStep(savedStep === 4 ? 5 : savedStep);
           } else if (authenticatedTeacher || sameEmailVerified || savedStep <= 4) {
@@ -284,13 +284,13 @@ export function useTeacherForm({ inviteToken = '' } = {}) {
 
   useEffect(() => {
     if (!authenticatedTeacher) return;
-    setCredentials((p) => ({ ...p, email: user.email }));
+    setCredentials((p) => ({ ...p, email: String(user?.email || '') }));
     setFormData((p) => ({
       ...p,
       personalInfo: {
         ...p.personalInfo,
-        fullName: p.personalInfo.fullName || user.name,
-        phone: p.personalInfo.phone || user.phone || '',
+        fullName: p.personalInfo.fullName || user?.name || '',
+        phone: p.personalInfo.phone || user?.phone || '',
       },
     }));
   }, [authenticatedTeacher, user?.email, user?.name, user?.phone]);

@@ -27,7 +27,9 @@ export default function TeacherProfileTab({
   const tp = t?.teacherPortal || {};
   const acc = tp.account || {};
   const intlLocale = resolveIntlLocale(locale);
-  const teacherName = teacher.personalInfo?.fullName || user?.name || tp.welcome?.tutorFallback || 'معلمنا';
+  const teacherName = teacher?.personalInfo?.fullName || user?.name || tp.welcome?.tutorFallback || 'معلمنا';
+  const rawEmail = String(user?.email || '').trim();
+  const displayEmail = rawEmail && !rawEmail.endsWith('@phone.wahywanamaa.local') ? rawEmail : '—';
   const pendingReview = profileChange?.status === 'pending';
 
   return (
@@ -35,7 +37,7 @@ export default function TeacherProfileTab({
       <section className="wn-teacher-profile-card">
         <div className="wn-teacher-profile-card__top">
           <TeacherAvatar
-            src={teacher.media?.profilePhoto}
+            src={teacher?.media?.profilePhoto}
             name={teacherName}
             alt={teacherName}
             size="lg"
@@ -43,12 +45,12 @@ export default function TeacherProfileTab({
           />
           <div>
             <span className="wn-teacher-profile-card__status">
-              <CheckCircle2 size={14} aria-hidden="true" /> {statusLabel(teacher.status)}
+              <CheckCircle2 size={14} aria-hidden="true" /> {statusLabel(teacher?.status)}
             </span>
             <h3>{teacherName}</h3>
             <p>
-              {teacher.academicInfo?.qualification
-                || teacher.academicInfo?.specialization
+              {teacher?.academicInfo?.qualification
+                || teacher?.academicInfo?.specialization
                 || acc.defaultQualification
                 || 'معلم قرآن كريم'}
             </p>
@@ -63,14 +65,14 @@ export default function TeacherProfileTab({
         </div>
 
         <div className="wn-teacher-profile-grid">
-          <InfoRow label={acc.emailLabel || 'البريد'} value={user?.email} />
-          <InfoRow label={acc.phoneLabel || 'الهاتف'} value={teacher.personalInfo?.phone} />
-          <InfoRow label={acc.countryLabel || 'البلد'} value={teacher.personalInfo?.country} />
-          <InfoRow label={acc.cityLabel || 'المدينة'} value={teacher.personalInfo?.city} />
-          <InfoRow label={acc.universityLabel || 'الجامعة'} value={teacher.academicInfo?.university} />
-          <InfoRow label={acc.specializationLabel || 'التخصص'} value={teacher.academicInfo?.specialization} />
-          <InfoRow label={acc.experienceLabel || 'سنوات الخبرة'} value={teacher.quranInfo?.teachingExperience} />
-          <InfoRow label={acc.ijazatLabel || 'الإجازات'} value={teacher.quranInfo?.numberOfIjazat} />
+          <InfoRow label={acc.emailLabel || 'البريد'} value={displayEmail} />
+          <InfoRow label={acc.phoneLabel || 'الهاتف'} value={teacher?.personalInfo?.phone || user?.phone} />
+          <InfoRow label={acc.countryLabel || 'البلد'} value={teacher?.personalInfo?.country} />
+          <InfoRow label={acc.cityLabel || 'المدينة'} value={teacher?.personalInfo?.city} />
+          <InfoRow label={acc.universityLabel || 'الجامعة'} value={teacher?.academicInfo?.university} />
+          <InfoRow label={acc.specializationLabel || 'التخصص'} value={teacher?.academicInfo?.specialization} />
+          <InfoRow label={acc.experienceLabel || 'سنوات الخبرة'} value={teacher?.quranInfo?.teachingExperience} />
+          <InfoRow label={acc.ijazatLabel || 'الإجازات'} value={teacher?.quranInfo?.numberOfIjazat} />
         </div>
 
         <div className="wn-teacher-profile-note">
