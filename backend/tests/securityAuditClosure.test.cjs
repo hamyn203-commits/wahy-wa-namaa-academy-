@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const app = require('../app');
 const { generateAccessToken, getAccessSecret } = require('../middleware/auth');
 const { addMockTeacher } = require('../mockStore');
+const { createTeacherInvite } = require('../services/teacherInvite');
 const Guardian = require('../models/Guardian');
 const Session = require('../models/Session');
 const TeacherTask = require('../models/TeacherTask');
@@ -310,7 +311,13 @@ test('Batch 1 Security Closure: Express 5 query/body sanitizer, guardian RBAC & 
     assert.ok(capturedPipeline?.[0]?.$match?.user instanceof mongoose.Types.ObjectId);
     assert.equal(String(capturedPipeline[0].$match.user), studentId);
 
-    // 7. Teacher registration enforces >= 8 character password policy
+    // 7. Teacher registration enforces >= 8 character password policy (with a valid temporary invite)
+    const { inviteToken } = await createTeacherInvite({
+      createdBy: new mongoose.Types.ObjectId().toString(),
+      label: 'security-test-invite',
+      expiresInHours: 1,
+      maxUses: 1,
+    });
     const verificationToken = jwt.sign(
       { email: 'weakpass-teacher@example.com', purpose: 'teacher-email-verification' },
       getAccessSecret(),
@@ -321,6 +328,7 @@ test('Batch 1 Security Closure: Express 5 query/body sanitizer, guardian RBAC & 
         email: 'weakpass-teacher@example.com',
         password: '123',
         verificationToken,
+        inviteToken,
         personalInfo: JSON.stringify({ fullName: 'معلم اختبار', phone: '+201012345678', age: 30, gender: 'male', address: 'القاهرة' }),
         academicInfo: JSON.stringify({ university: 'الأزهر', faculty: 'أصول الدين', graduationYear: 2020, qualification: 'ليسانس' }),
         quranInfo: JSON.stringify({ memorizedParts: 30, teachingExperience: 3, specializations: ['hifz'] }),

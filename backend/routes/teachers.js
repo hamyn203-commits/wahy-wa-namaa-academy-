@@ -1,5 +1,6 @@
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +30,27 @@ const {
   coreMediaAreDistinct,
 } = require('../services/teacherReview');
 const { mergeTeacherMedia, applyTeacherProfileChange } = require('../services/teacherProfileChange');
+const {
+  extractClientIp,
+  createTeacherInvite,
+  listTeacherInvites,
+  validateTeacherInvite,
+  consumeTeacherInviteAtomic,
+  finalizeTeacherInviteUsage,
+  rollbackTeacherInviteReservation,
+  resetTeacherInviteIpLock,
+  revokeTeacherInvite,
+  deleteTeacherInvite,
+} = require('../services/teacherInvite');
 const { validateMagicBytes } = require('../utils/magicBytes');
+
+const inviteStatusLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many invitation checks, please try again later.', code: 'INVITE_RATE_LIMITED' },
+});
 const multer = require('multer');
 const {
   addMockUser,
@@ -442,11 +463,20 @@ router.post(
   ]),
   async (req, res) => {
     let newlyCreatedUserId = null;
+    let inviteReservation = null;
+    const rollbackInvite = async () => {
+      if (inviteReservation) {
+        const toRollback = inviteReservation;
+        inviteReservation = null;
+        await rollbackTeacherInviteReservation(toRollback);
+      }
+    };
     try {
       const {
         personalInfo, academicInfo, quranInfo, languages, availability,
-        email, password, verificationToken, phoneVerificationToken
+        email, password, verificationToken, phoneVerificationToken, inviteToken
       } = req.body;
+      const rawInviteToken = String(inviteToken || req.headers?.['x-teacher-invite'] || '').trim();
       const normalizedEmail = String(email || '').trim().toLowerCase();
       const uploadedFiles = parseSafeMultipartJson(req.body.uploadedFiles, {});
       const documentAvailability = parseSafeMultipartJson(req.body.documentAvailability, {});
@@ -472,6 +502,15 @@ router.post(
       const parsedPersonalForVerification = parseSafeMultipartJson(personalInfo, {});
 
       if (!userId) {
+        const clientIp = extractClientIp(req);
+        const inviteCheck = await validateTeacherInvite(rawInviteToken, { clientIp, bindIfUnbound: false });
+        if (!inviteCheck.valid) {
+          return res.status(403).json({
+            error: inviteCheck.error,
+            code: inviteCheck.code,
+          });
+        }
+
         const teacherVerificationToken = verificationToken;
         if (!teacherVerificationToken) {
           return res.status(400).json({ error: 'Email verification is required' });
@@ -608,6 +647,16 @@ router.post(
             return res.status(409).json({ error: 'البريد الإلكتروني مسجل مسبقاً' });
           }
 
+          const consumed = await consumeTeacherInviteAtomic(rawInviteToken, {
+            email: normalizedEmail,
+            name: parsedPersonalForVerification.fullName || '',
+            clientIp: extractClientIp(req),
+          });
+          if (!consumed.ok) {
+            return res.status(403).json({ error: consumed.error, code: consumed.code });
+          }
+          inviteReservation = consumed;
+
           const parsedPersonal = parseSafeMultipartJson(personalInfo, {});
           const user = addMockUser({
             name: parsedPersonal.fullName || 'معلم أزهري',
@@ -625,6 +674,16 @@ router.post(
           if (existingUser) {
             return res.status(409).json({ error: 'Email already registered' });
           }
+
+          const consumed = await consumeTeacherInviteAtomic(rawInviteToken, {
+            email: normalizedEmail,
+            name: parsedPersonalForVerification.fullName || '',
+            clientIp: extractClientIp(req),
+          });
+          if (!consumed.ok) {
+            return res.status(403).json({ error: consumed.error, code: consumed.code });
+          }
+          inviteReservation = consumed;
 
           const parsedPersonal = parseSafeMultipartJson(personalInfo, {});
           const user = await User.create({
@@ -682,6 +741,16 @@ router.post(
           isVerified: false,
         });
 
+        if (inviteReservation) {
+          await finalizeTeacherInviteUsage({
+            inviteId: inviteReservation.inviteId,
+            reservationId: inviteReservation.reservationId,
+            userId,
+            teacherId: mockT._id,
+          });
+          inviteReservation = null;
+        }
+
         return res.status(201).json({
           success: true,
           message: 'تم إرسال طلب تسجيل المعلم بنجاح وهو الآن في انتظار موافقة الإدارة.',
@@ -697,7 +766,10 @@ router.post(
 
       const existingTeacher = await Teacher.findOne({ user: userId });
       const canResubmitExisting = Boolean(existingTeacher && req.user?.id && String(req.user.id) === String(userId) && ['pending', 'under-review', 'rejected'].includes(existingTeacher.status));
-      if (existingTeacher && !canResubmitExisting) { return res.status(400).json({ error: 'Teacher profile already exists' }); }
+      if (existingTeacher && !canResubmitExisting) {
+        await rollbackInvite();
+        return res.status(400).json({ error: 'Teacher profile already exists' });
+      }
 
       const directRef = directReference;
       const directPublic = (value) => {
@@ -769,6 +841,7 @@ router.post(
       };
 
       if (!coreMediaAreDistinct(media)) {
+        await rollbackInvite();
         if (newlyCreatedUserId && isDBConnected()) {
           await User.findByIdAndDelete(newlyCreatedUserId).catch(() => {});
           newlyCreatedUserId = null;
@@ -823,6 +896,16 @@ router.post(
     }
     await User.findByIdAndUpdate(userId, { $set: { role: 'teacher', 'onboarding.teacherApplicationReady': true } });
 
+    if (inviteReservation) {
+      await finalizeTeacherInviteUsage({
+        inviteId: inviteReservation.inviteId,
+        reservationId: inviteReservation.reservationId,
+        userId,
+        teacherId: teacher._id,
+      });
+      inviteReservation = null;
+    }
+
     notifyAdmins({
       type: 'system',
       title: { ar: 'طلب انضمام معلم جديد', en: 'New tutor application' },
@@ -862,6 +945,7 @@ router.post(
       teacher
     });
   } catch (error) {
+    await rollbackInvite();
     if (newlyCreatedUserId && isDBConnected()) {
       await User.findByIdAndDelete(newlyCreatedUserId).catch(() => {});
     }
@@ -1802,6 +1886,157 @@ router.get('/admin/:id/media/:kind{/:index}', protect, authorize('admin'), async
     });
   } catch (error) {
     return res.status(500).json({ error: 'Failed to load teacher media' });
+  }
+});
+
+router.get('/invite-status', inviteStatusLimiter, async (req, res) => {
+  try {
+    const rawToken = String(req.query?.token || req.query?.invite || '').trim();
+    const clientIp = extractClientIp(req);
+    const result = await validateTeacherInvite(rawToken, { clientIp, bindIfUnbound: true });
+    if (!result.valid) {
+      return res.status(403).json({
+        valid: false,
+        code: result.code,
+        error: result.error,
+      });
+    }
+    return res.json({
+      valid: true,
+      code: result.code,
+      invite: result.invite,
+    });
+  } catch (error) {
+    return res.status(500).json({ valid: false, error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.get('/admin/invites', protect, authorize('admin'), async (req, res) => {
+  try {
+    const limit = Number(req.query?.limit || 100);
+    const invites = await listTeacherInvites({ limit });
+    const activeCount = invites.filter((item) => item.status === 'active').length;
+    return res.json({ invites, activeCount, totalCount: invites.length });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.post('/admin/invites', protect, authorize('admin'), async (req, res) => {
+  try {
+    const label = String(req.body?.label || '').trim().slice(0, 120);
+    const expiresInHours = Number(req.body?.expiresInHours ?? 24);
+    const maxUses = Number(req.body?.maxUses ?? 1);
+    const lockToFirstIp = typeof req.body?.lockToFirstIp === 'boolean' ? req.body.lockToFirstIp : undefined;
+    const locale = String(req.body?.locale || 'ar').trim().toLowerCase();
+
+    const rawOrigin = String(req.headers?.origin || '').trim();
+    const safeOrigin = /^https?:\/\/[^/\s]+$/i.test(rawOrigin) ? rawOrigin : '';
+
+    const created = await createTeacherInvite({
+      createdBy: req.user.id,
+      label,
+      expiresInHours,
+      maxUses,
+      lockToFirstIp,
+      locale,
+      origin: process.env.FRONTEND_URL || safeOrigin || 'https://wahywanamaa.com',
+    });
+
+    if (isDBConnected()) {
+      logAdminAction({
+        req,
+        action: 'teacher_invite_created',
+        entityType: 'TeacherInvite',
+        entityId: created.invite?.id || null,
+        reason: label || `Temporary teacher invite (${created.invite?.maxUses} uses)`,
+        metadata: {
+          label,
+          maxUses: created.invite?.maxUses,
+          lockToFirstIp: created.invite?.lockToFirstIp,
+          expiresAt: created.invite?.expiresAt,
+          locale: created.invite?.locale,
+        },
+      }).catch(() => {});
+    }
+
+    return res.status(201).json({
+      success: true,
+      ...created,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/admin/invites/:inviteId/reset-ip', protect, authorize('admin'), async (req, res) => {
+  try {
+    const inviteId = String(req.params.inviteId || '').trim();
+    const result = await resetTeacherInviteIpLock(inviteId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    if (isDBConnected()) {
+      logAdminAction({
+        req,
+        action: 'teacher_invite_ip_reset',
+        entityType: 'TeacherInvite',
+        entityId: inviteId,
+        reason: String(req.body?.reason || '').trim() || 'IP lock reset by admin',
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, invite: result.invite });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.post('/admin/invites/:inviteId/revoke', protect, authorize('admin'), async (req, res) => {
+  try {
+    const inviteId = String(req.params.inviteId || '').trim();
+    const result = await revokeTeacherInvite(inviteId, req.user.id);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    if (isDBConnected()) {
+      logAdminAction({
+        req,
+        action: 'teacher_invite_revoked',
+        entityType: 'TeacherInvite',
+        entityId: inviteId,
+        reason: String(req.body?.reason || '').trim() || 'Revoked by admin',
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, invite: result.invite });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.delete('/admin/invites/:inviteId', protect, authorize('admin'), async (req, res) => {
+  try {
+    const inviteId = String(req.params.inviteId || '').trim();
+    const result = await deleteTeacherInvite(inviteId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+
+    if (isDBConnected()) {
+      logAdminAction({
+        req,
+        action: 'teacher_invite_deleted',
+        entityType: 'TeacherInvite',
+        entityId: inviteId,
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 

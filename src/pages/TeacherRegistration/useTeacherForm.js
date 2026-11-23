@@ -127,7 +127,7 @@ function validateTeacherFiles(files, tr) {
   return null;
 }
 
-export function useTeacherForm() {
+export function useTeacherForm({ inviteToken = '' } = {}) {
   const toast = useToast();
   const { locale, t } = useI18n();
   const tr = t?.teacherRegistration || {};
@@ -558,7 +558,7 @@ export function useTeacherForm() {
       const r = await fetch(apiUrl('/api/auth/send-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, ...(inviteToken ? { inviteToken } : {}) }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || tr.toasts?.codeSendFailed || 'فشل إرسال كود التحقق');
@@ -590,7 +590,7 @@ export function useTeacherForm() {
       const r = await fetch(apiUrl('/api/auth/verify-code'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: verificationCode }),
+        body: JSON.stringify({ email, code: verificationCode, ...(inviteToken ? { inviteToken } : {}) }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || tr.toasts?.invalidCode || 'كود غير صحيح');
@@ -740,6 +740,7 @@ export function useTeacherForm() {
         email: verifiedEmailNow,
         password: credentials.password,
         verificationToken,
+        ...(!authenticatedTeacher && inviteToken ? { inviteToken } : {}),
         documentAvailability: {
           graduationCertificate: hasGradCert,
           tajweedCertificates: hasTajweedCerts,

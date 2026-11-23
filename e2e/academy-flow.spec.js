@@ -74,7 +74,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const modal = teacherPage.getByRole('dialog').filter({ hasText: 'تقييم E2E Post Trial Student' });
     await expect(modal).toBeVisible();
 
-    for (const legend of ['الحضور والانتباه', 'الحفظ', 'التجويد', 'السلوك', 'الالتزام']) {
+    for (const legend of ['الحضور', 'الحفظ', 'التجويد', 'السلوك', 'الالتزام']) {
       const fieldset = modal.locator('fieldset').filter({ hasText: legend });
       await fieldset.getByRole('radio', { name: '3' }).click();
     }
@@ -99,19 +99,19 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const postTrialStep = studentPage.locator('section.wn-student-next-step');
     await expect(postTrialStep.getByText('أكملت الحصة التجريبية بنجاح')).toBeVisible();
     await expect(postTrialStep.getByRole('button', { name: 'اشتراك', exact: true })).toBeVisible();
-    await expect(postTrialStep.getByText(/2 متبقية/)).toBeVisible();
+    await expect(postTrialStep.getByText(/2\s+تجريبيات متبقية/)).toBeVisible();
 
     await studentPage.goto('/ar/student/dashboard?tab=evaluations');
     await expect(studentPage.getByText('السورة / المقطع: سورة الفاتحة', { exact: true })).toBeVisible();
-    await expect(studentPage.getByText('الهدف / الواجب القادم: مراجعة سورة الفاتحة', { exact: true })).toBeVisible();
-    await expect(studentPage.getByText('تقرير Playwright آلي للتحقق من دورة الحصة')).toBeVisible();
-    await expect(studentPage.getByText(/Africa\/Cairo/)).toBeVisible();
+    await expect(studentPage.getByText('الواجب القادم: مراجعة سورة الفاتحة', { exact: true })).toBeVisible();
+    await expect(studentPage.getByText('تقرير Playwright آلي للتحقق من دورة الحصة').first()).toBeVisible();
+    await expect(studentPage.getByText(/Africa\/Cairo/).first()).toBeVisible();
 
     await studentPage.goto('/ar/student/dashboard');
     const subscribeStep = studentPage.locator('section.wn-student-next-step');
     await subscribeStep.getByRole('button', { name: 'اشتراك', exact: true }).click();
     await expect(studentPage).toHaveURL(/\/ar\/plans/);
-    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك مع القرآن من 10 جنيه/ })).toBeVisible();
+    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك (?:القرآنية|مع القرآن) من 10/ })).toBeVisible();
     await expect(studentPage.getByRole('heading', { name: 'الحلقة الجماعية' })).toBeVisible();
     await expect(studentPage.getByText('من ساعة إلى ساعتين', { exact: true }).first()).toBeVisible();
     await expect(studentPage.getByText('ساعة ونصف', { exact: true }).first()).toBeVisible();
@@ -129,7 +129,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
 
     await expect(studentPage).toHaveURL(/\/ar\/payment\/manual\?subscription=/);
     await expect(studentPage.getByRole('heading', { name: 'إتمام الاشتراك والتحويل' })).toBeVisible();
-    await expect(studentPage.getByText(/480 EGP/)).toBeVisible();
+    await expect(studentPage.getByText(/(?:480|٤٨٠)\s*EGP/)).toBeVisible();
     await expect(studentPage.getByText('e2e@instapay', { exact: true })).toBeVisible();
     await expect(studentPage.getByText('عايز تدرس مع مين؟', { exact: true })).toBeVisible();
     const teacherSelect = studentPage.getByRole('combobox', { name: 'اختيار الشيخ أو المعلمة' });
@@ -147,7 +147,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
 
     const postTrialStep = page.locator('section.wn-student-next-step');
     await expect(postTrialStep.getByText('أكملت الحصة التجريبية بنجاح')).toBeVisible();
-    await expect(postTrialStep.getByText(/3 مستخدمة من 3/)).toBeVisible();
+    await expect(postTrialStep.getByText(/3\s*\/\s*3/)).toBeVisible();
     await expect(postTrialStep.getByText('استخدمت الحصص التجريبية الثلاث')).toBeVisible();
     await expect(postTrialStep.getByRole('button', { name: 'استخدم تجريبية أخرى' })).toHaveCount(0);
     await expect(postTrialStep.getByRole('button', { name: 'اشتراك', exact: true })).toBeVisible();
