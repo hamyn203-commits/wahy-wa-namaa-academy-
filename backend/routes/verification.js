@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const VerificationCode = require('../models/VerificationCode');
 const VerificationLedger = require('../models/VerificationLedger');
 const { sendEmail } = require('../services/notificationDispatcher');
+const { validateTeacherInvite, extractClientIp } = require('../services/teacherInvite');
 
 const OTP_MSG = (code) => `رمز التحقق — أكاديمية وَحْيٌ وَنَمَاء: ${code}\nصالح 10 دقائق.`;
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,189}\.[^\s@]{2,63}$/;
@@ -237,6 +238,17 @@ async function consumeVerificationTokenJti(jti, expSeconds) {
 
 router.post('/send-verification', async (req, res) => {
   try {
+    const rawInviteToken = String(req.body?.inviteToken || req.headers?.['x-teacher-invite'] || '').trim();
+    if (rawInviteToken) {
+      const inviteCheck = await validateTeacherInvite(rawInviteToken, {
+        clientIp: extractClientIp(req),
+        bindIfUnbound: true,
+      });
+      if (!inviteCheck.valid) {
+        return res.status(403).json({ error: inviteCheck.error, code: inviteCheck.code });
+      }
+    }
+
     const email = normalizeEmail(req.body?.email);
     if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
       return res.status(400).json({ error: 'Valid email address is required' });
@@ -304,6 +316,17 @@ router.post('/send-verification', async (req, res) => {
 
 router.post('/verify-code', async (req, res) => {
   try {
+    const rawInviteToken = String(req.body?.inviteToken || req.headers?.['x-teacher-invite'] || '').trim();
+    if (rawInviteToken) {
+      const inviteCheck = await validateTeacherInvite(rawInviteToken, {
+        clientIp: extractClientIp(req),
+        bindIfUnbound: true,
+      });
+      if (!inviteCheck.valid) {
+        return res.status(403).json({ error: inviteCheck.error, code: inviteCheck.code });
+      }
+    }
+
     const email = normalizeEmail(req.body?.email);
     const code = String(req.body?.code || '').trim();
 

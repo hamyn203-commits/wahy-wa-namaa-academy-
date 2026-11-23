@@ -34,6 +34,7 @@ import LaunchReadinessPanel from './LaunchReadinessPanel';
 import Student360Dossier from './Student360Dossier';
 import TeacherReviewDossier from './TeacherReviewDossier';
 import TeacherReviewQueue from './TeacherReviewQueue';
+import TeacherInviteLinksPanel from './TeacherInviteLinksPanel';
 
 const ALLOWED_TABS = [
   'overview', 'analytics', 'people', 'sessions', 'system',
@@ -1135,6 +1136,8 @@ export default function AdminDashboard() {
                     </div>
                   </section>
                 )}
+
+                <TeacherInviteLinksPanel onOpenDossier={openTeacherDossier} />
 
                 <TeacherReviewQueue
                   teachers={pending}

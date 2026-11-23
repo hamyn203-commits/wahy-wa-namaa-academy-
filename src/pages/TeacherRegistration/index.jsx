@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Info, Lock, Mail, Eye, EyeOff, ArrowLeft, ArrowRight,
   CheckCircle2, Clock, Shield, Video, AlertTriangle, Loader2, ChevronDown, ChevronUp, RotateCcw,
+  KeyRound, MessageCircle,
 } from 'lucide-react';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
@@ -17,7 +18,9 @@ import {
 } from './constants';
 import '../../styles/public-experience.css';
 import { useI18n } from '../../i18n';
-import { localizedPath } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
+import { apiUrl } from '../../config';
+import { SOCIAL_LINKS } from '../../config/social';
 
 const inputCls = 'input-field w-full';
 
@@ -47,12 +50,98 @@ function ProfilePhotoPreview({ file, alt }) {
   return <img src={previewUrl} alt={alt} className="h-32 rounded-lg object-cover" />;
 }
 
+function inviteBlockCopy(code, isRTL) {
+  switch (code) {
+    case 'INVITE_EXPIRED':
+      return {
+        title: isRTL ? 'انتهت صلاحية رابط الدعوة المؤقت' : 'Temporary Invitation Link Expired',
+        desc: isRTL
+          ? 'انتهت المدة المحددة لهذا الرابط. يُرجى التواصل مع إدارة الأكاديمية للحصول على رابط تسجيل مؤقت جديد.'
+          : 'This temporary link has expired. Please contact academy administration for a fresh invitation link.',
+      };
+    case 'INVITE_EXHAUSTED':
+      return {
+        title: isRTL ? 'تم استخدام رابط الدعوة بالكامل' : 'Invitation Link Already Used',
+        desc: isRTL
+          ? 'بلغ هذا الرابط الحد الأقصى للاستخدام ولا يمكن التسجيل به مرة أخرى. تواصل مع الإدارة لطلب رابط جديد.'
+          : 'This invitation link has reached its usage limit. Please request a new temporary link from administration.',
+      };
+    case 'INVITE_REVOKED':
+      return {
+        title: isRTL ? 'تم إلغاء رابط الدعوة من الإدارة' : 'Invitation Link Revoked',
+        desc: isRTL
+          ? 'أوقفت الإدارة صلاحية هذا الرابط. للتقديم كمعلم أو معلمة، يُرجى طلب رابط دعوة جديد عبر واتساب.'
+          : 'This link was revoked by administration. Please contact us on WhatsApp to request a new link.',
+      };
+    case 'INVITE_IP_MISMATCH':
+      return {
+        title: isRTL ? 'هذا الرابط مرتبط بشبكة/جهاز آخر' : 'Link Locked to Another Network',
+        desc: isRTL
+          ? 'هذا الرابط المؤقت مخصّص لشخص واحد فقط وقد تم تفعيله بالفعل من عنوان IP مختلف، ولا يمكن مشاركته. إذا كنت أنت المتقدم وتغيّرت شبكتك أو أردت رابطاً خاصاً بك، تواصل مع الإدارة عبر واتساب.'
+          : 'This temporary invitation link is locked to a different IP address and cannot be shared. Please contact administration on WhatsApp if you need a fresh link or network reset.',
+      };
+    case 'INVITE_INVALID':
+      return {
+        title: isRTL ? 'رابط الدعوة غير صالح' : 'Invalid Invitation Link',
+        desc: isRTL
+          ? 'تأكد من نسخ الرابط كاملاً كما أرسلته الإدارة، أو اطلب رابط دعوة مؤقت جديد.'
+          : 'Please make sure you copied the complete link sent by administration, or request a new temporary link.',
+      };
+    default:
+      return {
+        title: isRTL ? 'التسجيل متاح عبر رابط دعوة مؤقت فقط' : 'Invite-Only Teacher Registration',
+        desc: isRTL
+          ? 'لا يوجد رابط دائم مفتوح لتسجيل المعلمين. للانضمام لهيئة التدريس في أكاديمية وَحْيٌ وَنَمَاء، يُرجى التواصل مع الإدارة للحصول على رابط دعوة مؤقت.'
+          : 'Public permanent teacher registration is disabled. To apply as a Quran teacher at Wahy Wa Namaa Academy, please request a temporary invitation link from administration.',
+      };
+  }
+}
+
 export default function TeacherRegistration() {
   const { locale, dir, isRTL, t } = useI18n();
   const tr = t?.teacherRegistration || {};
+  const intlLocale = resolveIntlLocale(locale);
+  const [searchParams] = useSearchParams();
+  const inviteToken = (searchParams.get('invite') || searchParams.get('token') || '').trim();
   const [showPass, setShowPass] = useState(false);
   const [showOptionalUploads, setShowOptionalUploads] = useState(false);
-  const f = useTeacherForm();
+  const f = useTeacherForm({ inviteToken });
+  const [inviteState, setInviteState] = useState(() => ({
+    status: inviteToken ? 'checking' : 'blocked',
+    code: inviteToken ? '' : 'INVITE_REQUIRED',
+    invite: null,
+  }));
+
+  useEffect(() => {
+    if (f.authenticatedTeacher || f.submitted) return undefined;
+    if (!inviteToken) {
+      setInviteState({ status: 'blocked', code: 'INVITE_REQUIRED', invite: null });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setInviteState({ status: 'checking', code: '', invite: null });
+
+    fetch(`${apiUrl('/api/teachers/invite-status')}?token=${encodeURIComponent(inviteToken)}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok && data?.valid) {
+          setInviteState({ status: 'valid', code: 'INVITE_VALID', invite: data.invite || null });
+        } else {
+          setInviteState({ status: 'blocked', code: data?.code || 'INVITE_INVALID', invite: null });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInviteState({ status: 'blocked', code: 'INVITE_INVALID', invite: null });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken, f.authenticatedTeacher, f.submitted]);
 
   const PrevIcon = isRTL ? ArrowRight : ArrowLeft;
   const NextIcon = isRTL ? ArrowLeft : ArrowRight;
@@ -188,6 +277,75 @@ export default function TeacherRegistration() {
     );
   }
 
+  if (!f.authenticatedTeacher && inviteState.status === 'checking') {
+    return (
+      <>
+        <SEOHead
+          page={{
+            title: tr.seo?.title || 'تسجيل معلم',
+            description: tr.seo?.description || 'انضم كمعلم قرآن في أكاديمية وَحْيٌ وَنَمَاء',
+            url: '/register/teacher',
+            noindex: true,
+          }}
+        />
+        <GlobalHeader />
+        <div className="wn-teacher-register-shell min-h-screen flex items-center justify-center p-4" dir={dir}>
+          <div className="wn-teacher-register-card max-w-md w-full text-center p-8 space-y-3">
+            <Loader2 size={40} className="mx-auto animate-spin text-[var(--wn-emerald)]" aria-hidden="true" />
+            <h1 className="text-lg font-bold text-[var(--wn-heading)]">
+              {isRTL ? 'جارٍ التحقق من رابط الدعوة المؤقت...' : 'Verifying temporary invitation link...'}
+            </h1>
+          </div>
+        </div>
+        <GlobalFooter />
+      </>
+    );
+  }
+
+  if (!f.authenticatedTeacher && inviteState.status !== 'valid') {
+    const blocked = inviteBlockCopy(inviteState.code, isRTL);
+    const whatsappHref = SOCIAL_LINKS.whatsapp || 'https://wa.me/201557891330';
+    return (
+      <>
+        <SEOHead
+          page={{
+            title: tr.seo?.title || 'تسجيل معلم',
+            description: tr.seo?.description || 'انضم كمعلم قرآن في أكاديمية وَحْيٌ وَنَمَاء',
+            url: '/register/teacher',
+            noindex: true,
+          }}
+        />
+        <GlobalHeader />
+        <div className="wn-teacher-register-shell min-h-screen flex items-center justify-center p-4" dir={dir}>
+          <div className="wn-teacher-register-card max-w-lg w-full text-center p-6 sm:p-10 space-y-5">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-[var(--wn-gold-soft)] border border-[var(--wn-border-strong)] flex items-center justify-center text-[var(--wn-badge-gold-text)]">
+              <KeyRound size={32} aria-hidden="true" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold text-[var(--wn-heading)]">{blocked.title}</h1>
+              <p className="text-sm text-[var(--wn-text-secondary)] leading-relaxed">{blocked.desc}</p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <a
+                href={whatsappHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2"
+              >
+                <MessageCircle size={18} aria-hidden="true" />
+                <span>{isRTL ? 'طلب رابط دعوة عبر واتساب' : 'Request invite via WhatsApp'}</span>
+              </a>
+              <Link to={localizedPath('/', locale)} className="btn-secondary min-h-[44px] inline-flex items-center">
+                {isRTL ? 'العودة للرئيسية' : 'Back to Home'}
+              </Link>
+            </div>
+          </div>
+        </div>
+        <GlobalFooter />
+      </>
+    );
+  }
+
   const stepMeta = STEPS.find((s) => s.id === f.step);
   const stepTitle = (stepMeta && tr.steps?.[stepMeta.fullKey]) || stepMeta?.fullTitle;
   const s1 = tr.step1 || {};
@@ -221,6 +379,36 @@ export default function TeacherRegistration() {
               {hdr.subtitle || '5 خطوات واضحة لإكمال ملف التقديم'}
             </p>
           </div>
+
+          {!f.authenticatedTeacher && inviteState.invite ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--wn-border-strong)] bg-[var(--wn-gold-soft)] px-4 py-2.5 text-xs text-[var(--wn-badge-gold-text)]">
+              <div className="space-y-0.5">
+                <span className="inline-flex items-center gap-2 font-bold">
+                  <KeyRound size={15} className="shrink-0" aria-hidden="true" />
+                  <span>
+                    {isRTL ? 'رابط دعوة مؤقت صالح من الإدارة' : 'Valid temporary invitation link'}
+                    {inviteState.invite.label ? ` — ${inviteState.invite.label}` : ''}
+                  </span>
+                </span>
+                {inviteState.invite.lockToFirstIp ? (
+                  <p className="text-xs font-medium opacity-90">
+                    {isRTL
+                      ? 'الرابط مربوط بشبكتك الحالية فقط — يمكنك الخروج والعودة لإكمال التسجيل من نفس الإنترنت طوال مدة الصلاحية.'
+                      : 'This link is locked to your current network — you may leave and resume from the same IP until expiry.'}
+                  </p>
+                ) : null}
+              </div>
+              {inviteState.invite.expiresAt ? (
+                <span className="inline-flex items-center gap-1 font-semibold">
+                  <Clock size={13} aria-hidden="true" />
+                  <span>
+                    {isRTL ? 'ينتهي في: ' : 'Expires: '}
+                    {new Date(inviteState.invite.expiresAt).toLocaleString(intlLocale)}
+                  </span>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           <StepProgress current={f.step} />
 
