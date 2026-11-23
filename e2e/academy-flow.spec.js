@@ -74,7 +74,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const modal = teacherPage.getByRole('dialog').filter({ hasText: 'تقييم E2E Post Trial Student' });
     await expect(modal).toBeVisible();
 
-    for (const legend of ['الحضور والانتباه', 'الحفظ', 'التجويد', 'السلوك', 'الالتزام']) {
+    for (const legend of ['الحضور', 'الحفظ', 'التجويد', 'السلوك', 'الالتزام']) {
       const fieldset = modal.locator('fieldset').filter({ hasText: legend });
       await fieldset.getByRole('radio', { name: '3' }).click();
     }
@@ -99,11 +99,11 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const postTrialStep = studentPage.locator('section.wn-student-next-step');
     await expect(postTrialStep.getByText('أكملت الحصة التجريبية بنجاح')).toBeVisible();
     await expect(postTrialStep.getByRole('button', { name: 'اشتراك', exact: true })).toBeVisible();
-    await expect(postTrialStep.getByText(/2 متبقية/)).toBeVisible();
+    await expect(postTrialStep.getByText(/2\s+تجريبيات متبقية/)).toBeVisible();
 
     await studentPage.goto('/ar/student/dashboard?tab=evaluations');
     await expect(studentPage.getByText('السورة / المقطع: سورة الفاتحة', { exact: true })).toBeVisible();
-    await expect(studentPage.getByText('الهدف / الواجب القادم: مراجعة سورة الفاتحة', { exact: true })).toBeVisible();
+    await expect(studentPage.getByText('الواجب القادم: مراجعة سورة الفاتحة', { exact: true })).toBeVisible();
     await expect(studentPage.getByText('تقرير Playwright آلي للتحقق من دورة الحصة')).toBeVisible();
     await expect(studentPage.getByText(/Africa\/Cairo/)).toBeVisible();
 
@@ -147,7 +147,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
 
     const postTrialStep = page.locator('section.wn-student-next-step');
     await expect(postTrialStep.getByText('أكملت الحصة التجريبية بنجاح')).toBeVisible();
-    await expect(postTrialStep.getByText(/3 مستخدمة من 3/)).toBeVisible();
+    await expect(postTrialStep.getByText(/3\s*\/\s*3/)).toBeVisible();
     await expect(postTrialStep.getByText('استخدمت الحصص التجريبية الثلاث')).toBeVisible();
     await expect(postTrialStep.getByRole('button', { name: 'استخدم تجريبية أخرى' })).toHaveCount(0);
     await expect(postTrialStep.getByRole('button', { name: 'اشتراك', exact: true })).toBeVisible();

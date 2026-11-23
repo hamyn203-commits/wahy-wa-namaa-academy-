@@ -21,15 +21,15 @@ async function subscriptions(page, items) {
 test('subscriber sees package, used credits and two-lesson warning after login and reload', async ({ page }) => {
   await subscriptions(page, [packageFor()]);
   await login(page, accounts.bookingStudent);
-  const card = page.getByRole('region', { name: 'حالة الاشتراك' });
+  const card = page.getByRole('region', { name: 'اشتراكك الحالي' });
   await expect(card.getByText('اشتراكك الحالي')).toBeVisible();
-  await expect(card.getByText('الباقة: 8 حصص · المستخدم: 6 · المتبقي: 2')).toBeVisible();
+  await expect(card.getByText('الباقة: 8 · المستخدم: 6 · المتبقي: 2')).toBeVisible();
   await expect(card.getByText('المعلم: E2E Subscription Tutor')).toBeVisible();
   await expect(page.getByTestId('low-balance-alert')).toBeVisible();
   await expect(page.locator('.wn-student-welcome')).toHaveCount(0);
   await expect(page.getByText('حصص اشتراكك ومواعيد حلقتك', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(card.getByText('الباقة: 8 حصص · المستخدم: 6 · المتبقي: 2')).toBeVisible();
+  await expect(card.getByText('الباقة: 8 · المستخدم: 6 · المتبقي: 2')).toBeVisible();
   await expect(page.locator('.wn-student-welcome')).toHaveCount(0);
   await page.goto('/ar/student/dashboard?tab=overview');
   // The overview's study workspace is now the active-subscription card.
@@ -41,7 +41,7 @@ test('prepaid renewal replaces low-credit payment prompt', async ({ page }) => {
   const renewal = { ...packageFor('renewal_queued', 12), _id: 'renewal', sessionCount: 12, renewalOf: 'package-one', sessionsUsed: 0 };
   await subscriptions(page, [renewal, packageFor()]);
   await login(page, accounts.bookingStudent);
-  await expect(page.getByText('التجديد مدفوع وجاهز: 12 حصة تبدأ تلقائيًا بعد انتهاء الرصيد الحالي')).toBeVisible();
+  await expect(page.getByText('التجديد مدفوع وجاهز وسيبدأ تلقائيًا بعد انتهاء الرصيد الحالي (12)')).toBeVisible();
   await expect(page.getByTestId('low-balance-alert')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'تجديد الاشتراك', exact: true })).toHaveCount(0);
 });
@@ -50,7 +50,7 @@ for (const status of ['payment_review', 'awaiting_placement', 'placed']) {
   test(`${status} shows subscription progress instead of trial onboarding`, async ({ page }) => {
     await subscriptions(page, [packageFor(status, 8)]);
     await login(page, accounts.bookingStudent);
-    await expect(page.getByRole('region', { name: 'حالة الاشتراك' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'اشتراكك الحالي' })).toBeVisible();
     await expect(page.locator('.wn-student-welcome')).toHaveCount(0);
     await expect(page.getByTestId('low-balance-alert')).toHaveCount(0);
     await expect(page.getByText('لا حصص منتظمة — أكمل تجريبية ثم احجز من «حسابي»')).toHaveCount(0);

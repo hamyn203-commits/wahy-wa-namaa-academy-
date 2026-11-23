@@ -14,7 +14,7 @@ test('admin places learner, starts a 15-student circle and schedules without con
   await expect(learner).toBeVisible();
   await learner.getByRole('button', { name: 'تسكين الطالب', exact: true }).click();
   await expect(learner).toBeHidden();
-  await page.getByRole('button', { name: /الحلقات \(/ }).click();
+  await page.getByRole('tab', { name: /الحلقات \(/ }).click();
   const circle = page.locator('article').filter({ hasText: 'E2E Economic Circle' });
   await expect(circle.getByText('15/20 طالب')).toBeVisible();
   await expect(circle.getByText('جاهزة لتحديد المواعيد والبدء')).toBeVisible();
@@ -41,7 +41,7 @@ test('admin places learner, starts a 15-student circle and schedules without con
   const body = await response.json();
   expect(body.session.attendance).toHaveLength(15);
   await page.reload();
-  await page.getByRole('button', { name: /الحلقات \(/ }).click();
+  await page.getByRole('tab', { name: /الحلقات \(/ }).click();
   await circle.locator('summary').click();
   await expect(row.getByRole('cell').nth(2)).toHaveText('0');
   await expect(row.getByRole('cell').nth(3)).toHaveText('4');
