@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const TeacherInvite = require('../models/TeacherInvite');
 const { isMockMode } = require('../config/runtime');
+const { getAccessSecret } = require('../middleware/auth');
 
 const MIN_EXPIRES_HOURS = 1;
 const MAX_EXPIRES_HOURS = 720; // 30 days
@@ -27,6 +28,37 @@ function hashInviteToken(rawToken) {
   const clean = String(rawToken || '').trim();
   if (!clean) return '';
   return crypto.createHash('sha256').update(clean).digest('hex');
+}
+
+function deriveInviteCipherKey() {
+  return crypto.createHash('sha256').update(`teacher-invite-aes:${getAccessSecret()}`).digest();
+}
+
+function encryptInviteToken(rawToken) {
+  const clean = String(rawToken || '').trim();
+  if (!clean) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveInviteCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(clean, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('base64url')}.${tag.toString('base64url')}.${encrypted.toString('base64url')}`;
+}
+
+function decryptInviteToken(packed) {
+  const raw = String(packed || '').trim();
+  if (!raw) return '';
+  const parts = raw.split('.');
+  if (parts.length !== 3) return '';
+  try {
+    const iv = Buffer.from(parts[0], 'base64url');
+    const tag = Buffer.from(parts[1], 'base64url');
+    const ciphertext = Buffer.from(parts[2], 'base64url');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveInviteCipherKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  } catch {
+    return '';
+  }
 }
 
 function sanitizeInviteToken(rawToken) {
@@ -171,6 +203,7 @@ async function createTeacherInvite({
 
   const rawToken = generateRawInviteToken();
   const tokenHash = hashInviteToken(rawToken);
+  const encryptedToken = encryptInviteToken(rawToken);
   const tokenPreview = `${rawToken.slice(0, 6)}…${rawToken.slice(-4)}`;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + boundedHours * 60 * 60 * 1000);
@@ -180,6 +213,7 @@ async function createTeacherInvite({
     createdDoc = await TeacherInvite.create({
       tokenHash,
       tokenPreview,
+      encryptedToken,
       label: cleanLabel,
       locale: safeLocale,
       maxUses: boundedMaxUses,
@@ -198,6 +232,7 @@ async function createTeacherInvite({
       _id: id,
       tokenHash,
       tokenPreview,
+      encryptedToken,
       label: cleanLabel,
       locale: safeLocale,
       maxUses: boundedMaxUses,
@@ -564,6 +599,52 @@ async function rollbackTeacherInviteReservation({ inviteId, reservationId }) {
   }
 }
 
+async function revealTeacherInviteLink(inviteId, { origin = '' } = {}) {
+  const cleanId = String(inviteId || '');
+  if (!mongoose.Types.ObjectId.isValid(cleanId)) {
+    return { ok: false, status: 400, error: 'Invalid invite ID' };
+  }
+
+  let doc = null;
+  if (isDbReady()) {
+    const query = TeacherInvite.findById(new mongoose.Types.ObjectId(cleanId));
+    const withSelect = typeof query?.select === 'function' ? query.select('+encryptedToken') : query;
+    doc = typeof withSelect?.lean === 'function' ? await withSelect.lean() : await withSelect;
+  } else if (isMockMode) {
+    doc = mockInvites.get(cleanId) || null;
+  } else {
+    return { ok: false, status: 503, error: 'Database unavailable' };
+  }
+
+  if (!doc) {
+    return { ok: false, status: 404, error: 'Invitation not found' };
+  }
+
+  const rawToken = decryptInviteToken(doc.encryptedToken);
+  if (!rawToken) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'INVITE_LINK_UNAVAILABLE',
+      error: 'هذا الرابط أُنشئ قبل تفعيل عرض الروابط المحفوظة — يمكنك إنشاء رابط مؤقت جديد.',
+    };
+  }
+
+  const { invitePath, inviteUrl } = buildPublicInviteUrl({
+    rawToken,
+    locale: doc.locale || 'ar',
+    origin,
+  });
+
+  return {
+    ok: true,
+    inviteToken: rawToken,
+    invitePath,
+    inviteUrl,
+    status: computeInviteStatus(doc),
+  };
+}
+
 async function resetTeacherInviteIpLock(inviteId) {
   const cleanId = String(inviteId || '');
   if (!mongoose.Types.ObjectId.isValid(cleanId)) {
@@ -660,6 +741,7 @@ module.exports = {
   consumeTeacherInviteAtomic,
   finalizeTeacherInviteUsage,
   rollbackTeacherInviteReservation,
+  revealTeacherInviteLink,
   resetTeacherInviteIpLock,
   revokeTeacherInvite,
   deleteTeacherInvite,
