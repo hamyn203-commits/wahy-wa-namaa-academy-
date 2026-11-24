@@ -279,7 +279,7 @@ export const STATIC_SEO_ROUTES = [
       ku: 'پاکێج و نرخەکان | ئەکادیمیای وەحی و نەما',
     },
     description: {
-      ar: 'خطط مرنة لتعلّم القرآن في أكاديمية وحي ونماء تبدأ من 10 جنيه للحصة مع حلقات جماعية ومجموعات مركزة وحصص فردية وقسم سيدات.',
+      ar: 'خطط مدروسة لتعلّم القرآن في أكاديمية وحي ونماء تبدأ من 19 جنيه للحصة مع حلقات جماعية مركّزة (3–5 طلاب)، وحلقات إخوة، وحصص فردية (30 و60 دقيقة)، وقسم سيدات.',
       en: 'Flexible Quran learning plans at Wahy Wa Namaa Academy including group circles, focused circles, private sessions, and women-only sections.',
       fr: 'Forfaits flexibles à l’Académie WAHY WA NAMAA : cercles de groupe, séances individuelles et section dédiée aux femmes.',
       de: 'Flexible Tarife an der Wahy Wa Namaa Akademie mit Gruppenkursen, Einzelunterricht und eigenem Frauenbereich.',

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ShieldCheck, Star, Users, ArrowLeft, ArrowRight, BookOpen, RefreshCw } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import { formatCourseRegionalDisplay } from '../../lib/regionalPricing';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
@@ -305,16 +306,26 @@ export default function WomenPortal() {
                 </p>
               ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {courses.map((c) => (
-                    <Link key={c._id} to={localizedPath(`/courses/${c.slug}`, locale)} className="wn-program-card p-5">
-                      <BookOpen className="text-[var(--wn-women-accent)] mb-3" size={28} aria-hidden="true" />
-                      <h3 className="font-bold mb-1 text-[var(--wn-heading)]">{pickText(c.title)}</h3>
-                      <p className="text-sm text-[var(--wn-text-secondary)] line-clamp-2">{pickText(c.description)}</p>
-                      <span className="min-h-[44px] inline-flex items-center gap-1 text-[var(--wn-women-accent)] text-sm mt-2 font-medium">
-                        {copy.startNow} <ArrowIcon size={14} aria-hidden="true" />
-                      </span>
-                    </Link>
-                  ))}
+                  {courses.map((c) => {
+                    const pricing = formatCourseRegionalDisplay(c, locale, isRTL);
+                    return (
+                      <Link key={c._id} to={localizedPath(`/courses/${c.slug}`, locale)} className="wn-program-card p-5 flex flex-col justify-between">
+                        <div>
+                          <BookOpen className="text-[var(--wn-women-accent)] mb-3" size={28} aria-hidden="true" />
+                          <h3 className="font-bold mb-1 text-[var(--wn-heading)]">{pickText(c.title)}</h3>
+                          <p className="text-sm text-[var(--wn-text-secondary)] line-clamp-2">{pickText(c.description)}</p>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <span className="text-sm font-extrabold text-[var(--wn-emerald)]">
+                            {pricing.isFree ? (i18nT.courses?.free || (isRTL ? 'مجاني' : 'Free')) : pricing.formattedPrice}
+                          </span>
+                          <span className="min-h-[44px] inline-flex items-center gap-1 text-[var(--wn-women-accent)] text-sm font-medium">
+                            {copy.startNow} <ArrowIcon size={14} aria-hidden="true" />
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </section>

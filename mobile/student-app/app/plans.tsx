@@ -28,40 +28,119 @@ import { PlanCatalogItem, PlanCatalogResponse, SubscriptionItem } from '../src/t
 const DEFAULT_PACKS = [4, 8, 12, 24];
 
 const PLAN_HIGHLIGHTS: Record<string, { ar: string[]; en: string[]; popular?: boolean }> = {
-  community: {
-    ar: ['بيئة تنافسية مشجعة للحفظ الجماعي', 'إشراف معلم مجاز وتصحيح تلاوة', 'أقل تكلفة شهرية في الأكاديمية'],
-    en: ['Motivating community circle', 'Certified teacher supervision', 'Most affordable monthly option'],
-  },
-  group: {
-    ar: ['توازن مثالي بين التفاعل والتركيز', 'متابعة أسبوعية للحفظ والمراجعة', 'تقارير حضور وتقييم مستمرة'],
-    en: ['Balanced group interaction', 'Weekly memorization tracking', 'Regular attendance & progress reports'],
-  },
   focused: {
-    popular: true,
-    ar: ['وقت أطول لكل طالب (90 دقيقة)', 'تصحيح دقيق لأحكام التجويد', 'متابعة يومية للواجبات الصوتية'],
-    en: ['Dedicated 90-minute sessions', 'Detailed Tajweed correction', 'Daily voice homework follow-up'],
+    ar: [
+      'مجموعة صغيرة مركّزة من 3 إلى 5 طلاب فقط',
+      'مدة حصة ثابتة 45 دقيقة وتصحيح دقيق للتلاوة',
+      'خصم باقات يصل إلى 24% لباقتَي 12 و24 حصة',
+    ],
+    en: [
+      'Small focused circle of only 3 to 5 learners',
+      'Fixed 45-minute live session with generous recitation time',
+      'Progressive pack savings on 12 & 24 sessions',
+    ],
   },
   mini: {
-    ar: ['مجموعة صغيرة (2 إلى 3 طلاب فقط)', 'تقدّم أسرع في الحفظ والمراجعة', 'مرونة عالية في التنسيق مع المعلم'],
-    en: ['Tiny circle (2–3 students only)', 'Faster memorization progress', 'High scheduling flexibility'],
+    ar: [
+      'مثالية لأخوين أو 3 إخوة في حلقة عائلية واحدة',
+      'تبدأ فوراً للإخوة بدون انتظار اكتمال مجموعة',
+      'اهتمام شبه فردي (45 دقيقة) وتوفير حتى 22%',
+    ],
+    en: [
+      'Ideal for 2 or 3 siblings sharing one dedicated tutor',
+      'Starts immediately for siblings with zero waiting',
+      'Near-individual 45-minute live coaching',
+    ],
   },
   private: {
-    ar: ['حصة فردية كاملة 1-على-1 مع معلمك', 'خطة حفظ ومراجعة مخصصة لك وحدك', 'مناسبة جداً للإجازة بالسند والأطفال'],
-    en: ['Full 1-on-1 private attention', 'Personalized Hifz & Tajweed plan', 'Ideal for Ijazah & young learners'],
+    popular: true,
+    ar: [
+      'حصة فردية خاصة (1-on-1) مع معلم أو معلمة مخصصة',
+      '30 دقيقة مركّزة مثالية للأطفال والحفظ المنتظم',
+      'مرونة كاملة بالمواعيد وتوفير يصل إلى 29%',
+    ],
+    en: [
+      'Dedicated 1-on-1 private tutor with undivided attention',
+      'Focused 30-minute session ideal for kids & steady Hifz',
+      'Immediate start & up to 38% pack savings',
+    ],
+  },
+  private_intensive: {
+    ar: [
+      'ساعة كاملة فردية خالصة (60 دقيقة 1-on-1)',
+      'مخصصة للختم والمراجعة الكبيرة والإجازة بالسند',
+      'متابعة فردية مع كبار المعلمين المجازين',
+    ],
+    en: [
+      'Full 60-minute 1-on-1 private session',
+      'Designed for intensive revision, Khatmah & Sanad Ijazah',
+      'Personalized curriculum with certified scholars',
+    ],
+  },
+  // Legacy fallbacks
+  community: {
+    ar: ['حلقة جماعية قائمة', 'إشراف معلم مجاز'],
+    en: ['Existing community circle', 'Certified teacher supervision'],
+  },
+  group: {
+    ar: ['حلقة جماعية قائمة', 'متابعة أسبوعية للحفظ والمراجعة'],
+    en: ['Existing group circle', 'Weekly memorization tracking'],
   },
 };
 
 function getPlanImageUri(planKey: string, isFemale: boolean): string {
+  if (planKey === 'private_intensive') {
+    return isFemale
+      ? `${SITE_URL}/images/plans/women-private.jpg`
+      : `${SITE_URL}/images/programs/program-ijazah.jpg`;
+  }
   const validKeys = new Set(['community', 'group', 'focused', 'mini', 'private']);
-  const safeKey = validKeys.has(planKey) ? planKey : 'group';
+  const safeKey = validKeys.has(planKey) ? planKey : 'focused';
   const prefix = isFemale ? 'women' : 'men';
   return `${SITE_URL}/images/plans/${prefix}-${safeKey}.jpg`;
 }
 
-function getPerSessionPrice(plan: PlanCatalogItem): number {
-  return Number(
-    plan.pricePerSession ?? (plan.pricePerSessionMinor ? plan.pricePerSessionMinor / 100 : 0)
-  );
+function formatMinorNumber(minorUnits: number): string {
+  const major = Number(minorUnits || 0) / 100;
+  if (!Number.isFinite(major)) return '0';
+  if (Number.isInteger(major)) return String(major);
+  return major.toFixed(2).replace(/0$/, '');
+}
+
+function formatMoneyLabel(minorUnits: number, currency = 'EGP', locale: 'ar' | 'en' = 'ar'): string {
+  const num = formatMinorNumber(minorUnits);
+  if (currency === 'USD') return `$${num}`;
+  return locale === 'ar' ? `${num} ج.م` : `${num} EGP`;
+}
+
+function getAllowedPacksForPlan(plan: PlanCatalogItem | null, catalog: PlanCatalogResponse | null): number[] {
+  if (plan?.allowedSessionPacks?.length) return plan.allowedSessionPacks;
+  if (plan && (plan.key === 'focused' || plan.key === 'mini')) return [8, 12, 24];
+  if (catalog?.sessionPacks?.length) return catalog.sessionPacks;
+  if (catalog?.allowedSessionCounts?.length) return catalog.allowedSessionCounts;
+  return DEFAULT_PACKS;
+}
+
+function getPlanMinorForPack(plan: PlanCatalogItem, count: number): number {
+  const packOverride = plan.packPricesMinor?.[String(count)];
+  if (packOverride != null && Number.isFinite(Number(packOverride)) && Number(packOverride) > 0) {
+    return Number(packOverride);
+  }
+  if (plan.pricePerSessionMinor != null && Number(plan.pricePerSessionMinor) > 0) {
+    return Number(plan.pricePerSessionMinor);
+  }
+  return Math.round(Number(plan.pricePerSession || 0) * 100);
+}
+
+function getPlanAnchorMinor(plan: PlanCatalogItem): number {
+  if (plan.basePricePerSessionMinor != null && Number(plan.basePricePerSessionMinor) > 0) {
+    return Number(plan.basePricePerSessionMinor);
+  }
+  if (plan.packPricesMinor && typeof plan.packPricesMinor === 'object') {
+    const vals = Object.values(plan.packPricesMinor).map(Number).filter((v) => Number.isFinite(v) && v > 0);
+    if (vals.length > 0) return Math.max(...vals);
+  }
+  return getPlanMinorForPack(plan, 8);
 }
 
 export default function PlansScreen() {
@@ -76,7 +155,7 @@ export default function PlansScreen() {
 
   // Selected plan checkout sheet state
   const [checkoutPlan, setCheckoutPlan] = useState<PlanCatalogItem | null>(null);
-  const [sessionCount, setSessionCount] = useState<number>(8);
+  const [sessionCount, setSessionCount] = useState<number>(12);
   const [submitting, setSubmitting] = useState(false);
 
   // Onboarding modal state
@@ -114,8 +193,6 @@ export default function PlansScreen() {
     }, [loadPlans])
   );
 
-  const packs = catalog?.allowedSessionCounts?.length ? catalog.allowedSessionCounts : DEFAULT_PACKS;
-
   const openPlanCheckout = (plan: PlanCatalogItem) => {
     if (user?.role === 'guardian') {
       Alert.alert(
@@ -126,9 +203,12 @@ export default function PlansScreen() {
       );
       return;
     }
-    setSessionCount(packs.includes(8) ? 8 : packs[0]);
+    const planPacks = getAllowedPacksForPlan(plan, catalog);
+    setSessionCount(planPacks.includes(12) ? 12 : planPacks[0]);
     setCheckoutPlan(plan);
   };
+
+  const currency = catalog?.currency || 'EGP';
 
   const confirmPlanSubscription = async (plan: PlanCatalogItem, count: number, skipOnboardingCheck = false) => {
     if (needsOnboarding && !skipOnboardingCheck) {
@@ -148,10 +228,8 @@ export default function PlansScreen() {
       );
       setCheckoutPlan(null);
       const createdSub = res.subscription;
-      const perSession = getPerSessionPrice(plan);
-      const total = createdSub?.totalAmountMinor
-        ? Math.round(createdSub.totalAmountMinor / 100)
-        : Math.round(perSession * count);
+      const fallbackMinor = getPlanMinorForPack(plan, count) * count;
+      const totalMajor = formatMinorNumber(createdSub?.totalAmountMinor ?? fallbackMinor);
       const planTitle = locale === 'ar' ? plan.name?.ar || plan.key : plan.name?.en || plan.key;
 
       if (createdSub?._id) {
@@ -161,7 +239,7 @@ export default function PlansScreen() {
             subscriptionId: createdSub._id,
             planName: planTitle,
             sessionCount: String(count),
-            totalAmount: String(total),
+            totalAmount: totalMajor,
             currency: createdSub.currency || plan.currency || currency,
             section,
           },
@@ -184,19 +262,29 @@ export default function PlansScreen() {
 
   const activeSub = subscriptions.find((s) => s.status === 'active') || subscriptions[0] || null;
   const plans = catalog?.plans ?? [];
-  const currency = catalog?.currency || 'EGP';
   const align = isRTL ? 'right' : 'left';
   const rowDir = isRTL ? 'row-reverse' : 'row';
 
-  const checkoutPerSession = checkoutPlan ? getPerSessionPrice(checkoutPlan) : 0;
-  const checkoutTotal = Math.round(checkoutPerSession * sessionCount);
+  const checkoutPacks = getAllowedPacksForPlan(checkoutPlan, catalog);
+  const effectiveCheckoutCount = checkoutPacks.includes(sessionCount) ? sessionCount : (checkoutPacks[0] || 12);
+  const checkoutMinor = checkoutPlan ? getPlanMinorForPack(checkoutPlan, effectiveCheckoutCount) : 0;
+  const checkoutAnchorMinor = checkoutPlan ? Math.max(checkoutMinor, getPlanAnchorMinor(checkoutPlan)) : 0;
+  const checkoutTotalMinor = checkoutMinor * effectiveCheckoutCount;
+  const checkoutSavedMinor = Math.max(0, (checkoutAnchorMinor - checkoutMinor) * effectiveCheckoutCount);
+  const checkoutSavePct = checkoutAnchorMinor > checkoutMinor
+    ? Math.round(((checkoutAnchorMinor - checkoutMinor) / checkoutAnchorMinor) * 100)
+    : 0;
   const checkoutCurrency = checkoutPlan?.currency || currency;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <IslamicHero
         title={locale === 'ar' ? 'الباقات والحلقات' : 'Plans & Circles'}
-        subtitle={locale === 'ar' ? 'تعرّف على سعر الحصة لكل نظام حلقة، ثم اختر عدد الحصص المناسب لك.' : 'Compare per-session rates, then pick your session count.'}
+        subtitle={
+          locale === 'ar'
+            ? 'حلقات مركّزة وحصص فردية بخصومات تصل إلى 29% على الباقات الشهرية.'
+            : 'Focused circles & 1-on-1 private plans with progressive pack discounts.'
+        }
         isRTL={isRTL}
         onBack={() => router.back()}
         compact
@@ -247,8 +335,8 @@ export default function PlansScreen() {
                   : `Awaiting transfer proof • ${activeSub.sessionCount} sessions`)
                 : activeSub.status === 'payment_review'
                   ? (locale === 'ar'
-                    ? `تم رفع الإيصال — قيد مراجعة الإدارة والتسكين ⏳`
-                    : `Receipt uploaded — Under Admin Review ⏳`)
+                    ? 'تم رفع الإيصال — قيد مراجعة الإدارة والتسكين ⏳'
+                    : 'Receipt uploaded — Under Admin Review ⏳')
                   : (locale === 'ar'
                     ? `المتبقي ${activeSub.sessionsRemaining} من ${activeSub.sessionCount} حصة • الحالة: ${activeSub.status}`
                     : `${activeSub.sessionsRemaining} of ${activeSub.sessionCount} sessions left • ${activeSub.status}`)}
@@ -267,7 +355,7 @@ export default function PlansScreen() {
                           ? activeSub.pricingSnapshot?.nameAr || activeSub.planKey
                           : activeSub.pricingSnapshot?.nameEn || activeSub.planKey,
                       sessionCount: String(activeSub.sessionCount),
-                      totalAmount: String(Math.round((activeSub.totalAmountMinor || 0) / 100)),
+                      totalAmount: formatMinorNumber(activeSub.totalAmountMinor || 0),
                       currency: activeSub.currency || currency,
                       section: activeSub.section || (isFemale ? 'ladies' : 'men_children'),
                     },
@@ -293,7 +381,14 @@ export default function PlansScreen() {
           />
         ) : (
           plans.map((plan) => {
-            const perSession = getPerSessionPrice(plan);
+            const planCurrency = plan.currency || currency;
+            const minMinor = Number(plan.pricePerSessionMinor || 0);
+            const anchorMinor = getPlanAnchorMinor(plan);
+            const maxSave = plan.maxSavingsPercent ?? (
+              anchorMinor > minMinor && minMinor > 0
+                ? Math.round(((anchorMinor - minMinor) / anchorMinor) * 100)
+                : 0
+            );
             const fallback = PLAN_HIGHLIGHTS[plan.key];
             const isPopular = Boolean(plan.popular || fallback?.popular);
             const apiFeatures = Array.isArray(plan.features)
@@ -305,7 +400,7 @@ export default function PlansScreen() {
 
             const capacityLabel =
               plan.maxStudents === 1
-                ? (locale === 'ar' ? 'فردية (طالب واحد)' : '1-on-1 Private')
+                ? (locale === 'ar' ? 'فردية (طالب واحد 1-on-1)' : '1-on-1 Private')
                 : plan.minStudents && plan.maxStudents
                   ? (locale === 'ar'
                     ? `${plan.minStudents}–${plan.maxStudents} طلاب`
@@ -319,7 +414,6 @@ export default function PlansScreen() {
 
             return (
               <View key={plan.key} style={[styles.planCard, isPopular && styles.planCardPopular]}>
-                {/* Official Circle Photo Banner */}
                 <View style={styles.imageBanner}>
                   <Image
                     source={{ uri: getPlanImageUri(plan.key, isFemale) }}
@@ -331,7 +425,7 @@ export default function PlansScreen() {
                     <View style={[styles.popularPill, isRTL ? { right: 12 } : { left: 12 }]}>
                       <Sparkles size={12} color={colors.emeraldDeep} />
                       <Text style={styles.popularText}>
-                        {locale === 'ar' ? 'الأكثر اختياراً' : 'Most Popular'}
+                        {locale === 'ar' ? 'الأكثر طلباً • يبدأ فوراً' : 'Most Popular • Instant Start'}
                       </Text>
                     </View>
                   ) : null}
@@ -356,11 +450,23 @@ export default function PlansScreen() {
                     {locale === 'ar' ? plan.name?.ar || plan.key : plan.name?.en || plan.key}
                   </Text>
 
-                  {/* Clean Per-Session Price Display Only */}
+                  {maxSave > 0 ? (
+                    <View style={[styles.savingsRow, { flexDirection: rowDir }]}>
+                      <Text style={styles.anchorText}>
+                        {formatMoneyLabel(anchorMinor, planCurrency, locale)}
+                      </Text>
+                      <View style={styles.saveBadge}>
+                        <Text style={styles.saveBadgeText}>
+                          {locale === 'ar' ? `وفّر حتى ${maxSave}%` : `Save up to ${maxSave}%`}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
                   <View style={[styles.priceRow, { flexDirection: rowDir }]}>
                     <Text style={styles.priceText}>
-                      {plan.fromPrice ? (locale === 'ar' ? 'تبدأ من ' : 'From ') : ''}
-                      {perSession > 0 ? `${perSession} ${plan.currency || currency}` : '—'}
+                      {locale === 'ar' ? 'تبدأ من ' : 'From '}
+                      {minMinor > 0 ? formatMoneyLabel(minMinor, planCurrency, locale) : '—'}
                     </Text>
                     <View style={styles.perSessionBadge}>
                       <Text style={styles.perSessionText}>
@@ -391,7 +497,7 @@ export default function PlansScreen() {
         )}
       </ScrollView>
 
-      {/* Step 2: Choose Session Count & Live Total Checkout Sheet */}
+      {/* Step 2: Choose Session Count & Live Volume-Discount Checkout Sheet */}
       <Modal
         visible={Boolean(checkoutPlan)}
         transparent
@@ -409,8 +515,8 @@ export default function PlansScreen() {
                 </Text>
                 <Text style={[styles.modalSub, { textAlign: align }]}>
                   {locale === 'ar'
-                    ? `سعر الحصة الواحدة: ${checkoutPerSession} ${checkoutCurrency}`
-                    : `Per session rate: ${checkoutPerSession} ${checkoutCurrency}`}
+                    ? `سعر الحصة المختارة: ${formatMoneyLabel(checkoutMinor, checkoutCurrency, locale)}`
+                    : `Selected rate: ${formatMoneyLabel(checkoutMinor, checkoutCurrency, locale)} / session`}
                 </Text>
               </View>
               <Pressable onPress={() => setCheckoutPlan(null)} style={styles.modalCloseBtn} accessibilityRole="button">
@@ -419,14 +525,18 @@ export default function PlansScreen() {
             </View>
 
             <Text style={[styles.packHeading, { textAlign: align }]}>
-              {locale === 'ar' ? 'اختر عدد الحصص المناسب لك:' : 'Select number of sessions:'}
+              {locale === 'ar' ? 'اختر الباقة الشهرية (كلما زاد العدد زاد التوفير):' : 'Select your monthly pack:'}
             </Text>
 
             <View style={styles.packGrid}>
-              {packs.map((cnt) => {
-                const active = sessionCount === cnt;
-                const packTotal = Math.round(checkoutPerSession * cnt);
-                const recommended = cnt === 8;
+              {checkoutPacks.map((cnt) => {
+                const active = effectiveCheckoutCount === cnt;
+                const packMinor = checkoutPlan ? getPlanMinorForPack(checkoutPlan, cnt) : 0;
+                const packTotalMinor = packMinor * cnt;
+                const packSavePct = checkoutAnchorMinor > packMinor && packMinor > 0
+                  ? Math.round(((checkoutAnchorMinor - packMinor) / checkoutAnchorMinor) * 100)
+                  : 0;
+                const recommended = cnt === 12;
                 return (
                   <Pressable
                     key={cnt}
@@ -438,35 +548,56 @@ export default function PlansScreen() {
                     {recommended ? (
                       <View style={styles.recPill}>
                         <Text style={styles.recPillText}>
-                          {locale === 'ar' ? 'الأكثر اختياراً' : 'Popular'}
+                          {locale === 'ar' ? 'الأكثر توفيراً ⭐' : 'Best Value ⭐'}
+                        </Text>
+                      </View>
+                    ) : packSavePct > 0 ? (
+                      <View style={styles.recPill}>
+                        <Text style={styles.recPillText}>
+                          {locale === 'ar' ? `وفّر ${packSavePct}%` : `Save ${packSavePct}%`}
                         </Text>
                       </View>
                     ) : null}
                     <Text style={[styles.packCount, active && styles.packCountActive]}>
-                      {cnt} {locale === 'ar' ? 'حصص' : 'sessions'}
+                      {cnt} {locale === 'ar' ? (cnt === 12 ? 'حصة' : 'حصص') : 'sessions'}
                     </Text>
                     <Text style={[styles.packPrice, active && styles.packPriceActive]}>
-                      {packTotal} {checkoutCurrency}
+                      {formatMoneyLabel(packTotalMinor, checkoutCurrency, locale)}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
 
-            {/* Instant Total Summary Box */}
             <View style={styles.summaryBox}>
               <View style={[styles.summaryRow, { flexDirection: rowDir }]}>
                 <Text style={styles.summaryLabel}>{locale === 'ar' ? 'سعر الحصة' : 'Per Session'}</Text>
-                <Text style={styles.summaryVal}>{checkoutPerSession} {checkoutCurrency}</Text>
+                <Text style={styles.summaryVal}>
+                  {formatMoneyLabel(checkoutMinor, checkoutCurrency, locale)}
+                </Text>
               </View>
               <View style={[styles.summaryRow, { flexDirection: rowDir }]}>
                 <Text style={styles.summaryLabel}>{locale === 'ar' ? 'عدد الحصص المختار' : 'Selected Sessions'}</Text>
-                <Text style={styles.summaryVal}>{sessionCount} {locale === 'ar' ? 'حصص' : 'sessions'}</Text>
+                <Text style={styles.summaryVal}>
+                  {effectiveCheckoutCount} {locale === 'ar' ? (effectiveCheckoutCount === 12 ? 'حصة' : 'حصص') : 'sessions'}
+                </Text>
               </View>
-              <View style={[styles.summaryDivider]} />
+              {checkoutSavedMinor > 0 ? (
+                <View style={[styles.summaryRow, { flexDirection: rowDir }]}>
+                  <Text style={styles.savedLabel}>
+                    {locale === 'ar' ? `قيمة التوفير (${checkoutSavePct}%)` : `Your Savings (${checkoutSavePct}%)`}
+                  </Text>
+                  <Text style={styles.savedVal}>
+                    -{formatMoneyLabel(checkoutSavedMinor, checkoutCurrency, locale)}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.summaryDivider} />
               <View style={[styles.summaryRow, { flexDirection: rowDir }]}>
                 <Text style={styles.totalLabel}>{locale === 'ar' ? 'الإجمالي المطلوب' : 'Total Amount'}</Text>
-                <Text style={styles.totalVal}>{checkoutTotal} {checkoutCurrency}</Text>
+                <Text style={styles.totalVal}>
+                  {formatMoneyLabel(checkoutTotalMinor, checkoutCurrency, locale)}
+                </Text>
               </View>
             </View>
 
@@ -474,12 +605,12 @@ export default function PlansScreen() {
               <PrimaryButton
                 label={
                   locale === 'ar'
-                    ? `تأكيد الاشتراك — ${checkoutTotal} ${checkoutCurrency}`
-                    : `Confirm Subscription — ${checkoutTotal} ${checkoutCurrency}`
+                    ? `تأكيد الاشتراك — ${formatMoneyLabel(checkoutTotalMinor, checkoutCurrency, locale)}`
+                    : `Confirm Subscription — ${formatMoneyLabel(checkoutTotalMinor, checkoutCurrency, locale)}`
                 }
                 variant="gold"
                 loading={submitting}
-                onPress={() => void confirmPlanSubscription(checkoutPlan, sessionCount)}
+                onPress={() => void confirmPlanSubscription(checkoutPlan, effectiveCheckoutCount)}
               />
             ) : null}
           </View>
@@ -574,8 +705,24 @@ const styles = StyleSheet.create({
   planBody: { padding: spacing.lg, gap: spacing.sm },
   headRow: { alignItems: 'center', gap: spacing.sm },
   planName: { fontSize: 18, fontFamily: fonts.extraBold, color: colors.emeraldDark },
+  savingsRow: { alignItems: 'center', gap: spacing.xs, marginTop: 2 },
+  anchorText: {
+    fontSize: 13,
+    fontFamily: fonts.bold,
+    color: colors.textTertiary,
+    textDecorationLine: 'line-through',
+  },
+  saveBadge: {
+    backgroundColor: colors.goldSoft,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  saveBadgeText: { fontSize: 11, fontFamily: fonts.extraBold, color: colors.goldDark },
   priceRow: { alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  priceText: { fontSize: 25, fontFamily: fonts.extraBold, color: colors.emerald },
+  priceText: { fontSize: 24, fontFamily: fonts.extraBold, color: colors.emerald },
   perSessionBadge: {
     backgroundColor: colors.emeraldSoft,
     paddingHorizontal: 10,
@@ -652,6 +799,8 @@ const styles = StyleSheet.create({
   summaryRow: { alignItems: 'center', justifyContent: 'space-between' },
   summaryLabel: { fontSize: 13, fontFamily: fonts.medium, color: colors.textSecondary },
   summaryVal: { fontSize: 13, fontFamily: fonts.bold, color: colors.textPrimary },
+  savedLabel: { fontSize: 13, fontFamily: fonts.bold, color: colors.emerald },
+  savedVal: { fontSize: 13, fontFamily: fonts.extraBold, color: colors.emerald },
   summaryDivider: { height: 1, backgroundColor: colors.border },
   totalLabel: { fontSize: 15, fontFamily: fonts.extraBold, color: colors.emeraldDark },
   totalVal: { fontSize: 20, fontFamily: fonts.extraBold, color: colors.emerald },

@@ -4219,7 +4219,7 @@ export default {
       retry: 'Try Again',
       headerTitle: 'Student Placement & Circle Operations',
       headerFlow: 'Approve payment → Place with chosen tutor & plan → Reach capacity → Set schedule & start circle → Schedule sessions. Credits deduct after completed sessions based on attendance & excuses.',
-      headerNote: 'Community plan: 15–20 students. Each student’s session credit is tracked independently: 4, 8, 12, or 24 sessions.',
+      headerNote: 'Active plans: Focused Group (3–5 learners, 45m), Siblings/Dual (2–3 learners, 45m), Focused Private 1-on-1 (30m), and Intensive Private & Ijazah (60m). Each student credit is tracked independently.',
       tabs: {
         ariaLabel: 'Subscription & circle management tabs',
         awaiting: 'Awaiting Placement ({count})',
@@ -4243,11 +4243,12 @@ export default {
         Friday: 'Friday',
       },
       planNames: {
-        community: 'Community Circle (15–20 students)',
-        group: 'Group Circle (6–8 students)',
-        focused: 'Focused Circle (3–5 students)',
-        mini: 'Mini Circle (2–3 students)',
-        private: 'Private Intensive (1 student)',
+        community: 'Legacy Community Circle (renewal)',
+        group: 'Legacy Group Circle (renewal)',
+        focused: 'Focused Group Circle (3–5 students • 45m)',
+        mini: 'Siblings & Dual Circle (2–3 students • 45m)',
+        private: 'Focused Private 1-on-1 (1 student • 30m)',
+        private_intensive: 'Intensive Private & Ijazah (1 student • 60m)',
       },
       awaitingCard: {
         studentFallback: 'Student',
