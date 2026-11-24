@@ -165,15 +165,27 @@ const MOBILE_COPY = {
 };
 
 const DOWNLOAD_ANDROID_LABEL = {
-  ar: 'تحميل تطبيق أندرويد (Wahy-Wa-Namaa-Academy.apk)',
-  en: 'Download Android App (APK)',
-  fr: 'Télécharger l’application Android (APK)',
-  de: 'Android-App herunterladen (APK)',
-  tr: 'Android Uygulamasını İndir (APK)',
-  ur: 'اینڈرائیڈ ایپ ڈاؤن لوڈ کریں (APK)',
-  id: 'Unduh Aplikasi Android (APK)',
-  ms: 'Muat Turun Aplikasi Android (APK)',
-  ku: 'داگرتنی ئەپی ئەندرۆید (APK)',
+  ar: 'تحميل تطبيق الطالب (APK)',
+  en: 'Download Student App (APK)',
+  fr: 'Télécharger l’application Étudiant (APK)',
+  de: 'Schüler-App herunterladen (APK)',
+  tr: 'Öğrenci Uygulamasını İndir (APK)',
+  ur: 'طالب علم ایپ ڈاؤن لوڈ کریں (APK)',
+  id: 'Unduh Aplikasi Siswa (APK)',
+  ms: 'Muat Turun Aplikasi Pelajar (APK)',
+  ku: 'داگرتنی ئەپی قوتابی (APK)',
+};
+
+const DOWNLOAD_TEACHER_ANDROID_LABEL = {
+  ar: 'تحميل تطبيق المعلم (APK)',
+  en: 'Download Teacher App (APK)',
+  fr: 'Télécharger l’application Enseignant (APK)',
+  de: 'Lehrer-App herunterladen (APK)',
+  tr: 'Öğretmen Uygulamasını İndir (APK)',
+  ur: 'استاد ایپ ڈاؤن لوڈ کریں (APK)',
+  id: 'Unduh Aplikasi Guru (APK)',
+  ms: 'Muat Turun Aplikasi Guru (APK)',
+  ku: 'داگرتنی ئەپی مامۆستا (APK)',
 };
 
 const STEP_ICONS = [Download, Share, Bell, WifiOff];
@@ -183,7 +195,9 @@ export default function MobileAppPage() {
   const lp = (path) => localizedPath(path, locale);
   const copy = MOBILE_COPY[locale] || MOBILE_COPY.en;
   const androidDownloadLabel = DOWNLOAD_ANDROID_LABEL[locale] || DOWNLOAD_ANDROID_LABEL.en;
-  const androidDownloadHref = apiUrl('/api/mobile/download/android');
+  const teacherAndroidDownloadLabel = DOWNLOAD_TEACHER_ANDROID_LABEL[locale] || DOWNLOAD_TEACHER_ANDROID_LABEL.en;
+  const androidDownloadHref = apiUrl('/api/mobile/download/android?app=learner');
+  const teacherAndroidDownloadHref = apiUrl('/api/mobile/download/teacher');
 
   return (
     <>
@@ -208,6 +222,13 @@ export default function MobileAppPage() {
                 >
                   <Download size={18} aria-hidden="true" />
                   <span>{androidDownloadLabel}</span>
+                </a>
+                <a
+                  href={teacherAndroidDownloadHref}
+                  className="wn-btn wn-btn--primary min-h-[44px] inline-flex items-center gap-2"
+                >
+                  <Download size={18} aria-hidden="true" />
+                  <span>{teacherAndroidDownloadLabel}</span>
                 </a>
                 <Link to={lp('/register/student')} className="wn-btn wn-btn--secondary min-h-[44px]">{t.common?.register || copy.register}</Link>
                 <Link to={lp('/login')} className="wn-btn wn-btn--secondary min-h-[44px]">{t.common?.login || copy.login}</Link>

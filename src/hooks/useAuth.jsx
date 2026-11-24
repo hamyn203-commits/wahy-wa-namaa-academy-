@@ -90,13 +90,26 @@ export function AuthProvider({ children }) {
     let cancelled = false;
 
     const bootstrap = async () => {
-      // Remove tokens left by older versions. Authentication now restores
-      // exclusively from the HttpOnly refresh cookie.
+      // Remove tokens left by older versions. Authentication restores from the
+      // HttpOnly refresh cookie or an injected in-app mobile session token.
       clearLegacyAuthStorage();
 
       try {
-        await refreshAccessToken();
-        const data = await api.get('/api/auth/me?fresh=' + Date.now(), { auth: true });
+        const preloadedToken = getAccessToken();
+        if (!preloadedToken) {
+          await refreshAccessToken();
+        }
+        let data;
+        try {
+          data = await api.get('/api/auth/me?fresh=' + Date.now(), { auth: true });
+        } catch (meError) {
+          if (preloadedToken) {
+            await refreshAccessToken();
+            data = await api.get('/api/auth/me?fresh=' + Date.now(), { auth: true });
+          } else {
+            throw meError;
+          }
+        }
 
         if (!cancelled) {
           setUser(data.user || null);

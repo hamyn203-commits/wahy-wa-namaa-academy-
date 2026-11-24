@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useI18n } from '../../i18n';
 import Modal from '../shared/Modal';
+import MushafWordInspectorBar from './MushafWordInspectorBar';
 import './classroom.css';
 
 /**
@@ -129,79 +130,70 @@ export const QURAN_SURAHS = [
   { id: 114, name: 'الناس', startPage: 604, verses: 6, type: 'مكية' }
 ];
 
-/**
- * نصوص الآيات التفاعلية النموذجية لصفحات البداية وسور الحفظ الشائعة
- */
 const SAMPLE_PAGE_VERSES = {
   1: {
     surahName: 'سورة الفاتحة',
     isBismillah: false,
     verses: [
-      { num: 1, text: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' },
-      { num: 2, text: 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ' },
-      { num: 3, text: 'الرَّحْمَٰنِ الرَّحِيمِ' },
-      { num: 4, text: 'مَالِكِ يَوْمِ الدِّينِ' },
-      { num: 5, text: 'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ' },
-      { num: 6, text: 'اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ' },
-      { num: 7, text: 'صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ' }
+      { num: 1, surahNum: 1, key: '1:1', text: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' },
+      { num: 2, surahNum: 1, key: '1:2', text: 'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ' },
+      { num: 3, surahNum: 1, key: '1:3', text: 'الرَّحْمَٰنِ الرَّحِيمِ' },
+      { num: 4, surahNum: 1, key: '1:4', text: 'مَالِكِ يَوْمِ الدِّينِ' },
+      { num: 5, surahNum: 1, key: '1:5', text: 'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ' },
+      { num: 6, surahNum: 1, key: '1:6', text: 'اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ' },
+      { num: 7, surahNum: 1, key: '1:7', text: 'صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ' }
     ]
   },
   2: {
     surahName: 'سورة البقرة',
     isBismillah: true,
     verses: [
-      { num: 1, text: 'الم' },
-      { num: 2, text: 'ذَٰلِكَ الْكِتَابُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًى لِّلْمُتَّقِينَ' },
-      { num: 3, text: 'الَّذِينَ يُؤْمِنُونَ بِالْغَيْبِ وَيُقِيمُونَ الصَّلَاةَ وَمِمَّا رَزَقْنَاهُمْ يُنفِقُونَ' },
-      { num: 4, text: 'وَالَّذِينَ يُؤْمِنُونَ بِمَا أُنزِلَ إِلَيْكَ وَمَا أُنزِلَ مِن قَبْلِكَ وَبِالْآخِرَةِ هُمْ يُوقِنُونَ' },
-      { num: 5, text: 'أُولَٰئِكَ عَلَىٰ هُدًى مِّن رَّبِّهِمْ ۖ وَأُولَٰئِكَ هُمُ الْمُفْلِحُونَ' }
+      { num: 1, surahNum: 2, key: '2:1', text: 'الم' },
+      { num: 2, surahNum: 2, key: '2:2', text: 'ذَٰلِكَ الْكِتَابُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًى لِّلْمُتَّقِينَ' },
+      { num: 3, surahNum: 2, key: '2:3', text: 'الَّذِينَ يُؤْمِنُونَ بِالْغَيْبِ وَيُقِيمُونَ الصَّلَاةَ وَمِمَّا رَزَقْنَاهُمْ يُنفِقُونَ' },
+      { num: 4, surahNum: 2, key: '2:4', text: 'وَالَّذِينَ يُؤْمِنُونَ بِمَا أُنزِلَ إِلَيْكَ وَمَا أُنزِلَ مِن قَبْلِكَ وَبِالْآخِرَةِ هُمْ يُوقِنُونَ' },
+      { num: 5, surahNum: 2, key: '2:5', text: 'أُولَٰئِكَ عَلَىٰ هُدًى مِّن رَّبِّهِمْ ۖ وَأُولَٰئِكَ هُمُ الْمُفْلِحُونَ' }
     ]
   },
   562: {
     surahName: 'سورة الملك',
     isBismillah: true,
     verses: [
-      { num: 1, text: 'تَبَارَكَ الَّذِي بِيَدِهِ الْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ' },
-      { num: 2, text: 'الَّذِي خَلَقَ الْمَوْتَ وَالْحَيَاةَ لِيَبْلُوَكُمْ أَيُّكُمْ أَحْسَنُ عَمَلًا ۚ وَهُوَ الْعَزِيزُ الْغَفُورُ' },
-      { num: 3, text: 'الَّذِي خَلَقَ سَبْعَ سَمَاوَاتٍ طِبَاقًا ۖ مَّا تَرَىٰ فِي خَلْقِ الرَّحْمَٰنِ مِن تَفَاوُتٍ ۖ فَارْجِعِ الْبَصَرَ هَلْ تَرَىٰ مِن فُطُورٍ' },
-      { num: 4, text: 'ثُمَّ ارْجِعِ الْبَصَرَ كَرَّتَيْنِ يَنقَلِبْ إِلَيْكَ الْبَصَرُ خَاسِئًا وَهُوَ حَسِيرٌ' },
-      { num: 5, text: 'وَلَقَدْ زَيَّنَّا السَّمَاءَ الدُّنْيَا بِمَصَابِيحَ وَجَعَلْنَاهَا رُجُومًا لِّلشَّيَاطِينِ ۖ وَأَعْتَدْنَا لَهُمْ عَذَابَ السَّعِيرِ' }
+      { num: 1, surahNum: 67, key: '67:1', text: 'تَبَارَكَ الَّذِي بِيَدِهِ الْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ' },
+      { num: 2, surahNum: 67, key: '67:2', text: 'الَّذِي خَلَقَ الْمَوْتَ وَالْحَيَاةَ لِيَبْلُوَكُمْ أَيُّكُمْ أَحْسَنُ عَمَلًا ۚ وَهُوَ الْعَزِيزُ الْغَفُورُ' },
+      { num: 3, surahNum: 67, key: '67:3', text: 'الَّذِي خَلَقَ سَبْعَ سَمَاوَاتٍ طِبَاقًا ۖ مَّا تَرَىٰ فِي خَلْقِ الرَّحْمَٰنِ مِن تَفَاوُتٍ ۖ فَارْجِعِ الْبَصَرَ هَلْ تَرَىٰ مِن فُطُورٍ' },
+      { num: 4, surahNum: 67, key: '67:4', text: 'ثُمَّ ارْجِعِ الْبَصَرَ كَرَّتَيْنِ يَنقَلِبْ إِلَيْكَ الْبَصَرُ خَاسِئًا وَهُوَ حَسِيرٌ' },
+      { num: 5, surahNum: 67, key: '67:5', text: 'وَلَقَدْ زَيَّنَّا السَّمَاءَ الدُّنْيَا بِمَصَابِيحَ وَجَعَلْنَاهَا رُجُومًا لِّلشَّيَاطِينِ ۖ وَأَعْتَدْنَا لَهُمْ عَذَابَ السَّعِيرِ' }
     ]
   },
   604: {
     surahName: 'سورة الإخلاص والمعوذتين',
     isBismillah: true,
     verses: [
-      { num: 1, text: 'قُلْ هُوَ اللَّهُ أَحَدٌ' },
-      { num: 2, text: 'اللَّهُ الصَّمَدُ' },
-      { num: 3, text: 'لَمْ يَلِدْ وَلَمْ يُولَدْ' },
-      { num: 4, text: 'وَلَمْ يَكُن لَّهُ كُفُوًا أَحَدٌ' },
-      { num: 101, text: 'قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ' },
-      { num: 102, text: 'مِن شَرِّ مَا خَلَقَ' },
-      { num: 103, text: 'وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ' },
-      { num: 104, text: 'وَمِن شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ' },
-      { num: 105, text: 'وَمِن شَرِّ حَاسِدٍ إِذَا حَسَدَ' },
-      { num: 201, text: 'قُلْ أَعُوذُ بِرَبِّ النَّاسِ' },
-      { num: 202, text: 'مَلِكِ النَّاسِ' },
-      { num: 203, text: 'إِلَٰهِ النَّاسِ' },
-      { num: 204, text: 'مِن شَرِّ الْوَسْوَاسِ الْخَنَّاسِ' },
-      { num: 205, text: 'الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ' },
-      { num: 206, text: 'مِنَ الْجِنَّةِ وَالنَّاسِ' }
+      { num: 1, surahNum: 112, key: '112:1', text: 'قُلْ هُوَ اللَّهُ أَحَدٌ' },
+      { num: 2, surahNum: 112, key: '112:2', text: 'اللَّهُ الصَّمَدُ' },
+      { num: 3, surahNum: 112, key: '112:3', text: 'لَمْ يَلِدْ وَلَمْ يُولَدْ' },
+      { num: 4, surahNum: 112, key: '112:4', text: 'وَلَمْ يَكُن لَّهُ كُفُوًا أَحَدٌ' },
+      { num: 1, surahNum: 113, key: '113:1', text: 'قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ' },
+      { num: 2, surahNum: 113, key: '113:2', text: 'مِن شَرِّ مَا خَلَقَ' },
+      { num: 3, surahNum: 113, key: '113:3', text: 'وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ' },
+      { num: 4, surahNum: 113, key: '113:4', text: 'وَمِن شَرِّ النَّفَّاثَاتِ فِي الْعُقَدِ' },
+      { num: 5, surahNum: 113, key: '113:5', text: 'وَمِن شَرِّ حَاسِدٍ إِذَا حَسَدَ' },
+      { num: 1, surahNum: 114, key: '114:1', text: 'قُلْ أَعُوذُ بِرَبِّ النَّاسِ' },
+      { num: 2, surahNum: 114, key: '114:2', text: 'مَلِكِ النَّاسِ' },
+      { num: 3, surahNum: 114, key: '114:3', text: 'إِلَٰهِ النَّاسِ' },
+      { num: 4, surahNum: 114, key: '114:4', text: 'مِن شَرِّ الْوَسْوَاسِ الْخَنَّاسِ' },
+      { num: 5, surahNum: 114, key: '114:5', text: 'الَّذِي يُوَسْوِسُ فِي صُدُورِ النَّاسِ' },
+      { num: 6, surahNum: 114, key: '114:6', text: 'مِنَ الْجِنَّةِ وَالنَّاسِ' }
     ]
   }
 };
 
-/**
- * حساب رقم الجزء القرآني (Juz) من رقم الصفحة تقريبياً
- */
 function getJuzFromPage(page) {
   if (page <= 21) return 1;
   return Math.min(30, Math.ceil((page - 1) / 20));
 }
 
-/**
- * معرفة السورة المرتبطة برقم الصفحة
- */
 function getSurahForPage(page) {
   for (let i = QURAN_SURAHS.length - 1; i >= 0; i--) {
     if (page >= QURAN_SURAHS[i].startPage) {
@@ -211,8 +203,18 @@ function getSurahForPage(page) {
   return QURAN_SURAHS[0];
 }
 
+function isWordHiddenByVeil(veilMode, wordIdx) {
+  if (!veilMode || veilMode === 'none') return false;
+  if (veilMode === 'heads') return wordIdx >= 2;
+  if (veilMode === 'alternating') return wordIdx % 2 === 1;
+  if (veilMode === 'full') return true;
+  return false;
+}
+
 /**
- * مكون المصحف الرقمي المتزامن عبر LiveKit Data Channel
+ * مكون المصحف الرقمي المتزامن الخارق (V2.0)
+ * يدعم: المؤشر الذهبي كلمة بكلمة، ستار التسميع الغيبي مع فتح الـ 3 ثوانٍ،
+ * ختم الأخطاء الفوري بملف الطالب، المقرئ المتزامن، ومنبّه السجدات الـ 15.
  */
 export default function SyncedMushaf({
   room,
@@ -220,34 +222,50 @@ export default function SyncedMushaf({
   isTeacher = false,
   isObserver = false,
   onAyahClick = null,
+  mushafState = null,
+  studentOpenMistakes = [],
+  onSyncMushaf = null,
+  onPinMistake = null,
+  onUndoOrResolveMistake = null,
+  onRingListenerBell = null,
+  onOpenTajweedLab = null,
+  onTeleportToWhiteboard = null,
+  onPageDataReady = null,
 }) {
   const { isRTL, dir, t } = useI18n();
-  const [currentPage, setCurrentPage] = useState(1);
-  const [highlightedAyah, setHighlightedAyah] = useState(null);
+  const [currentPage, setCurrentPage] = useState(() => mushafState?.page || 1);
+  const [highlightedAyah, setHighlightedAyah] = useState(() => mushafState?.ayahKey || null);
+  const [highlightedWordIdx, setHighlightedWordIdx] = useState(() => mushafState?.wordIndex ?? -1);
+  const [selectedWordInfo, setSelectedWordInfo] = useState(null);
 
   const [allowIndependentReading, setAllowIndependentReading] = useState(false);
   const [isIndependentMode, setIsIndependentMode] = useState(false);
   const [teacherPage, setTeacherPage] = useState(1);
   const [syncToast, setSyncToast] = useState(null);
+  const [bellSentNotice, setBellSentNotice] = useState(false);
 
-  const [theme, setTheme] = useState('parchment'); // 'parchment' | 'night' | 'white'
+  const [theme, setTheme] = useState('parchment');
   const [zoomLevel, setZoomLevel] = useState(100);
   const [showSurahModal, setShowSurahModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [jumpPageInput, setJumpPageInput] = useState('');
-  const [viewMode, setViewMode] = useState('interactive'); // 'interactive' | 'image'
+  const [viewMode, setViewMode] = useState('interactive');
   const [imageError, setImageError] = useState(false);
   const [ayahFetchError, setAyahFetchError] = useState(false);
   const [ayahRetryNonce, setAyahRetryNonce] = useState(0);
   const [dynamicPageVerses, setDynamicPageVerses] = useState({});
 
+  const [selectedReciter, setSelectedReciter] = useState('Husary_Muallim_128kbps');
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
   const containerRef = useRef(null);
   const toastTimerRef = useRef(null);
+  const audioRef = useRef(null);
+  const lastAudioNonceRef = useRef(mushafState?.qariAudio?.nonce || 0);
 
   const showSyncToast = useCallback((message) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setSyncToast(message);
     toastTimerRef.current = setTimeout(() => {
       setSyncToast(null);
@@ -256,10 +274,99 @@ export default function SyncedMushaf({
   }, []);
 
   useEffect(() => () => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
   }, []);
+
+  // Reconcile incoming persistent classroom mushafState (late joiner & dual-engine sync)
+  useEffect(() => {
+    if (!mushafState) return;
+    if (mushafState.page) {
+      setTeacherPage(mushafState.page);
+      if (!isTeacher && !isIndependentMode && mushafState.page !== currentPage) {
+        setCurrentPage(mushafState.page);
+        setImageError(false);
+      }
+    }
+    if (!isTeacher && !isIndependentMode) {
+      setHighlightedAyah(mushafState.ayahKey || null);
+      setHighlightedWordIdx(mushafState.wordIndex ?? -1);
+    }
+    setAllowIndependentReading(Boolean(mushafState.allowIndependent));
+    if (!mushafState.allowIndependent) {
+      setIsIndependentMode(false);
+    }
+  }, [
+    mushafState?.page,
+    mushafState?.ayahKey,
+    mushafState?.wordIndex,
+    mushafState?.allowIndependent,
+    isTeacher,
+    isIndependentMode,
+    currentPage,
+    mushafState,
+  ]);
+
+  // Timer for 3.5-second Teacher Word Peek auto-expiry
+  useEffect(() => {
+    const exp = Number(mushafState?.peekExpiresAt) || 0;
+    if (!exp || exp <= Date.now()) return undefined;
+    setNowMs(Date.now());
+    const timer = setTimeout(() => {
+      setNowMs(Date.now());
+    }, Math.max(100, exp - Date.now() + 80));
+    return () => clearTimeout(timer);
+  }, [mushafState?.peekWordKey, mushafState?.peekExpiresAt]);
+
+  // Synced Master Qari Audio playback across both Teacher & Student devices
+  useEffect(() => {
+    const qAudio = mushafState?.qariAudio;
+    if (!qAudio || qAudio.nonce === lastAudioNonceRef.current) return undefined;
+    lastAudioNonceRef.current = qAudio.nonce;
+
+    if (!qAudio.playing) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setIsAudioPlaying(false);
+      return undefined;
+    }
+
+    const sPad = String(qAudio.surah || 1).padStart(3, '0');
+    const aPad = String(qAudio.ayah || 1).padStart(3, '0');
+    const url = `https://everyayah.com/data/${qAudio.reciter || 'Husary_Muallim_128kbps'}/${sPad}${aPad}.mp3`;
+    let remainingPlays = Math.max(1, Math.min(5, Number(qAudio.repeat) || 1));
+
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+    }
+    const player = audioRef.current;
+    player.pause();
+    player.src = url;
+    setIsAudioPlaying(true);
+
+    const onEnded = () => {
+      remainingPlays -= 1;
+      if (remainingPlays > 0) {
+        player.currentTime = 0;
+        player.play().catch(() => setIsAudioPlaying(false));
+      } else {
+        setIsAudioPlaying(false);
+      }
+    };
+    const onError = () => setIsAudioPlaying(false);
+
+    player.onended = onEnded;
+    player.onerror = onError;
+    player.play().catch(() => setIsAudioPlaying(false));
+
+    return () => {
+      player.onended = null;
+      player.onerror = null;
+    };
+  }, [mushafState?.qariAudio]);
 
   const currentSurah = useMemo(() => getSurahForPage(currentPage), [currentPage]);
   const currentJuz = useMemo(() => getJuzFromPage(currentPage), [currentPage]);
@@ -271,30 +378,30 @@ export default function SyncedMushaf({
   }, [currentPage]);
 
   const broadcastMushafAction = useCallback((action, payload = {}) => {
-    if (!room || !localParticipant?.localParticipant) return;
-
-    const messageData = {
-      type: 'MUSHAF_ACTION',
-      action,
-      page: payload.page ?? currentPage,
-      ayahId: payload.ayahId ?? highlightedAyah,
-      allowIndependent: payload.allowIndependent ?? allowIndependentReading,
-      senderRole: isTeacher ? 'teacher' : 'student',
-      timestamp: Date.now()
-    };
-
-    try {
-      localParticipant.localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(messageData)),
-        { reliable: true }
-      );
-    } catch (err) {
-      console.error('Failed to broadcast Mushaf action:', err);
+    if (room && localParticipant?.localParticipant) {
+      const messageData = {
+        type: 'MUSHAF_ACTION',
+        action,
+        page: payload.page ?? currentPage,
+        ayahId: payload.ayahId ?? highlightedAyah,
+        wordIndex: payload.wordIndex ?? highlightedWordIdx,
+        allowIndependent: payload.allowIndependent ?? allowIndependentReading,
+        senderRole: isTeacher ? 'teacher' : 'student',
+        timestamp: Date.now()
+      };
+      try {
+        localParticipant.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(messageData)),
+          { reliable: true }
+        );
+      } catch {
+        // fallback handled by onSyncMushaf
+      }
     }
-  }, [room, localParticipant, currentPage, highlightedAyah, allowIndependentReading, isTeacher]);
+  }, [room, localParticipant, currentPage, highlightedAyah, highlightedWordIdx, allowIndependentReading, isTeacher]);
 
   useEffect(() => {
-    if (!room) return;
+    if (!room) return undefined;
 
     const handleDataReceived = (payload, participant) => {
       try {
@@ -302,7 +409,6 @@ export default function SyncedMushaf({
         if (!senderIdentity.startsWith('teacher:') && !senderIdentity.startsWith('admin:')) {
           return;
         }
-
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type !== 'MUSHAF_ACTION') return;
 
@@ -320,11 +426,13 @@ export default function SyncedMushaf({
           if (!isTeacher && !isIndependentMode) {
             setCurrentPage(safePage);
             setHighlightedAyah(safeAyahId);
+            setHighlightedWordIdx(-1);
             showSyncToast(`${t.live.mushaf.movedToPage} ${safePage}`);
           }
         } else if (data.action === 'AYAH_HIGHLIGHT') {
           if (!isTeacher && !isIndependentMode) {
             setHighlightedAyah(safeAyahId);
+            setHighlightedWordIdx(Number.isInteger(data.wordIndex) ? data.wordIndex : -1);
           }
         } else if (data.action === 'MODE_TOGGLE') {
           setAllowIndependentReading(Boolean(data.allowIndependent));
@@ -335,7 +443,7 @@ export default function SyncedMushaf({
           }
         }
       } catch {
-        // ignore non-matching messages
+        // ignore non-matching packets
       }
     };
 
@@ -343,52 +451,88 @@ export default function SyncedMushaf({
     return () => room.off('dataReceived', handleDataReceived);
   }, [room, isTeacher, isIndependentMode, showSyncToast, t]);
 
-  const goToNextPage = useCallback(() => {
-    if (currentPage >= 604) return;
-    const next = currentPage + 1;
-    setCurrentPage(next);
+  const syncTeacherPageChange = useCallback((nextPage) => {
+    const surahObj = getSurahForPage(nextPage);
+    setCurrentPage(nextPage);
     setHighlightedAyah(null);
+    setHighlightedWordIdx(-1);
+    setSelectedWordInfo(null);
     setImageError(false);
 
     if (isTeacher) {
-      broadcastMushafAction('PAGE_CHANGE', { page: next, ayahId: null });
+      broadcastMushafAction('PAGE_CHANGE', { page: nextPage, ayahId: null, wordIndex: -1 });
+      onSyncMushaf?.({
+        page: nextPage,
+        surahNumber: surahObj.id,
+        ayahKey: '',
+        wordIndex: -1,
+        wordText: '',
+        spotlightWord: '',
+      });
     }
-  }, [currentPage, isTeacher, broadcastMushafAction]);
+  }, [isTeacher, broadcastMushafAction, onSyncMushaf]);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage >= 604) return;
+    syncTeacherPageChange(currentPage + 1);
+  }, [currentPage, syncTeacherPageChange]);
 
   const goToPrevPage = useCallback(() => {
     if (currentPage <= 1) return;
-    const prev = currentPage - 1;
-    setCurrentPage(prev);
-    setHighlightedAyah(null);
-    setImageError(false);
-
-    if (isTeacher) {
-      broadcastMushafAction('PAGE_CHANGE', { page: prev, ayahId: null });
-    }
-  }, [currentPage, isTeacher, broadcastMushafAction]);
+    syncTeacherPageChange(currentPage - 1);
+  }, [currentPage, syncTeacherPageChange]);
 
   const jumpToPage = useCallback((pageNum) => {
     const validPage = Math.max(1, Math.min(604, parseInt(pageNum, 10) || 1));
-    setCurrentPage(validPage);
-    setHighlightedAyah(null);
-    setImageError(false);
     setShowSurahModal(false);
+    syncTeacherPageChange(validPage);
+  }, [syncTeacherPageChange]);
 
-    if (isTeacher) {
-      broadcastMushafAction('PAGE_CHANGE', { page: validPage, ayahId: null });
-    }
-  }, [isTeacher, broadcastMushafAction]);
+  const jumpToSurahNumber = useCallback((surahNumber) => {
+    const found = QURAN_SURAHS.find((s) => s.id === Number(surahNumber));
+    if (found) jumpToPage(found.startPage);
+  }, [jumpToPage]);
 
-  const handleAyahClick = (ayahNum) => {
+  const handleWordOrAyahSelect = (ayah, wordIdx, wordStr) => {
     if (isObserver) return;
+    const ayahIdentifier = String(ayah.key || `${currentSurah.id}:${ayah.num}`);
+    const isSameSelection = highlightedAyah === ayahIdentifier && highlightedWordIdx === wordIdx;
 
-    const newHighlight = highlightedAyah === ayahNum ? null : ayahNum;
-    setHighlightedAyah(newHighlight);
+    const nextAyah = isSameSelection ? null : ayahIdentifier;
+    const nextWordIdx = isSameSelection ? -1 : wordIdx;
+    const nextWordText = isSameSelection ? '' : wordStr;
 
-    if (onAyahClick) onAyahClick(ayahNum);
+    setHighlightedAyah(nextAyah);
+    setHighlightedWordIdx(nextWordIdx);
+    setSelectedWordInfo(
+      isSameSelection
+        ? null
+        : {
+            ayahNum: ayah.num,
+            surahNumber: ayah.surahNum || currentSurah.id,
+            ayahKey: ayahIdentifier,
+            wordIndex: wordIdx,
+            wordText: wordStr || ayah.text,
+            ayahFullText: ayah.text,
+          }
+    );
+
+    if (onAyahClick) onAyahClick(ayahIdentifier);
 
     if (isTeacher) {
-      broadcastMushafAction('AYAH_HIGHLIGHT', { ayahId: newHighlight, page: currentPage });
+      broadcastMushafAction('AYAH_HIGHLIGHT', { ayahId: nextAyah, wordIndex: nextWordIdx, page: currentPage });
+      const activeVeil = mushafState?.hifzVeilMode || 'none';
+      const wordCompositeKey = `${ayahIdentifier}:${wordIdx}`;
+      onSyncMushaf?.({
+        page: currentPage,
+        surahNumber: ayah.surahNum || currentSurah.id,
+        ayahKey: nextAyah || '',
+        wordIndex: nextWordIdx,
+        wordText: nextWordText,
+        ...(activeVeil !== 'none' && !isSameSelection
+          ? { peekWordKey: wordCompositeKey, peekDurationMs: 3500 }
+          : {}),
+      });
     }
   };
 
@@ -397,6 +541,7 @@ export default function SyncedMushaf({
     const nextState = !allowIndependentReading;
     setAllowIndependentReading(nextState);
     broadcastMushafAction('MODE_TOGGLE', { allowIndependent: nextState, page: currentPage });
+    onSyncMushaf?.({ allowIndependent: nextState, page: currentPage });
   };
 
   const returnToTeacherSync = () => {
@@ -413,6 +558,12 @@ export default function SyncedMushaf({
   }, [searchQuery]);
 
   const pageVerseData = SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage];
+
+  useEffect(() => {
+    if (pageVerseData && onPageDataReady) {
+      onPageDataReady(pageVerseData);
+    }
+  }, [pageVerseData, onPageDataReady]);
 
   useEffect(() => {
     if (SAMPLE_PAGE_VERSES[currentPage] || dynamicPageVerses[currentPage]) {
@@ -438,7 +589,8 @@ export default function SyncedMushaf({
             isBismillah: false,
             verses: ayahs.map((a) => ({
               num: a.numberInSurah,
-              key: `${a.surah?.number || 0}:${a.numberInSurah}`,
+              surahNum: a.surah?.number || currentSurah.id,
+              key: `${a.surah?.number || currentSurah.id}:${a.numberInSurah}`,
               text: a.text,
             })),
           },
@@ -448,7 +600,7 @@ export default function SyncedMushaf({
         if (!cancelled) setAyahFetchError(true);
       });
     return () => { cancelled = true; };
-  }, [currentPage, dynamicPageVerses, ayahRetryNonce]);
+  }, [currentPage, dynamicPageVerses, ayahRetryNonce, currentSurah.id]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -465,6 +617,65 @@ export default function SyncedMushaf({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isRTL, isTeacher, isIndependentMode, goToNextPage, goToPrevPage]);
+
+  const hifzVeilMode = mushafState?.hifzVeilMode || 'none';
+  const spotlightWord = mushafState?.spotlightWord || '';
+  const pinnedMistakes = Array.isArray(mushafState?.pinnedMistakes) ? mushafState.pinnedMistakes : [];
+  const activePeekKey = (mushafState?.peekExpiresAt || 0) > nowMs ? mushafState?.peekWordKey : '';
+
+  const handlePlayQari = (repeatCount = 1) => {
+    if (!isTeacher) return;
+    const targetSurah = selectedWordInfo?.surahNumber || currentSurah.id;
+    const targetAyah = selectedWordInfo?.ayahNum || 1;
+    onSyncMushaf?.({
+      qariAudio: {
+        reciter: selectedReciter,
+        surah: targetSurah,
+        ayah: targetAyah,
+        repeat: repeatCount,
+        playing: true,
+      },
+    });
+  };
+
+  const handleStopQari = () => {
+    if (audioRef.current) audioRef.current.pause();
+    setIsAudioPlaying(false);
+    if (isTeacher) {
+      onSyncMushaf?.({
+        qariAudio: {
+          reciter: selectedReciter,
+          surah: currentSurah.id,
+          ayah: 1,
+          repeat: 1,
+          playing: false,
+        },
+      });
+    }
+  };
+
+  const handlePinWordMistake = async (type) => {
+    if (!isTeacher || !selectedWordInfo || !onPinMistake) return;
+    await onPinMistake({
+      surahNumber: selectedWordInfo.surahNumber || currentSurah.id,
+      surahName: currentSurah.name,
+      ayahNumber: selectedWordInfo.ayahNum || 1,
+      wordText: selectedWordInfo.wordText || '',
+      type,
+    });
+    showSyncToast('تم ختم الملاحظة على مصحف الطالب وحفظها في سجله ✅');
+  };
+
+  const handleStudentBell = async () => {
+    if (!onRingListenerBell) return;
+    try {
+      await onRingListenerBell(currentPage, highlightedAyah || '');
+      setBellSentNotice(true);
+      setTimeout(() => setBellSentNotice(false), 4000);
+    } catch {
+      // ignore cooldown
+    }
+  };
 
   return (
     <div className={`synced-mushaf-container mushaf-theme-${theme}`} ref={containerRef} dir={dir}>
@@ -564,7 +775,13 @@ export default function SyncedMushaf({
             <button
               type="button"
               className="mushaf-icon-btn text-[var(--wn-text-gold)]"
-              onClick={() => handleAyahClick(highlightedAyah)}
+              onClick={() => {
+                setHighlightedAyah(null);
+                setHighlightedWordIdx(-1);
+                setSelectedWordInfo(null);
+                broadcastMushafAction('AYAH_HIGHLIGHT', { ayahId: null, wordIndex: -1, page: currentPage });
+                onSyncMushaf?.({ ayahKey: '', wordIndex: -1, wordText: '', spotlightWord: '' });
+              }}
               aria-label={t.live.mushaf.clearHighlight}
               title={t.live.mushaf.clearHighlight}
             >
@@ -573,6 +790,33 @@ export default function SyncedMushaf({
           )}
         </div>
       </div>
+
+      {/* شريط الأدوات القرآنية المتقدم: ستار الحفظ، المقرئ المتزامن، وختم الأخطاء */}
+      <MushafWordInspectorBar
+        isTeacher={isTeacher}
+        isObserver={isObserver}
+        currentPage={currentPage}
+        currentSurah={currentSurah}
+        selectedWordInfo={selectedWordInfo}
+        hifzVeilMode={hifzVeilMode}
+        spotlightWord={spotlightWord}
+        isAudioPlaying={isAudioPlaying}
+        selectedReciter={selectedReciter}
+        onChangeReciter={setSelectedReciter}
+        onPlayQariAyah={handlePlayQari}
+        onStopQariAyah={handleStopQari}
+        onChangeVeilMode={(mode) => onSyncMushaf?.({ hifzVeilMode: mode, peekWordKey: '' })}
+        onToggleSpotlight={(word) => onSyncMushaf?.({ spotlightWord: word })}
+        onPinMistake={handlePinWordMistake}
+        pinnedMistakes={pinnedMistakes}
+        studentOpenMistakes={studentOpenMistakes}
+        onUndoOrResolveMistake={onUndoOrResolveMistake}
+        onJumpToSurahNumber={jumpToSurahNumber}
+        onRingListenerBell={handleStudentBell}
+        onOpenTajweedLab={onOpenTajweedLab}
+        onTeleportToWhiteboard={onTeleportToWhiteboard}
+        bellSentNotice={bellSentNotice}
+      />
 
       <AnimatePresence>
         {syncToast && (
@@ -662,26 +906,89 @@ export default function SyncedMushaf({
           {viewMode === 'interactive' && pageVerseData ? (
             <div className="mushaf-verses-flow">
               {pageVerseData.verses.map((ayah) => {
-                const ayahIdentifier = ayah.key || ayah.num;
-                const isHighlighted = highlightedAyah === ayahIdentifier || highlightedAyah === ayah.num;
+                const ayahIdentifier = String(ayah.key || `${ayah.surahNum || currentSurah.id}:${ayah.num}`);
+                const isAyahHighlighted = String(highlightedAyah) === ayahIdentifier || highlightedAyah === ayah.num;
+                const words = String(ayah.text || '').split(/\s+/).filter(Boolean);
+
                 return (
                   <span
                     key={ayahIdentifier}
-                    role={isObserver ? undefined : 'button'}
-                    tabIndex={isObserver ? -1 : 0}
-                    aria-pressed={isObserver ? undefined : isHighlighted}
-                    onClick={() => handleAyahClick(ayahIdentifier)}
-                    onKeyDown={(e) => {
-                      if (!isObserver && (e.key === 'Enter' || e.key === ' ')) {
-                        e.preventDefault();
-                        handleAyahClick(ayahIdentifier);
-                      }
-                    }}
-                    className={`mushaf-verse-span focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${isHighlighted ? 'mushaf-verse-highlighted' : ''}`}
-                    title={isTeacher ? t.live.mushaf.ayahTeacherTitle : t.live.mushaf.ayahStudentTitle}
+                    className={`mushaf-verse-span ${isAyahHighlighted && highlightedWordIdx < 0 ? 'mushaf-verse-highlighted' : ''}`}
                   >
-                    {ayah.text}
-                    <span className="ayah-number-badge">﴿{ayah.num}﴾</span>
+                    {words.map((word, wIdx) => {
+                      const wordCompositeKey = `${ayahIdentifier}:${wIdx}`;
+                      const isLaserWord = isAyahHighlighted && highlightedWordIdx === wIdx;
+                      const isPeeked = activePeekKey === wordCompositeKey;
+                      const hiddenForLearner = !isTeacher && !isIndependentMode && isWordHiddenByVeil(hifzVeilMode, wIdx) && !isPeeked;
+                      const veiledPreviewForTeacher = isTeacher && isWordHiddenByVeil(hifzVeilMode, wIdx);
+
+                      const mistakeMatch = pinnedMistakes.find(
+                        (m) =>
+                          m.surahNumber === (ayah.surahNum || currentSurah.id) &&
+                          m.ayahNumber === ayah.num &&
+                          m.wordText === word
+                      );
+
+                      return (
+                        <span
+                          key={wordCompositeKey}
+                          role={isObserver ? undefined : 'button'}
+                          tabIndex={isObserver ? -1 : 0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleWordOrAyahSelect(ayah, wIdx, word);
+                          }}
+                          onKeyDown={(e) => {
+                            if (!isObserver && (e.key === 'Enter' || e.key === ' ')) {
+                              e.preventDefault();
+                              handleWordOrAyahSelect(ayah, wIdx, word);
+                            }
+                          }}
+                          title={
+                            isTeacher && veiledPreviewForTeacher
+                              ? 'انقر لفتح هذه الكلمة للطالب لمدة ٣ ثوانٍ'
+                              : isTeacher
+                                ? 'انقر لتوجيه المؤشر الذهبي أو ختم ملاحظة'
+                                : undefined
+                          }
+                          className={`inline-block mx-0.5 px-1 rounded transition-all duration-200 ${
+                            hiddenForLearner
+                              ? 'blur-sm select-none opacity-20 bg-[var(--wn-gold-soft)]'
+                              : isPeeked
+                                ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] ring-2 ring-[var(--wn-emerald)] font-bold scale-105'
+                                : isLaserWord
+                                  ? 'mushaf-verse-highlighted ring-2 ring-[var(--wn-gold)] font-bold scale-105'
+                                  : veiledPreviewForTeacher
+                                    ? 'opacity-70 border-b border-dashed border-[var(--wn-gold)]'
+                                    : ''
+                          } ${
+                            mistakeMatch?.type === 'memorization'
+                              ? 'underline decoration-wavy decoration-[var(--wn-danger)]'
+                              : mistakeMatch?.type === 'tajweed'
+                                ? 'underline decoration-wavy decoration-[var(--wn-warning)]'
+                                : mistakeMatch?.type === 'tashkeel'
+                                  ? 'underline decoration-wavy decoration-[var(--wn-emerald)]'
+                                  : ''
+                          }`}
+                        >
+                          {word}
+                        </span>
+                      );
+                    })}
+                    <span
+                      role={isObserver ? undefined : 'button'}
+                      tabIndex={isObserver ? -1 : 0}
+                      onClick={() => handleWordOrAyahSelect(ayah, -1, '')}
+                      onKeyDown={(e) => {
+                        if (!isObserver && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          handleWordOrAyahSelect(ayah, -1, '');
+                        }
+                      }}
+                      className="ayah-number-badge cursor-pointer"
+                    >
+                      ﴿{ayah.num}﴾
+                    </span>
                   </span>
                 );
               })}

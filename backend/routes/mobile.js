@@ -9,6 +9,8 @@ const ALLOWED_PLATFORMS = new Set(['android', 'ios']);
 const DEFAULT_SITE_URL = (process.env.SITE_URL || 'https://wahywanamaa.com').replace(/\/+$/, '');
 const DEFAULT_LEARNER_ANDROID_APK_URL =
   'https://github.com/hamyn203-commits/wahy-wa-namaa-academy-/releases/latest/download/Wahy-Wa-Namaa-Academy.apk';
+const DEFAULT_TEACHER_ANDROID_APK_URL =
+  'https://github.com/hamyn203-commits/wahy-wa-namaa-academy-/releases/latest/download/Wahy-Wa-Namaa-Al-Muallim.apk';
 
 function sanitizeSemver(raw, fallback = '1.0.0') {
   const value = String(raw || '').trim();
@@ -55,8 +57,8 @@ router.get('/config', (req, res) => {
   const latestVersion = sanitizeSemver(process.env[`${prefix}_LATEST_VERSION`], '1.0.0');
   const minVersion = sanitizeSemver(process.env[`${prefix}_MIN_VERSION`], '1.0.0');
 
-  const fallbackDownloadUrl = app === 'learner' && platform === 'android'
-    ? DEFAULT_LEARNER_ANDROID_APK_URL
+  const fallbackDownloadUrl = platform === 'android'
+    ? (app === 'teacher' ? DEFAULT_TEACHER_ANDROID_APK_URL : DEFAULT_LEARNER_ANDROID_APK_URL)
     : `${DEFAULT_SITE_URL}/ar/app`;
   const envUrlKey = platform === 'ios'
     ? `${prefix}_IOS_STORE_URL`
@@ -84,6 +86,19 @@ router.get('/config', (req, res) => {
 });
 
 /**
+ * GET /api/mobile/download/teacher (alias: /download/al-muallim)
+ * Clean branded permanent download URL for the Teacher Android APK.
+ */
+router.get(['/download/teacher', '/download/al-muallim'], (_req, res) => {
+  const targetUrl = safeHttpsUrl(
+    process.env.MOBILE_TEACHER_ANDROID_APK_URL,
+    DEFAULT_TEACHER_ANDROID_APK_URL
+  );
+  res.setHeader('Cache-Control', 'no-store');
+  return res.redirect(302, targetUrl);
+});
+
+/**
  * GET /api/mobile/download/:platform?app=learner|teacher
  * Branded permanent academy download link that redirects safely to the latest
  * official release file (e.g. Wahy-Wa-Namaa-Academy.apk).
@@ -96,8 +111,8 @@ router.get('/download/:platform', (req, res) => {
   const platform = ALLOWED_PLATFORMS.has(rawPlatform) ? rawPlatform : 'android';
 
   const prefix = app === 'teacher' ? 'MOBILE_TEACHER' : 'MOBILE_LEARNER';
-  const fallbackDownloadUrl = app === 'learner' && platform === 'android'
-    ? DEFAULT_LEARNER_ANDROID_APK_URL
+  const fallbackDownloadUrl = platform === 'android'
+    ? (app === 'teacher' ? DEFAULT_TEACHER_ANDROID_APK_URL : DEFAULT_LEARNER_ANDROID_APK_URL)
     : `${DEFAULT_SITE_URL}/ar/app`;
   const envUrlKey = platform === 'ios'
     ? `${prefix}_IOS_STORE_URL`

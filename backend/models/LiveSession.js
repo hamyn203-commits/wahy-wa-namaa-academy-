@@ -20,7 +20,11 @@ const LiveSessionSchema = new mongoose.Schema({
   subject: { type: String, default: 'general' },
   isLive: { type: Boolean, default: false },
   participants: { type: Number, default: 0 },
+  classroomState: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({}),
+  },
   createdAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, minimize: false });
 
 module.exports = mongoose.model('LiveSession', LiveSessionSchema);

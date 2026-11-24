@@ -1,0 +1,92 @@
+{
+  "expo": {
+    "name": "معلم وحي ونماء",
+    "slug": "wahy-wa-namaa-teacher",
+    "owner": "wahy-wa-namaa",
+    "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/93a33e1d-682a-4616-9f41-b4f7141429d1",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "orientation": "portrait",
+    "scheme": "wahywanamaateacher",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#073528"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wahywanamaa.teacher",
+      "infoPlist": {
+        "NSCameraUsageDescription": "تحتاج الأكاديمية إلى الكاميرا لإدارة حلقات القرآن الكريم المباشرة وتحديث الصورة الشخصية.",
+        "NSMicrophoneUsageDescription": "تحتاج الأكاديمية إلى الميكروفون للتسميع في الحلقات المباشرة وتسجيل الملاحظات الصوتية للطلاب.",
+        "NSPhotoLibraryUsageDescription": "يحتاج التطبيق إلى معرض الصور لاختيار صورة الملف الشخصي أو مرفقات الرسائل للطلاب."
+      }
+    },
+    "android": {
+      "package": "com.wahywanamaa.teacher",
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#073528"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "يحتاج تطبيق وحي ونماء للمعلم إلى الميكروفون لتسجيل الملاحظات الصوتية على واجبات الطلاب وإدارة الحلقات المباشرة."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يحتاج تطبيق وحي ونماء للمعلم إلى معرض الصور لتحديث صورة الملف الشخصي.",
+          "cameraPermission": "يحتاج تطبيق وحي ونماء للمعلم إلى الكاميرا لإدارة الحلقات المباشرة وتصوير الملف الشخصي."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0F6B4F"
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "appAudience": "teacher",
+      "apiBaseUrl": "https://api.wahywanamaa.com",
+      "siteUrl": "https://wahywanamaa.com",
+      "supportsRTL": true,
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "93a33e1d-682a-4616-9f41-b4f7141429d1"
+      }
+    }
+  }
+}

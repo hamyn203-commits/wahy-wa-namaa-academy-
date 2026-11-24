@@ -91,4 +91,24 @@ test('GET /api/mobile/config computes soft/forced updates and enforces safe HTTP
   });
   assert.equal(dlRedirect.status, 302);
   assert.equal(dlRedirect.location, 'https://wahywanamaa.com/downloads/student-v1.2.0.apk');
+
+  // 6) Teacher download routes fall back safely (302) to default HTTPS teacher APK URL when env is invalid
+  const teacherDlRedirect = await new Promise((resolve, reject) => {
+    http.get(`${baseUrl}/api/mobile/download/android?app=teacher`, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode, location: res.headers.location });
+    }).on('error', reject);
+  });
+  assert.equal(teacherDlRedirect.status, 302);
+  assert.match(teacherDlRedirect.location, /^https:\/\/.*Wahy-Wa-Namaa-Al-Muallim\.apk$/);
+
+  // 7) Clean short branded teacher link (/api/mobile/download/teacher) redirects identically
+  const teacherShortRedirect = await new Promise((resolve, reject) => {
+    http.get(`${baseUrl}/api/mobile/download/teacher`, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode, location: res.headers.location });
+    }).on('error', reject);
+  });
+  assert.equal(teacherShortRedirect.status, 302);
+  assert.match(teacherShortRedirect.location, /^https:\/\/.*Wahy-Wa-Namaa-Al-Muallim\.apk$/);
 });

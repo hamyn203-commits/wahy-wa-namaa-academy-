@@ -1,0 +1,15 @@
+# Keep EAS Build archive tiny (only mobile/teacher-app source & assets)
+node_modules/
+**/node_modules/
+.expo/
+dist/
+.expo-verify-dist/
+android/
+ios/
+*.log
+*.apk
+*.aab
+*.jks
+*.keystore
+*.zip
+*.tar.gz

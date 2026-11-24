@@ -11,6 +11,13 @@ const Guardian = require('../models/Guardian');
 const GroupCircle = require('../models/GroupCircle');
 const { verifyAccessToken, requireRole } = require('../middleware/auth');
 const { sessionParticipantWindow } = require('../services/sessionAccess');
+const {
+  applyHostStatePatch,
+  recordStudentGameAnswer,
+  recordActiveListenerBell,
+  recordStudentWhiteboardAction,
+  presentClassroomState,
+} = require('../services/classroomStateService');
 
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
@@ -140,6 +147,7 @@ async function buildSessionContext(liveSession, bookedSession) {
     const users = await User.find({ _id: { $in: Array.from(studentIds) } }).select('_id name').lean().catch(() => []);
     roster = users.map((u) => ({
       id: `student:${u._id}`,
+      userId: String(u._id),
       name: String(u.name || 'طالب').trim(),
       avatar: String(u.name || 'ط').trim().charAt(0) || 'ط',
     }));
@@ -294,6 +302,10 @@ router.post('/token', verifyAccessToken, async (req, res) => {
       roomId: liveSession.roomId,
       serverUrl: LIVEKIT_URL,
       sessionContext,
+      classroomState: presentClassroomState(liveSession.classroomState, {
+        isHost: access.isHost,
+        viewerUserId: req.user.id,
+      }),
       permissions: {
         role,
         isHost: access.isHost,
@@ -591,6 +603,220 @@ router.patch('/sessions/:roomId/live', verifyAccessToken, requireRole('teacher',
     return res.json({ ...presentLiveSession(liveSession, access), sessionContext });
   } catch {
     return res.status(500).json({ message: 'Failed to update session' });
+  }
+});
+
+async function resolveAuthorizedRoomForState(roomName, user) {
+  let liveSession = await findLiveSessionByRoomOrSession(roomName);
+  const bookedIdFromRoom = bookedSessionIdFromRoomName(roomName);
+
+  if (!liveSession && bookedIdFromRoom) {
+    const bookedSession = await Session.findById(bookedIdFromRoom)
+      .select('_id student circle teacher attendance scheduledAt duration timezone status type');
+    if (bookedSession && bookedSession.status === 'accepted') {
+      const preflightAccess = await getRoomAccess({ session: bookedSession._id }, user);
+      if (!preflightAccess.allowed) {
+        return { liveSession: null, access: preflightAccess, notFound: false };
+      }
+      const roomId = `session_${crypto.randomBytes(16).toString('hex')}`;
+      try {
+        liveSession = await LiveSession.create({
+          roomId,
+          session: bookedSession._id,
+          createdBy: user.id,
+          title: bookedSession.type === 'trial' ? 'حصة تجريبية' : 'حلقة تعليمية',
+          description: 'غرفة الأكاديمية المباشرة الموحدة',
+          subject: 'quran',
+          isLive: false,
+          participants: 0,
+          classroomState: {},
+        });
+      } catch (createError) {
+        if (createError?.code !== 11000) throw createError;
+        liveSession = await LiveSession.findOne({ session: bookedSession._id });
+      }
+      if (liveSession) await syncBookedSessionLiveLink(bookedSession, liveSession.roomId);
+    }
+  }
+
+  if (!liveSession) {
+    return { liveSession: null, access: null, notFound: true };
+  }
+
+  const access = await getRoomAccess(liveSession, user);
+  return { liveSession, access, notFound: false };
+}
+
+async function persistClassroomState(liveSession, nextState) {
+  liveSession.classroomState = nextState;
+  if (typeof liveSession.markModified === 'function') {
+    liveSession.markModified('classroomState');
+  }
+  if (typeof liveSession.save === 'function') {
+    await liveSession.save();
+  } else if (liveSession._id && typeof LiveSession.updateOne === 'function') {
+    await LiveSession.updateOne(
+      { _id: liveSession._id },
+      { $set: { classroomState: nextState } }
+    ).catch(() => {});
+  }
+}
+
+router.get('/sessions/:roomId/state', verifyAccessToken, async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed) {
+      return res.status(403).json({ message: 'You are not assigned to this live session' });
+    }
+
+    const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
+    return res.json({
+      roomId: liveSession.roomId,
+      canManage: Boolean(access.isHost),
+      isObserver: Boolean(access.isObserver),
+      permissions: {
+        role: req.user.role,
+        isHost: Boolean(access.isHost),
+        isObserver: Boolean(access.isObserver),
+        canPublish: !access.isObserver && ['student', 'teacher', 'admin'].includes(req.user.role),
+      },
+      sessionContext,
+      classroomState: presentClassroomState(liveSession.classroomState, {
+        isHost: Boolean(access.isHost),
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to load classroom state' });
+  }
+});
+
+router.patch('/sessions/:roomId/state', verifyAccessToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || !access?.isHost) {
+      return res.status(403).json({ message: 'Not authorized to manage classroom state' });
+    }
+
+    const nextState = applyHostStatePatch(liveSession.classroomState, req.body || {});
+    await persistClassroomState(liveSession, nextState);
+
+    return res.json({
+      roomId: liveSession.roomId,
+      classroomState: presentClassroomState(nextState, {
+        isHost: true,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to update classroom state' });
+  }
+});
+
+router.post('/sessions/:roomId/game-answer', verifyAccessToken, requireRole('student'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || access?.isObserver) {
+      return res.status(403).json({ message: 'You are not assigned as an active learner in this session' });
+    }
+
+    const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
+    const studentName = String(participantUser?.name || req.user.name || 'طالب').trim().slice(0, 80);
+
+    const outcome = recordStudentGameAnswer(liveSession.classroomState, {
+      studentId: req.user.id,
+      studentName,
+      answer: req.body?.answer,
+    });
+
+    if (!outcome.ok) {
+      return res.status(outcome.status || 400).json({ message: outcome.message });
+    }
+
+    await persistClassroomState(liveSession, outcome.state);
+
+    return res.status(201).json({
+      submission: outcome.submission,
+      classroomState: presentClassroomState(outcome.state, {
+        isHost: false,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to submit game answer' });
+  }
+});
+
+router.post('/sessions/:roomId/listener-bell', verifyAccessToken, requireRole('student'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || access?.isObserver) {
+      return res.status(403).json({ message: 'You are not assigned as an active learner in this session' });
+    }
+
+    const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
+    const studentName = String(participantUser?.name || req.user.name || 'طالب').trim().slice(0, 80);
+
+    const outcome = recordActiveListenerBell(liveSession.classroomState, {
+      studentId: req.user.id,
+      studentName,
+      page: req.body?.page,
+      ayahKey: req.body?.ayahKey,
+    });
+
+    if (!outcome.ok) {
+      return res.status(outcome.status || 400).json({ message: outcome.message });
+    }
+
+    await persistClassroomState(liveSession, outcome.state);
+
+    return res.status(201).json({
+      alert: outcome.alert,
+      classroomState: presentClassroomState(outcome.state, {
+        isHost: false,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to send active listener alert' });
+  }
+});
+
+router.post('/sessions/:roomId/whiteboard-action', verifyAccessToken, requireRole('student'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || access?.isObserver) {
+      return res.status(403).json({ message: 'You are not assigned as an active learner in this session' });
+    }
+
+    const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
+    const studentName = String(participantUser?.name || req.user.name || 'طالب').trim().slice(0, 80);
+
+    const outcome = recordStudentWhiteboardAction(liveSession.classroomState, {
+      studentId: req.user.id,
+      studentName,
+      actionPayload: req.body || {},
+    });
+
+    if (!outcome.ok) {
+      return res.status(outcome.status || 400).json({ message: outcome.message });
+    }
+
+    await persistClassroomState(liveSession, outcome.state);
+
+    return res.status(201).json({
+      classroomState: presentClassroomState(outcome.state, {
+        isHost: false,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to update whiteboard' });
   }
 });
 
