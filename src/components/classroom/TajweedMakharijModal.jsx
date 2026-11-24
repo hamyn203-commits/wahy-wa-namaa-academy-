@@ -90,14 +90,16 @@ export default function TajweedMakharijModal({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-w-[44px] min-h-[44px] rounded-xl inline-flex items-center justify-center hover:bg-[var(--wn-surface-sunken)] text-[var(--wn-text-secondary)] cursor-pointer"
-            aria-label="إغلاق"
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
+          {isTeacher && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-w-[44px] min-h-[44px] rounded-xl inline-flex items-center justify-center hover:bg-[var(--wn-surface-sunken)] text-[var(--wn-text-secondary)] cursor-pointer"
+              aria-label="إغلاق"
+            >
+              <X size={20} aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <div className="p-2.5 border-b border-[var(--wn-border)] bg-[var(--wn-surface)] flex flex-wrap gap-2">

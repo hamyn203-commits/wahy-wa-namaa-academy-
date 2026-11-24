@@ -13,6 +13,7 @@ const INITIAL_CLASSROOM_STATE = {
     peekWordKey: '',
     peekExpiresAt: 0,
     allowIndependent: false,
+    studentPointer: null,
     qariAudio: { reciter: 'Husary_Muallim_128kbps', surah: 1, ayah: 1, repeat: 1, playing: false, nonce: 0 },
     pinnedMistakes: [],
   },
@@ -49,6 +50,7 @@ const INITIAL_CLASSROOM_STATE = {
   whiteboard: {
     mode: 'ayah',
     permission: 'teacher_only',
+    boardsFrozen: false,
     delegatedStudentId: '',
     delegatedStudentName: '',
     featuredStudentId: '',
@@ -61,6 +63,16 @@ const INITIAL_CLASSROOM_STATE = {
     stamps: [],
     studentBoards: {},
     teleportNonce: 0,
+  },
+  controls: {
+    activeStageTab: 'mushaf',
+    followTeacherTab: true,
+    micPolicy: 'open',
+    activeReciterUserId: '',
+    cameraAllowed: false,
+    chatMode: 'teacher_only',
+    allowHandRaise: true,
+    studentPointerAllowed: false,
   },
   updatedAtMs: 0,
 };
@@ -99,6 +111,7 @@ export default function useClassroomSync({
       activeGame: { ...prev.activeGame, ...(incoming.activeGame || {}) },
       engagement: { ...prev.engagement, ...(incoming.engagement || {}) },
       whiteboard: { ...prev.whiteboard, ...(incoming.whiteboard || {}) },
+      controls: { ...prev.controls, ...(incoming.controls || {}) },
     }));
   }, []);
 
@@ -250,6 +263,20 @@ export default function useClassroomSync({
     return res?.classroomState || null;
   }, [isObserver, isHost, roomId, applyIncomingState, publishRealtimePacket]);
 
+  const submitStudentPointer = useCallback(async (pointerPayload) => {
+    if (isObserver || isHost || !roomId) return null;
+    const res = await api.post(
+      `/api/live/sessions/${encodeURIComponent(roomId)}/student-pointer`,
+      pointerPayload,
+      { auth: true }
+    );
+    if (res?.classroomState) {
+      applyIncomingState(res.classroomState, true);
+    }
+    publishRealtimePacket({ type: 'CLASSROOM_SYNC', nudge: 'REFRESH_STATE' });
+    return res?.classroomState || null;
+  }, [isObserver, isHost, roomId, applyIncomingState, publishRealtimePacket]);
+
   const pinStudentMistake = useCallback(async ({ surahNumber, surahName, ayahNumber, wordText, type, note = '' }) => {
     if (!isHost) return null;
     let annotationId = '';
@@ -307,6 +334,7 @@ export default function useClassroomSync({
     submitGameAnswer,
     ringListenerBell,
     submitWhiteboardStudentAction,
+    submitStudentPointer,
     pinStudentMistake,
     undoOrResolveMistake,
     refreshStudentMemory,

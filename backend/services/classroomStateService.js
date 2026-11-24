@@ -20,6 +20,9 @@ const ALLOWED_WB_MODES = new Set(['ayah', 'tracing', 'miniboards']);
 const ALLOWED_WB_PERMISSIONS = new Set(['teacher_only', 'delegated', 'all_miniboards']);
 const ALLOWED_PEN_COLORS = new Set(['madd', 'ghunnah', 'qalqalah', 'silent', 'emerald', 'laser']);
 const ALLOWED_BOARD_BADGES = new Set(['', 'star', 'retry']);
+const ALLOWED_STAGE_TABS = new Set(['mushaf', 'whiteboard', 'games', 'circle', 'video']);
+const ALLOWED_MIC_POLICIES = new Set(['open', 'reciter_only', 'locked']);
+const ALLOWED_CHAT_MODES = new Set(['teacher_only', 'everyone', 'locked']);
 
 function clampInt(val, min, max, fallback) {
   const parsed = Number.parseInt(val, 10);
@@ -92,6 +95,7 @@ function normalizeClassroomState(raw = {}) {
   const g = src.activeGame && typeof src.activeGame === 'object' ? src.activeGame : {};
   const e = src.engagement && typeof src.engagement === 'object' ? src.engagement : {};
   const wb = src.whiteboard && typeof src.whiteboard === 'object' ? src.whiteboard : {};
+  const ctrl = src.controls && typeof src.controls === 'object' ? src.controls : {};
   const now = Date.now();
 
   const rawBoards = wb.studentBoards && typeof wb.studentBoards === 'object' ? wb.studentBoards : {};
@@ -142,6 +146,17 @@ function normalizeClassroomState(raw = {}) {
       peekWordKey: cleanStr(m.peekWordKey, 48, ''),
       peekExpiresAt: Number.isFinite(Number(m.peekExpiresAt)) ? Number(m.peekExpiresAt) : 0,
       allowIndependent: Boolean(m.allowIndependent),
+      studentPointer: m.studentPointer && typeof m.studentPointer === 'object' && m.studentPointer.studentId
+        ? {
+            studentId: cleanStr(m.studentPointer.studentId, 64, ''),
+            studentName: cleanStr(m.studentPointer.studentName, 80, 'طالب'),
+            page: clampInt(m.studentPointer.page, 1, 604, page),
+            ayahKey: cleanStr(m.studentPointer.ayahKey, 32, ''),
+            wordIndex: clampInt(m.studentPointer.wordIndex, -1, 250, -1),
+            wordText: cleanStr(m.studentPointer.wordText, 100, ''),
+            timestamp: Number(m.studentPointer.timestamp) || now,
+          }
+        : null,
       qariAudio: m.qariAudio && typeof m.qariAudio === 'object'
         ? {
             reciter: cleanStr(m.qariAudio.reciter, 60, 'Husary_Muallim_128kbps'),
@@ -235,6 +250,7 @@ function normalizeClassroomState(raw = {}) {
     whiteboard: {
       mode: ALLOWED_WB_MODES.has(wb.mode) ? wb.mode : 'ayah',
       permission: ALLOWED_WB_PERMISSIONS.has(wb.permission) ? wb.permission : 'teacher_only',
+      boardsFrozen: Boolean(wb.boardsFrozen),
       delegatedStudentId: cleanStr(wb.delegatedStudentId, 64, ''),
       delegatedStudentName: cleanStr(wb.delegatedStudentName, 80, ''),
       featuredStudentId: cleanStr(wb.featuredStudentId, 64, ''),
@@ -247,6 +263,16 @@ function normalizeClassroomState(raw = {}) {
       stamps: normalizeStamps(wb.stamps, 30),
       studentBoards,
       teleportNonce: clampInt(wb.teleportNonce, 0, 1e9, 0),
+    },
+    controls: {
+      activeStageTab: ALLOWED_STAGE_TABS.has(ctrl.activeStageTab) ? ctrl.activeStageTab : 'mushaf',
+      followTeacherTab: ctrl.followTeacherTab !== undefined ? Boolean(ctrl.followTeacherTab) : true,
+      micPolicy: ALLOWED_MIC_POLICIES.has(ctrl.micPolicy) ? ctrl.micPolicy : 'open',
+      activeReciterUserId: cleanStr(ctrl.activeReciterUserId, 64, ''),
+      cameraAllowed: Boolean(ctrl.cameraAllowed),
+      chatMode: ALLOWED_CHAT_MODES.has(ctrl.chatMode) ? ctrl.chatMode : 'teacher_only',
+      allowHandRaise: ctrl.allowHandRaise !== undefined ? Boolean(ctrl.allowHandRaise) : true,
+      studentPointerAllowed: Boolean(ctrl.studentPointerAllowed),
     },
     updatedAtMs: Number(src.updatedAtMs) || 0,
   };
@@ -261,6 +287,7 @@ function applyHostStatePatch(existingRaw = {}, patch = {}) {
     const pm = patch.mushaf;
     if (pm.page !== undefined) {
       next.mushaf.page = clampInt(pm.page, 1, 604, next.mushaf.page);
+      next.mushaf.studentPointer = null;
       if (!next.engagement.visitedPages.includes(next.mushaf.page) && next.engagement.visitedPages.length < 50) {
         next.engagement.visitedPages.push(next.mushaf.page);
       }
@@ -438,6 +465,9 @@ function applyHostStatePatch(existingRaw = {}, patch = {}) {
     if (pw.permission !== undefined && ALLOWED_WB_PERMISSIONS.has(pw.permission)) {
       next.whiteboard.permission = pw.permission;
     }
+    if (pw.boardsFrozen !== undefined) {
+      next.whiteboard.boardsFrozen = Boolean(pw.boardsFrozen);
+    }
     if (pw.delegatedStudentId !== undefined) {
       next.whiteboard.delegatedStudentId = cleanStr(pw.delegatedStudentId, 64, '');
     }
@@ -465,6 +495,7 @@ function applyHostStatePatch(existingRaw = {}, patch = {}) {
     if (pw.clearStudentBoards) {
       next.whiteboard.studentBoards = {};
       next.whiteboard.featuredStudentId = '';
+      next.whiteboard.boardsFrozen = false;
     }
     if (pw.addStroke && typeof pw.addStroke === 'object') {
       const normalized = normalizeStrokes(
@@ -521,8 +552,64 @@ function applyHostStatePatch(existingRaw = {}, patch = {}) {
     }
   }
 
+  if (patch.controls && typeof patch.controls === 'object') {
+    const pc = patch.controls;
+    if (pc.activeStageTab !== undefined && ALLOWED_STAGE_TABS.has(pc.activeStageTab)) {
+      next.controls.activeStageTab = pc.activeStageTab;
+    }
+    if (pc.followTeacherTab !== undefined) {
+      next.controls.followTeacherTab = Boolean(pc.followTeacherTab);
+    }
+    if (pc.micPolicy !== undefined && ALLOWED_MIC_POLICIES.has(pc.micPolicy)) {
+      next.controls.micPolicy = pc.micPolicy;
+    }
+    if (pc.activeReciterUserId !== undefined) {
+      const rawReciter = cleanStr(pc.activeReciterUserId, 64, '');
+      next.controls.activeReciterUserId = rawReciter.startsWith('student:')
+        ? rawReciter.slice('student:'.length)
+        : rawReciter;
+    }
+    if (pc.cameraAllowed !== undefined) {
+      next.controls.cameraAllowed = Boolean(pc.cameraAllowed);
+    }
+    if (pc.chatMode !== undefined && ALLOWED_CHAT_MODES.has(pc.chatMode)) {
+      next.controls.chatMode = pc.chatMode;
+    }
+    if (pc.allowHandRaise !== undefined) {
+      next.controls.allowHandRaise = Boolean(pc.allowHandRaise);
+    }
+    if (pc.studentPointerAllowed !== undefined) {
+      next.controls.studentPointerAllowed = Boolean(pc.studentPointerAllowed);
+      if (!next.controls.studentPointerAllowed) {
+        next.mushaf.studentPointer = null;
+      }
+    }
+  }
+
   next.updatedAtMs = now;
   return next;
+}
+
+function recordStudentMushafPointer(existingRaw = {}, { studentId, studentName, pointerPayload = {} }) {
+  const next = normalizeClassroomState(existingRaw);
+  const cleanId = cleanStr(studentId, 64, '');
+  if (!cleanId) {
+    return { ok: false, status: 400, message: 'Invalid student identifier' };
+  }
+  if (!next.controls.studentPointerAllowed) {
+    return { ok: false, status: 403, message: 'مؤشر الطالب مقفل — يفتحه المعلم فقط عند السؤال' };
+  }
+  next.mushaf.studentPointer = {
+    studentId: cleanId,
+    studentName: cleanStr(studentName, 80, 'طالب'),
+    page: clampInt(pointerPayload.page, 1, 604, next.mushaf.page),
+    ayahKey: cleanStr(pointerPayload.ayahKey, 32, ''),
+    wordIndex: clampInt(pointerPayload.wordIndex, -1, 250, -1),
+    wordText: cleanStr(pointerPayload.wordText, 100, ''),
+    timestamp: Date.now(),
+  };
+  next.updatedAtMs = Date.now();
+  return { ok: true, state: next };
 }
 
 function recordStudentWhiteboardAction(existingRaw = {}, { studentId, studentName, actionPayload = {} }) {
@@ -530,6 +617,9 @@ function recordStudentWhiteboardAction(existingRaw = {}, { studentId, studentNam
   const cleanId = cleanStr(studentId, 64, '');
   if (!cleanId || cleanId.startsWith('$') || cleanId.includes('.')) {
     return { ok: false, status: 400, message: 'Invalid student identifier' };
+  }
+  if (next.whiteboard.boardsFrozen) {
+    return { ok: false, status: 423, message: 'قام المعلم بتجميد الألواح للمراجعة والتصحيح' };
   }
   const now = Date.now();
   const perm = next.whiteboard.permission;
@@ -735,5 +825,6 @@ module.exports = {
   recordStudentGameAnswer,
   recordActiveListenerBell,
   recordStudentWhiteboardAction,
+  recordStudentMushafPointer,
   presentClassroomState,
 };

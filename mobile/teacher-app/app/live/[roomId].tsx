@@ -48,6 +48,11 @@ interface RemoteClassroomState {
   whiteboard?: {
     mode?: string;
     permission?: string;
+    boardsFrozen?: boolean;
+  };
+  controls?: {
+    micPolicy?: 'open' | 'reciter_only' | 'locked';
+    cameraAllowed?: boolean;
   };
 }
 
@@ -293,6 +298,34 @@ export default function TeacherLiveClassroomScreen() {
             </Pressable>
 
             <Pressable
+              onPress={() => {
+                const curMic = roomState.controls?.micPolicy || 'open';
+                const nextMic = curMic === 'open' ? 'reciter_only' : curMic === 'reciter_only' ? 'locked' : 'open';
+                const msg =
+                  nextMic === 'reciter_only'
+                    ? 'المايك مفتوح للقارئ فقط 🎙️'
+                    : nextMic === 'locked'
+                      ? 'تم قفل ميكروفونات جميع الطلاب 🔇'
+                      : 'الميكروفونات متاحة الآن';
+                void sendHostPatch({ controls: { micPolicy: nextMic } }, msg);
+              }}
+              style={[styles.veilBtn, (roomState.controls?.micPolicy || 'open') !== 'open' && styles.veilBtnActive]}
+            >
+              <Text
+                style={[
+                  styles.veilBtnText,
+                  (roomState.controls?.micPolicy || 'open') !== 'open' && styles.veilBtnTextActive,
+                ]}
+              >
+                {(roomState.controls?.micPolicy || 'open') === 'open'
+                  ? '🎙️ المايك: متاح'
+                  : roomState.controls?.micPolicy === 'reciter_only'
+                    ? '🎙️ المايك: للقارئ فقط'
+                    : '🔇 المايك: مقفل'}
+              </Text>
+            </Pressable>
+
+            <Pressable
               onPress={() =>
                 void sendHostPatch(
                   {
@@ -318,6 +351,22 @@ export default function TeacherLiveClassroomScreen() {
                 {roomState.whiteboard?.permission === 'all_miniboards' ? '🧩 إغلاق ألواح الطلاب' : '🎨 فتح ألواح الطلاب'}
               </Text>
             </Pressable>
+
+            {roomState.whiteboard?.permission === 'all_miniboards' ? (
+              <Pressable
+                onPress={() =>
+                  void sendHostPatch(
+                    { whiteboard: { boardsFrozen: !roomState.whiteboard?.boardsFrozen } },
+                    roomState.whiteboard?.boardsFrozen ? 'تم فك تجميد الألواح' : '❄️ تم تجميد ألواح الطلاب للمراجعة'
+                  )
+                }
+                style={[styles.veilBtn, roomState.whiteboard?.boardsFrozen && styles.veilBtnActive]}
+              >
+                <Text style={[styles.veilBtnText, roomState.whiteboard?.boardsFrozen && styles.veilBtnTextActive]}>
+                  {roomState.whiteboard?.boardsFrozen ? '❄️ فك التجميد' : '❄️ تجميد الألواح'}
+                </Text>
+              </Pressable>
+            ) : null}
 
             <Pressable
               onPress={() =>

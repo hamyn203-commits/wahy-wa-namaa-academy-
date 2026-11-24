@@ -32,6 +32,9 @@ export default function MushafWordInspectorBar({
   onRingListenerBell,
   onOpenTajweedLab,
   onTeleportToWhiteboard,
+  allowHandRaise = true,
+  studentPointerAllowed = false,
+  studentPointer = null,
   bellSentNotice = false,
 }) {
   const sajdahInfo = SAJDAH_PAGES_MAP[currentPage] || null;
@@ -82,7 +85,12 @@ export default function MushafWordInspectorBar({
                 🫣 وضع التسميع الغيبي مفعّل من المعلم — سمِّع غيباً بارك الله فيك
               </span>
             )}
-            {!isObserver && (
+            {studentPointerAllowed && (
+              <span className="px-2.5 py-1 rounded-lg bg-[var(--wn-emerald-soft)] border border-[var(--wn-emerald)] text-[var(--wn-badge-emerald-text)] font-bold">
+                👆 أذن لك المعلم بالإشارة — انقر على الكلمة المطلوبة في الآية
+              </span>
+            )}
+            {!isObserver && allowHandRaise && (
               <button
                 type="button"
                 onClick={onRingListenerBell}
@@ -212,6 +220,15 @@ export default function MushafWordInspectorBar({
           <div className="text-4xl md:text-5xl font-serif font-bold text-[var(--wn-heading)] py-1" dir="rtl">
             {spotlightWord}
           </div>
+        </div>
+      )}
+
+      {/* إشارة الطالب النشطة على المصحف (بإذن المعلم) */}
+      {studentPointer?.wordText && studentPointer.page === currentPage && (
+        <div className="p-2 px-3 rounded-xl bg-[var(--wn-emerald-soft)] border border-[var(--wn-emerald)] flex items-center justify-between gap-2 text-[var(--wn-badge-emerald-text)]">
+          <span className="font-bold">
+            👆 أشار {studentPointer.studentName || 'الطالب'} إلى كلمة: <span className="font-serif text-base">«{studentPointer.wordText}»</span>
+          </span>
         </div>
       )}
 

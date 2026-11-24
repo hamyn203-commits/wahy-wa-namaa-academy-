@@ -263,6 +263,7 @@ export default function SmartQuranWhiteboard({
 
   const mode = whiteboardState?.mode || 'ayah';
   const permission = whiteboardState?.permission || 'teacher_only';
+  const boardsFrozen = Boolean(whiteboardState?.boardsFrozen);
   const delegatedStudentId = whiteboardState?.delegatedStudentId || '';
   const featuredStudentId = whiteboardState?.featuredStudentId || '';
   const ayahText = whiteboardState?.ayahText || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
@@ -295,8 +296,9 @@ export default function SmartQuranWhiteboard({
   const canDrawOnActiveSurface =
     !isObserver &&
     (isTeacher ||
-      (permission === 'delegated' && String(currentUserId) === String(delegatedStudentId)) ||
-      isMiniBoardStudentView);
+      (!boardsFrozen &&
+        ((permission === 'delegated' && String(currentUserId) === String(delegatedStudentId)) ||
+          isMiniBoardStudentView)));
 
   const activeStrokes = featuredBoard
     ? featuredBoard.strokes || []
@@ -484,6 +486,20 @@ export default function SmartQuranWhiteboard({
                 <UserCheck size={13} aria-hidden="true" />
                 <span>لوح لكل طالب</span>
               </button>
+
+              {permission !== 'teacher_only' && (
+                <button
+                  type="button"
+                  onClick={() => onHostUpdateWhiteboard?.({ boardsFrozen: !boardsFrozen })}
+                  className={`min-h-[36px] px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer ${
+                    boardsFrozen
+                      ? 'bg-[var(--wn-danger-soft)] border-[var(--wn-danger)] text-[var(--wn-text-danger)]'
+                      : 'bg-[var(--wn-surface-soft)] border-[var(--wn-border)] text-[var(--wn-text-secondary)]'
+                  }`}
+                >
+                  {boardsFrozen ? '❄️ الألواح مجمّدة (فك التجميد)' : '❄️ تجميد ألواح الطلاب'}
+                </button>
+              )}
             </>
           )}
 
@@ -629,7 +645,7 @@ export default function SmartQuranWhiteboard({
       {canDrawOnActiveSurface && (
         <div className="rounded-2xl border border-[var(--wn-border)] bg-[var(--wn-surface)] p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex flex-wrap items-center gap-1.5">
-            {TAJWEED_PENS.map((pen) => (
+            {TAJWEED_PENS.filter((pen) => isTeacher || !pen.isLaser).map((pen) => (
               <button
                 key={pen.id}
                 type="button"
@@ -717,13 +733,15 @@ export default function SmartQuranWhiteboard({
       {!isTeacher && (
         <div className="px-3 py-1.5 rounded-xl bg-[var(--wn-emerald-soft)] border border-[var(--wn-border-mint)] flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-[var(--wn-badge-emerald-text)]">
           <span>
-            {featuredBoard
-              ? `🌟 يعرض المعلم الآن لوح الطالب المتفوق: ${featuredBoard.studentName}`
-              : isMiniBoardStudentView
-                ? '🧩 هذا لوحك الشخصي المستقل — ارسم أو ضع أختام التشكيل وسيرى المعلم إجابتك مباشرة!'
-                : permission === 'delegated' && String(currentUserId) === String(delegatedStudentId)
-                  ? '🎯 فوّضك المعلم للكتابة الآن على السبورة الرئيسية أمام زملائك!'
-                  : '👀 أنت تتابع شرح المعلم المباشر على السبورة'}
+            {boardsFrozen
+              ? '❄️ قام المعلم بتجميد الألواح لمراجعة الإجابات وتصحيحها'
+              : featuredBoard
+                ? `🌟 يعرض المعلم الآن لوح الطالب المتفوق: ${featuredBoard.studentName}`
+                : isMiniBoardStudentView
+                  ? '🧩 هذا لوحك الشخصي المستقل — ارسم أو ضع أختام التشكيل وسيرى المعلم إجابتك مباشرة!'
+                  : permission === 'delegated' && String(currentUserId) === String(delegatedStudentId)
+                    ? '🎯 فوّضك المعلم للكتابة الآن على السبورة الرئيسية أمام زملائك!'
+                    : '👀 أنت تتابع شرح المعلم المباشر على السبورة'}
           </span>
           {isMiniBoardStudentView && myMiniBoard.badge === 'star' && (
             <span className="px-2.5 py-0.5 rounded-full bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)] border border-[var(--wn-gold)]">
