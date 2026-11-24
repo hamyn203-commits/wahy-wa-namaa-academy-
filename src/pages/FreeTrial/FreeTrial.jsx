@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   BookOpen,
   Award,
@@ -311,18 +311,21 @@ const LOCALE_CHROME = {
 export default function FreeTrial() {
   const { locale, isRTL, dir } = useI18n();
   const { locale: paramLocale } = useParams();
+  const [searchParams] = useSearchParams();
   const { createWebPageSchema, createBreadcrumbSchema } = useSEO();
   const activeLocale = paramLocale || locale || DEFAULT_LOCALE;
   const lp = (path) => localizedPath(path, activeLocale);
 
   const [step, setStep] = useState(1);
+  const [availableTeachers, setAvailableTeachers] = useState([]);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => ({
     track: 'memorization',
     studentName: '',
     age: '',
     gender: 'male',
     currentLevel: 'beginner',
+    teacherId: String(searchParams.get('teacherId') || '').trim(),
     guardianName: '',
     countryCode: '+966',
     whatsapp: '',
@@ -331,7 +334,30 @@ export default function FreeTrial() {
     preferredDay: 'tomorrow',
     customDate: '',
     notes: ''
-  });
+  }));
+
+  useEffect(() => {
+    let active = true;
+    api.get('/api/teachers?limit=50')
+      .then((res) => {
+        if (!active) return;
+        const list = Array.isArray(res?.teachers) ? res.teachers : [];
+        setAvailableTeachers(list);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const compatibleTeachers = useMemo(() => {
+    const parsedAge = Number(formData.age);
+    const isYoungChild = Number.isFinite(parsedAge) && parsedAge > 0 && parsedAge < 12;
+    return availableTeachers.filter((tItem) => {
+      const tGender = tItem?.personalInfo?.gender;
+      if (!tGender) return true;
+      if (isYoungChild) return true;
+      return tGender === formData.gender;
+    });
+  }, [availableTeachers, formData.age, formData.gender]);
 
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -646,6 +672,7 @@ export default function FreeTrial() {
       gender: formData.gender,
       currentLevel: formData.currentLevel,
       guardianName: formData.guardianName.trim(),
+      teacherId: formData.teacherId || undefined,
       countryCode: formData.countryCode,
       whatsapp: `${formData.countryCode}${formData.whatsapp.trim().replace(/^0+/, '')}`,
       email: formData.email.trim() || undefined,
@@ -991,6 +1018,39 @@ export default function FreeTrial() {
                         <span>{text.genderNotice}</span>
                       </div>
                     </fieldset>
+
+                    {compatibleTeachers.length > 0 && (
+                      <div>
+                        <label htmlFor="trial-teacher-select" className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-1.5">
+                          {isRTL ? 'اختيار معلم أو معلمة محددة (اختياري — يصل الطلب للمعلم مباشرة)' : 'Choose a Specific Teacher (Optional — routed directly to teacher)'}
+                        </label>
+                        <select
+                          id="trial-teacher-select"
+                          value={compatibleTeachers.some((tItem) => String(tItem._id) === String(formData.teacherId)) ? formData.teacherId : ''}
+                          onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
+                          className={fieldCls(false)}
+                        >
+                          <option value="">
+                            {isRTL ? 'دع الأكاديمية ترشح لي المعلم الأنسب تلقائياً' : 'Let the Academy match the ideal teacher for me'}
+                          </option>
+                          {compatibleTeachers.map((tItem) => {
+                            const tName = tItem?.personalInfo?.fullName || tItem?.user?.name || (isRTL ? 'معلم قرآن' : 'Quran Teacher');
+                            return (
+                              <option key={tItem._id} value={tItem._id}>
+                                {tName}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        {formData.teacherId && compatibleTeachers.some((tItem) => String(tItem._id) === String(formData.teacherId)) && (
+                          <p className="text-xs text-[var(--wn-emerald)] font-semibold mt-1.5">
+                            {isRTL
+                              ? '✓ سيصل طلب الحصة التجريبية مباشرة إلى المعلم المختار فور الإرسال دون انتظار تعيين يدوي.'
+                              : '✓ Your trial class will be sent directly to your selected teacher immediately.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     <fieldset>
                       <legend className="block text-sm font-semibold text-[var(--wn-text-primary)] mb-2">

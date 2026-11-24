@@ -59,6 +59,42 @@ function teacherHasIjazah(teacher?: PublicTeacher | null): boolean {
   );
 }
 
+interface AvailableSlotItem {
+  startsAt: string;
+  duration?: number;
+  teacherLocalDate?: string;
+  teacherLocalTime?: string;
+}
+
+const FALLBACK_HOUR_CHIPS = ['10:00', '13:00', '16:00', '18:00', '20:00', '21:00'] as const;
+
+function getDeviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo';
+  } catch {
+    return 'Africa/Cairo';
+  }
+}
+
+function buildNextDays(count = 7): Array<{ isoDate: string; labelAr: string; labelEn: string }> {
+  const out: Array<{ isoDate: string; labelAr: string; labelEn: string }> = [];
+  for (let i = 1; i <= count; i += 1) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const isoDate = d.toISOString().slice(0, 10);
+    const labelAr =
+      i === 1
+        ? `غداً (${d.toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' })})`
+        : d.toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' });
+    const labelEn =
+      i === 1
+        ? `Tomorrow (${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })})`
+        : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    out.push({ isoDate, labelAr, labelEn });
+  }
+  return out;
+}
+
 export default function TeachersScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string; teacherId?: string }>();
@@ -86,6 +122,14 @@ export default function TeachersScreen() {
   const deepLinkedRef = useRef(false);
 
   // Trial form state
+  const [chosenTeacher, setChosenTeacher] = useState<PublicTeacher | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [teacherSlotsConfigured, setTeacherSlotsConfigured] = useState(false);
+  const [teacherSlots, setTeacherSlots] = useState<AvailableSlotItem[]>([]);
+  const [selectedSlotIso, setSelectedSlotIso] = useState('');
+  const nextDays = useMemo(() => buildNextDays(7), []);
+  const [selectedFallbackDate, setSelectedFallbackDate] = useState<string>(() => buildNextDays(7)[0]?.isoDate || '');
+  const [selectedFallbackHour, setSelectedFallbackHour] = useState<string>('18:00');
   const [studentName, setStudentName] = useState(user?.name || '');
   const [guardianName, setGuardianName] = useState(user?.role === 'guardian' ? user?.name || '' : '');
   const [whatsappPhone, setWhatsappPhone] = useState(user?.phone || '');
@@ -95,6 +139,28 @@ export default function TeachersScreen() {
   const [preferredTeacherGender, setPreferredTeacherGender] = useState<'male' | 'female' | 'any'>('any');
   const [notes, setNotes] = useState('');
   const [submittingTrial, setSubmittingTrial] = useState(false);
+
+  const loadTeacherSlots = useCallback(async (teacherId: string) => {
+    setSlotsLoading(true);
+    setSelectedSlotIso('');
+    try {
+      const res = await api.get<{ configured?: boolean; slots?: AvailableSlotItem[] }>(
+        `/api/sessions/available-slots/${encodeURIComponent(teacherId)}?days=14`
+      );
+      const list = Array.isArray(res?.slots) ? res.slots : [];
+      const configured = Boolean(res?.configured) && list.length > 0;
+      setTeacherSlotsConfigured(configured);
+      setTeacherSlots(list);
+      if (configured && list[0]?.startsAt) {
+        setSelectedSlotIso(list[0].startsAt);
+      }
+    } catch {
+      setTeacherSlotsConfigured(false);
+      setTeacherSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
 
   const openTeacherProfile = useCallback(async (teacher: PublicTeacher) => {
     setSelectedTeacher(teacher);
@@ -182,15 +248,15 @@ export default function TeachersScreen() {
   }, [loadData]);
 
   const handleBookWithTeacher = (teacher: PublicTeacher) => {
-    const teacherName = teacher.personalInfo?.fullName || teacher.user?.name || '';
+    setChosenTeacher(teacher);
     if (teacher.personalInfo?.gender) {
       setPreferredTeacherGender(teacher.personalInfo.gender);
+      const parsedAgeNum = parseInt(age, 10);
+      if (!Number.isFinite(parsedAgeNum) || parsedAgeNum >= 12) {
+        setGender(teacher.personalInfo.gender);
+      }
     }
-    setNotes(
-      locale === 'ar'
-        ? `أرغب في حجز الحصة التجريبية مع المعلم/ة: ${teacherName}`
-        : `Requesting trial with teacher: ${teacherName}`
-    );
+    void loadTeacherSlots(teacher._id);
     closeTeacherProfile();
     setTab('trial');
   };
@@ -209,9 +275,19 @@ export default function TeachersScreen() {
       return;
     }
 
+    const tz = getDeviceTimezone();
+    let scheduledAt: string | undefined;
+    if (chosenTeacher) {
+      if (teacherSlotsConfigured && selectedSlotIso) {
+        scheduledAt = selectedSlotIso;
+      } else if (selectedFallbackDate && selectedFallbackHour) {
+        scheduledAt = `${selectedFallbackDate}T${selectedFallbackHour}:00`;
+      }
+    }
+
     setSubmittingTrial(true);
     try {
-      const res = await api.post<{ message?: string }>(
+      const res = await api.post<{ message?: string; directTeacherAssigned?: boolean }>(
         '/api/trials',
         {
           studentName: studentName.trim(),
@@ -222,17 +298,32 @@ export default function TeachersScreen() {
           gender,
           preferredTrack,
           preferredTeacherGender,
+          ...(chosenTeacher ? { teacherId: chosenTeacher._id, scheduledAt, timezone: tz } : {}),
           notes: notes.trim(),
         },
         { auth: true }
       );
-      Alert.alert(
-        t.common.success,
+      const successMsg =
         res.message
-          || (locale === 'ar'
+        || (res.directTeacherAssigned
+          ? locale === 'ar'
+            ? 'تم إرسال طلب الحصة التجريبية مباشرة إلى المعلم المختار بنجاح! ستجد الحصة في تبويب الحصص.'
+            : 'Your trial class request was sent directly to your selected teacher!'
+          : locale === 'ar'
             ? 'تم تسجيل طلب الحصة التجريبية المجانية بنجاح!'
-            : 'Free trial request submitted successfully!')
-      );
+            : 'Free trial request submitted successfully!');
+
+      if (res.directTeacherAssigned) {
+        Alert.alert(t.common.success, successMsg, [
+          {
+            text: locale === 'ar' ? 'الذهاب إلى حصصي' : 'View My Sessions',
+            onPress: () => router.push('/(tabs)/sessions'),
+          },
+          { text: locale === 'ar' ? 'حسناً' : 'OK' },
+        ]);
+      } else {
+        Alert.alert(t.common.success, successMsg);
+      }
       setNotes('');
       void loadData(true);
     } catch (err) {
@@ -452,6 +543,141 @@ export default function TeachersScreen() {
               {locale === 'ar' ? 'احجز حصتك التجريبية المجانية' : 'Book Your Free Trial Class'}
             </Text>
 
+            {/* المعلم المختار (توجيه مباشر فوري للمعلم دون انتظار الإدارة) */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { textAlign: align }]}>
+                {locale === 'ar' ? 'المعلم المختار' : 'Selected Teacher'}
+              </Text>
+              {chosenTeacher ? (
+                <View style={[styles.chosenTeacherBox, { flexDirection: rowDir }]}>
+                  <TeacherAvatar
+                    uri={resolveTeacherPhotoUrl(chosenTeacher)}
+                    name={chosenTeacher.personalInfo?.fullName || chosenTeacher.user?.name || ''}
+                    size={46}
+                  />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.teacherName, { textAlign: align, fontSize: 14 }]} numberOfLines={1}>
+                      {chosenTeacher.personalInfo?.fullName || chosenTeacher.user?.name || ''}
+                    </Text>
+                    <Text style={[styles.chosenHintText, { textAlign: align }]}>
+                      {locale === 'ar'
+                        ? '✓ يصل الطلب للمعلم مباشرة فوراً دون انتظار تعيين يدوي'
+                        : '✓ Sent directly to this teacher immediately'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      setChosenTeacher(null);
+                      setTeacherSlots([]);
+                      setSelectedSlotIso('');
+                    }}
+                    style={styles.clearTeacherBtn}
+                  >
+                    <Text style={styles.clearTeacherText}>
+                      {locale === 'ar' ? 'تغيير' : 'Change'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={{ gap: spacing.xs }}>
+                  <Text style={[styles.trialMeta, { textAlign: align }]}>
+                    {locale === 'ar'
+                      ? 'اختر معلماً ليذهب الطلب إليه مباشرة، أو اتركه فارغاً لترشح لك الإدارة:'
+                      : 'Pick a teacher for direct booking, or leave unselected for Academy matching:'}
+                  </Text>
+                  {teachers.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.videoTabsRow}>
+                      {teachers
+                        .filter((item) => {
+                          const parsedAgeNum = parseInt(age, 10);
+                          if (Number.isFinite(parsedAgeNum) && parsedAgeNum > 0 && parsedAgeNum < 12) return true;
+                          return !item.personalInfo?.gender || item.personalInfo.gender === gender;
+                        })
+                        .slice(0, 15)
+                        .map((item) => {
+                          const tName = item.personalInfo?.fullName || item.user?.name || '';
+                          return (
+                            <Pressable
+                              key={item._id}
+                              onPress={() => {
+                                setChosenTeacher(item);
+                                void loadTeacherSlots(item._id);
+                              }}
+                              style={styles.chip}
+                            >
+                              <Text style={styles.chipText}>{tName}</Text>
+                            </Pressable>
+                          );
+                        })}
+                    </ScrollView>
+                  ) : null}
+                </View>
+              )}
+            </View>
+
+            {chosenTeacher ? (
+              <View style={styles.field}>
+                <Text style={[styles.label, { textAlign: align }]}>
+                  {locale === 'ar' ? 'اختر الموعد المناسب مع المعلم' : 'Pick Date & Time with Teacher'}
+                </Text>
+                {slotsLoading ? (
+                  <ActivityIndicator size="small" color={colors.emerald} />
+                ) : teacherSlotsConfigured && teacherSlots.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.videoTabsRow}>
+                    {teacherSlots.slice(0, 18).map((slot) => {
+                      const active = selectedSlotIso === slot.startsAt;
+                      const formatted = new Date(slot.startsAt).toLocaleString(
+                        locale === 'ar' ? 'ar-EG' : 'en-US',
+                        { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }
+                      );
+                      return (
+                        <Pressable
+                          key={slot.startsAt}
+                          onPress={() => setSelectedSlotIso(slot.startsAt)}
+                          style={[styles.chip, active && styles.chipActive]}
+                        >
+                          <Text style={[styles.chipText, active && styles.chipTextActive]}>{formatted}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <View style={{ gap: spacing.xs }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.videoTabsRow}>
+                      {nextDays.map((d) => {
+                        const active = selectedFallbackDate === d.isoDate;
+                        return (
+                          <Pressable
+                            key={d.isoDate}
+                            onPress={() => setSelectedFallbackDate(d.isoDate)}
+                            style={[styles.chip, active && styles.chipActive]}
+                          >
+                            <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                              {locale === 'ar' ? d.labelAr : d.labelEn}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.videoTabsRow}>
+                      {FALLBACK_HOUR_CHIPS.map((hr) => {
+                        const active = selectedFallbackHour === hr;
+                        return (
+                          <Pressable
+                            key={hr}
+                            onPress={() => setSelectedFallbackHour(hr)}
+                            style={[styles.chip, active && styles.chipActive]}
+                          >
+                            <Text style={[styles.chipText, active && styles.chipTextActive]}>{hr}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            ) : null}
+
             <View style={styles.field}>
               <Text style={[styles.label, { textAlign: align }]}>
                 {locale === 'ar' ? 'اسم الطالب' : 'Student Name'}
@@ -577,14 +803,40 @@ export default function TeachersScreen() {
               <Text style={[styles.formTitle, { textAlign: align }]}>
                 {locale === 'ar' ? 'طلبات الحصص التجريبية السابقة' : 'My Trial Requests'}
               </Text>
-              {myTrials.map((tr) => (
-                <View key={tr._id} style={styles.trialRow}>
-                  <Text style={[styles.trialTitle, { textAlign: align }]}>{tr.studentName}</Text>
-                  <Text style={[styles.trialMeta, { textAlign: align }]}>
-                    {tr.status} {tr.createdAt ? `• ${new Date(tr.createdAt).toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US')}` : ''}
-                  </Text>
-                </View>
-              ))}
+              {myTrials.map((tr) => {
+                const assignedName =
+                  tr.assignedTeacher?.personalInfo?.fullName || tr.assignedTeacher?.user?.name || '';
+                const statusText =
+                  tr.status === 'scheduled'
+                    ? locale === 'ar'
+                      ? 'موجهة للمعلم المختار'
+                      : 'Sent to Teacher'
+                    : tr.status === 'completed'
+                      ? locale === 'ar'
+                        ? 'مكتملة'
+                        : 'Completed'
+                      : tr.status === 'cancelled'
+                        ? locale === 'ar'
+                          ? 'ملغاة'
+                          : 'Cancelled'
+                        : locale === 'ar'
+                          ? 'قيد ترشيح معلم'
+                          : 'Pending Match';
+                return (
+                  <View key={tr._id} style={styles.trialRow}>
+                    <Text style={[styles.trialTitle, { textAlign: align }]}>
+                      {tr.studentName}
+                      {assignedName ? ` • ${assignedName}` : ''}
+                    </Text>
+                    <Text style={[styles.trialMeta, { textAlign: align }]}>
+                      {statusText}{' '}
+                      {tr.createdAt
+                        ? `• ${new Date(tr.createdAt).toLocaleDateString(locale === 'ar' ? 'ar-EG' : 'en-US')}`
+                        : ''}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           ) : null}
         </ScrollView>
@@ -1062,6 +1314,33 @@ const styles = StyleSheet.create({
   trackOptionActive: { borderColor: colors.emerald, backgroundColor: colors.emeraldSoft },
   trackText: { fontSize: 14, fontFamily: fonts.semiBold, color: colors.textSecondary },
   trackTextActive: { color: colors.emeraldDark, fontFamily: fonts.bold },
+  chosenTeacherBox: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.emeraldSoft,
+    borderWidth: 1.2,
+    borderColor: colors.emerald,
+  },
+  chosenHintText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.emeraldDark,
+  },
+  clearTeacherBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  clearTeacherText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: colors.emeraldDark,
+  },
   trialRow: {
     padding: spacing.md,
     borderRadius: radius.md,

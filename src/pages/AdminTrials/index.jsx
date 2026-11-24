@@ -156,7 +156,7 @@ export default function AdminTrials() {
   const intlLocale = resolveIntlLocale(locale);
   const cancelReasonId = useId();
   const showLoadError = toast.error;
-  const [filter, setFilter] = useState('pending');
+  const [filter, setFilter] = useState('all');
   const [trials, setTrials] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -337,10 +337,18 @@ export default function AdminTrials() {
                     </p>
                     {trial.notes ? <p className="text-xs text-[var(--wn-text-secondary)] whitespace-pre-line">{pt.card.notes}: {trial.notes}</p> : null}
                     {trial.assignedTeacher ? (
-                      <p className="text-sm text-[var(--wn-text-primary)]">
-                        {pt.card.teacher}: <strong>{teacherName(trial.assignedTeacher, pt.card.teacherFallback)}</strong>
-                        {session?.scheduledAt ? <> · {pt.card.scheduledAt}: <strong>{formatDate(session.scheduledAt, intlLocale, dash, true)}</strong></> : null}
-                      </p>
+                      <div className="space-y-1">
+                        <p className="text-sm text-[var(--wn-text-primary)]">
+                          {pt.card.teacher}: <strong>{teacherName(trial.assignedTeacher, pt.card.teacherFallback)}</strong>
+                          {session?.scheduledAt ? <> · {pt.card.scheduledAt}: <strong>{formatDate(session.scheduledAt, intlLocale, dash, true)}</strong></> : null}
+                        </p>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-status-success-bg)] text-[var(--wn-status-success-text)] px-2.5 py-0.5 text-xs font-semibold">
+                          <UserCheck size={12} aria-hidden="true" />
+                          {isRTL
+                            ? `مُسندة للمعلم مباشرة (${session?.status === 'pending' ? 'بانتظار قبول المعلم' : 'مؤكدة'}) — للعلم والمتابعة`
+                            : `Assigned to teacher (${session?.status === 'pending' ? 'awaiting teacher acceptance' : 'confirmed'}) — FYI`}
+                        </span>
+                      </div>
                     ) : null}
                     {trial.assessment?.level ? (
                       <p className="text-sm text-[var(--wn-emerald)]">

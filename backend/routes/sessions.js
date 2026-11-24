@@ -8,6 +8,7 @@ const Teacher = require('../models/Teacher');
 const TeacherTask = require('../models/TeacherTask');
 const StudentSubscription = require('../models/StudentSubscription');
 const GroupCircle = require('../models/GroupCircle');
+const TrialRequest = require('../models/TrialRequest');
 const { protect, authorize } = require('../middleware/auth');
 const meetingService = require('../services/meetingService');
 const { meetingVisibleToRole, sessionParticipantWindow } = require('../services/sessionAccess');
@@ -32,6 +33,7 @@ const {
   notifyTeacherForSessionRequest,
   notifySessionAccepted,
   notifyGuardiansForStudent,
+  notifyAdmins,
   notifyUser,
 } = require('../utils/notify');
 
@@ -43,6 +45,10 @@ const {
 } = require('../utils/safeguarding');
 const { createScopedRateLimiter } = require('../middleware/userRateLimit');
 const isDBConnected = () => mongoose.connection.readyState === 1;
+const canWriteTrialRequest = () =>
+  (isDBConnected() && Boolean(mongoose.connection?.db))
+  || TrialRequest.create !== mongoose.Model.create
+  || TrialRequest.updateOne !== mongoose.Model.updateOne;
 const isValidObjectId = (id) => Boolean(id && mongoose.Types.ObjectId.isValid(String(id)));
 
 const sessionReportLimiter = createScopedRateLimiter({
@@ -241,13 +247,21 @@ async function sessionIncludesStudent(session, studentId) {
 
 router.post('/trial', protect, authorize('student'), async (req, res) => {
   try {
-    const student = await User.findById(req.user.id).select('name phone gender age enrollmentSection onboarding preferredTrack');
+    const student = await User.findById(req.user.id).select('name phone whatsappPhone email gender age enrollmentSection onboarding preferredTrack currentLevel');
     if (!student?.name?.trim() || !student?.phone?.trim()
         || (student.onboarding?.required && !student.onboarding.completed)) {
       return res.status(403).json({ code: 'PROFILE_INCOMPLETE', error: 'Complete your student profile before booking' });
     }
     if (student.onboarding?.trackSelected !== true) {
-      return res.status(403).json({ code: 'TRACK_REQUIRED', error: 'Select your learning track before booking' });
+      if (!student.preferredTrack) student.preferredTrack = 'memorization';
+      if (typeof student.set === 'function') {
+        student.set('onboarding.trackSelected', true);
+      } else {
+        student.onboarding = { ...(student.onboarding || {}), trackSelected: true };
+      }
+      if (typeof student.save === 'function') {
+        await student.save().catch(() => {});
+      }
     }
 
     const { teacherId, scheduledAt, timezone, notes } = req.body;
@@ -256,7 +270,7 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
       _id: teacherId, 
       status: 'approved', 
       isVerified: true 
-    });
+    }).populate('user', 'name');
 
     if (!teacher) {
       return res.status(404).json({ error: 'Teacher not found or not available' });
@@ -387,12 +401,60 @@ router.post('/trial', protect, authorize('student'), async (req, res) => {
     }
 
     const { session, trialUsed, trialRemaining } = outcome;
+    const teacherUserId = teacher.user?._id || teacher.user;
+    const teacherDisplayName = teacher.personalInfo?.fullName || teacher.user?.name || 'المعلم';
+    const sessionTz = String(session.timezone || timezone || 'Africa/Cairo');
+    const formattedWhen = new Date(session.scheduledAt).toLocaleString('ar-EG', { timeZone: sessionTz });
+
+    // Create a linked TrialRequest already assigned to the chosen teacher so:
+    // 1. Admin sees it in /admin/trials as already assigned (no manual teacher selection needed)
+    // 2. Teacher can submit level assessment via /api/trials/by-session/:sessionId after completion
+    if (canWriteTrialRequest()) {
+      await TrialRequest.create({
+        studentName: student.name.trim(),
+        phone: student.phone,
+        whatsappPhone: student.whatsappPhone || student.phone,
+        email: student.email || '',
+        age: student.age,
+        gender: student.gender || 'male',
+        preferredTrack: ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(student.preferredTrack)
+          ? student.preferredTrack
+          : 'memorization',
+        preferredTeacherGender: teacher.personalInfo?.gender || 'any',
+        currentLevel: student.currentLevel || '',
+        preferredDate: session.scheduledAt,
+        assignedTeacher: teacher._id,
+        scheduledSession: session._id,
+        studentUser: student._id,
+        submittedBy: student._id,
+        status: 'scheduled',
+        notes: notes ? String(notes).slice(0, 1500) : '',
+      }).catch((err) => {
+        console.warn('TrialRequest sync warning:', err?.message);
+      });
+    }
 
     try {
-      await notifyTeacherForSessionRequest(session, teacher.user);
+      if (teacherUserId) {
+        await notifyTeacherForSessionRequest(session, teacherUserId);
+      }
     } catch (e) {
       console.warn('Session request notification:', e.message);
     }
+
+    notifyAdmins({
+      type: 'system',
+      title: {
+        ar: 'إشعار حصة تجريبية مباشرة (للعلم)',
+        en: 'Direct trial session booked (FYI)',
+      },
+      message: {
+        ar: `حجز الطالب ${student.name} حصة تجريبية مباشرة مع المعلم ${teacherDisplayName} في موعد ${formattedWhen} (${sessionTz}) — أُرسلت للمعلم مباشرة دون حاجة لتعيين يدوي.`,
+        en: `Student ${student.name} booked a direct trial session with ${teacherDisplayName} for ${new Date(session.scheduledAt).toISOString()} — routed directly to the teacher.`,
+      },
+      data: { session: session._id, actionUrl: '/admin/trials' },
+      priority: 'medium',
+    }).catch((e) => console.warn('Admin trial FYI notification:', e.message));
 
     res.status(201).json({
       success: true,
@@ -959,6 +1021,12 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
     } else if (action === 'reject') {
       session.status = 'rejected';
       session.cancellationReason = reason;
+      if (session.type === 'trial' && canWriteTrialRequest()) {
+        await TrialRequest.updateOne(
+          { scheduledSession: session._id, status: 'scheduled' },
+          { $set: { status: 'cancelled' } }
+        ).catch(() => {});
+      }
     } else if (action === 'reschedule') {
       const timezone = safeTimeZone(
         rescheduleTimezone
@@ -1033,6 +1101,12 @@ router.put('/:id/respond', protect, authorize('teacher'), async (req, res) => {
           rescheduledFrom: session._id,
           cancellationReason: undefined,
         });
+        if (session.type === 'trial' && canWriteTrialRequest()) {
+          await TrialRequest.updateOne(
+            { scheduledSession: session._id },
+            { $set: { scheduledSession: newSession._id, preferredDate: proposedDate } }
+          ).catch(() => {});
+        }
       } catch (createErr) {
         session.status = previousStatus;
         session.cancellationReason = previousCancellationReason;

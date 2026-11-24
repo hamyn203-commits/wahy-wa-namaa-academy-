@@ -237,11 +237,12 @@ export default function TeacherSessionsScreen() {
 
     if (session.type === 'trial') {
       try {
-        const res = await api.get<{ trialRequest?: { _id?: string } }>(
+        const res = await api.get<{ trial?: { _id?: string }; trialRequest?: { _id?: string } }>(
           `/api/trials/by-session/${session._id}`,
           { auth: true }
         );
-        if (res.trialRequest?._id) setTrialRequestId(res.trialRequest._id);
+        const linkedId = res.trial?._id || res.trialRequest?._id;
+        if (linkedId) setTrialRequestId(linkedId);
       } catch {
         // Optional trial assessment lookup.
       }
