@@ -296,4 +296,41 @@ test('Live classroom state sync, Hifz veil, anti-cheat games, and active-listene
   assert.ok(teacherBoards.data.classroomState.whiteboard.studentBoards[ids.student1]);
   assert.ok(teacherBoards.data.classroomState.whiteboard.studentBoards[ids.student2]);
   assert.equal(teacherBoards.data.classroomState.whiteboard.studentBoards[ids.student1].badge, 'star');
+
+  // 9. Freeze Student Boards (423) + Student Mushaf Pointer permission gate (403 until allowed -> 201)
+  await req('PATCH', `/api/live/sessions/${liveDoc.roomId}/state`, users.teacher, {
+    whiteboard: { boardsFrozen: true },
+  });
+  const frozenAttempt = await req('POST', `/api/live/sessions/${liveDoc.roomId}/whiteboard-action`, users.student1, {
+    clearMine: true,
+  });
+  assert.equal(frozenAttempt.status, 423);
+
+  const lockedPointer = await req('POST', `/api/live/sessions/${liveDoc.roomId}/student-pointer`, users.student1, {
+    page: 562,
+    ayahKey: '67:2',
+    wordIndex: 1,
+    wordText: 'خَلَقَ',
+  });
+  assert.equal(lockedPointer.status, 403);
+
+  await req('PATCH', `/api/live/sessions/${liveDoc.roomId}/state`, users.teacher, {
+    controls: {
+      studentPointerAllowed: true,
+      micPolicy: 'reciter_only',
+      activeReciterUserId: ids.student1,
+      cameraAllowed: false,
+      chatMode: 'teacher_only',
+      followTeacherTab: true,
+    },
+  });
+
+  const allowedPointer = await req('POST', `/api/live/sessions/${liveDoc.roomId}/student-pointer`, users.student1, {
+    page: 562,
+    ayahKey: '67:2',
+    wordIndex: 1,
+    wordText: 'خَلَقَ',
+  });
+  assert.equal(allowedPointer.status, 201);
+  assert.equal(allowedPointer.data.classroomState.mushaf.studentPointer.wordText, 'خَلَقَ');
 });

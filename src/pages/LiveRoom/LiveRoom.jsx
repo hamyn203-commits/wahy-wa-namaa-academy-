@@ -33,6 +33,7 @@ import CircleTurnManager from '../../components/classroom/CircleTurnManager';
 import LiveQuranGameArena from '../../components/classroom/LiveQuranGameArena';
 import TajweedMakharijModal from '../../components/classroom/TajweedMakharijModal';
 import LiveEncouragementOverlay from '../../components/classroom/LiveEncouragementOverlay';
+import TeacherPermissionsModal from '../../components/classroom/TeacherPermissionsModal';
 import useClassroomSync from '../../components/classroom/useClassroomSync';
 import { inspectMessage } from '../../components/classroom/ChatSafetyFilter';
 
@@ -56,9 +57,10 @@ function ClassroomStageCore({
   const { locale, dir, isRTL, t } = useI18n();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState('mushaf'); // 'mushaf' | 'games' | 'circle' | 'video'
+  const [activeTab, setActiveTab] = useState('mushaf'); // 'mushaf' | 'whiteboard' | 'games' | 'circle' | 'video'
   const [focusMode, setFocusMode] = useState(false);
   const [lowDataMode, setLowDataMode] = useState(false);
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [currentPageData, setCurrentPageData] = useState(null);
 
   const [showChat, setShowChat] = useState(false);
@@ -90,6 +92,7 @@ function ClassroomStageCore({
     submitGameAnswer,
     ringListenerBell,
     submitWhiteboardStudentAction,
+    submitStudentPointer,
     pinStudentMistake,
     undoOrResolveMistake,
   } = useClassroomSync({
@@ -101,6 +104,63 @@ function ClassroomStageCore({
     initialServerState,
     primaryStudentUserId,
   });
+
+  const controls = classroomState?.controls || {};
+  const followTeacherTab = controls.followTeacherTab !== false;
+  const micPolicy = controls.micPolicy || 'open';
+  const cameraAllowed = Boolean(controls.cameraAllowed);
+  const chatMode = controls.chatMode || 'teacher_only';
+  const allowHandRaise = controls.allowHandRaise !== false;
+  const studentPointerAllowed = Boolean(controls.studentPointerAllowed);
+
+  const canUseMic =
+    isHost ||
+    (!isObserver &&
+      (micPolicy === 'open' ||
+        (micPolicy === 'reciter_only' &&
+          Boolean(controls.activeReciterUserId) &&
+          String(currentUserId) === String(controls.activeReciterUserId))));
+
+  const canUseCamera = isHost || (!isObserver && cameraAllowed);
+
+  // Enforce Follow-Teacher-Screen lock on learners
+  useEffect(() => {
+    if (isHost || !followTeacherTab) return;
+    const hostTab = controls.activeStageTab || 'mushaf';
+    const resolvedTab = hostTab === 'video' && !hasLiveKitMedia ? 'mushaf' : hostTab;
+    setActiveTab(resolvedTab);
+  }, [isHost, followTeacherTab, controls.activeStageTab, hasLiveKitMedia]);
+
+  // Enforce Hard Microphone Lock & Camera Privacy Gate on learners
+  useEffect(() => {
+    if (isHost || !localParticipant?.localParticipant) return;
+    if (!canUseMic) {
+      try {
+        localParticipant.localParticipant.setMicrophoneEnabled(false);
+      } catch {
+        // ignore
+      }
+    }
+  }, [isHost, canUseMic, localParticipant]);
+
+  useEffect(() => {
+    if (isHost || !localParticipant?.localParticipant) return;
+    if (!canUseCamera) {
+      try {
+        localParticipant.localParticipant.setCameraEnabled(false);
+      } catch {
+        // ignore
+      }
+    }
+  }, [isHost, canUseCamera, localParticipant]);
+
+  const selectStageTab = useCallback((nextTab) => {
+    if (!isHost && followTeacherTab) return;
+    setActiveTab(nextTab);
+    if (isHost) {
+      updateClassroomState({ controls: { activeStageTab: nextTab } });
+    }
+  }, [isHost, followTeacherTab, updateClassroomState]);
 
   // Auto-focus learners onto the Live Challenges tab whenever the teacher launches a new game round
   useEffect(() => {
@@ -209,6 +269,7 @@ function ClassroomStageCore({
   const sendMessage = async (e) => {
     e.preventDefault();
     if (isObserver || !newMessage.trim() || !localParticipant?.localParticipant) return;
+    if (!isHost && chatMode === 'locked') return;
 
     const inspection = inspectMessage(newMessage);
     if (!inspection.isSafe) {
@@ -227,10 +288,20 @@ function ClassroomStageCore({
       timestamp: Date.now(),
     };
 
+    const hostIdentities =
+      !isHost && chatMode === 'teacher_only'
+        ? participants
+            .map((p) => p.identity)
+            .filter((id) => id && (String(id).startsWith('teacher:') || String(id).startsWith('admin:')))
+        : [];
+
     try {
       await localParticipant.localParticipant.publishData(
         new TextEncoder().encode(JSON.stringify(messageData)),
-        { reliable: true }
+        {
+          reliable: true,
+          ...(hostIdentities.length > 0 ? { destinationIdentities: hostIdentities } : {}),
+        }
       );
 
       setChatMessages((prev) => [...prev, {
@@ -324,10 +395,11 @@ function ClassroomStageCore({
           <button
             type="button"
             role="tab"
+            disabled={!isHost && followTeacherTab}
             aria-selected={activeTab === 'mushaf'}
             aria-label={t.live.room.mushafTab}
             className={`room-tab-btn ${activeTab === 'mushaf' ? 'active' : ''}`}
-            onClick={() => setActiveTab('mushaf')}
+            onClick={() => selectStageTab('mushaf')}
           >
             <BookOpen size={16} aria-hidden="true" />
             <span>{t.live.room.mushafTab}</span>
@@ -336,10 +408,11 @@ function ClassroomStageCore({
           <button
             type="button"
             role="tab"
+            disabled={!isHost && followTeacherTab}
             aria-selected={activeTab === 'whiteboard'}
             aria-label={t.live.room.whiteboardTab}
             className={`room-tab-btn relative ${activeTab === 'whiteboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('whiteboard')}
+            onClick={() => selectStageTab('whiteboard')}
           >
             <PenTool size={16} aria-hidden="true" />
             <span>{t.live.room.whiteboardTab}</span>
@@ -351,10 +424,11 @@ function ClassroomStageCore({
           <button
             type="button"
             role="tab"
+            disabled={!isHost && followTeacherTab}
             aria-selected={activeTab === 'games'}
             aria-label={t.live.room.gamesTab}
             className={`room-tab-btn relative ${activeTab === 'games' ? 'active' : ''}`}
-            onClick={() => setActiveTab('games')}
+            onClick={() => selectStageTab('games')}
           >
             <Gamepad2 size={16} aria-hidden="true" />
             <span>{t.live.room.gamesTab}</span>
@@ -366,23 +440,24 @@ function ClassroomStageCore({
           <button
             type="button"
             role="tab"
+            disabled={!isHost && followTeacherTab}
             aria-selected={activeTab === 'circle'}
             aria-label={t.live.room.circleTab}
             className={`room-tab-btn ${activeTab === 'circle' ? 'active' : ''}`}
-            onClick={() => setActiveTab('circle')}
+            onClick={() => selectStageTab('circle')}
           >
             <Users size={16} aria-hidden="true" />
             <span>{t.live.room.circleTab}</span>
           </button>
 
-          {hasLiveKitMedia && (
+          {hasLiveKitMedia && (isHost || !followTeacherTab) && (
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'video'}
               aria-label={t.live.room.videoTab}
               className={`room-tab-btn ${activeTab === 'video' ? 'active' : ''}`}
-              onClick={() => setActiveTab('video')}
+              onClick={() => selectStageTab('video')}
             >
               <Video size={16} aria-hidden="true" />
               <span>{t.live.room.videoTab}</span>
@@ -391,6 +466,17 @@ function ClassroomStageCore({
         </div>
 
         <div className="live-room-header-left flex items-center gap-1.5">
+          {isHost && (
+            <button
+              type="button"
+              onClick={() => setShowPermissionsModal(true)}
+              className="min-h-[42px] px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/30 text-emerald-100 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              title="ضبط صلاحيات الطلاب (الميكروفون، الكاميرا، المحادثة، وتثبيت الشاشة)"
+            >
+              <Shield size={15} aria-hidden="true" />
+              <span className="hidden xl:inline">صلاحيات الطلاب</span>
+            </button>
+          )}
           {isHost && (
             <button
               type="button"
@@ -520,9 +606,13 @@ function ClassroomStageCore({
                       clearMainBoard: true,
                       teleport: true,
                     },
+                    controls: { activeStageTab: 'whiteboard' },
                   });
                   setActiveTab('whiteboard');
                 }}
+                onStudentPointWord={submitStudentPointer}
+                allowHandRaise={allowHandRaise}
+                studentPointerAllowed={studentPointerAllowed}
                 onPageDataReady={setCurrentPageData}
               />
             </div>
@@ -579,6 +669,10 @@ function ClassroomStageCore({
                 isObserver={isObserver}
                 currentUserName={participantName}
                 rosterStudents={sessionContext?.roster || []}
+                allowHandRaise={allowHandRaise}
+                onActiveReciterChange={(reciterId) =>
+                  updateClassroomState({ controls: { activeReciterUserId: reciterId } })
+                }
                 onMuteLocalMic={() => localParticipant?.localParticipant?.setMicrophoneEnabled(false)}
               />
             </div>
@@ -610,7 +704,16 @@ function ClassroomStageCore({
               transition={{ type: 'spring', damping: 25 }}
             >
               <div className="chat-header">
-                <h3>{t.live.chat}</h3>
+                <div>
+                  <h3>{t.live.chat}</h3>
+                  <p className="text-[11px] text-[var(--wn-text-secondary)]">
+                    {chatMode === 'locked'
+                      ? '🔒 المحادثة مغلقة حالياً'
+                      : chatMode === 'teacher_only'
+                        ? '🛡️ رسائل الطلاب تصل للمعلم فقط'
+                        : 'متاحة لجميع المشاركين'}
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowChat(false)}
@@ -675,14 +778,14 @@ function ClassroomStageCore({
                     if (chatError) setChatError('');
                   }}
                   aria-label={t.live.room.chatPlaceholder}
-                  placeholder={t.live.room.chatPlaceholder}
+                  placeholder={!isHost && chatMode === 'locked' ? '🔒 المحادثة مغلقة من المعلم حالياً' : t.live.room.chatPlaceholder}
                   className="chat-input"
-                  disabled={isObserver}
+                  disabled={isObserver || (!isHost && chatMode === 'locked')}
                 />
                 <button
                   type="submit"
                   className="chat-send-btn"
-                  disabled={isObserver || !newMessage.trim()}
+                  disabled={isObserver || (!isHost && chatMode === 'locked') || !newMessage.trim()}
                   aria-label={t.live.chatSend}
                 >
                   <Send size={18} aria-hidden="true" />
@@ -706,13 +809,27 @@ function ClassroomStageCore({
               </div>
             ) : (
               <>
-                <TrackToggle source="microphone">
-                  {(isEnabled) => (isEnabled ? <Mic size={24} /> : <MicOff size={24} />)}
-                </TrackToggle>
+                {canUseMic ? (
+                  <TrackToggle source="microphone">
+                    {(isEnabled) => (isEnabled ? <Mic size={24} /> : <MicOff size={24} />)}
+                  </TrackToggle>
+                ) : (
+                  <div className="observer-lock-pill" title="الميكروفون مقفل من المعلم حتى يبدأ دورك">
+                    <MicOff size={18} className="text-red-400" aria-hidden="true" />
+                    <span className="text-xs">المايك بإذن المعلم</span>
+                  </div>
+                )}
 
-                <TrackToggle source="camera">
-                  {(isEnabled) => (isEnabled ? <Video size={24} /> : <VideoOff size={24} />)}
-                </TrackToggle>
+                {canUseCamera ? (
+                  <TrackToggle source="camera">
+                    {(isEnabled) => (isEnabled ? <Video size={24} /> : <VideoOff size={24} />)}
+                  </TrackToggle>
+                ) : (
+                  <div className="observer-lock-pill" title="الكاميرا مغلقة افتراضياً ولا تفتح إلا بإذن المعلم">
+                    <VideoOff size={18} className="text-red-400" aria-hidden="true" />
+                    <span className="text-xs">الكاميرا مقفلة</span>
+                  </div>
+                )}
 
                 {isHost && (
                   <TrackToggle source="screen_share">
@@ -743,6 +860,16 @@ function ClassroomStageCore({
         onUpdateLab={(labPatch) => updateClassroomState({ tajweedLab: labPatch })}
         dir={dir}
       />
+
+      {isHost && (
+        <TeacherPermissionsModal
+          isOpen={showPermissionsModal}
+          onClose={() => setShowPermissionsModal(false)}
+          controls={controls}
+          onUpdateControls={(ctrlPatch) => updateClassroomState({ controls: ctrlPatch })}
+          dir={dir}
+        />
+      )}
     </div>
   );
 }
@@ -924,7 +1051,7 @@ export default function LiveRoom() {
 
   return (
     <LiveKitRoom
-      video={!isObserver}
+      video={false}
       audio={!isObserver}
       token={token}
       serverUrl={serverUrl}

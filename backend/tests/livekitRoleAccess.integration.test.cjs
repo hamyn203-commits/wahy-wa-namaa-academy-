@@ -188,6 +188,7 @@ test('LiveKit room permissions are server-derived and fail closed', async (t) =>
   const teacherToken = jwt.decode(teacher.data.token);
   assert.equal(teacherToken.video.roomJoin, true);
   assert.equal(teacherToken.video.canPublish, true);
+  assert.ok(teacherToken.video.canPublishSources.includes('screen_share'));
   assert.equal(teacherToken.video.canSubscribe, true);
 
   const student = await call(base, users.student, { roomName: liveSession.roomId });
@@ -196,6 +197,8 @@ test('LiveKit room permissions are server-derived and fail closed', async (t) =>
   assert.equal(student.data.permissions.isHost, false);
   assert.equal(student.data.permissions.isObserver, false);
   assert.equal(student.data.permissions.canPublish, true);
+  const studentToken = jwt.decode(student.data.token);
+  assert.deepEqual(studentToken.video.canPublishSources, ['microphone', 'camera']);
 
   const guardian = await call(base, users.guardian, { roomName: liveSession.roomId });
   assert.equal(guardian.status, 200);

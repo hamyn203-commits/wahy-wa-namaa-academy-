@@ -39,6 +39,11 @@ interface StudentRemoteClassroomState {
   };
   whiteboard?: {
     permission?: string;
+    boardsFrozen?: boolean;
+  };
+  controls?: {
+    micPolicy?: string;
+    allowHandRaise?: boolean;
   };
 }
 
@@ -200,16 +205,18 @@ export default function LiveClassroomScreen() {
         </View>
 
         <View style={[styles.actionsRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-          <Pressable
-            onPress={() => void handleListenerBell()}
-            style={({ pressed }) => [styles.bellBtn, bellNotice && styles.bellBtnSent, pressed && styles.pressed]}
-            accessibilityRole="button"
-          >
-            <Bell size={13} color={bellNotice ? colors.emeraldNight : colors.goldBright} />
-            <Text style={[styles.bellText, bellNotice && styles.bellTextSent]}>
-              {bellNotice ? (locale === 'ar' ? 'أُرسل ✓' : 'Sent') : (locale === 'ar' ? 'يقظ' : 'Alert')}
-            </Text>
-          </Pressable>
+          {roomState.controls?.allowHandRaise !== false ? (
+            <Pressable
+              onPress={() => void handleListenerBell()}
+              style={({ pressed }) => [styles.bellBtn, bellNotice && styles.bellBtnSent, pressed && styles.pressed]}
+              accessibilityRole="button"
+            >
+              <Bell size={13} color={bellNotice ? colors.emeraldNight : colors.goldBright} />
+              <Text style={[styles.bellText, bellNotice && styles.bellTextSent]}>
+                {bellNotice ? (locale === 'ar' ? 'أُرسل ✓' : 'Sent') : (locale === 'ar' ? 'يقظ' : 'Alert')}
+              </Text>
+            </Pressable>
+          ) : null}
 
           <Pressable
             onPress={() => router.back()}

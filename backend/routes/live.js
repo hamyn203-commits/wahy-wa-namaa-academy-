@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-const { AccessToken } = require('livekit-server-sdk');
+const { AccessToken, TrackSource } = require('livekit-server-sdk');
 const LiveSession = require('../models/LiveSession');
 const User = require('../models/User');
 const Session = require('../models/Session');
@@ -16,6 +16,7 @@ const {
   recordStudentGameAnswer,
   recordActiveListenerBell,
   recordStudentWhiteboardAction,
+  recordStudentMushafPointer,
   presentClassroomState,
 } = require('../services/classroomStateService');
 
@@ -27,17 +28,24 @@ function isLiveKitConfigured() {
   return Boolean(LIVEKIT_API_KEY && LIVEKIT_API_SECRET && LIVEKIT_URL);
 }
 
-async function createToken({ roomName, identity, participantName, canPublish, isObserver = false }) {
+async function createToken({ roomName, identity, participantName, canPublish, isHost = false, isObserver = false }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
     identity,
     name: isObserver ? 'مراقب ولي الأمر' : participantName,
     ttl: '2h',
   });
 
+  const publishSources = canPublish
+    ? (isHost
+        ? [TrackSource.MICROPHONE, TrackSource.CAMERA, TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO]
+        : [TrackSource.MICROPHONE, TrackSource.CAMERA])
+    : [];
+
   at.addGrant({
     room: roomName,
     roomJoin: true,
     canPublish,
+    ...(canPublish ? { canPublishSources: publishSources } : {}),
     canSubscribe: true,
     canPublishData: canPublish,
     ...(isObserver ? { hidden: true } : {}),
@@ -294,6 +302,7 @@ router.post('/token', verifyAccessToken, async (req, res) => {
       identity,
       participantName,
       canPublish,
+      isHost: Boolean(access.isHost),
       isObserver: Boolean(access.isObserver),
     });
     const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
@@ -817,6 +826,40 @@ router.post('/sessions/:roomId/whiteboard-action', verifyAccessToken, requireRol
     });
   } catch {
     return res.status(500).json({ message: 'Failed to update whiteboard' });
+  }
+});
+
+router.post('/sessions/:roomId/student-pointer', verifyAccessToken, requireRole('student'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    if (notFound) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || access?.isObserver) {
+      return res.status(403).json({ message: 'You are not assigned as an active learner in this session' });
+    }
+
+    const participantUser = await User.findById(req.user.id).select('name').lean().catch(() => null);
+    const studentName = String(participantUser?.name || req.user.name || 'طالب').trim().slice(0, 80);
+
+    const outcome = recordStudentMushafPointer(liveSession.classroomState, {
+      studentId: req.user.id,
+      studentName,
+      pointerPayload: req.body || {},
+    });
+
+    if (!outcome.ok) {
+      return res.status(outcome.status || 400).json({ message: outcome.message });
+    }
+
+    await persistClassroomState(liveSession, outcome.state);
+
+    return res.status(201).json({
+      classroomState: presentClassroomState(outcome.state, {
+        isHost: false,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to update student pointer' });
   }
 });
 

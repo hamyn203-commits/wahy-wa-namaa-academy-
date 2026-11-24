@@ -230,6 +230,9 @@ export default function SyncedMushaf({
   onRingListenerBell = null,
   onOpenTajweedLab = null,
   onTeleportToWhiteboard = null,
+  onStudentPointWord = null,
+  allowHandRaise = true,
+  studentPointerAllowed = false,
   onPageDataReady = null,
 }) {
   const { isRTL, dir, t } = useI18n();
@@ -483,10 +486,12 @@ export default function SyncedMushaf({
   }, [currentPage, syncTeacherPageChange]);
 
   const jumpToPage = useCallback((pageNum) => {
+    const activeVeil = mushafState?.hifzVeilMode || 'none';
+    if (!isTeacher && (!isIndependentMode || activeVeil !== 'none')) return;
     const validPage = Math.max(1, Math.min(604, parseInt(pageNum, 10) || 1));
     setShowSurahModal(false);
     syncTeacherPageChange(validPage);
-  }, [syncTeacherPageChange]);
+  }, [isTeacher, isIndependentMode, mushafState?.hifzVeilMode, syncTeacherPageChange]);
 
   const jumpToSurahNumber = useCallback((surahNumber) => {
     const found = QURAN_SURAHS.find((s) => s.id === Number(surahNumber));
@@ -496,6 +501,19 @@ export default function SyncedMushaf({
   const handleWordOrAyahSelect = (ayah, wordIdx, wordStr) => {
     if (isObserver) return;
     const ayahIdentifier = String(ayah.key || `${currentSurah.id}:${ayah.num}`);
+
+    if (!isTeacher) {
+      if (!studentPointerAllowed || wordIdx < 0 || !wordStr) return;
+      onStudentPointWord?.({
+        page: currentPage,
+        ayahKey: ayahIdentifier,
+        wordIndex: wordIdx,
+        wordText: wordStr,
+      });
+      showSyncToast(`تم إرسال إشارتك على كلمة «${wordStr}» للمعلم ✅`);
+      return;
+    }
+
     const isSameSelection = highlightedAyah === ayahIdentifier && highlightedWordIdx === wordIdx;
 
     const nextAyah = isSameSelection ? null : ayahIdentifier;
@@ -620,8 +638,11 @@ export default function SyncedMushaf({
 
   const hifzVeilMode = mushafState?.hifzVeilMode || 'none';
   const spotlightWord = mushafState?.spotlightWord || '';
+  const studentPointer = mushafState?.studentPointer || null;
   const pinnedMistakes = Array.isArray(mushafState?.pinnedMistakes) ? mushafState.pinnedMistakes : [];
   const activePeekKey = (mushafState?.peekExpiresAt || 0) > nowMs ? mushafState?.peekWordKey : '';
+  const canLearnerNavigate = isTeacher || (allowIndependentReading && isIndependentMode && hifzVeilMode === 'none');
+  const effectiveViewMode = !isTeacher && hifzVeilMode !== 'none' ? 'interactive' : viewMode;
 
   const handlePlayQari = (repeatCount = 1) => {
     if (!isTeacher) return;
@@ -709,25 +730,29 @@ export default function SyncedMushaf({
         </div>
 
         <div className="mushaf-actions-group">
-          <button
-            type="button"
-            className="mushaf-icon-btn"
-            onClick={() => setShowSurahModal(true)}
-            aria-label={t.live.mushaf.surahIndexTitle}
-            title={t.live.mushaf.surahIndexTitle}
-          >
-            <Search size={16} aria-hidden="true" />
-          </button>
+          {(isTeacher || (allowIndependentReading && hifzVeilMode === 'none')) && (
+            <button
+              type="button"
+              className="mushaf-icon-btn"
+              onClick={() => setShowSurahModal(true)}
+              aria-label={t.live.mushaf.surahIndexTitle}
+              title={t.live.mushaf.surahIndexTitle}
+            >
+              <Search size={16} aria-hidden="true" />
+            </button>
+          )}
 
-          <button
-            type="button"
-            className={`mushaf-icon-btn ${viewMode === 'image' ? 'active' : ''}`}
-            onClick={() => setViewMode((v) => (v === 'interactive' ? 'image' : 'interactive'))}
-            aria-label={viewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
-            title={viewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
-          >
-            <BookOpen size={16} aria-hidden="true" />
-          </button>
+          {(isTeacher || hifzVeilMode === 'none') && (
+            <button
+              type="button"
+              className={`mushaf-icon-btn ${effectiveViewMode === 'image' ? 'active' : ''}`}
+              onClick={() => setViewMode((v) => (v === 'interactive' ? 'image' : 'interactive'))}
+              aria-label={effectiveViewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
+              title={effectiveViewMode === 'interactive' ? t.live.mushaf.viewImage : t.live.mushaf.viewInteractive}
+            >
+              <BookOpen size={16} aria-hidden="true" />
+            </button>
+          )}
 
           <button
             type="button"
@@ -815,6 +840,9 @@ export default function SyncedMushaf({
         onRingListenerBell={handleStudentBell}
         onOpenTajweedLab={onOpenTajweedLab}
         onTeleportToWhiteboard={onTeleportToWhiteboard}
+        allowHandRaise={allowHandRaise}
+        studentPointerAllowed={studentPointerAllowed}
+        studentPointer={studentPointer}
         bellSentNotice={bellSentNotice}
       />
 
@@ -833,7 +861,7 @@ export default function SyncedMushaf({
         )}
       </AnimatePresence>
 
-      {!isTeacher && !isObserver && allowIndependentReading && (
+      {!isTeacher && !isObserver && allowIndependentReading && hifzVeilMode === 'none' && (
         <div className="independent-reading-alert flex-wrap gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span>{t.live.mushaf.independentAllowed}</span>
@@ -866,7 +894,7 @@ export default function SyncedMushaf({
           type="button"
           className="mushaf-nav-btn mushaf-nav-prev"
           onClick={goToPrevPage}
-          disabled={currentPage <= 1 || (!isTeacher && !isIndependentMode)}
+          disabled={currentPage <= 1 || !canLearnerNavigate}
           aria-label={t.live.mushaf.prevPage}
           title={t.live.mushaf.prevPage}
         >
@@ -877,7 +905,7 @@ export default function SyncedMushaf({
           type="button"
           className="mushaf-nav-btn mushaf-nav-next"
           onClick={goToNextPage}
-          disabled={currentPage >= 604 || (!isTeacher && !isIndependentMode)}
+          disabled={currentPage >= 604 || !canLearnerNavigate}
           aria-label={t.live.mushaf.nextPage}
           title={t.live.mushaf.nextPage}
         >
@@ -903,7 +931,7 @@ export default function SyncedMushaf({
             </div>
           )}
 
-          {viewMode === 'interactive' && pageVerseData ? (
+          {effectiveViewMode === 'interactive' && pageVerseData ? (
             <div className="mushaf-verses-flow">
               {pageVerseData.verses.map((ayah) => {
                 const ayahIdentifier = String(ayah.key || `${ayah.surahNum || currentSurah.id}:${ayah.num}`);
@@ -918,6 +946,11 @@ export default function SyncedMushaf({
                     {words.map((word, wIdx) => {
                       const wordCompositeKey = `${ayahIdentifier}:${wIdx}`;
                       const isLaserWord = isAyahHighlighted && highlightedWordIdx === wIdx;
+                      const isStudentPointedWord =
+                        studentPointer &&
+                        studentPointer.page === currentPage &&
+                        String(studentPointer.ayahKey) === ayahIdentifier &&
+                        studentPointer.wordIndex === wIdx;
                       const isPeeked = activePeekKey === wordCompositeKey;
                       const hiddenForLearner = !isTeacher && !isIndependentMode && isWordHiddenByVeil(hifzVeilMode, wIdx) && !isPeeked;
                       const veiledPreviewForTeacher = isTeacher && isWordHiddenByVeil(hifzVeilMode, wIdx);
@@ -932,8 +965,8 @@ export default function SyncedMushaf({
                       return (
                         <span
                           key={wordCompositeKey}
-                          role={isObserver ? undefined : 'button'}
-                          tabIndex={isObserver ? -1 : 0}
+                          role={isObserver || (!isTeacher && !studentPointerAllowed) ? undefined : 'button'}
+                          tabIndex={isObserver || (!isTeacher && !studentPointerAllowed) ? -1 : 0}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleWordOrAyahSelect(ayah, wIdx, word);
@@ -949,7 +982,9 @@ export default function SyncedMushaf({
                               ? 'انقر لفتح هذه الكلمة للطالب لمدة ٣ ثوانٍ'
                               : isTeacher
                                 ? 'انقر لتوجيه المؤشر الذهبي أو ختم ملاحظة'
-                                : undefined
+                                : studentPointerAllowed
+                                  ? 'انقر للإشارة إلى هذه الكلمة أمام المعلم'
+                                  : undefined
                           }
                           className={`inline-block mx-0.5 px-1 rounded transition-all duration-200 ${
                             hiddenForLearner
@@ -958,9 +993,11 @@ export default function SyncedMushaf({
                                 ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-badge-emerald-text)] ring-2 ring-[var(--wn-emerald)] font-bold scale-105'
                                 : isLaserWord
                                   ? 'mushaf-verse-highlighted ring-2 ring-[var(--wn-gold)] font-bold scale-105'
-                                  : veiledPreviewForTeacher
-                                    ? 'opacity-70 border-b border-dashed border-[var(--wn-gold)]'
-                                    : ''
+                                  : isStudentPointedWord
+                                    ? 'bg-[var(--wn-mint)] text-[var(--wn-heading)] ring-2 ring-[var(--wn-teal)] font-bold scale-105'
+                                    : veiledPreviewForTeacher
+                                      ? 'opacity-70 border-b border-dashed border-[var(--wn-gold)]'
+                                      : ''
                           } ${
                             mistakeMatch?.type === 'memorization'
                               ? 'underline decoration-wavy decoration-[var(--wn-danger)]'
@@ -993,7 +1030,7 @@ export default function SyncedMushaf({
                 );
               })}
             </div>
-          ) : viewMode === 'interactive' && ayahFetchError ? (
+          ) : effectiveViewMode === 'interactive' && ayahFetchError ? (
             <div className="flex flex-col items-center justify-center p-8 text-center gap-3 my-auto">
               <BookOpen size={40} className="opacity-60 text-[var(--wn-text-gold)]" aria-hidden="true" />
               <p className="font-bold text-base">{t.live.mushaf.pageLabel} {currentPage} — {currentSurah.name}</p>

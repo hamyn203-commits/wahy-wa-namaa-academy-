@@ -20,6 +20,8 @@ export default function CircleTurnManager({
   isObserver = false,
   currentUserName,
   onMuteLocalMic = null,
+  onActiveReciterChange = null,
+  allowHandRaise = true,
   rosterStudents = [],
 }) {
   const { isRTL, t } = useI18n();
@@ -35,6 +37,7 @@ export default function CircleTurnManager({
   const [timeSpentMap, setTimeSpentMap] = useState({}); // { [studentId]: seconds }
   const [actionNotice, setActionNotice] = useState(null);
   const noticeTimerRef = useRef(null);
+  const lastHandRaiseAtRef = useRef(0);
 
   const showNotice = useCallback((message, durationMs = 3500) => {
     if (noticeTimerRef.current) {
@@ -240,6 +243,7 @@ export default function CircleTurnManager({
     setActiveReciter({ id: student.id, name: student.name });
     setTimeLeft(duration);
     setIsTimerRunning(true);
+    onActiveReciterChange?.(student.userId || student.id);
     broadcastCircleAction('START_RECITATION', {
       studentId: student.id,
       studentName: student.name,
@@ -251,6 +255,7 @@ export default function CircleTurnManager({
     if (!isTeacher) return;
     setActiveReciter(null);
     setIsTimerRunning(false);
+    onActiveReciterChange?.('');
     broadcastCircleAction('END_RECITATION');
   };
 
@@ -261,19 +266,25 @@ export default function CircleTurnManager({
   };
 
   const toggleRaiseHand = () => {
-    if (isObserver) return;
+    if (isObserver || !allowHandRaise) return;
 
     if (isHandRaised) {
       broadcastCircleAction('LOWER_HAND', { studentId: currentParticipantId });
       setWaitingQueue((prev) => prev.filter((item) => item.id !== currentParticipantId && item.name !== resolvedUserName));
     } else {
+      const now = Date.now();
+      if (now - lastHandRaiseAtRef.current < 15000) {
+        showNotice('يرجى الانتظار قليلاً قبل رفع اليد مجدداً', 2500);
+        return;
+      }
+      lastHandRaiseAtRef.current = now;
       broadcastCircleAction('RAISE_HAND', {
         studentId: currentParticipantId,
         studentName: resolvedUserName
       });
       setWaitingQueue((prev) => [
         ...prev,
-        { id: currentParticipantId, name: resolvedUserName, timestamp: Date.now() }
+        { id: currentParticipantId, name: resolvedUserName, timestamp: now }
       ]);
     }
   };
@@ -308,7 +319,7 @@ export default function CircleTurnManager({
               <VolumeX size={15} aria-hidden="true" />
               <span>{t.live.circle.muteAll}</span>
             </button>
-          ) : !isObserver ? (
+          ) : !isObserver && allowHandRaise ? (
             <button
               type="button"
               onClick={toggleRaiseHand}
