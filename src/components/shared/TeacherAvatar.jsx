@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { GraduationCap } from 'lucide-react';
 import {
   isFallbackTeacherImage,
-  teacherImageFallback,
   teacherPublicImage,
 } from '../../lib/teacherMedia';
 
@@ -32,6 +31,17 @@ export default function TeacherAvatar({
   const resolvedSrc = teacherPublicImage(src);
   const [failedSrc, setFailedSrc] = useState('');
   const [loadedSrc, setLoadedSrc] = useState('');
+
+  const handleImgRef = useCallback((node) => {
+    if (!node || !resolvedSrc) return;
+    if (node.complete) {
+      if (node.naturalWidth > 0) {
+        setLoadedSrc((prev) => (prev === resolvedSrc ? prev : resolvedSrc));
+      } else {
+        setFailedSrc((prev) => (prev === resolvedSrc ? prev : resolvedSrc));
+      }
+    }
+  }, [resolvedSrc]);
 
   const isFallback = isFallbackTeacherImage(resolvedSrc) || failedSrc === resolvedSrc;
   const isLoaded = !isFallback && loadedSrc === resolvedSrc;
@@ -73,16 +83,14 @@ export default function TeacherAvatar({
             />
           )}
           <img
+            ref={handleImgRef}
             src={resolvedSrc}
             alt={alt || name || 'Teacher'}
             loading={loading}
             decoding="async"
             fetchPriority={fetchPriority}
             onLoad={() => setLoadedSrc(resolvedSrc)}
-            onError={(event) => {
-              setFailedSrc(resolvedSrc);
-              teacherImageFallback(event);
-            }}
+            onError={() => setFailedSrc(resolvedSrc)}
             className={`${imgClassName} transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
           />
         </>

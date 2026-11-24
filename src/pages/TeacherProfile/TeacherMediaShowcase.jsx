@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Headphones, Play, Video, Volume2 } from 'lucide-react';
+import { AlertCircle, Headphones, Play, RefreshCw, Video, Volume2 } from 'lucide-react';
 
 export default function TeacherMediaShowcase({
   mediaItems = [],
@@ -7,6 +7,8 @@ export default function TeacherMediaShowcase({
   copy,
 }) {
   const [activeKey, setActiveKey] = useState('');
+  const [failedKey, setFailedKey] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   if (!mediaItems.length && !audioItems.length) {
     return (
@@ -40,21 +42,44 @@ export default function TeacherMediaShowcase({
         <div className="grid gap-4 sm:grid-cols-2">
           {mediaItems.map((item) => {
             const isPlaying = activeKey === item.key;
+            const hasFailed = failedKey === item.key;
             const isRecitation = item.key === 'recitation' || item.key.startsWith('additional-');
             return (
               <div key={item.key} className="overflow-hidden rounded-2xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)]">
                 {isPlaying ? (
                   <div>
                     <video
-                      key={item.url}
+                      key={`${item.url}-${retryNonce}`}
+                      src={item.url}
                       controls
                       autoPlay
                       playsInline
                       preload="metadata"
+                      onLoadedData={() => {
+                        if (failedKey === item.key) setFailedKey('');
+                      }}
+                      onError={() => setFailedKey(item.key)}
                       className="aspect-video w-full bg-[var(--wn-emerald-deep)]"
-                    >
-                      <source src={item.url} />
-                    </video>
+                    />
+                    {hasFailed && (
+                      <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--wn-danger)] bg-[var(--wn-danger-soft)] px-3.5 py-2 text-xs text-[var(--wn-text-danger)]">
+                        <span className="inline-flex items-center gap-1.5 font-semibold">
+                          <AlertCircle size={14} aria-hidden="true" />
+                          <span>{copy.mediaLoadError || 'Could not play this video right now.'}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFailedKey('');
+                            setRetryNonce((n) => n + 1);
+                          }}
+                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-2.5 py-1 font-bold text-[var(--wn-text-primary)]"
+                        >
+                          <RefreshCw size={13} aria-hidden="true" />
+                          <span>{copy.retryBtn || 'Retry'}</span>
+                        </button>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-[var(--wn-heading)]">
                       <span className="flex items-center gap-1.5">
                         {isRecitation ? <Volume2 size={14} aria-hidden="true" /> : <Video size={14} aria-hidden="true" />}
@@ -65,7 +90,10 @@ export default function TeacherMediaShowcase({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setActiveKey(item.key)}
+                    onClick={() => {
+                      setFailedKey('');
+                      setActiveKey(item.key);
+                    }}
                     className="wn-tp-media-facade flex aspect-video w-full flex-col items-center justify-center gap-3 p-4 text-center"
                   >
                     <span className="grid h-14 w-14 place-items-center rounded-full border border-[var(--wn-gold)] bg-[var(--wn-gold)] text-[var(--wn-emerald-deep)] shadow-md">
@@ -98,9 +126,7 @@ export default function TeacherMediaShowcase({
                 <span className="text-xs font-bold text-[var(--wn-badge-emerald-text)]">
                   {String(copy.audioClipLabel || 'Audio clip {index}').replace('{index}', String(index + 1))}
                 </span>
-                <audio controls preload="none" className="w-full">
-                  <source src={audio} />
-                </audio>
+                <audio src={audio} controls preload="metadata" className="w-full" />
               </div>
             ))}
           </div>

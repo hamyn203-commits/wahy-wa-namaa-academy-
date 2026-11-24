@@ -16,6 +16,17 @@ const { findMockUserById } = require('../mockStore');
 const { isMockMode } = require('../config/runtime');
 const { createGuardianInvitation, expireStaleInvitations, presentStudentInvitation } = require('../services/guardianInvitations');
 const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+const objectStorage = require('../services/objectStorage');
+
+function normalizePublicAvatarRef(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'not-provided') return '';
+  if (raw.includes('/api/uploads/public?ref=')) return raw;
+  if (/^https:\/\/[a-z0-9]+\.private\.blob\.vercel-storage\.com\/uploads\/(?:teacher-public|student-avatar)\//i.test(raw)) {
+    return objectStorage.publicProxyUrl(raw) || raw;
+  }
+  return raw;
+}
 
 const guardianInvitationLimiter = createScopedRateLimiter({
   windowMs: 15 * 60 * 1000,
@@ -558,8 +569,8 @@ router.get('/teachers', protect, authorize('student'), async (req, res) => {
         map[id] = {
           _id: teacherDoc._id,
           name: teacherDoc.user?.name || teacherDoc.personalInfo?.fullName,
-          avatar: teacherDoc.user?.avatar || teacherDoc.media?.profilePhoto,
-          media: teacherDoc.media ? { profilePhoto: teacherDoc.media.profilePhoto } : undefined,
+          avatar: normalizePublicAvatarRef(teacherDoc.user?.avatar || teacherDoc.media?.profilePhoto),
+          media: teacherDoc.media ? { profilePhoto: normalizePublicAvatarRef(teacherDoc.media.profilePhoto) } : undefined,
           country: teacherDoc.personalInfo?.country,
           rating: Number(teacherDoc.rating?.count || 0) > 0 ? Number(teacherDoc.rating?.average || 0) : 0,
           ratingCount: Number(teacherDoc.rating?.count || 0),
@@ -625,10 +636,10 @@ function sanitizeSessionForStudentArchive(doc, studentId) {
             country: s.teacher.personalInfo?.country,
             gender: s.teacher.personalInfo?.gender,
           },
-          media: s.teacher.media ? { profilePhoto: s.teacher.media.profilePhoto } : undefined,
+          media: s.teacher.media ? { profilePhoto: normalizePublicAvatarRef(s.teacher.media.profilePhoto) } : undefined,
           rating: s.teacher.rating,
           user: s.teacher.user
-            ? { _id: s.teacher.user._id, name: s.teacher.user.name, avatar: s.teacher.user.avatar }
+            ? { _id: s.teacher.user._id, name: s.teacher.user.name, avatar: normalizePublicAvatarRef(s.teacher.user.avatar) }
             : undefined,
         }
       : null,

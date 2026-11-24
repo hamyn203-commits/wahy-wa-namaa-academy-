@@ -119,6 +119,7 @@ export function getProfileCopy(locale, t = null) {
       ? 'اضغط على أي بطاقة لتشغيل الفيديو أو التلاوة دون إبطاء الصفحة.'
       : 'Click any card to load and play the video or audio on demand.'),
     clickToPlay: tp.clickToPlay || (isAr ? 'اضغط للتشغيل' : 'Click to play'),
+    mediaLoadError: tp.mediaLoadError || (isAr ? 'تعذر تشغيل هذا المقطع حاليًا. تحقق من الاتصال وأعد المحاولة.' : 'Could not play this recording right now. Please try again.'),
     noMedia: tp.noMedia || (isAr ? 'لا توجد تسجيلات أو فيديوهات منشورة لهذا المعلم بعد.' : 'No published media recordings yet.'),
     audioTitle: tp.audioTitle || (isAr ? 'تسجيلات صوتية' : 'Audio recitations'),
     audioClipLabel: tp.audioClipLabel || (isAr ? 'تسجيل صوتي {index}' : 'Audio clip {index}'),

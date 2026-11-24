@@ -25,7 +25,7 @@ import TeacherAvatar from '../../components/shared/TeacherAvatar';
 import { useI18n } from '../../i18n';
 import { useSEO } from '../../hooks/useSEO';
 import { localizedPath, resolveIntlLocale } from '../../lib/locale';
-import { isFallbackTeacherImage, teacherPublicImage, teacherPublicVideo } from '../../lib/teacherMedia';
+import { teacherPublicAudio, teacherPublicImage, teacherPublicVideo } from '../../lib/teacherMedia';
 import { fetchTeacherBundle, getCachedTeacherBundle } from '../../lib/teacherProfileCache';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { useStudentTeacherLock } from '../../hooks/useStudentTeacherLock';
@@ -261,8 +261,8 @@ export default function TeacherProfile() {
 
   const audioItems = Array.from(new Set(
     (Array.isArray(media.audioRecordings) ? media.audioRecordings : [])
-      .map((audio) => teacherPublicImage(audio))
-      .filter((url) => url && !isFallbackTeacherImage(url)),
+      .map((audio) => teacherPublicAudio(audio))
+      .filter(Boolean),
   ));
 
   const mediaCount = mediaItems.length + audioItems.length;
