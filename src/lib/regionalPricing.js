@@ -25,12 +25,12 @@ export const DEFAULT_REGIONAL_PRICING = {
 };
 
 export function resolveRegionalPlanPriceMinor(regionalPricing, planKey, sessionCount, fallbackMajor = 0) {
-  const packMap = regionalPricing?.packPricesMinor?.[planKey];
-  if (packMap && Number.isFinite(Number(packMap[sessionCount]))) {
-    return Number(packMap[sessionCount]);
+  const packOverride = regionalPricing?.packPricesMinor?.[planKey]?.[sessionCount];
+  if (packOverride != null && Number.isFinite(Number(packOverride)) && Number(packOverride) > 0) {
+    return Number(packOverride);
   }
   const baseMinor = regionalPricing?.pricesMinor?.[planKey];
-  if (Number.isFinite(Number(baseMinor))) {
+  if (baseMinor != null && Number.isFinite(Number(baseMinor)) && Number(baseMinor) > 0) {
     return Number(baseMinor);
   }
   return Math.round(Number(fallbackMajor || 0) * 100);

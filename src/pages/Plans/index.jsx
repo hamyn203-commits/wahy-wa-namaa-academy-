@@ -641,10 +641,11 @@ export default function PlansPage() {
     const serverPackPrice = serverPlan?.packPricesMinor?.[effectiveSessionCount];
     const clientEgPackPrice = !serverPlan && billingCurrency === 'EGP'
       ? plan.packPricesMinorEg?.[effectiveSessionCount]
-      : null;
-    const priceMinor = Number.isFinite(Number(serverPackPrice))
+      : undefined;
+    const hasPositiveNumber = (val) => val != null && Number.isFinite(Number(val)) && Number(val) > 0;
+    const priceMinor = hasPositiveNumber(serverPackPrice)
       ? Number(serverPackPrice)
-      : Number.isFinite(Number(clientEgPackPrice))
+      : hasPositiveNumber(clientEgPackPrice)
         ? Number(clientEgPackPrice)
         : serverPlan
           ? Number(serverPlan.pricePerSessionMinor)
