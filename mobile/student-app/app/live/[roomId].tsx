@@ -1,12 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-import { Bell, BookOpen, PhoneOff, Radio, Trophy } from 'lucide-react-native';
+import { Bell, BookOpen, CheckCircle, PhoneOff, Radio, Sparkles, Star, Trophy } from 'lucide-react-native';
 import { useI18n } from '../../src/i18n/I18nProvider';
 import { api } from '../../src/lib/api';
 import { SITE_URL } from '../../src/lib/config';
@@ -44,8 +55,21 @@ interface StudentRemoteClassroomState {
   controls?: {
     micPolicy?: string;
     allowHandRaise?: boolean;
+    sessionEnded?: boolean;
+    endedAtMs?: number;
   };
 }
+
+interface EndedSessionContext {
+  sessionId?: string | null;
+  sessionType?: 'trial' | 'regular' | 'group_circle' | string;
+  teacherId?: string | null;
+  teacherName?: string;
+  title?: string;
+}
+
+const MOBILE_PRAISE_TAGS_AR = ['إتقان التجويد', 'صبر وتشجيع', 'شرح واضح', 'التزام بالموعد'];
+const MOBILE_PRAISE_TAGS_EN = ['Great Tajweed', 'Patient & kind', 'Clear teaching', 'On time'];
 
 /**
  * In-App Student Live Classroom Screen V2.0
@@ -68,7 +92,16 @@ export default function LiveClassroomScreen() {
   const [bellNotice, setBellNotice] = useState(false);
   const [answeredRoundId, setAnsweredRoundId] = useState('');
   const [answerResultText, setAnswerResultText] = useState('');
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [sessionContext, setSessionContext] = useState<EndedSessionContext | null>(null);
+  const [ratingStars, setRatingStars] = useState(5);
+  const [selectedPraise, setSelectedPraise] = useState<string[]>([]);
+  const [ratingComment, setRatingComment] = useState('');
+  const [wouldContinue, setWouldContinue] = useState(true);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingError, setRatingError] = useState('');
 
+  const sessionEndedNotifiedRef = useRef(false);
   const lastReactionIdRef = useRef('');
   const webViewRef = useRef<WebView | null>(null);
   const pushedWebTokenRef = useRef<string | null>(null);
@@ -104,14 +137,36 @@ export default function LiveClassroomScreen() {
     };
   }, []);
 
+  const triggerLearnerSessionEnd = useCallback((ctx?: EndedSessionContext | null) => {
+    if (ctx) {
+      setSessionContext((prev) => ({ ...(prev || {}), ...ctx }));
+    }
+    if (!sessionEndedNotifiedRef.current) {
+      sessionEndedNotifiedRef.current = true;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setSessionEnded(true);
+  }, []);
+
   const pollClassroomState = useCallback(async () => {
-    if (!rawRoom) return;
+    if (!rawRoom || sessionEndedNotifiedRef.current) return;
     try {
-      const res = await api.get<{ classroomState?: StudentRemoteClassroomState }>(
+      const res = await api.get<{
+        sessionEnded?: boolean;
+        sessionContext?: EndedSessionContext;
+        classroomState?: StudentRemoteClassroomState;
+      }>(
         `/api/live/sessions/${encodeURIComponent(rawRoom)}/state`,
         { auth: true }
       );
       pushTokenToWebView(api.getAccessToken());
+      if (res?.sessionContext) {
+        setSessionContext(res.sessionContext);
+      }
+      if (res?.sessionEnded || res?.classroomState?.controls?.sessionEnded) {
+        triggerLearnerSessionEnd(res?.sessionContext || null);
+        return;
+      }
       if (res?.classroomState) {
         setRoomState(res.classroomState);
         const rx = res.classroomState.engagement?.lastReaction;
@@ -127,7 +182,7 @@ export default function LiveClassroomScreen() {
     } catch {
       // non-blocking
     }
-  }, [pushTokenToWebView, rawRoom]);
+  }, [pushTokenToWebView, rawRoom, triggerLearnerSessionEnd]);
 
   useEffect(() => {
     if (!ready || !rawRoom) return undefined;
@@ -179,6 +234,86 @@ export default function LiveClassroomScreen() {
     }
   };
 
+  const handleWebViewMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      try {
+        const parsed = JSON.parse(String(event.nativeEvent.data || '{}')) as {
+          type?: string;
+          sessionContext?: EndedSessionContext;
+        };
+        if (parsed?.type === 'WWN_SESSION_ENDED') {
+          triggerLearnerSessionEnd(parsed.sessionContext || null);
+        }
+      } catch {
+        // ignore non-JSON messages
+      }
+    },
+    [triggerLearnerSessionEnd]
+  );
+
+  const togglePraiseChip = (chip: string) => {
+    setSelectedPraise((prev) =>
+      prev.includes(chip) ? prev.filter((item) => item !== chip) : [...prev, chip]
+    );
+  };
+
+  const submitPostSessionRating = async () => {
+    if (submittingRating) return;
+    const sid = sessionContext?.sessionId || '';
+    if (!sid) {
+      router.replace('/(tabs)/sessions');
+      return;
+    }
+    setSubmittingRating(true);
+    setRatingError('');
+    const finalComment = [
+      selectedPraise.length ? selectedPraise.join(' · ') : '',
+      ratingComment.trim(),
+    ]
+      .filter(Boolean)
+      .join(' — ')
+      .slice(0, 1000);
+
+    try {
+      try {
+        await api.post(
+          '/api/reviews',
+          {
+            sessionId: sid,
+            teacherId: sessionContext?.teacherId || undefined,
+            rating: ratingStars,
+            comment: finalComment,
+            wouldContinue,
+          },
+          { auth: true }
+        );
+      } catch (revErr) {
+        const msg = revErr instanceof Error ? revErr.message : '';
+        if (!msg.toLowerCase().includes('already reviewed')) {
+          throw revErr;
+        }
+      }
+      await api
+        .put(
+          `/api/sessions/${encodeURIComponent(sid)}/feedback`,
+          { rating: ratingStars, comment: finalComment, wouldContinue },
+          { auth: true }
+        )
+        .catch(() => {});
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace('/(tabs)/sessions');
+    } catch (err) {
+      setRatingError(
+        err instanceof Error
+          ? err.message
+          : locale === 'ar'
+            ? 'تعذر إرسال التقييم حالياً'
+            : 'Could not submit rating right now'
+      );
+      setSubmittingRating(false);
+    }
+  };
+
   const classroomUrl = `${SITE_URL}/${locale}/live/${cleanRoom}`;
   const injectedAuthJs = token
     ? `try { window.sessionStorage.setItem('wwn_mobile_token', ${JSON.stringify(token)}); } catch (e) {} true;`
@@ -193,6 +328,149 @@ export default function LiveClassroomScreen() {
     Array.isArray(activeGame.options) &&
     activeGame.options.length > 0 &&
     answeredRoundId !== activeGame.roundId;
+
+  if (sessionEnded) {
+    const isAr = locale === 'ar';
+    const tutorDisplay = sessionContext?.teacherName || (isAr ? 'معلم الحلقة' : 'Your Tutor');
+    const sType = sessionContext?.sessionType || 'regular';
+    const typeLabel =
+      sType === 'trial'
+        ? isAr ? 'حصة تجريبية' : 'Trial Session'
+        : sType === 'group_circle'
+          ? isAr ? 'حلقة جماعية' : 'Group Circle'
+          : isAr ? 'حصة فردية' : '1-on-1 Session';
+    const praiseList = isAr ? MOBILE_PRAISE_TAGS_AR : MOBILE_PRAISE_TAGS_EN;
+
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView contentContainerStyle={styles.ratingScroll} keyboardShouldPersistTaps="handled">
+            <View style={styles.ratingCard}>
+              <View style={styles.ratingHero}>
+                <View style={styles.endedPill}>
+                  <CheckCircle size={14} color={colors.goldBright} />
+                  <Text style={styles.endedPillText}>{typeLabel}</Text>
+                </View>
+                <Text style={styles.endedSubText}>
+                  {isAr ? 'تقبّل الله منكم — انتهت الحصة بحمد الله' : 'The session has ended'}
+                </Text>
+                <Text style={styles.ratingTitle}>
+                  {isAr ? 'قيّم المعلم والحصة' : 'Rate Your Tutor & Session'}
+                </Text>
+                <Text style={styles.ratingTutorName}>{tutorDisplay}</Text>
+              </View>
+
+              <View style={styles.ratingBody}>
+                <View style={[styles.starsRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  {[1, 2, 3, 4, 5].map((st) => {
+                    const active = st <= ratingStars;
+                    return (
+                      <Pressable
+                        key={st}
+                        disabled={submittingRating}
+                        onPress={() => {
+                          void Haptics.selectionAsync();
+                          setRatingStars(st);
+                        }}
+                        style={[styles.starBtn, active && styles.starBtnActive]}
+                      >
+                        <Star
+                          size={26}
+                          color={active ? colors.goldDark : colors.textTertiary}
+                          fill={active ? colors.gold : 'transparent'}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={styles.ratingScoreText}>{ratingStars} / 5</Text>
+
+                <View style={[styles.praiseWrap, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  {praiseList.map((chip) => {
+                    const chosen = selectedPraise.includes(chip);
+                    return (
+                      <Pressable
+                        key={chip}
+                        disabled={submittingRating}
+                        onPress={() => togglePraiseChip(chip)}
+                        style={[styles.praiseChip, chosen && styles.praiseChipActive]}
+                      >
+                        <Sparkles size={12} color={chosen ? colors.emeraldDark : colors.textSecondary} />
+                        <Text style={[styles.praiseChipText, chosen && styles.praiseChipTextActive]}>
+                          {chip}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <TextInput
+                  value={ratingComment}
+                  onChangeText={setRatingComment}
+                  editable={!submittingRating}
+                  multiline
+                  numberOfLines={3}
+                  placeholder={
+                    isAr
+                      ? 'اكتب انطباعك عن شرح المعلم وأسلوبه (اختياري)…'
+                      : 'Share your feedback about the session (optional)…'
+                  }
+                  placeholderTextColor={colors.textTertiary}
+                  style={[styles.commentInput, { textAlign: isRTL ? 'right' : 'left' }]}
+                />
+
+                <View style={[styles.continueRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  <Text style={[styles.continueLabel, { textAlign: isRTL ? 'right' : 'left' }]}>
+                    {isAr
+                      ? 'أرغب في الاستمرار بالدراسة مع هذا المعلم'
+                      : 'I would like to continue with this tutor'}
+                  </Text>
+                  <Switch
+                    value={wouldContinue}
+                    onValueChange={setWouldContinue}
+                    disabled={submittingRating}
+                    trackColor={{ false: colors.borderSoft, true: colors.emerald }}
+                  />
+                </View>
+
+                {ratingError ? <Text style={styles.ratingErrText}>{ratingError}</Text> : null}
+
+                <Pressable
+                  disabled={submittingRating}
+                  onPress={() => void submitPostSessionRating()}
+                  style={({ pressed }) => [
+                    styles.submitRatingBtn,
+                    (pressed || submittingRating) && styles.pressed,
+                  ]}
+                >
+                  {submittingRating ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={styles.submitRatingText}>
+                      {isAr ? 'إرسال التقييم والعودة لحصصي' : 'Submit Rating & Return'}
+                    </Text>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  disabled={submittingRating}
+                  onPress={() => router.replace('/(tabs)/sessions')}
+                  style={styles.skipRatingBtn}
+                >
+                  <Text style={styles.skipRatingText}>
+                    {isAr ? 'تخطي الآن والعودة لحصصي' : 'Skip for now'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -282,6 +560,7 @@ export default function LiveClassroomScreen() {
             mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
             allowsFullscreenVideo
             originWhitelist={['https://wahywanamaa.com', 'https://*.wahywanamaa.com']}
+            onMessage={handleWebViewMessage}
             onError={() => setLoadFailed(true)}
             startInLoadingState
             renderLoading={() => (
@@ -438,4 +717,117 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resultPillText: { color: colors.white, fontSize: 12, fontFamily: fonts.bold },
+  ratingScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  ratingCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.xl,
+    borderWidth: 2,
+    borderColor: colors.gold,
+    overflow: 'hidden',
+  },
+  ratingHero: {
+    backgroundColor: colors.emeraldDeep,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+    gap: 6,
+  },
+  endedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(212, 175, 107, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  endedPillText: { color: colors.goldBright, fontSize: 12, fontFamily: fonts.bold },
+  endedSubText: { color: colors.mint, fontSize: 12, fontFamily: fonts.medium, textAlign: 'center' },
+  ratingTitle: { color: colors.white, fontSize: 20, fontFamily: fonts.extraBold, textAlign: 'center' },
+  ratingTutorName: { color: colors.goldBright, fontSize: 15, fontFamily: fonts.bold, textAlign: 'center' },
+  ratingBody: { padding: spacing.lg, gap: spacing.md },
+  starsRow: { justifyContent: 'center', alignItems: 'center', gap: 8 },
+  starBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    backgroundColor: colors.ivory,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  starBtnActive: {
+    borderColor: colors.gold,
+    backgroundColor: colors.goldSoft,
+  },
+  ratingScoreText: {
+    textAlign: 'center',
+    fontSize: 14,
+    fontFamily: fonts.bold,
+    color: colors.emeraldDark,
+  },
+  praiseWrap: { flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
+  praiseChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    backgroundColor: colors.ivory,
+  },
+  praiseChipActive: {
+    borderColor: colors.emerald,
+    backgroundColor: colors.emeraldSoft,
+  },
+  praiseChipText: { fontSize: 12, fontFamily: fonts.bold, color: colors.textSecondary },
+  praiseChipTextActive: { color: colors.emeraldDark },
+  commentInput: {
+    minHeight: 84,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    backgroundColor: colors.ivory,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: colors.textPrimary,
+    textAlignVertical: 'top',
+  },
+  continueRow: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    backgroundColor: colors.ivory,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  continueLabel: { flex: 1, fontSize: 13, fontFamily: fonts.bold, color: colors.textPrimary },
+  ratingErrText: { fontSize: 12, fontFamily: fonts.bold, color: colors.danger, textAlign: 'center' },
+  submitRatingBtn: {
+    minHeight: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.emerald,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  submitRatingText: { color: colors.white, fontSize: 15, fontFamily: fonts.bold },
+  skipRatingBtn: {
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipRatingText: { color: colors.textSecondary, fontSize: 13, fontFamily: fonts.bold },
 });

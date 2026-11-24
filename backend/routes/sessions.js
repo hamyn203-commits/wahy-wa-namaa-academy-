@@ -867,6 +867,16 @@ router.get('/my-sessions', protect, async (req, res) => {
 
       return {
         ...value,
+        ...(req.user.role === 'student'
+          ? {
+              myFeedback:
+                value.type === 'group_circle'
+                  ? value.studentFeedbacks?.[0] || null
+                  : value.studentFeedback?.rating
+                    ? value.studentFeedback
+                    : null,
+            }
+          : {}),
         meetingAvailable: Boolean(value.meetingLink) && meetingVisible,
         meetingLink: meetingVisible ? value.meetingLink : undefined,
         lifecycle: {
@@ -1418,6 +1428,46 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
       },
     });
 
+    // Ensure any linked live classroom is immediately marked ended so learners disconnect cleanly
+    try {
+      const LiveSession = require('../models/LiveSession');
+      if (Boolean(mongoose.connection?.db) || LiveSession.findOne !== mongoose.Model.findOne) {
+        const linkedLive = await LiveSession.findOne({ session: session._id });
+        if (linkedLive) {
+          const { applyHostStatePatch } = require('../services/classroomStateService');
+          const endedState = applyHostStatePatch(linkedLive.classroomState, {
+            controls: { sessionEnded: true, endedAtMs: Date.now() },
+          });
+          linkedLive.isLive = false;
+          linkedLive.endedAt = linkedLive.endedAt || new Date();
+          linkedLive.classroomState = endedState;
+          if (typeof linkedLive.markModified === 'function') linkedLive.markModified('classroomState');
+          if (typeof linkedLive.save === 'function') {
+            await linkedLive.save();
+          } else if (linkedLive._id && typeof LiveSession.updateOne === 'function') {
+            await LiveSession.updateOne(
+              { _id: linkedLive._id },
+              { $set: { isLive: false, endedAt: linkedLive.endedAt, classroomState: endedState } }
+            ).catch(() => {});
+          }
+          const lkKey = process.env.LIVEKIT_API_KEY || '';
+          const lkSecret = process.env.LIVEKIT_API_SECRET || '';
+          const lkUrl = process.env.LIVEKIT_URL || '';
+          if (linkedLive.roomId && lkKey && lkSecret && lkUrl && !lkUrl.includes('.example.')) {
+            const { RoomServiceClient } = require('livekit-server-sdk');
+            const httpUrl = lkUrl.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://');
+            const svc = new RoomServiceClient(httpUrl, lkKey, lkSecret);
+            await Promise.race([
+              svc.deleteRoom(String(linkedLive.roomId)),
+              new Promise((r) => setTimeout(r, 1200)),
+            ]).catch(() => {});
+          }
+        }
+      }
+    } catch {
+      // Non-blocking if LiveSession is unavailable in unit tests
+    }
+
     if (wasAlreadyCompleted) {
       return res.json({
         success: true,
@@ -1471,9 +1521,11 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
         },
         data: {
           session: session._id,
+          rateSessionId: String(session._id),
+          teacherId: String(teacher._id),
           actionUrl: isTrial
-            ? `/student/dashboard?tab=trials&postTrial=${session._id}`
-            : '/student/dashboard?tab=evaluations',
+            ? `/student/dashboard?tab=trials&postTrial=${session._id}&rateSession=${session._id}`
+            : `/student/dashboard?tab=sessions&rateSession=${session._id}`,
           ...(isTrial ? {
             trialAllowance: {
               limit: MAX_TRIAL_SESSIONS_PER_STUDENT,
@@ -1511,7 +1563,7 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
                 ar: 'تم تسجيل حصة الحلقة كمكتملة وتحديث رصيد حصصك حسب حالة الحضور.',
                 en: 'The circle session was completed and your session balance was updated based on attendance.',
               },
-              data: { ...payload.data, actionUrl: '/student/dashboard?tab=sessions' },
+              data: { ...payload.data, actionUrl: `/student/dashboard?tab=sessions&rateSession=${session._id}` },
             }),
             notifyGuardiansForStudent(studentId, {
               ...payload,
@@ -1548,11 +1600,30 @@ router.put('/:id/feedback', protect, authorize('student'), async (req, res) => {
 
     const session = await Session.findOne({
       _id: req.params.id,
-      status: 'completed'
+      status: { $in: ['accepted', 'completed'] },
     });
 
     if (!session || !(await sessionIncludesStudent(session, req.user.id))) {
       return res.status(404).json({ error: 'Completed session not found' });
+    }
+
+    if (session.status === 'accepted') {
+      const hasStarted = session.scheduledAt && new Date(session.scheduledAt).getTime() <= Date.now();
+      let liveEnded = false;
+      if (!hasStarted) {
+        try {
+          const LiveSession = require('../models/LiveSession');
+          if (Boolean(mongoose.connection?.db) || LiveSession.findOne !== mongoose.Model.findOne) {
+            const ls = await LiveSession.findOne({ session: session._id });
+            liveEnded = Boolean(ls?.endedAt || ls?.classroomState?.controls?.sessionEnded);
+          }
+        } catch {
+          liveEnded = false;
+        }
+      }
+      if (!hasStarted && !liveEnded) {
+        return res.status(404).json({ error: 'Completed session not found' });
+      }
     }
 
     let savedFeedback;

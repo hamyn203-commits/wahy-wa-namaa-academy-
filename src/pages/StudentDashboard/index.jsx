@@ -274,6 +274,7 @@ export default function StudentDashboard() {
   const [chatSession, setChatSession] = useState(null);
   const [unreadChatSessionIds, setUnreadChatSessionIds] = useState(() => new Set());
   const consumedChatSessionRef = useRef(null);
+  const consumedRateSessionRef = useRef(null);
   const [booking, setBooking] = useState(false);
   const [studentExcuseModal, setStudentExcuseModal] = useState(null);
   const [studentExcuseReason, setStudentExcuseReason] = useState('');
@@ -488,6 +489,22 @@ export default function StudentDashboard() {
         syncSessions();
       }
       if (type === 'session-completed') {
+        const completedId = String(detail?.data?.rateSessionId || detail?.data?.session || '');
+        api.get('/api/sessions/my-sessions?limit=100', { auth: true })
+          .then((result) => {
+            const all = result?.sessions || [];
+            setTrials(all.filter((item) => item.type === 'trial'));
+            setSessions(all.filter((item) => item.type !== 'trial'));
+            if (completedId && consumedRateSessionRef.current !== completedId) {
+              const targetSess = all.find((item) => String(item._id) === completedId);
+              if (targetSess && !targetSess.myFeedback) {
+                consumedRateSessionRef.current = completedId;
+                setReviewForm(emptyReview);
+                setReviewModal(targetSess);
+              }
+            }
+          })
+          .catch(() => {});
         api.get('/api/students/dashboard/evaluations', { auth: true })
           .then((result) => setEvaluations(result.evaluations || []))
           .catch(() => {});
@@ -540,6 +557,21 @@ export default function StudentDashboard() {
       setTab(requestedTab);
     }
 
+    const requestedRateSessionId = searchParams.get('rateSession');
+    if (requestedRateSessionId && consumedRateSessionRef.current !== String(requestedRateSessionId)) {
+      const rateTarget = [...trials, ...sessions].find((item) => String(item._id) === String(requestedRateSessionId));
+      if (rateTarget) {
+        consumedRateSessionRef.current = String(requestedRateSessionId);
+        const alreadyRated = Boolean(rateTarget.myFeedback) || reviews.some(
+          (r) => String(r.session?._id || r.session || '') === String(rateTarget._id)
+        );
+        if (!alreadyRated) {
+          setReviewForm(emptyReview);
+          setReviewModal(rateTarget);
+        }
+      }
+    }
+
     const requestedSessionId = searchParams.get('session');
     if (!requestedSessionId) return;
     if (consumedChatSessionRef.current === String(requestedSessionId)) return;
@@ -548,7 +580,7 @@ export default function StudentDashboard() {
       consumedChatSessionRef.current = String(requestedSessionId);
       openSessionChat(found);
     }
-  }, [searchParams, trials, sessions, openSessionChat]);
+  }, [searchParams, trials, sessions, reviews, openSessionChat]);
 
   useEffect(() => {
     if (!ready) return;
@@ -896,12 +928,19 @@ export default function StudentDashboard() {
     if (!reviewModal || submittingReview) return;
     setSubmittingReview(true);
     try {
-      await api.post('/api/reviews', {
-        teacherId: reviewModal.teacher?._id,
-        sessionId: reviewModal._id,
-        rating: reviewForm.rating,
-        comment: reviewForm.comment,
-      }, { auth: true });
+      try {
+        await api.post('/api/reviews', {
+          teacherId: reviewModal.teacher?._id,
+          sessionId: reviewModal._id,
+          rating: reviewForm.rating,
+          comment: reviewForm.comment,
+          wouldContinue: reviewForm.wouldContinue,
+        }, { auth: true });
+      } catch (revErr) {
+        if (!String(revErr?.message || '').toLowerCase().includes('already reviewed')) {
+          throw revErr;
+        }
+      }
       await api.put(`/api/sessions/${reviewModal._id}/feedback`, {
         rating: reviewForm.rating,
         comment: reviewForm.comment,
@@ -1051,7 +1090,9 @@ export default function StudentDashboard() {
     }
   };
 
-  const hasReviewed = (sessionId) => reviews.some((r) => r.session === sessionId || r.session?._id === sessionId);
+  const hasReviewed = (sessionId, sessionObj = null) =>
+    Boolean(sessionObj?.myFeedback) ||
+    reviews.some((r) => String(r.session?._id || r.session || '') === String(sessionId));
 
   const bookingTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const bookingDateKey = (value) => {
@@ -2146,7 +2187,7 @@ export default function StudentDashboard() {
                     key={s._id}
                     session={s}
                     onReview={openReview}
-                    hasReviewed={hasReviewed(s._id)}
+                    hasReviewed={hasReviewed(s._id, s)}
                     onChat={openSessionChat}
                     onRsvp={(sess, rsvpSt) => rsvpSt === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
                     onAcceptReschedule={acceptRescheduledSession}
@@ -2184,7 +2225,7 @@ export default function StudentDashboard() {
                     key={s._id}
                     session={s}
                     onReview={openReview}
-                    hasReviewed={hasReviewed(s._id)}
+                    hasReviewed={hasReviewed(s._id, s)}
                     onChat={openSessionChat}
                     onRsvp={(sess, rsvpSt) => rsvpSt === 'excused' ? setStudentExcuseModal(sess) : handleStudentRsvp(sess._id, 'confirmed')}
                     onAcceptReschedule={acceptRescheduledSession}
@@ -2742,25 +2783,38 @@ export default function StudentDashboard() {
       <Modal
         isOpen={Boolean(reviewModal)}
         disableClose={submittingReview}
-        title={`${modT.reviewTitle || 'Rate Session & Tutor'} — ${reviewModal?.teacher?.user?.name || scT.tutorFallback || ''}`}
+        title={`${modT.reviewTitle || 'Rate Session & Tutor'} — ${reviewModal?.teacher?.personalInfo?.fullName || reviewModal?.teacher?.user?.name || reviewModal?.circle?.name || scT.tutorFallback || ''}`}
         onClose={() => { if (!submittingReview) setReviewModal(null); }}
       >
         <div className="space-y-4">
           <div>
-            <label htmlFor="review-rating" className="block text-sm font-medium text-[var(--wn-text-primary)] mb-1">
+            <p className="block text-sm font-medium text-[var(--wn-text-primary)] mb-2">
               {modT.ratingLabel || 'Overall rating'}
-            </label>
-            <input
-              id="review-rating"
-              type="range"
-              min={1}
-              max={5}
-              disabled={submittingReview}
-              value={reviewForm.rating}
-              onChange={(e) => setReviewForm((p) => ({ ...p, rating: Number(e.target.value) }))}
-              className="w-full accent-[var(--wn-emerald)]"
-            />
-            <span className="text-[var(--wn-link)] font-bold">{reviewForm.rating} / 5</span>
+            </p>
+            <div className="flex items-center gap-2" role="radiogroup" aria-label={modT.ratingLabel || 'Overall rating'}>
+              {[1, 2, 3, 4, 5].map((star) => {
+                const active = star <= reviewForm.rating;
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    disabled={submittingReview}
+                    role="radio"
+                    aria-checked={reviewForm.rating === star}
+                    aria-label={`${star} / 5`}
+                    onClick={() => setReviewForm((p) => ({ ...p, rating: star }))}
+                    className={`min-h-[44px] min-w-[44px] rounded-xl border transition inline-flex items-center justify-center cursor-pointer ${
+                      active
+                        ? 'border-[var(--wn-gold)] bg-[var(--wn-gold-soft)] text-[var(--wn-gold)]'
+                        : 'border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-[var(--wn-text-tertiary)]'
+                    }`}
+                  >
+                    <Star size={22} fill={active ? 'currentColor' : 'none'} aria-hidden="true" />
+                  </button>
+                );
+              })}
+              <span className="ms-2 text-[var(--wn-link)] font-bold">{reviewForm.rating} / 5</span>
+            </div>
           </div>
           <div>
             <label htmlFor="review-comment" className="block text-sm font-medium text-[var(--wn-text-primary)] mb-1">

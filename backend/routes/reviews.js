@@ -4,6 +4,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Session = require('../models/Session');
+const LiveSession = require('../models/LiveSession');
 const { protect, authorize } = require('../middleware/auth');
 const { logAdminAction } = require('../services/adminAudit');
 const { inspectChatSafety } = require('../utils/chatSafety');
@@ -34,9 +35,41 @@ function maskDisplayName(name) {
   return `${parts[0]} ${parts[1].charAt(0)}.`;
 }
 
+function sessionIncludesLearner(session, studentId) {
+  if (!session || !studentId) return false;
+  const target = String(studentId);
+  if (session.student && String(session.student?._id || session.student) === target) return true;
+  if (
+    Array.isArray(session.attendance) &&
+    session.attendance.some((entry) => entry?.student && String(entry.student?._id || entry.student) === target)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function isSessionEligibleForStudentReview(session) {
+  if (!session) return false;
+  if (session.status === 'completed') return true;
+  if (session.status !== 'accepted') return false;
+  if (session.scheduledAt && new Date(session.scheduledAt).getTime() <= Date.now()) {
+    return true;
+  }
+  if (Boolean(mongoose.connection?.db) || LiveSession.findOne !== mongoose.Model.findOne) {
+    try {
+      const q = LiveSession.findOne({ session: session._id });
+      const ls = typeof q?.select === 'function' ? await q.select('endedAt classroomState').lean() : await q;
+      if (ls?.endedAt || ls?.classroomState?.controls?.sessionEnded) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return false;
+}
+
 router.post('/', protect, authorize('student'), async (req, res) => {
   try {
-    const { sessionId, rating, comment, categories, isAnonymous } = req.body || {};
+    const { sessionId, rating, comment, categories, isAnonymous, wouldContinue } = req.body || {};
 
     if (!sessionId || !mongoose.Types.ObjectId.isValid(String(sessionId))) {
       return res.status(400).json({ error: 'Invalid session ID' });
@@ -61,11 +94,10 @@ router.post('/', protect, authorize('student'), async (req, res) => {
 
     const session = await Session.findOne({
       _id: sessionId,
-      student: req.user.id,
-      status: 'completed'
+      status: { $in: ['accepted', 'completed'] },
     });
 
-    if (!session) {
+    if (!session || !sessionIncludesLearner(session, req.user.id) || !(await isSessionEligibleForStudentReview(session))) {
       return res.status(404).json({ error: 'Completed session not found' });
     }
 
@@ -102,6 +134,33 @@ router.post('/', protect, authorize('student'), async (req, res) => {
     }
 
     await Review.updateTeacherRating(teacherId);
+
+    // Keep Session feedback synchronized for both 1-on-1 (trial/regular) and group_circle sessions
+    if (typeof session.save === 'function') {
+      const cleanContinue = typeof wouldContinue === 'boolean' ? wouldContinue : undefined;
+      if (session.type === 'group_circle') {
+        if (!Array.isArray(session.studentFeedbacks)) session.studentFeedbacks = [];
+        const idx = session.studentFeedbacks.findIndex(
+          (entry) => entry?.student && String(entry.student) === String(req.user.id)
+        );
+        const entryPayload = {
+          student: req.user.id,
+          rating: numericRating,
+          comment: cleanComment,
+          ...(cleanContinue !== undefined ? { wouldContinue: cleanContinue } : {}),
+          submittedAt: new Date(),
+        };
+        if (idx >= 0) session.studentFeedbacks[idx] = entryPayload;
+        else session.studentFeedbacks.push(entryPayload);
+      } else {
+        session.studentFeedback = {
+          rating: numericRating,
+          comment: cleanComment,
+          ...(cleanContinue !== undefined ? { wouldContinue: cleanContinue } : {}),
+        };
+      }
+      await session.save().catch(() => {});
+    }
 
     res.status(201).json({ success: true, review });
   } catch (error) {

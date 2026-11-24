@@ -34,6 +34,7 @@ import LiveQuranGameArena from '../../components/classroom/LiveQuranGameArena';
 import TajweedMakharijModal from '../../components/classroom/TajweedMakharijModal';
 import LiveEncouragementOverlay from '../../components/classroom/LiveEncouragementOverlay';
 import TeacherPermissionsModal from '../../components/classroom/TeacherPermissionsModal';
+import PostSessionRatingModal from '../../components/classroom/PostSessionRatingModal';
 import useClassroomSync from '../../components/classroom/useClassroomSync';
 import { inspectMessage } from '../../components/classroom/ChatSafetyFilter';
 
@@ -51,6 +52,8 @@ function ClassroomStageCore({
   sessionContext,
   initialServerState = null,
   onEndAndEvaluate,
+  onStudentVoluntaryLeave = null,
+  onRemoteSessionEnded = null,
   onBackToDashboard = null,
   hasLiveKitMedia = false,
 }) {
@@ -87,8 +90,11 @@ function ClassroomStageCore({
 
   const {
     classroomState,
+    sessionEnded,
+    syncedSessionContext,
     studentOpenMistakes,
     updateClassroomState,
+    endClassroomForAll,
     submitGameAnswer,
     ringListenerBell,
     submitWhiteboardStudentAction,
@@ -104,6 +110,33 @@ function ClassroomStageCore({
     initialServerState,
     primaryStudentUserId,
   });
+
+  const effectiveSessionContext = syncedSessionContext || sessionContext;
+  const [endingRoom, setEndingRoom] = useState(false);
+
+  const handleHostEndRoom = useCallback(async () => {
+    if (!isHost || endingRoom) return;
+    setEndingRoom(true);
+    await endClassroomForAll();
+    try {
+      room?.disconnect();
+    } catch {
+      // ignore
+    }
+    if (onEndAndEvaluate) {
+      await onEndAndEvaluate({ alreadyEndedOnServer: true });
+    }
+  }, [isHost, endingRoom, endClassroomForAll, room, onEndAndEvaluate]);
+
+  useEffect(() => {
+    if (!sessionEnded || isHost) return;
+    try {
+      room?.disconnect();
+    } catch {
+      // ignore
+    }
+    onRemoteSessionEnded?.(effectiveSessionContext);
+  }, [sessionEnded, isHost, room, onRemoteSessionEnded, effectiveSessionContext]);
 
   const controls = classroomState?.controls || {};
   const followTeacherTab = controls.followTeacherTab !== false;
@@ -525,8 +558,9 @@ function ClassroomStageCore({
           {isHost && onEndAndEvaluate && (
             <button
               type="button"
-              onClick={onEndAndEvaluate}
-              className="min-h-[42px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+              disabled={endingRoom}
+              onClick={handleHostEndRoom}
+              className="min-h-[42px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] disabled:opacity-60"
               title={t.live.room.endAndEvaluateTitle}
             >
               <CheckCircle2 size={15} aria-hidden="true" />
@@ -840,10 +874,29 @@ function ClassroomStageCore({
             )}
           </div>
 
-          <DisconnectButton>
-            <PhoneOff size={24} aria-hidden="true" />
-            <span>{t.live.leave}</span>
-          </DisconnectButton>
+          {isHost ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={endingRoom}
+                onClick={handleHostEndRoom}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-[var(--wn-danger)] text-[var(--wn-text-inverse)] text-sm font-bold inline-flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-60"
+              >
+                <PhoneOff size={20} aria-hidden="true" />
+                <span>{t.live.room.endSessionForAll || t.live.room.endAndEvaluate}</span>
+              </button>
+              <DisconnectButton>
+                <span className="text-xs">{t.live.room.leaveTemporarily || t.live.leave}</span>
+              </DisconnectButton>
+            </div>
+          ) : (
+            <div onClickCapture={() => onStudentVoluntaryLeave?.()}>
+              <DisconnectButton>
+                <PhoneOff size={24} aria-hidden="true" />
+                <span>{t.live.leave}</span>
+              </DisconnectButton>
+            </div>
+          )}
         </div>
       )}
 
@@ -905,11 +958,67 @@ export default function LiveRoom() {
   const [resolvedServerUrl, setResolvedServerUrl] = useState('');
   const [standalonePreview, setStandalonePreview] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [endedForLearnerContext, setEndedForLearnerContext] = useState(null);
+  const studentVoluntaryLeaveRef = useRef(false);
+  const postedNativeEndRef = useRef(false);
+  const toast = useToast();
 
   const role = serverPermissions?.role || user?.role || '';
   const isHost = serverPermissions?.isHost ?? (role === 'teacher' || role === 'admin');
   const isObserver = serverPermissions?.isObserver ?? (role === 'guardian' || role === 'supervisor');
   const participantName = user?.name || user?.email || (isObserver ? t.live.room.roleObserver : isHost ? t.live.room.roleTeacher : t.live.room.roleStudent);
+
+  const navigateAfterLearnerExit = useCallback(
+    (ctx) => {
+      const targetCtx = ctx || sessionContext;
+      if (role === 'student' && targetCtx?.sessionType === 'trial' && targetCtx?.sessionId) {
+        navigate(
+          localizedPath(
+            `/student/dashboard?tab=trials&postTrial=${encodeURIComponent(targetCtx.sessionId)}`,
+            locale
+          ),
+          { replace: true }
+        );
+        return;
+      }
+      if (role === 'student') {
+        navigate(localizedPath('/student/dashboard?tab=sessions', locale), { replace: true });
+        return;
+      }
+      navigate(dashboardPathForRole(role, locale), { replace: true });
+    },
+    [sessionContext, role, navigate, locale]
+  );
+
+  const handleRemoteSessionEnded = useCallback(
+    (ctx) => {
+      const mergedCtx = ctx || sessionContext || {};
+      if (isObserver) {
+        toast.success(t.live.room.sessionEndedBanner || 'انتهت الحصة بحمد الله');
+        navigate(dashboardPathForRole(role, locale), { replace: true });
+        return;
+      }
+      if (typeof window !== 'undefined' && window.ReactNativeWebView?.postMessage) {
+        if (!postedNativeEndRef.current) {
+          postedNativeEndRef.current = true;
+          try {
+            window.ReactNativeWebView.postMessage(
+              JSON.stringify({
+                type: 'WWN_SESSION_ENDED',
+                sessionContext: mergedCtx,
+              })
+            );
+          } catch {
+            // fallback to web modal if postMessage throws
+            setEndedForLearnerContext(mergedCtx);
+          }
+        }
+        return;
+      }
+      setEndedForLearnerContext(mergedCtx);
+    },
+    [sessionContext, isObserver, toast, t, navigate, role, locale]
+  );
 
   useEffect(() => {
     if (authLoading) return undefined;
@@ -947,6 +1056,23 @@ export default function LiveRoom() {
             if (fallbackState.permissions) setServerPermissions(fallbackState.permissions);
             if (fallbackState.sessionContext) setSessionContext(fallbackState.sessionContext);
             if (fallbackState.classroomState) setInitialClassroomState(fallbackState.classroomState);
+            if (fallbackState.sessionEnded || fallbackState.classroomState?.controls?.sessionEnded) {
+              if (fallbackState.permissions?.role === 'student') {
+                const endedCtx = fallbackState.sessionContext || {};
+                if (typeof window !== 'undefined' && window.ReactNativeWebView?.postMessage) {
+                  try {
+                    window.ReactNativeWebView.postMessage(
+                      JSON.stringify({ type: 'WWN_SESSION_ENDED', sessionContext: endedCtx })
+                    );
+                  } catch {
+                    setEndedForLearnerContext(endedCtx);
+                  }
+                } else {
+                  setEndedForLearnerContext(endedCtx);
+                }
+                return;
+              }
+            }
             // If LiveKit is simply not configured yet (503), launch directly into the Synced Smart Classroom!
             if (err?.status === 503) {
               setStandalonePreview(true);
@@ -968,6 +1094,18 @@ export default function LiveRoom() {
     return () => { cancelled = true; };
   }, [roomId, participantName, authLoading, isAuthenticated, navigate, locale, retryNonce, t]);
 
+  if (endedForLearnerContext) {
+    return (
+      <div className="min-h-screen bg-[var(--wn-bg)] flex items-center justify-center">
+        <PostSessionRatingModal
+          sessionContext={endedForLearnerContext}
+          onComplete={() => navigateAfterLearnerExit(endedForLearnerContext)}
+          onSkip={() => navigateAfterLearnerExit(endedForLearnerContext)}
+        />
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="live-room-loading" dir={dir} role="status" aria-live="polite">
@@ -978,10 +1116,14 @@ export default function LiveRoom() {
     );
   }
 
-  const handleEndAndEvaluate = async () => {
+  const handleEndAndEvaluate = async (opts = {}) => {
     const activeRoom = resolvedRoomId || roomId;
-    if (isHost && activeRoom) {
-      await api.patch('/api/live/sessions/' + encodeURIComponent(activeRoom) + '/live', { isLive: false }, { auth: true }).catch(() => {});
+    if (isHost && activeRoom && !opts?.alreadyEndedOnServer) {
+      await api
+        .post('/api/live/sessions/' + encodeURIComponent(activeRoom) + '/end', {}, { auth: true })
+        .catch(() =>
+          api.patch('/api/live/sessions/' + encodeURIComponent(activeRoom) + '/live', { isLive: false, endSession: true }, { auth: true }).catch(() => {})
+        );
     }
     if (role === 'teacher' && sessionContext?.sessionId) {
       navigate(localizedPath(`/teacher/dashboard?tab=sessions&evaluate=${encodeURIComponent(sessionContext.sessionId)}`, locale));
@@ -1001,6 +1143,7 @@ export default function LiveRoom() {
         sessionContext={sessionContext}
         initialServerState={initialClassroomState}
         onEndAndEvaluate={isHost ? handleEndAndEvaluate : null}
+        onRemoteSessionEnded={handleRemoteSessionEnded}
         onBackToDashboard={() => navigate(dashboardPathForRole(role, locale))}
         hasLiveKitMedia={false}
       />
@@ -1049,6 +1192,29 @@ export default function LiveRoom() {
 
   const serverUrl = resolvedServerUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://your-livekit-server.livekit.cloud';
 
+  const handleLiveKitDisconnected = async () => {
+    if (isHost) {
+      navigate(dashboardPathForRole(role, locale));
+      return;
+    }
+    if (studentVoluntaryLeaveRef.current) {
+      navigateAfterLearnerExit(sessionContext);
+      return;
+    }
+    // Check if disconnect happened because the teacher ended the room on SFU
+    try {
+      const activeRoom = resolvedRoomId || roomId;
+      const st = await api.get('/api/live/sessions/' + encodeURIComponent(activeRoom) + '/state', { auth: true });
+      if (st?.sessionEnded || st?.classroomState?.controls?.sessionEnded) {
+        handleRemoteSessionEnded(st.sessionContext || sessionContext);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    navigateAfterLearnerExit(sessionContext);
+  };
+
   return (
     <LiveKitRoom
       video={false}
@@ -1056,7 +1222,7 @@ export default function LiveRoom() {
       token={token}
       serverUrl={serverUrl}
       data-lk-theme="default"
-      onDisconnected={() => navigate(dashboardPathForRole(role, locale))}
+      onDisconnected={handleLiveKitDisconnected}
     >
       <LiveKitConnectedStage
         isHost={isHost}
@@ -1067,6 +1233,10 @@ export default function LiveRoom() {
         sessionContext={sessionContext}
         initialServerState={initialClassroomState}
         onEndAndEvaluate={isHost ? handleEndAndEvaluate : null}
+        onStudentVoluntaryLeave={() => {
+          studentVoluntaryLeaveRef.current = true;
+        }}
+        onRemoteSessionEnded={handleRemoteSessionEnded}
       />
     </LiveKitRoom>
   );
