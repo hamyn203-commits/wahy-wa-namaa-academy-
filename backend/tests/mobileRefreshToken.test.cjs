@@ -98,6 +98,22 @@ test('Native mobile login issues rolling refresh token, rotates on /refresh, rej
     assert.ok(mobileLogin.json?.refreshToken, 'mobile login should return refreshToken');
     assert.equal(mobileLogin.headers['set-cookie'], undefined, 'mobile login should not pollute OS cookie jar');
 
+    const decodedMobileAccess = jwt.verify(mobileLogin.json.accessToken, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
+    const decodedWebAccess = jwt.verify(webLogin.json.accessToken, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
+    assert.ok(
+      decodedMobileAccess.exp - decodedMobileAccess.iat >= 3600,
+      'mobile access token TTL should be >= 1h to avoid mid-lesson classroom drops'
+    );
+    assert.equal(
+      decodedWebAccess.exp - decodedWebAccess.iat,
+      900,
+      'web access token TTL must remain 15m (900s)'
+    );
+
     const decodedFirst = jwt.verify(mobileLogin.json.refreshToken, process.env.JWT_REFRESH_SECRET, {
       algorithms: ['HS256'],
     });
@@ -169,6 +185,73 @@ test('Native mobile login issues rolling refresh token, rotates on /refresh, rej
       { 'X-Client-Platform': 'ios', 'X-App-Audience': 'student_guardian' }
     );
     assert.equal(refreshAfterLogout.status, 401);
+
+    // 9. Multi-device isolation: logging out on Website MUST NOT log out concurrent Mobile App session!
+    const concurrentMobileLogin = await postJson(
+      port,
+      '/api/auth/login',
+      { email, password },
+      { 'X-Client-Platform': 'android', 'X-App-Audience': 'teacher' }
+    );
+    assert.equal(concurrentMobileLogin.status, 200);
+
+    const concurrentWebLogin = await postJson(port, '/api/auth/login', { email, password });
+    assert.equal(concurrentWebLogin.status, 200);
+    const webCookie = String(concurrentWebLogin.headers['set-cookie'] || '').split(';')[0];
+    assert.match(webCookie, /^wn_refresh=/);
+
+    // User logs out on Website
+    const webLogout = await postJson(
+      port,
+      '/api/auth/logout',
+      {},
+      {
+        Cookie: webCookie,
+        Authorization: `Bearer ${concurrentWebLogin.json.accessToken}`,
+      }
+    );
+    assert.equal(webLogout.status, 200);
+
+    // Web refresh cookie is now revoked
+    const webRefreshAfterLogout = await postJson(
+      port,
+      '/api/auth/refresh',
+      {},
+      { Cookie: webCookie }
+    );
+    assert.equal(webRefreshAfterLogout.status, 401);
+
+    // Meanwhile, Mobile App refresh session MUST STILL WORK cleanly!
+    const mobileStillAlive = await postJson(
+      port,
+      '/api/auth/refresh',
+      { refreshToken: concurrentMobileLogin.json.refreshToken },
+      { 'X-Client-Platform': 'android', 'X-App-Audience': 'teacher' }
+    );
+    assert.equal(
+      mobileStillAlive.status,
+      200,
+      'Mobile app session must survive single-device logout on web browser'
+    );
+    assert.ok(mobileStillAlive.json?.accessToken);
+    assert.ok(mobileStillAlive.json?.refreshToken);
+
+    // 10. Explicit /api/auth/logout-all revokes ALL devices including mobile
+    const logoutAllRes = await postJson(
+      port,
+      '/api/auth/logout-all',
+      {},
+      { Authorization: `Bearer ${mobileStillAlive.json.accessToken}` }
+    );
+    assert.equal(logoutAllRes.status, 200);
+
+    const mobileAfterLogoutAll = await postJson(
+      port,
+      '/api/auth/refresh',
+      { refreshToken: mobileStillAlive.json.refreshToken },
+      { 'X-Client-Platform': 'android', 'X-App-Audience': 'teacher' }
+    );
+    assert.equal(mobileAfterLogoutAll.status, 401);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

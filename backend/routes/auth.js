@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Guardian = require('../models/Guardian');
 const { 
   isNativeMobileClient,
+  markAccessJtiRevokedInMemory,
   generateAccessToken, 
   generateRefreshToken, 
   verifyAccessToken, 
@@ -45,7 +46,31 @@ const MAX_CONSUMED_REFRESH_JTIS = 512;
 const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
 const PASSWORD_RESET_HOURLY_CAP = 4;
 const consumedRefreshJtisFallback = new Map();
+const loggedOutRefreshJtisFallback = new Map();
 const passwordResetQuotaFallback = new Map();
+
+function markRefreshJtiLoggedOutInMemory(jti, expSeconds) {
+  if (!jti) return;
+  const now = Date.now();
+  if (loggedOutRefreshJtisFallback.size > 5000) {
+    for (const [key, expiresAt] of loggedOutRefreshJtisFallback.entries()) {
+      if (expiresAt <= now) loggedOutRefreshJtisFallback.delete(key);
+    }
+  }
+  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : 90 * 24 * 60 * 60 * 1000;
+  loggedOutRefreshJtisFallback.set(jti, now + ttlMs);
+}
+
+function isRefreshJtiLoggedOutInMemory(jti) {
+  if (!jti) return false;
+  const expiresAt = loggedOutRefreshJtisFallback.get(jti);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    loggedOutRefreshJtisFallback.delete(jti);
+    return false;
+  }
+  return true;
+}
 
 async function recordFailedPasswordAttempt(user, lockExpired, maxAttempts = MAX_FAILED_LOGIN_ATTEMPTS) {
   const lockValue = new Date(Date.now() + LOCKOUT_DURATION_MS);
@@ -155,6 +180,9 @@ function sanitizeUserResponse(user) {
   delete obj.password;
   delete obj.googleSubject;
   delete obj.refreshTokenVersion;
+  delete obj.consumedRefreshJtis;
+  delete obj.revokedRefreshJtis;
+  delete obj.revokedAccessJtis;
   delete obj.failedLoginAttempts;
   delete obj.lockUntil;
   delete obj.sessionsRevokedAt;
@@ -368,7 +396,7 @@ router.post('/register', async (req, res) => {
         });
       }
 
-      const accessToken = generateAccessToken(user);
+      const accessToken = generateAccessToken(user, { mobile: isNativeMobileClient(req) });
       const mobileRefresh = attachRefreshSession(req, res, user);
 
       user.lastLogin = new Date();
@@ -405,7 +433,7 @@ router.post('/register', async (req, res) => {
       lastLogin: new Date(),
     });
 
-    const accessToken = generateAccessToken(user);
+    const accessToken = generateAccessToken(user, { mobile: isNativeMobileClient(req) });
     const mobileRefresh = attachRefreshSession(req, res, user);
 
     res.status(201).json({
@@ -624,7 +652,7 @@ router.post('/google', async (req, res) => {
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
     await user.save();
-    const accessToken = generateAccessToken(user);
+    const accessToken = generateAccessToken(user, { mobile: isNativeMobileClient(req) });
     const mobileRefresh = attachRefreshSession(req, res, user);
     return res.json({
       accessToken,
@@ -739,7 +767,7 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    const accessToken = generateAccessToken(user);
+    const accessToken = generateAccessToken(user, { mobile: isNativeMobileClient(req) });
     const mobileRefresh = attachRefreshSession(req, res, user);
 
     if (!isMockMode || isDBConnected()) {
@@ -773,7 +801,7 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
   try {
     const user = isMockMode && !isDBConnected()
       ? findMockUserById(req.refreshToken.id)
-      : await User.findById(req.refreshToken.id).select('+refreshTokenVersion +sessionsRevokedAt +lockUntil +consumedRefreshJtis');
+      : await User.findById(req.refreshToken.id).select('+refreshTokenVersion +sessionsRevokedAt +lockUntil +consumedRefreshJtis +revokedRefreshJtis');
     
     if (!user || !user.isActive) {
       clearRefreshCookie(res);
@@ -812,6 +840,27 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
 
     const presentedJti = typeof req.refreshToken.jti === 'string' ? req.refreshToken.jti : '';
     if (presentedJti) {
+      // Single-device logout revocation check (revokes ONLY this device's refresh session,
+      // never terminating concurrent sessions on the user's mobile apps or other devices).
+      if (
+        isRefreshJtiLoggedOutInMemory(presentedJti)
+        || (Array.isArray(user.revokedRefreshJtis) && user.revokedRefreshJtis.includes(presentedJti))
+      ) {
+        clearRefreshCookie(res);
+        return res.status(401).json({ error: 'Refresh session has been revoked', code: 'SESSION_REVOKED' });
+      }
+      if (hasRealMongoDriver()) {
+        const loggedOutEntry = await VerificationLedger.exists({
+          kind: 'logout_jti',
+          key: `${user._id}:${presentedJti}`,
+          consumed: true,
+        }).catch(() => null);
+        if (loggedOutEntry) {
+          clearRefreshCookie(res);
+          return res.status(401).json({ error: 'Refresh session has been revoked', code: 'SESSION_REVOKED' });
+        }
+      }
+
       const canRotateInDb = isDBConnected() && User.findOneAndUpdate === mongoose.Model.findOneAndUpdate;
       if (canRotateInDb) {
         if (hasRealMongoDriver()) {
@@ -890,7 +939,7 @@ router.post('/refresh', verifyRefreshToken, async (req, res) => {
       }
     }
 
-    const accessToken = generateAccessToken(user);
+    const accessToken = generateAccessToken(user, { mobile: isNativeMobileClient(req) });
     const mobileRefresh = attachRefreshSession(req, res, user);
 
     res.json({
@@ -911,25 +960,60 @@ router.post('/logout', readRefreshTokenIfValid, readAccessTokenIfValid, async (r
   try {
     const targetId = req.refreshToken?.id || req.user?.id;
     const tokenVersion = Number((req.refreshToken ? req.refreshToken.v : req.user?.v) || 0);
+    const refreshJti = typeof req.refreshToken?.jti === 'string' ? req.refreshToken.jti : '';
+    const accessJti = typeof req.user?.jti === 'string' ? req.user.jti : '';
+    const nativeMobile = isNativeMobileClient(req);
+
     if (targetId) {
-      if (isMockMode && !isDBConnected()) {
-        const user = findMockUserById(targetId);
-        if (user && Number(user.refreshTokenVersion || 0) === tokenVersion) {
-          updateMockUser(user._id || user.id, {
-            refreshTokenVersion: Number(user.refreshTokenVersion || 0) + 1,
-            sessionsRevokedAt: new Date(),
-            pushToken: undefined,
-          });
+      const currentUser = isMockMode && !isDBConnected()
+        ? findMockUserById(targetId)
+        : await User.findById(targetId).select('+refreshTokenVersion');
+
+      // V3-HIGH-06: Ignore already-revoked stale tokens so they cannot disturb active sessions.
+      if (currentUser && Number(currentUser.refreshTokenVersion || 0) === tokenVersion) {
+        if (refreshJti) {
+          markRefreshJtiLoggedOutInMemory(refreshJti, req.refreshToken?.exp);
         }
-      } else {
-        await User.findOneAndUpdate(
-          { _id: targetId, refreshTokenVersion: tokenVersion },
-          {
-            $inc: { refreshTokenVersion: 1 },
-            $set: { sessionsRevokedAt: new Date(), consumedRefreshJtis: [] },
-            $unset: { pushToken: 1 },
+        if (accessJti) {
+          markAccessJtiRevokedInMemory(accessJti, req.user?.exp);
+        }
+
+        if (isMockMode && !isDBConnected()) {
+          if (nativeMobile) {
+            updateMockUser(currentUser._id || currentUser.id, { pushToken: undefined });
           }
-        );
+        } else {
+          if (hasRealMongoDriver() && refreshJti) {
+            const ttlExpiresAt = new Date(
+              req.refreshToken?.exp
+                ? Math.max(Date.now() + 5000, req.refreshToken.exp * 1000)
+                : Date.now() + 90 * 24 * 60 * 60 * 1000
+            );
+            await VerificationLedger.findOneAndUpdate(
+              { kind: 'logout_jti', key: `${currentUser._id}:${refreshJti}` },
+              { $set: { consumed: true, expiresAt: ttlExpiresAt } },
+              { upsert: true, new: true }
+            ).catch(() => {});
+          }
+
+          const pushOps = {};
+          if (refreshJti) {
+            pushOps.revokedRefreshJtis = { $each: [refreshJti], $slice: -256 };
+          }
+          if (accessJti) {
+            pushOps.revokedAccessJtis = { $each: [accessJti], $slice: -64 };
+          }
+          const updateDoc = {
+            ...(Object.keys(pushOps).length > 0 ? { $push: pushOps } : {}),
+            ...(nativeMobile ? { $unset: { pushToken: 1 } } : {}),
+          };
+          if (Object.keys(updateDoc).length > 0) {
+            await User.findOneAndUpdate(
+              { _id: targetId, refreshTokenVersion: tokenVersion },
+              updateDoc
+            );
+          }
+        }
       }
     }
   } catch (error) {

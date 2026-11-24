@@ -13,7 +13,12 @@ async function safeGet(key: string): Promise<string | null> {
     return memoryFallback.get(key) ?? null;
   }
   try {
-    return await SecureStore.getItemAsync(key);
+    const value = await SecureStore.getItemAsync(key);
+    if (value !== null) {
+      memoryFallback.set(key, value);
+      return value;
+    }
+    return memoryFallback.get(key) ?? null;
   } catch {
     return memoryFallback.get(key) ?? null;
   }
@@ -27,7 +32,11 @@ async function safeSet(key: string, value: string): Promise<void> {
       keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
     });
   } catch {
-    // Memory fallback preserves active session if hardware keystore is temporarily locked.
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch {
+      // Memory fallback preserves active session if hardware keystore is temporarily locked.
+    }
   }
 }
 

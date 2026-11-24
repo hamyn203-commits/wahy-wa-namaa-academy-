@@ -107,9 +107,20 @@ export default function TeacherLiveClassroomScreen() {
   const [roomState, setRoomState] = useState<RemoteClassroomState>({});
   const [statusFeedback, setStatusFeedback] = useState<string>('');
   const prevAlertsCountRef = useRef(0);
+  const webViewRef = useRef<WebView | null>(null);
+  const pushedWebTokenRef = useRef<string | null>(null);
 
   const rawRoom = String(roomId || '').trim();
   const cleanRoom = encodeURIComponent(rawRoom);
+
+  const pushTokenToWebView = useCallback((nextToken: string | null) => {
+    if (!nextToken || nextToken === pushedWebTokenRef.current || !webViewRef.current) return;
+    pushedWebTokenRef.current = nextToken;
+    const escaped = JSON.stringify(nextToken);
+    webViewRef.current.injectJavaScript(
+      `try { window.sessionStorage.setItem('wwn_mobile_token', ${escaped}); window.dispatchEvent(new CustomEvent('wwn:mobile-token', { detail: { token: ${escaped} } })); } catch (e) {} true;`
+    );
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -121,6 +132,7 @@ export default function TeacherLiveClassroomScreen() {
       }
       const accessToken = await api.hydrateToken();
       if (active) {
+        pushedWebTokenRef.current = accessToken;
         setToken(accessToken);
         setReady(true);
       }
@@ -137,6 +149,7 @@ export default function TeacherLiveClassroomScreen() {
         `/api/live/sessions/${encodeURIComponent(rawRoom)}/state`,
         { auth: true }
       );
+      pushTokenToWebView(api.getAccessToken());
       if (res?.classroomState) {
         const nextAlerts = res.classroomState.engagement?.activeListenerAlerts || [];
         if (nextAlerts.length > prevAlertsCountRef.current) {
@@ -148,7 +161,7 @@ export default function TeacherLiveClassroomScreen() {
     } catch {
       // Room may still be provisioning
     }
-  }, [rawRoom]);
+  }, [pushTokenToWebView, rawRoom]);
 
   useEffect(() => {
     if (!ready || !rawRoom) return undefined;
@@ -446,6 +459,7 @@ export default function TeacherLiveClassroomScreen() {
           </View>
         ) : (
           <WebView
+            ref={webViewRef}
             source={{
               uri: classroomUrl,
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,

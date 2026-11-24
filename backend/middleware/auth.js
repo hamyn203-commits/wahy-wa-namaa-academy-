@@ -12,6 +12,30 @@ const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const DEFAULT_JWT_SECRET = 'wahy-namaa-dev-access-secret-change-me';
 const DEFAULT_REFRESH_SECRET = 'wahy-namaa-dev-refresh-secret-change-me';
 const VALID_SESSION_ROLES = new Set(['student', 'teacher', 'admin', 'guardian', 'supervisor']);
+const loggedOutAccessJtisFallback = new Map();
+
+function markAccessJtiRevokedInMemory(jti, expSeconds) {
+  if (!jti) return;
+  const now = Date.now();
+  if (loggedOutAccessJtisFallback.size > 5000) {
+    for (const [key, expiresAt] of loggedOutAccessJtisFallback.entries()) {
+      if (expiresAt <= now) loggedOutAccessJtisFallback.delete(key);
+    }
+  }
+  const ttlMs = expSeconds ? Math.max(1000, expSeconds * 1000 - now) : 2 * 60 * 60 * 1000;
+  loggedOutAccessJtisFallback.set(jti, now + ttlMs);
+}
+
+function isAccessJtiRevokedInMemory(jti) {
+  if (!jti) return false;
+  const expiresAt = loggedOutAccessJtisFallback.get(jti);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    loggedOutAccessJtisFallback.delete(jti);
+    return false;
+  }
+  return true;
+}
 
 function isWeakProductionSecret(value) {
   const secret = String(value || '');
@@ -82,7 +106,10 @@ function isValidRefreshPayload(decoded) {
   return true;
 }
 
-const generateAccessToken = (user) => {
+const generateAccessToken = (user, options = {}) => {
+  const expiresIn = options && options.mobile
+    ? (process.env.JWT_MOBILE_ACCESS_EXPIRES_IN || '2h')
+    : (process.env.JWT_EXPIRES_IN || '15m');
   return jwt.sign(
     {
       typ: 'access',
@@ -90,9 +117,10 @@ const generateAccessToken = (user) => {
       email: user.email,
       role: user.role,
       v: Number(user.refreshTokenVersion || 0),
+      jti: crypto.randomUUID(),
     },
     accessSecret(),
-    { expiresIn: process.env.JWT_EXPIRES_IN || '15m', algorithm: 'HS256' }
+    { expiresIn, algorithm: 'HS256' }
   );
 };
 
@@ -120,7 +148,7 @@ async function loadLiveSessionState(userId) {
     const query = User.findById(userId);
     let user = null;
     if (query && typeof query.select === 'function') {
-      const selected = query.select('role isActive +refreshTokenVersion +sessionsRevokedAt +lockUntil');
+      const selected = query.select('role isActive +refreshTokenVersion +sessionsRevokedAt +lockUntil +revokedAccessJtis');
       user = typeof selected?.lean === 'function' ? await selected.lean() : await selected;
     } else {
       user = await query;
@@ -152,7 +180,14 @@ function evaluateRevocation(decoded, liveUser, mode) {
   if (mode === 'db' && !liveUser) {
     return { status: 401, body: { error: 'Invalid or revoked session', code: 'SESSION_REVOKED' } };
   }
+  if (decoded?.jti && isAccessJtiRevokedInMemory(decoded.jti)) {
+    return { status: 401, body: { error: 'Session has been revoked', code: 'SESSION_REVOKED' } };
+  }
   if (!liveUser) return null;
+
+  if (decoded?.jti && Array.isArray(liveUser.revokedAccessJtis) && liveUser.revokedAccessJtis.includes(decoded.jti)) {
+    return { status: 401, body: { error: 'Session has been revoked', code: 'SESSION_REVOKED' } };
+  }
 
   if (liveUser.isActive === false) {
     return { status: 403, body: { error: 'Account is deactivated. Please contact support.', code: 'ACCOUNT_DEACTIVATED' } };
@@ -407,6 +442,8 @@ const attachTeacherProfile = async (req, res, next) => {
 module.exports = {
   isWeakProductionSecret,
   isNativeMobileClient,
+  markAccessJtiRevokedInMemory,
+  isAccessJtiRevokedInMemory,
   getAccessSecret: accessSecret,
   generateAccessToken,
   generateRefreshToken,

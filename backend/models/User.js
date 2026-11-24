@@ -131,6 +131,8 @@ const UserSchema = new mongoose.Schema({
   passwordResetExpires: { type: Date, select: false },
   refreshTokenVersion: { type: Number, default: 0, select: false },
   consumedRefreshJtis: { type: [String], default: [], select: false },
+  revokedRefreshJtis: { type: [String], default: [], select: false },
+  revokedAccessJtis: { type: [String], default: [], select: false },
   failedLoginAttempts: { type: Number, default: 0, select: false },
   lockUntil: { type: Date, default: null, select: false },
   sessionsRevokedAt: { type: Date, default: null, select: false },

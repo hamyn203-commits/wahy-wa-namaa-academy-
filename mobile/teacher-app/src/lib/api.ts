@@ -2,6 +2,46 @@ import * as FileSystem from 'expo-file-system';
 import { API_BASE_URL, APP_AUDIENCE, APP_VERSION, CLIENT_PLATFORM, SITE_URL } from './config';
 import { secureStorage } from './secureStorage';
 
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function decodeBase64UrlAscii(input: string): string {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+  let buffer = 0;
+  let bits = 0;
+  let out = '';
+  for (let i = 0; i < normalized.length; i += 1) {
+    const ch = normalized[i];
+    if (ch === '=') break;
+    const val = BASE64_CHARS.indexOf(ch);
+    if (val < 0) continue;
+    buffer = (buffer << 6) | val;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+  return out;
+}
+
+function isJwtExpiringSoon(token: string | null | undefined, bufferSeconds = 180): boolean {
+  if (!token) return true;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(decodeBase64UrlAscii(parts[1])) as { exp?: unknown };
+    if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return false;
+    return payload.exp * 1000 <= Date.now() + bufferSeconds * 1000;
+  } catch {
+    return false;
+  }
+}
+
+function isAuthoritativeSessionForbidden(data: Record<string, unknown>): boolean {
+  const code = typeof data.code === 'string' ? data.code : '';
+  return code === 'ACCOUNT_DEACTIVATED' || code.startsWith('TEACHER_');
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -27,6 +67,8 @@ interface RequestOptions {
 
 class TeacherApiClient {
   private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+  private lastRefreshAt = 0;
   private onUnauthorized: (() => void) | null = null;
   private refreshInFlight: Promise<string | null> | null = null;
 
@@ -38,22 +80,48 @@ class TeacherApiClient {
     return this.accessToken;
   }
 
+  setRefreshToken(token: string | null) {
+    this.refreshToken = token;
+  }
+
+  clearTokensInMemory() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.lastRefreshAt = 0;
+  }
+
   setUnauthorizedHandler(handler: (() => void) | null) {
     this.onUnauthorized = handler;
   }
 
   async hydrateToken(): Promise<string | null> {
-    if (this.accessToken) return this.accessToken;
-    const stored = await secureStorage.getAccessToken();
-    if (stored) {
-      this.accessToken = stored;
-      return stored;
+    let candidate = this.accessToken;
+    if (!candidate) {
+      candidate = await secureStorage.getAccessToken();
+      if (candidate) {
+        this.accessToken = candidate;
+      }
     }
-    const storedRefresh = await secureStorage.getRefreshToken();
+
+    if (candidate && !isJwtExpiringSoon(candidate, 180)) {
+      return candidate;
+    }
+
+    const storedRefresh = this.refreshToken || (await secureStorage.getRefreshToken());
     if (storedRefresh) {
-      return this.refreshAccessToken();
+      this.refreshToken = storedRefresh;
+      try {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) return refreshed;
+      } catch (error) {
+        if (candidate && !isJwtExpiringSoon(candidate, 5)) {
+          return candidate;
+        }
+        throw error;
+      }
     }
-    return null;
+
+    return candidate;
   }
 
   async refreshAccessToken(): Promise<string | null> {
@@ -61,14 +129,23 @@ class TeacherApiClient {
       return this.refreshInFlight;
     }
 
+    if (
+      this.accessToken
+      && Date.now() - this.lastRefreshAt < 5000
+      && !isJwtExpiringSoon(this.accessToken, 60)
+    ) {
+      return this.accessToken;
+    }
+
     const runner = (async (): Promise<string | null> => {
-      const storedRefresh = await secureStorage.getRefreshToken();
+      const storedRefresh = this.refreshToken || (await secureStorage.getRefreshToken());
       if (!storedRefresh) {
         return null;
       }
+      this.refreshToken = storedRefresh;
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
+      const timer = setTimeout(() => controller.abort(), 35000);
       try {
         const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
           method: 'POST',
@@ -82,6 +159,10 @@ class TeacherApiClient {
 
         if (response.ok && typeof data.accessToken === 'string' && data.accessToken) {
           this.accessToken = data.accessToken;
+          this.lastRefreshAt = Date.now();
+          if (typeof data.refreshToken === 'string' && data.refreshToken) {
+            this.refreshToken = data.refreshToken;
+          }
           await secureStorage.setAccessToken(data.accessToken);
           if (typeof data.refreshToken === 'string' && data.refreshToken) {
             await secureStorage.setRefreshToken(data.refreshToken);
@@ -89,8 +170,8 @@ class TeacherApiClient {
           return data.accessToken;
         }
 
-        if (response.status === 401 || response.status === 403) {
-          this.accessToken = null;
+        if (response.status === 401 || (response.status === 403 && isAuthoritativeSessionForbidden(data))) {
+          this.clearTokensInMemory();
           await secureStorage.clearAuthTokens();
           this.onUnauthorized?.();
           return null;
@@ -177,16 +258,28 @@ class TeacherApiClient {
 
       const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
-      if (auth && response.status === 401) {
+      const isPasswordMismatch401 =
+        response.status === 401
+        && path === '/api/auth/change-password'
+        && typeof data.error === 'string'
+        && /current password/i.test(data.error);
+
+      if (auth && response.status === 401 && !isPasswordMismatch401) {
         if (!_retried) {
+          if (this.accessToken && this.accessToken !== token && !isJwtExpiringSoon(this.accessToken, 15)) {
+            return this.request<T>(path, { ...options, _retried: true });
+          }
           const freshToken = await this.refreshAccessToken();
           if (freshToken) {
             return this.request<T>(path, { ...options, _retried: true });
           }
         }
-        this.accessToken = null;
-        await secureStorage.clearAuthTokens();
-        this.onUnauthorized?.();
+        const remainingRefresh = this.refreshToken || (await secureStorage.getRefreshToken());
+        if (!remainingRefresh) {
+          this.clearTokensInMemory();
+          await secureStorage.clearAuthTokens();
+          this.onUnauthorized?.();
+        }
       }
 
       if (!response.ok) {
@@ -237,14 +330,20 @@ class TeacherApiClient {
 
       if (auth && response.status === 401) {
         if (!_retried) {
+          if (this.accessToken && this.accessToken !== token && !isJwtExpiringSoon(this.accessToken, 15)) {
+            return this.uploadMultipart<T>(path, formData, { ...options, _retried: true });
+          }
           const freshToken = await this.refreshAccessToken();
           if (freshToken) {
             return this.uploadMultipart<T>(path, formData, { ...options, _retried: true });
           }
         }
-        this.accessToken = null;
-        await secureStorage.clearAuthTokens();
-        this.onUnauthorized?.();
+        const remainingRefresh = this.refreshToken || (await secureStorage.getRefreshToken());
+        if (!remainingRefresh) {
+          this.clearTokensInMemory();
+          await secureStorage.clearAuthTokens();
+          this.onUnauthorized?.();
+        }
       }
 
       if (!response.ok) {
@@ -270,7 +369,7 @@ class TeacherApiClient {
   /**
    * Downloads an authenticated private audio/media file to local cache so expo-av can play it reliably.
    */
-  async downloadAuthenticatedFile(path: string, filename: string): Promise<string> {
+  async downloadAuthenticatedFile(path: string, filename: string, _retried = false): Promise<string> {
     if (!path.startsWith('/') || path.startsWith('//')) {
       throw new ApiError('Invalid API path', 400, { code: 'INVALID_API_PATH' });
     }
@@ -284,8 +383,18 @@ class TeacherApiClient {
       headers: {
         Authorization: `Bearer ${token}`,
         Origin: SITE_URL,
+        'X-Client-Platform': CLIENT_PLATFORM,
       },
     });
+    if (result.status === 401 && !_retried) {
+      const freshToken =
+        this.accessToken && this.accessToken !== token && !isJwtExpiringSoon(this.accessToken, 15)
+          ? this.accessToken
+          : await this.refreshAccessToken();
+      if (freshToken) {
+        return this.downloadAuthenticatedFile(path, filename, true);
+      }
+    }
     if (result.status < 200 || result.status >= 300) {
       throw new ApiError('تعذر تحميل الملف الصوتي', result.status);
     }

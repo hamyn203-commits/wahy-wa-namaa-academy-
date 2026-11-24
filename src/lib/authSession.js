@@ -1,6 +1,7 @@
 import { API_BASE_URL } from '../config';
 
 let accessToken = null;
+let lastInjectedMobileToken = null;
 let refreshPromise = null;
 
 function getMobileWebViewToken() {
@@ -15,9 +16,25 @@ function getMobileWebViewToken() {
   }
 }
 
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('wwn:mobile-token', (event) => {
+    const nextToken = event?.detail?.token;
+    if (typeof nextToken === 'string' && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(nextToken.trim())) {
+      const clean = nextToken.trim();
+      lastInjectedMobileToken = clean;
+      accessToken = clean;
+    }
+  });
+}
+
 export function getAccessToken() {
-  if (accessToken) return accessToken;
   const mobileToken = getMobileWebViewToken();
+  if (mobileToken && mobileToken !== lastInjectedMobileToken) {
+    lastInjectedMobileToken = mobileToken;
+    accessToken = mobileToken;
+    return mobileToken;
+  }
+  if (accessToken) return accessToken;
   if (mobileToken) {
     accessToken = mobileToken;
     return mobileToken;
@@ -38,6 +55,15 @@ export async function refreshAccessToken() {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
+    // If embedded inside the native mobile app WebView and the host app pushed a rotated token,
+    // adopt it immediately before attempting cookie-based web refresh.
+    const latestMobileToken = getMobileWebViewToken();
+    if (latestMobileToken && latestMobileToken !== accessToken) {
+      lastInjectedMobileToken = latestMobileToken;
+      accessToken = latestMobileToken;
+      return latestMobileToken;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
