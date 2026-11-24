@@ -47,7 +47,7 @@ export default function AdminSubscriptions() {
   const [newCircleForm, setNewCircleForm] = useState({
     name: '',
     teacherId: '',
-    planKey: 'group',
+    planKey: 'focused',
     section: 'men_children',
     day: 'Saturday',
     startTime: '',
@@ -352,11 +352,12 @@ export default function AdminSubscriptions() {
                       onChange={(e) => setNewCircleForm((p) => ({ ...p, planKey: e.target.value }))}
                       className="block w-full min-h-[44px] border border-[var(--wn-border)] rounded-lg p-2 text-sm bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
                     >
-                      <option value="community">{ps.planNames.community}</option>
-                      <option value="group">{ps.planNames.group}</option>
                       <option value="focused">{ps.planNames.focused}</option>
                       <option value="mini">{ps.planNames.mini}</option>
                       <option value="private">{ps.planNames.private}</option>
+                      <option value="private_intensive">{ps.planNames.private_intensive || (isRTL ? 'الفردية المكثّفة والإجازة (60 د)' : 'Intensive Private & Ijazah (60m)')}</option>
+                      <option value="group">{ps.planNames.group}</option>
+                      <option value="community">{ps.planNames.community}</option>
                     </select>
                   </label>
                   <label className="space-y-1 font-bold text-[var(--wn-heading)]">

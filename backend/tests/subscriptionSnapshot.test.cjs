@@ -4,17 +4,50 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const StudentSubscription = require('../models/StudentSubscription');
 const { quoteSubscription } = require('../config/subscriptionPlans');
-test('community checkout snapshots validate the approved twenty-learner capacity', async () => {
-  for (const sessionCount of [4, 8, 12, 24]) {
-    const quote = quoteSubscription({ planKey: 'community', sessionCount });
+
+test('focused & private_intensive checkout snapshots validate 3-5 / 1-on-1 capacities and integer minor pricing', async () => {
+  for (const sessionCount of [8, 12, 24]) {
+    const quote = quoteSubscription({ planKey: 'focused', sessionCount });
     const subscription = new StudentSubscription({
-      student: new mongoose.Types.ObjectId(), planKey: 'community', section: 'men_children',
-      sessionCount, sessionsUsed: 0, sessionsRemaining: sessionCount,
-      pricePerSessionMinor: quote.pricePerSessionMinor, totalAmountMinor: quote.totalAmountMinor,
-      pricingSnapshot: { minStudents: quote.plan.minStudents, maxStudents: quote.plan.maxStudents },
+      student: new mongoose.Types.ObjectId(),
+      planKey: 'focused',
+      section: 'men_children',
+      sessionCount,
+      sessionsUsed: 0,
+      sessionsRemaining: sessionCount,
+      pricePerSessionMinor: quote.pricePerSessionMinor,
+      totalAmountMinor: quote.totalAmountMinor,
+      pricingSnapshot: {
+        minStudents: quote.plan.minStudents,
+        maxStudents: quote.plan.maxStudents,
+        durationMinMinutes: quote.plan.durationMinMinutes,
+        durationMaxMinutes: quote.plan.durationMaxMinutes,
+      },
     });
     await subscription.validate();
-    assert.equal(subscription.pricingSnapshot.maxStudents, 20);
-    assert.equal(subscription.totalAmountMinor, sessionCount * 1000);
+    assert.equal(subscription.pricingSnapshot.minStudents, 3);
+    assert.equal(subscription.pricingSnapshot.maxStudents, 5);
+    assert.equal(subscription.pricingSnapshot.durationMaxMinutes, 45);
+    assert.equal(subscription.totalAmountMinor, sessionCount === 8 ? 20000 : sessionCount * 2000);
   }
+
+  const intensiveQuote = quoteSubscription({ planKey: 'private_intensive', sessionCount: 12 });
+  const intensiveSub = new StudentSubscription({
+    student: new mongoose.Types.ObjectId(),
+    planKey: 'private_intensive',
+    section: 'ladies',
+    sessionCount: 12,
+    sessionsUsed: 0,
+    sessionsRemaining: 12,
+    pricePerSessionMinor: intensiveQuote.pricePerSessionMinor,
+    totalAmountMinor: intensiveQuote.totalAmountMinor,
+    pricingSnapshot: {
+      minStudents: intensiveQuote.plan.minStudents,
+      maxStudents: intensiveQuote.plan.maxStudents,
+      durationMinMinutes: intensiveQuote.plan.durationMinMinutes,
+      durationMaxMinutes: intensiveQuote.plan.durationMaxMinutes,
+    },
+  });
+  await intensiveSub.validate();
+  assert.equal(intensiveSub.totalAmountMinor, 180000);
 });

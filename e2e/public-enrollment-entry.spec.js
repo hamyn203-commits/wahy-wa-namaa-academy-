@@ -56,13 +56,13 @@ test('women-section account stays within its saved section at subscription check
 
   const headers = { Authorization: 'Bearer ' + registration.accessToken };
   const wrong = await page.request.post('/api/subscriptions/select', {
-    headers, data: { planKey: 'group', section: 'men_children', sessionCount: 4 },
+    headers, data: { planKey: 'private', section: 'men_children', sessionCount: 4 },
   });
   expect(wrong.status()).toBe(409);
   expect((await wrong.json()).code).toBe('SUBSCRIPTION_SECTION_MISMATCH');
 
   const valid = await page.request.post('/api/subscriptions/select', {
-    headers, data: { planKey: 'group', section: 'ladies', sessionCount: 4 },
+    headers, data: { planKey: 'private', section: 'ladies', sessionCount: 4 },
   });
   expect(valid.status()).toBe(201);
   expect((await valid.json()).subscription?.section).toBe('ladies');

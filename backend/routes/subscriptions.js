@@ -71,6 +71,7 @@ const { getPlan } = require('../config/subscriptionPlans');
 const { logAdminAction } = require('../services/adminAudit');
 const { notifyUser } = require('../utils/notify');
 const {
+  isActivePlan,
   isSection,
   isCompatibleStudentSection,
   publicPlanCatalog,
@@ -294,6 +295,13 @@ router.post('/select', protect, authorize('student', 'guardian'), async (req, re
       return res.status(safeguardErr.status || 403).json({
         error: safeguardErr.publicMessage || safeguardErr.message,
         code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
+      });
+    }
+
+    if (!isActivePlan(planKey)) {
+      return res.status(400).json({
+        error: 'هذه الباقة لم تعد متاحة للاشتراكات الجديدة. اختر إحدى الباقات المعتمدة الحالية.',
+        code: 'SUBSCRIPTION_PLAN_INVALID',
       });
     }
 
@@ -650,7 +658,7 @@ router.get('/admin/circles', protect, authorize('admin'), async (_req, res) => {
       });
     }
     const [circles, approvedTeachers, allStudents] = await Promise.all([
-      GroupCircle.find({ subscriptionPlanKey: { $in: ['community', 'group', 'focused', 'mini', 'private'] }, status: { $ne: 'completed' } })
+      GroupCircle.find({ subscriptionPlanKey: { $in: ['community', 'group', 'focused', 'mini', 'private', 'private_intensive'] }, status: { $ne: 'completed' } })
         .sort({ createdAt: -1 }).limit(100)
         .populate({ path: 'teacher', select: 'personalInfo user', populate: { path: 'user', select: 'name' } })
         .populate('students', 'name email phone gender age currentLevel')
