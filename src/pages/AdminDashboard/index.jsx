@@ -1076,9 +1076,13 @@ export default function AdminDashboard() {
 
             {tab === 'sessions' && (
               <AdminSessionControl
-                initialFocus={['overdue', 'missing-reports'].includes(focus) ? focus : 'all'}
+                initialFocus={['live', 'today', 'overdue', 'pending', 'missing-reports'].includes(focus) ? focus : 'all'}
                 onOpenStudent={openStudentDossier}
                 onOpenTeacher={openTeacherDossier}
+                onMessageStudent={(studentId) => {
+                  setSupportStudent(studentId);
+                  setTab('messages');
+                }}
                 onFocusChange={(nextFocus) => selectAdminTab('sessions', nextFocus)}
               />
             )}

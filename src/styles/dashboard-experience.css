@@ -8680,15 +8680,9 @@
 .wn-admin-app .wn-admin-exec-priority-list > button {
   grid-template-columns: auto minmax(0,1fr) auto auto;
 }
-.wn-admin-app .wn-admin-session-control__list > article,
 .wn-admin-app .wn-admin-guardian-links__list > article {
   min-width: 0;
 }
-.wn-admin-app .wn-admin-session-control__list > article {
-  grid-template-columns: 150px minmax(0,1fr);
-}
-.wn-admin-app .wn-admin-session-control__meta,
-.wn-admin-app .wn-admin-session-control__list code { grid-column: 2; }
 .wn-admin-app .wn-dashboard-surface,
 .wn-admin-app .wn-admin-exec-panel,
 .wn-admin-app .wn-admin-dossier,
