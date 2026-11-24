@@ -20,10 +20,15 @@ const ContactMessage = require('../models/ContactMessage');
 const GuardianInvitation = require('../models/GuardianInvitation');
 const GroupCircle = require('../models/GroupCircle');
 const StudentSubscription = require('../models/StudentSubscription');
+const LiveSession = require('../models/LiveSession');
+const Review = require('../models/Review');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { protect, authorize } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
 const { logAdminAction } = require('../services/adminAudit');
+const { sessionParticipantWindow } = require('../services/sessionAccess');
+const meetingService = require('../services/meetingService');
+const { notifyUser, notifySessionAccepted } = require('../utils/notify');
 const {
   calculateSessionEarning,
   ensureSessionEarning,
@@ -83,6 +88,57 @@ const {
 const PLACEHOLDER = '/uploads/teachers/placeholder.jpg';
 const API_PUBLIC = process.env.API_PUBLIC_URL || 'https://wahy-wa-namaa-api.vercel.app';
 
+function buildMissingReportMongoFilter() {
+  return {
+    status: 'completed',
+    $and: [
+      {
+        $or: [
+          { studentReports: { $exists: false } },
+          { studentReports: { $size: 0 } },
+        ],
+      },
+      {
+        $or: [
+          { type: 'group_circle' },
+          {
+            'teacherEvaluation.memorization': { $exists: false },
+            'teacherEvaluation.tajweed': { $exists: false },
+            'teacherEvaluation.overallNotes': { $in: [null, ''] },
+            'teacherEvaluation.surahRecited': { $in: [null, ''] },
+            'teacherEvaluation.recommendedLevel': { $exists: false },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function hasSessionTeacherReport(session) {
+  if (!session) return false;
+  if (Array.isArray(session.studentReports) && session.studentReports.length > 0) {
+    return true;
+  }
+  if (session.type === 'group_circle') {
+    return false;
+  }
+  const ev = session.teacherEvaluation;
+  if (!ev || typeof ev !== 'object') return false;
+  return Boolean(
+    ev.memorization != null ||
+    ev.tajweed != null ||
+    ev.attendance != null ||
+    ev.behavior != null ||
+    ev.commitment != null ||
+    (typeof ev.surahRecited === 'string' && ev.surahRecited.trim()) ||
+    (typeof ev.overallNotes === 'string' && ev.overallNotes.trim()) ||
+    (typeof ev.nextHomework === 'string' && ev.nextHomework.trim()) ||
+    ev.recommendedLevel ||
+    ev.recommendedTrack ||
+    (Array.isArray(ev.assignedHomework) && ev.assignedHomework.length > 0)
+  );
+}
+
 router.get('/', protect, authorize('admin'), (_req, res) => {
   res.json({ ok: true, module: 'admin', version: 2 });
 });
@@ -133,13 +189,7 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         status: 'accepted',
         scheduledAt: { $lt: now },
       }),
-      Session.countDocuments({
-        status: 'completed',
-        $or: [
-          { studentReports: { $exists: false } },
-          { studentReports: { $size: 0 } },
-        ],
-      }),
+      Session.countDocuments(buildMissingReportMongoFilter()),
       Teacher.find({ status: { $in: ['pending', 'under-review'] } })
         .populate('user', 'name email')
         .select('user personalInfo status createdAt reviewStartedAt')
@@ -251,69 +301,328 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
 router.get('/session-control', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
     const focus = String(req.query.focus || 'all').trim();
-    return res.json({ focus, count: 0, sessions: [] });
+    return res.json({
+      focus,
+      count: 0,
+      summary: {
+        liveCount: 0,
+        todayTotal: 0,
+        todayCompleted: 0,
+        overdueCount: 0,
+        pendingCount: 0,
+        missingReportsCount: 0,
+        avgRating: 0,
+        ratedCount: 0,
+      },
+      sessions: [],
+    });
   }
   try {
     const now = new Date();
+    const allowedFocuses = new Set(['all', 'live', 'today', 'overdue', 'pending', 'missing-reports']);
     const focus = String(req.query.focus || 'all').trim();
-    const filter = {};
-
-    if (focus === 'overdue') {
-      Object.assign(filter, { status: 'accepted', scheduledAt: { $lt: now } });
-    } else if (focus === 'missing-reports') {
-      Object.assign(filter, {
-        status: 'completed',
-        $or: [
-          { studentReports: { $exists: false } },
-          { studentReports: { $size: 0 } },
-        ],
-      });
-    } else if (focus !== 'all') {
+    if (!allowedFocuses.has(focus)) {
       return res.status(400).json({ error: 'Invalid session control focus' });
     }
 
-    const sessions = await Session.find(filter)
-      .populate('student', 'name email phone avatar')
-      .populate({
-        path: 'teacher',
-        select: 'personalInfo.fullName user media.profilePhoto',
-        populate: { path: 'user', select: 'name email avatar' },
-      })
-      .populate('circle', 'name')
-      .sort({ scheduledAt: focus === 'overdue' ? 1 : -1 })
-      .limit(150)
-      .lean();
+    const typeFilter = String(req.query.type || 'all').trim();
+    const statusFilter = String(req.query.status || 'all').trim();
+    const searchQuery = String(req.query.q || '').trim().slice(0, 120);
+    const limitNum = Math.min(200, Math.max(20, Number.parseInt(req.query.limit, 10) || 150));
 
-    const rows = sessions.map((session) => ({
-      _id: session._id,
-      type: session.type,
-      status: session.status,
-      scheduledAt: session.scheduledAt,
-      duration: session.duration,
-      timezone: session.timezone,
-      student: session.student ? {
-        _id: session.student._id,
-        name: session.student.name,
-        email: session.student.email,
-        phone: session.student.phone,
-        avatar: session.student.avatar,
-      } : null,
-      teacher: session.teacher ? {
-        _id: session.teacher._id,
-        name: session.teacher.user?.name || session.teacher.personalInfo?.fullName || 'معلم',
-        email: session.teacher.user?.email || '',
-        avatar: session.teacher.media?.profilePhoto || session.teacher.user?.avatar || '',
-      } : null,
-      circle: session.circle ? { _id: session.circle._id, name: session.circle.name } : null,
-      attendanceCount: (session.attendance || []).length,
-      reportCount: (session.studentReports || []).length,
-      meetingAvailable: Boolean(session.meetingLink),
-      roomId: session.roomId || String(session._id),
-      recordingAvailable: Boolean(session.recordingUrl),
-      cancellationReason: session.cancellationReason || '',
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-    }));
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+
+    const canQueryAuxModels =
+      Boolean(mongoose.connection?.db) ||
+      LiveSession.find !== mongoose.Model.find;
+
+    // Discover actively live room session IDs first (fast indexed query)
+    let activeLiveDocs = [];
+    if (canQueryAuxModels) {
+      activeLiveDocs = await LiveSession.find({
+        isLive: true,
+        endedAt: null,
+        session: { $ne: null },
+      })
+        .select('session roomId isLive endedAt classroomState updatedAt')
+        .lean()
+        .catch(() => []);
+    }
+    const activeLiveSessionIds = activeLiveDocs
+      .filter((ls) => !ls?.classroomState?.controls?.sessionEnded && ls?.session)
+      .map((ls) => ls.session);
+
+    const filter = {};
+    if (focus === 'overdue') {
+      Object.assign(filter, { status: 'accepted', scheduledAt: { $lt: now } });
+    } else if (focus === 'pending') {
+      filter.status = 'pending';
+    } else if (focus === 'today') {
+      filter.scheduledAt = { $gte: startOfToday, $lt: endOfToday };
+    } else if (focus === 'live') {
+      const windowLookback = new Date(now.getTime() - 120 * 60 * 1000);
+      const windowLookahead = new Date(now.getTime() + 30 * 60 * 1000);
+      filter.$or = [
+        ...(activeLiveSessionIds.length ? [{ _id: { $in: activeLiveSessionIds } }] : []),
+        {
+          status: 'accepted',
+          scheduledAt: { $gte: windowLookback, $lte: windowLookahead },
+        },
+      ];
+    } else if (focus === 'missing-reports') {
+      Object.assign(filter, buildMissingReportMongoFilter());
+    }
+
+    if (typeFilter !== 'all' && ['trial', 'regular', 'group_circle', 'assessment'].includes(typeFilter)) {
+      filter.type = typeFilter;
+    }
+    if (
+      statusFilter !== 'all' &&
+      ['pending', 'accepted', 'completed', 'cancelled', 'rejected', 'no-show'].includes(statusFilter)
+    ) {
+      filter.status = statusFilter;
+    }
+
+    const [
+      sessions,
+      todayTotal,
+      todayCompleted,
+      overdueCount,
+      pendingCount,
+      missingReportsCount,
+    ] = await Promise.all([
+      Session.find(filter)
+        .populate('student', 'name email phone avatar')
+        .populate({
+          path: 'teacher',
+          select: 'personalInfo.fullName user media.profilePhoto hourlyRate',
+          populate: { path: 'user', select: 'name email avatar' },
+        })
+        .populate('circle', 'name code')
+        .populate('attendance.student', 'name email avatar')
+        .sort({ scheduledAt: ['overdue', 'pending', 'today', 'live'].includes(focus) ? 1 : -1 })
+        .limit(limitNum)
+        .lean(),
+      Session.countDocuments({ scheduledAt: { $gte: startOfToday, $lt: endOfToday } }),
+      Session.countDocuments({
+        scheduledAt: { $gte: startOfToday, $lt: endOfToday },
+        status: 'completed',
+      }),
+      Session.countDocuments({ status: 'accepted', scheduledAt: { $lt: now } }),
+      Session.countDocuments({ status: 'pending' }),
+      Session.countDocuments(buildMissingReportMongoFilter()),
+    ]);
+
+    const sessionIds = sessions.map((s) => s._id).filter(Boolean);
+    const [liveDocs, reviewDocs] =
+      sessionIds.length > 0 && canQueryAuxModels
+        ? await Promise.all([
+            LiveSession.find({ session: { $in: sessionIds } })
+              .select('session roomId isLive endedAt classroomState updatedAt')
+              .lean()
+              .catch(() => []),
+            Review.find({ session: { $in: sessionIds } })
+              .select('session student rating comment createdAt')
+              .lean()
+              .catch(() => []),
+          ])
+        : [[], []];
+
+    const liveBySessionId = new Map(liveDocs.map((ls) => [String(ls.session), ls]));
+    const reviewsBySessionId = new Map();
+    for (const rev of reviewDocs) {
+      const key = String(rev.session);
+      if (!reviewsBySessionId.has(key)) reviewsBySessionId.set(key, []);
+      reviewsBySessionId.get(key).push(rev);
+    }
+
+    let ratingSumAll = 0;
+    let ratedSessionsCount = 0;
+
+    let rows = sessions.map((session) => {
+      const sid = String(session._id);
+      const liveDoc = liveBySessionId.get(sid) || null;
+      const roomEnded = Boolean(liveDoc?.endedAt || liveDoc?.classroomState?.controls?.sessionEnded);
+      const isActivelyLive = Boolean(liveDoc?.isLive && !roomEnded && session.status === 'accepted');
+      const win = sessionParticipantWindow(session);
+      const canObserveLive = Boolean(
+        session.status === 'accepted' && !roomEnded && (isActivelyLive || win.within)
+      );
+
+      const attendanceList = Array.isArray(session.attendance) ? session.attendance : [];
+      const attendanceSummary = {
+        total: attendanceList.length,
+        attended: attendanceList.filter((e) => e?.status === 'attended').length,
+        absent: attendanceList.filter((e) => e?.status === 'absent').length,
+        excused: attendanceList.filter((e) => e?.status === 'excused').length,
+        unresolved: attendanceList.filter((e) =>
+          ['pending', 'confirmed'].includes(String(e?.status || 'pending'))
+        ).length,
+      };
+
+      const hasReport = hasSessionTeacherReport(session);
+      const reportCount =
+        (session.studentReports || []).length || (hasReport ? 1 : 0);
+
+      // Combine Review collection + Session inline studentFeedback/studentFeedbacks
+      const revs = reviewsBySessionId.get(sid) || [];
+      let ratingAvg = 0;
+      let ratingCount = 0;
+      let primaryComment = '';
+      let wouldContinue = null;
+
+      if (revs.length > 0) {
+        ratingCount = revs.length;
+        ratingAvg =
+          Math.round((revs.reduce((acc, r) => acc + Number(r.rating || 0), 0) / revs.length) * 10) / 10;
+        primaryComment = revs.find((r) => r.comment)?.comment || '';
+      } else if (session.type === 'group_circle' && Array.isArray(session.studentFeedbacks) && session.studentFeedbacks.length > 0) {
+        ratingCount = session.studentFeedbacks.length;
+        ratingAvg =
+          Math.round(
+            (session.studentFeedbacks.reduce((acc, f) => acc + Number(f.rating || 0), 0) / ratingCount) * 10
+          ) / 10;
+        primaryComment = session.studentFeedbacks.find((f) => f.comment)?.comment || '';
+      } else if (session.studentFeedback?.rating) {
+        ratingCount = 1;
+        ratingAvg = Number(session.studentFeedback.rating);
+        primaryComment = session.studentFeedback.comment || '';
+      }
+
+      if (session.studentFeedback && typeof session.studentFeedback.wouldContinue === 'boolean') {
+        wouldContinue = session.studentFeedback.wouldContinue;
+      } else if (Array.isArray(session.studentFeedbacks) && session.studentFeedbacks.length > 0) {
+        const cont = session.studentFeedbacks.find((f) => typeof f.wouldContinue === 'boolean');
+        if (cont) wouldContinue = cont.wouldContinue;
+      }
+
+      if (ratingCount > 0 && ratingAvg > 0) {
+        ratingSumAll += ratingAvg;
+        ratedSessionsCount += 1;
+      }
+
+      const ev = session.teacherEvaluation || null;
+      const teacherEvaluationSummary = hasReport && ev
+        ? {
+            memorization: ev.memorization ?? null,
+            tajweed: ev.tajweed ?? null,
+            attendance: ev.attendance ?? null,
+            surahRecited: ev.surahRecited || '',
+            fromAyah: ev.fromAyah ?? null,
+            toAyah: ev.toAyah ?? null,
+            nextHomework: ev.nextHomework || '',
+            overallNotes: ev.overallNotes || '',
+            recommendedLevel: ev.recommendedLevel || '',
+            recommendedTrack: ev.recommendedTrack || '',
+          }
+        : null;
+
+      return {
+        _id: session._id,
+        shortCode: `#${sid.slice(-4).toUpperCase()}`,
+        type: session.type || 'regular',
+        status: session.status,
+        scheduledAt: session.scheduledAt,
+        duration: session.duration || 60,
+        timezone: session.timezone || 'Africa/Cairo',
+        student: session.student
+          ? {
+              _id: session.student._id,
+              name: session.student.name,
+              email: session.student.email,
+              phone: session.student.phone,
+              avatar: session.student.avatar,
+            }
+          : null,
+        teacher: session.teacher
+          ? {
+              _id: session.teacher._id,
+              userId: session.teacher.user?._id || session.teacher.user || null,
+              name: session.teacher.user?.name || session.teacher.personalInfo?.fullName || 'معلم',
+              email: session.teacher.user?.email || '',
+              avatar: session.teacher.media?.profilePhoto || session.teacher.user?.avatar || '',
+            }
+          : null,
+        circle: session.circle ? { _id: session.circle._id, name: session.circle.name, code: session.circle.code || '' } : null,
+        attendance: attendanceList.map((entry) => ({
+          studentId: entry?.student?._id || entry?.student || null,
+          studentName: entry?.student?.name || 'طالب',
+          studentEmail: entry?.student?.email || '',
+          status: entry?.status || 'pending',
+          excuseReason: entry?.excuseReason || '',
+          eligibleForCompensation: Boolean(entry?.eligibleForCompensation),
+        })),
+        attendanceCount: attendanceList.length,
+        attendanceSummary,
+        hasTeacherReport: hasReport,
+        reportCount,
+        teacherEvaluation: teacherEvaluationSummary,
+        studentRating:
+          ratingCount > 0
+            ? {
+                count: ratingCount,
+                average: ratingAvg,
+                comment: primaryComment,
+                wouldContinue,
+              }
+            : null,
+        liveRoom: {
+          provisioned: Boolean(liveDoc),
+          roomId: liveDoc?.roomId || session.roomId || sid,
+          isLive: isActivelyLive,
+          sessionEnded: roomEnded,
+          mushafPage: liveDoc?.classroomState?.mushaf?.page || null,
+          totalStars: liveDoc?.classroomState?.engagement?.totalStars || 0,
+          endedAt: liveDoc?.endedAt || null,
+        },
+        canObserveLive,
+        joinWindowPhase: !win.valid
+          ? 'invalid'
+          : now.getTime() < win.opensAt.getTime()
+            ? 'early'
+            : now.getTime() > win.closesAt.getTime()
+              ? 'expired'
+              : 'open',
+        meetingAvailable: Boolean(session.meetingLink),
+        roomId: liveDoc?.roomId || session.roomId || sid,
+        recordingAvailable: Boolean(session.recordingUrl),
+        financial: {
+          amount: Number(session.earnings?.amount || 0),
+          status: session.earnings?.status || 'pending',
+          agreedHourlyRate: session.agreedHourlyRate ?? session.teacher?.hourlyRate ?? null,
+        },
+        cancellationReason: session.cancellationReason || '',
+        notes: session.notes || '',
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      };
+    });
+
+    if (focus === 'live') {
+      rows = rows.filter((r) => r.liveRoom.isLive || r.canObserveLive);
+    }
+
+    if (searchQuery) {
+      const needle = searchQuery.toLowerCase().replace(/^#/, '');
+      rows = rows.filter((r) => {
+        const hay = [
+          String(r._id),
+          r.shortCode,
+          r.student?.name,
+          r.student?.email,
+          r.student?.phone,
+          r.teacher?.name,
+          r.teacher?.email,
+          r.circle?.name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(needle);
+      });
+    }
 
     await logAdminAction({
       req,
@@ -324,7 +633,21 @@ router.get('/session-control', protect, authorize('admin'), async (req, res) => 
       metadata: { focus, resultCount: rows.length },
     }).catch(() => {});
 
-    return res.json({ focus, count: rows.length, sessions: rows });
+    return res.json({
+      focus,
+      count: rows.length,
+      summary: {
+        liveCount: activeLiveSessionIds.length,
+        todayTotal,
+        todayCompleted,
+        overdueCount,
+        pendingCount,
+        missingReportsCount,
+        avgRating: ratedSessionsCount > 0 ? Math.round((ratingSumAll / ratedSessionsCount) * 10) / 10 : 0,
+        ratedCount: ratedSessionsCount,
+      },
+      sessions: rows,
+    });
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -339,7 +662,7 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
     if (!session) return res.status(404).json({ error: 'الحصة غير موجودة' });
 
     const { status, reason, resolvePendingAttendanceAs } = req.body || {};
-    if (!['completed', 'cancelled', 'no-show'].includes(status)) {
+    if (!['accepted', 'completed', 'cancelled', 'no-show'].includes(status)) {
       return res.status(400).json({ error: 'حالة الحصة غير مدعومة' });
     }
 
@@ -354,7 +677,22 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
 
     let subscriptionUsage = null;
 
-    if (status === 'completed') {
+    if (status === 'accepted') {
+      if (session.status !== 'pending') {
+        return res.status(409).json({
+          error: 'يمكن تأكيد الحصص المعلقة فقط',
+          code: 'SESSION_NOT_PENDING',
+        });
+      }
+      session.status = 'accepted';
+      if (!session.meetingLink) {
+        meetingService.attachToSession(session);
+      }
+      await session.save();
+      if (Boolean(mongoose.connection?.db) && session.student) {
+        notifySessionAccepted(session, session.student).catch(() => {});
+      }
+    } else if (status === 'completed') {
       if (!wasAlreadyCompleted && session.status !== 'accepted') {
         return res.status(409).json({
           error: 'لا يمكن إغلاق الحصة كمكتملة إلا إذا كانت مقبولة ومجدولة (accepted)',
@@ -494,6 +832,25 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
       await session.save();
     }
 
+    // Close any open LiveSession room when admin finalizes a session
+    if (['completed', 'cancelled', 'no-show'].includes(status) && Boolean(mongoose.connection?.db)) {
+      try {
+        const ls = await LiveSession.findOne({ session: session._id });
+        if (ls && (ls.isLive || !ls.endedAt)) {
+          const { applyHostStatePatch } = require('../services/classroomStateService');
+          ls.isLive = false;
+          ls.endedAt = ls.endedAt || new Date();
+          ls.classroomState = applyHostStatePatch(ls.classroomState, {
+            controls: { sessionEnded: true, endedAtMs: Date.now() },
+          });
+          if (typeof ls.markModified === 'function') ls.markModified('classroomState');
+          await ls.save();
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+
     await logAdminAction({
       req,
       action: `session-control.status.${status}`,
@@ -511,6 +868,67 @@ router.put('/session-control/:id/status', protect, authorize('admin'), async (re
   } catch (error) {
     console.error('Admin session-control status update error:', error);
     return res.status(400).json({ error: 'تعذر تحديث حالة الحصة حالياً' });
+  }
+});
+
+router.post('/session-control/:id/nudge-teacher', protect, authorize('admin'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid session id' });
+    }
+    const session = await Session.findById(req.params.id)
+      .populate('teacher', 'user personalInfo.fullName')
+      .populate('student', 'name')
+      .populate('circle', 'name')
+      .lean();
+    if (!session) {
+      return res.status(404).json({ error: 'الحصة غير موجودة' });
+    }
+    const teacherUserId = session.teacher?.user?._id || session.teacher?.user;
+    if (!teacherUserId) {
+      return res.status(400).json({ error: 'لا يوجد حساب معلم مرتبط بهذه الحصة' });
+    }
+
+    const learnerLabel = session.circle?.name || session.student?.name || 'الطالب';
+    const customNote = String(req.body?.note || '').trim().slice(0, 300);
+    const titleAr =
+      session.status === 'pending'
+        ? 'تذكير إداري: تأكيد موعد حصة معلّقة'
+        : session.status === 'accepted'
+          ? 'تذكير إداري: إغلاق الحصة ورصد التقييم'
+          : 'تذكير إداري: استكمال التقرير التربوي للحصة';
+    const msgAr =
+      customNote ||
+      (session.status === 'pending'
+        ? `يرجى مراجعة وتأكيد حصة (${learnerLabel}) المعلقة في أقرب وقت.`
+        : `يرجى استكمال إجراءات الإغلاق والتقييم التربوي لحصة (${learnerLabel}).`);
+
+    const Notification = require('../models/Notification');
+    if (Boolean(mongoose.connection?.db) || Notification.create !== mongoose.Model.create) {
+      await notifyUser(teacherUserId, {
+        type: 'system',
+        title: { ar: titleAr, en: 'Admin Reminder: Session Follow-up' },
+        message: { ar: msgAr, en: msgAr },
+        data: {
+          session: session._id,
+          actionUrl: `/teacher/dashboard?tab=sessions&evaluate=${session._id}`,
+        },
+        priority: 'high',
+      }).catch(() => {});
+    }
+
+    await logAdminAction({
+      req,
+      action: 'session-control.nudge-teacher',
+      entityType: 'session',
+      entityId: String(session._id),
+      reason: msgAr.slice(0, 200),
+      metadata: { status: session.status, teacherId: String(session.teacher?._id || '') },
+    }).catch(() => {});
+
+    return res.json({ success: true, message: 'تم إرسال التذكير الفوري للمعلم بنجاح' });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
 });
 
