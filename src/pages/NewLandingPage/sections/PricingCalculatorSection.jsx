@@ -5,6 +5,7 @@ import {
   formatLocalEquivalent,
   formatRegionalMoney,
   resolveRegionalPlanPriceMinor,
+  resolveRegionalPlanSavings,
   usdLocalEquivalentNote,
 } from '../../../lib/regionalPricing';
 import {
@@ -27,19 +28,20 @@ import { CALCULATOR_COPY } from '../landingI18nPart2';
 const CALCULATOR_PLANS = [
   {
     id: 'focused',
-    price: 20,
+    price: 19,
+    anchorPrice: 25,
     allowedPacks: [8, 12, 24],
     i18n: {
       ar: {
         name: 'الحلقة الجماعية المركّزة',
-        badge: 'تبدأ من 20 ج • 3–5 طلاب',
+        badge: 'تبدأ من 19 ج • 3–5 طلاب',
         students: 'من 3 إلى 5 طلاب فقط',
         duration: '45 دقيقة',
         recitation: 'مجموعة صغيرة مركّزة تضمن وقت تسميع وتصحيح وافراً لكل طالب',
         features: [
           '3 إلى 5 طلاب كحد أقصى في الحلقة',
           'مدة الحصة 45 دقيقة ثابتة ومنظمة',
-          '20 ج/حصة لباقتَي 12 و24 حصة (و25 ج لباقة 8 حصص)',
+          'خصم باقات يصل إلى 24% (19 ج لباقة 24 حصة و20 ج لـ 12 حصة)',
         ],
       },
       en: {
@@ -51,14 +53,15 @@ const CALCULATOR_PLANS = [
         features: [
           'Maximum 3 to 5 matched learners per circle',
           'Fixed 45-minute structured live session',
-          'Available in 8, 12, or 24 monthly session packs',
+          'Progressive savings on 12 & 24 monthly session packs',
         ],
       },
     },
   },
   {
     id: 'mini',
-    price: 45,
+    price: 35,
+    anchorPrice: 45,
     allowedPacks: [8, 12, 24],
     i18n: {
       ar: {
@@ -70,7 +73,7 @@ const CALCULATOR_PLANS = [
         features: [
           'تبدأ فوراً للإخوة بدون انتظار اكتمال مجموعة',
           'اهتمام شبه فردي وتشجيع عائلي مشترك',
-          'مدة الحصة 45 دقيقة بجدول يناسب الأسرة',
+          'مدة 45 دقيقة مع خصم يصل إلى 22% للباقات الأكبر',
         ],
       },
       en: {
@@ -90,7 +93,8 @@ const CALCULATOR_PLANS = [
   {
     id: 'private',
     featured: true,
-    price: 80,
+    price: 60,
+    anchorPrice: 85,
     allowedPacks: [4, 8, 12, 24],
     i18n: {
       ar: {
@@ -102,7 +106,7 @@ const CALCULATOR_PLANS = [
         features: [
           'طالب واحد فقط مع المعلم أو المعلمة (1-on-1)',
           '30 دقيقة مركّزة مثالية للأطفال والحفظ المنتظم',
-          'مرونة كاملة في المواعيد وبداية فورية بدون انتظار',
+          'مرونة كاملة في المواعيد وتوفير يصل إلى 29%',
         ],
       },
       en: {
@@ -114,14 +118,15 @@ const CALCULATOR_PLANS = [
         features: [
           'Undivided 1-on-1 instructor attention',
           'Focused 30-minute session ideal for kids & steady Hifz',
-          'Flexible personal scheduling with immediate start',
+          'Flexible scheduling with up to 38% pack savings',
         ],
       },
     },
   },
   {
     id: 'private_intensive',
-    price: 150,
+    price: 110,
+    anchorPrice: 150,
     allowedPacks: [4, 8, 12, 24],
     i18n: {
       ar: {
@@ -133,7 +138,7 @@ const CALCULATOR_PLANS = [
         features: [
           '60 دقيقة كاملة فردية خالصة (1-on-1)',
           'مثالية للمراجعة الكبيرة وتصحيح التلاوة والإجازات',
-          'متابعة فردية دقيقة مع كبار المعلمين والمعلمات المجازين',
+          'متابعة فردية مع كبار المجازين وتوفير حتى 27%',
         ],
       },
       en: {
@@ -182,14 +187,21 @@ export default function PricingCalculatorSection() {
   };
 
   const activePlanCopy = pickLocale(activePlan.i18n, locale, isRTL);
-  const activeMinor = getMinorForPlan(activePlan, effectiveSessionCount);
+  const activeSavings = resolveRegionalPlanSavings(
+    regionalPricing,
+    activePlan.id,
+    effectiveSessionCount,
+    activePlan.price,
+    activePlan.anchorPrice
+  );
+  const activeMinor = activeSavings.priceMinor;
   const totalMinor = activeMinor * effectiveSessionCount;
   const totalLocalHint = formatLocalEquivalent(totalMinor, billingCurrency, localHint, isRTL);
   const pacingNote = copy.pacing?.[effectiveSessionCount] || '';
 
   const checkoutTarget = `/plans?section=${encodeURIComponent(section)}&plan=${encodeURIComponent(activePlan.id)}&sessions=${effectiveSessionCount}`;
   const minFormattedPrice = formatRegionalMoney(
-    regionalPricing?.minPriceMinor ?? 2000,
+    regionalPricing?.minPriceMinor ?? 1900,
     billingCurrency,
     locale
   );
@@ -324,6 +336,13 @@ export default function PricingCalculatorSection() {
               <div className="wn-calc-packs" role="radiogroup" aria-label={copy.packsAria}>
                 {allowedPacks.map((count) => {
                   const active = effectiveSessionCount === count;
+                  const packSavings = resolveRegionalPlanSavings(
+                    regionalPricing,
+                    activePlan.id,
+                    count,
+                    activePlan.price,
+                    activePlan.anchorPrice
+                  );
                   return (
                     <button
                       type="button"
@@ -344,6 +363,11 @@ export default function PricingCalculatorSection() {
                     >
                       <strong>{count}</strong>
                       <span>{sessionWord(count)}</span>
+                      {packSavings.savingsPercent > 0 ? (
+                        <small className="text-[11px] font-extrabold text-[var(--wn-gold)]">
+                          {isRTL ? `وفّر ${packSavings.savingsPercent}%` : `-${packSavings.savingsPercent}%`}
+                        </small>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -372,6 +396,11 @@ export default function PricingCalculatorSection() {
               <div className="wn-calc-summary__row">
                 <span>{copy.pricePerSessionLabel}</span>
                 <strong>
+                  {activeSavings.savingsPercent > 0 ? (
+                    <del className="me-2 text-xs opacity-70">
+                      {formatRegionalMoney(activeSavings.anchorMinor, billingCurrency, locale)}
+                    </del>
+                  ) : null}
                   {formatRegionalMoney(activeMinor, billingCurrency, locale)}
                 </strong>
               </div>
@@ -388,6 +417,15 @@ export default function PricingCalculatorSection() {
                   {totalLocalHint ? <em> ({totalLocalHint})</em> : null}
                 </strong>
               </div>
+              {activeSavings.totalSavingsMinor > 0 ? (
+                <div className="wn-calc-summary__row">
+                  <span className="font-bold text-[var(--wn-gold)]">
+                    {isRTL
+                      ? `وفّرت ${formatRegionalMoney(activeSavings.totalSavingsMinor, billingCurrency, locale)} (${activeSavings.savingsPercent}%)`
+                      : `You save ${formatRegionalMoney(activeSavings.totalSavingsMinor, billingCurrency, locale)} (${activeSavings.savingsPercent}%)`}
+                  </span>
+                </div>
+              ) : null}
               {billingCurrency === 'USD' ? (
                 <div className="wn-calc-summary__row">
                   <span>{usdLocalEquivalentNote(isRTL)}</span>

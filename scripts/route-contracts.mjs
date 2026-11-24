@@ -281,6 +281,13 @@ assert.doesNotMatch(paymentReturn, /params\.get\(['"]success['"]\)/);
 
 const courseDetail = read('src/pages/CourseDetail/index.jsx');
 assert.match(courseDetail, /localizedPath\(['"]\/payment\/manual['"],\s*locale\)/);
+assert.match(courseDetail, /formatCourseRegionalDisplay/);
+
+const coursePricingConfig = read('backend/config/coursePricing.js');
+assert.match(coursePricingConfig, /resolveCoursePricing/);
+assert.match(coursePricingConfig, /OFFICIAL_ACADEMY_COURSES/);
+assert.match(read('backend/routes/admin.js'), /seed-official-catalog/);
+assert.match(read('src/lib/regionalPricing.js'), /resolveRegionalPlanSavings/);
 
 const manualPayment = read('src/pages/ManualPayment/index.jsx');
 assert.match(manualPayment, /uploadFileDirect\(proof,\s*['"]payment-proof['"]\)/);

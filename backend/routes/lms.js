@@ -14,6 +14,8 @@ const { protect, authorize, attachTeacherProfile } = require('../middleware/auth
 const { notifyCourseEnrollment, notifyCertificateIssued } = require('../utils/notify');
 const { isMockMode } = require('../config/runtime');
 const objectStorage = require('../services/objectStorage');
+const { detectCountryFromRequest } = require('../config/geoPricing');
+const { resolveCoursePricing } = require('../config/coursePricing');
 
 function isPrivateCourseMediaRef(url) {
   const pathname = objectStorage.extractPathname(url);
@@ -253,7 +255,12 @@ router.post('/course/:slug/enroll', protect, authorize('student'), async (req, r
     const existing = await getEnrollment(req.user.id, course._id);
     if (existing) return res.status(400).json({ error: 'Already enrolled', enrollment: existing });
 
-    if (Number(course.price || 0) > 0) {
+    const resolvedPricing = resolveCoursePricing(course, detectCountryFromRequest(req));
+    const effectivePrice = resolvedPricing.hasRegionalOverride
+      ? resolvedPricing.price
+      : Number(course.price || 0);
+
+    if (effectivePrice > 0) {
       return res.status(402).json({
         error: 'Payment is required before enrollment',
         code: 'PAYMENT_REQUIRED'

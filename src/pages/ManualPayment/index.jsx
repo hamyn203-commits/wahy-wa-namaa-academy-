@@ -153,9 +153,10 @@ export default function ManualPayment() {
     [teachers, preferredTeacherId]
   );
 
+  const courseHasRegionalOverride = Boolean(course?.regionalPricing?.hasRegionalOverride);
   const amountDue = isSubscription
     ? Number(subscription?.totalAmountMinor || 0) / 100
-    : Number(course?.price || 0);
+    : (courseHasRegionalOverride ? Number(course.regionalPricing.price || 0) : Number(course?.price || 0));
 
   const intlLocale = resolveIntlLocale(locale);
   const formattedAmount = useMemo(
@@ -165,7 +166,7 @@ export default function ManualPayment() {
 
   const currency = isSubscription
     ? (subscription?.currency || 'EGP')
-    : (course?.currency || 'EGP');
+    : (courseHasRegionalOverride ? (course.regionalPricing.currency || 'EGP') : (course?.currency || 'EGP'));
 
   const paymentTitle = isSubscription
     ? (locale === 'ar'

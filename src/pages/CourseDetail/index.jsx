@@ -10,6 +10,7 @@ import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
 import { useSEO } from '../../hooks/useSEO';
 import { localizedPath } from '../../lib/locale';
+import { formatCourseRegionalDisplay, usdLocalEquivalentNote } from '../../lib/regionalPricing';
 import { useToast } from '../../context/ToastProvider';
 import api from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -416,7 +417,8 @@ export default function CourseDetail() {
       return;
     }
 
-    const paidCourse = Number(course?.price || 0) > 0;
+    const pricingCheck = formatCourseRegionalDisplay(course, locale, isRTL);
+    const paidCourse = !pricingCheck.isFree;
 
     if (paidCourse && paymentConfig.loaded && !paymentConfig.configured) {
       toast.error(copy.errTransfersConfig);
@@ -528,6 +530,11 @@ export default function CourseDetail() {
   const title = textValue(course.title, locale, isRTL) || slug;
   const description = textValue(course.description, locale, isRTL);
   const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+  const outcomes = Array.isArray(course.learningOutcomes?.[locale]) && course.learningOutcomes[locale].length
+    ? course.learningOutcomes[locale]
+    : (isRTL ? (course.learningOutcomes?.ar || []) : (course.learningOutcomes?.en || course.learningOutcomes?.ar || []));
+  const pricing = formatCourseRegionalDisplay(course, locale, isRTL);
+  const paidCourseDisplay = !pricing.isFree;
   const ratingCount = Number(course.stats?.rating?.count || 0);
   const ratingAverage = Number(course.stats?.rating?.average || 0);
   const enrolled = Number(course.stats?.enrolled || 0);
@@ -543,8 +550,8 @@ export default function CourseDetail() {
     url: '/courses/' + slug,
     image: course.thumbnail || course.coverImage,
     level: course.level,
-    price: course.price,
-    currency: course.currency || 'USD',
+    price: pricing.price,
+    currency: pricing.currency,
     ratingValue: ratingAverage,
     ratingCount,
   });
@@ -588,6 +595,22 @@ export default function CourseDetail() {
         <div className="page-container wn-detail-layout">
           <section className="wn-detail-card">
             <div className="wn-detail-card__body">
+              {outcomes.length > 0 ? (
+                <div className="mb-7 rounded-2xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-5">
+                  <h2 className="text-base font-extrabold text-[var(--wn-heading)] mb-3">
+                    {isRTL ? 'ماذا ستتقن في هذه الدورة؟' : 'What you will master'}
+                  </h2>
+                  <ul className="grid gap-2.5 text-sm text-[var(--wn-text-primary)]">
+                    {outcomes.map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <CheckCircle size={16} className="mt-0.5 shrink-0 text-[var(--wn-emerald)]" aria-hidden="true" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               <span className="wn-public-eyebrow">{copy.contentEyebrow}</span>
               <h2>{copy.journeyTitle}</h2>
 
@@ -622,9 +645,30 @@ export default function CourseDetail() {
               </div>
             ) : null}
 
+            {pricing.discountPercent > 0 ? (
+              <div className="flex items-center gap-2 mb-1">
+                <del className="text-sm font-semibold text-[var(--wn-text-tertiary)]">
+                  {pricing.formattedCompareAt}
+                </del>
+                <span className="rounded-full bg-[var(--wn-gold-soft)] px-2.5 py-0.5 text-xs font-extrabold text-[var(--wn-badge-gold-text)]">
+                  {isRTL ? `وفّر ${pricing.discountPercent}%` : `Save ${pricing.discountPercent}%`}
+                </span>
+              </div>
+            ) : null}
+
             <div className="wn-detail-price">
-              {Number(course.price) > 0 ? course.price + ' ' + (course.currency || 'USD') : (t.courses?.free || copy.free)}
+              {paidCourseDisplay ? pricing.formattedPrice : (t.courses?.free || copy.free)}
             </div>
+            {pricing.localHint ? (
+              <p className="mt-1 text-xs font-semibold text-[var(--wn-text-secondary)]">
+                {pricing.localHint}
+              </p>
+            ) : null}
+            {paidCourseDisplay && pricing.currency === 'USD' ? (
+              <p className="mt-1 text-xs text-[var(--wn-text-tertiary)]">
+                {usdLocalEquivalentNote(isRTL)}
+              </p>
+            ) : null}
 
             <div className="grid gap-2 mt-4">
               {enrollment ? (
@@ -636,13 +680,13 @@ export default function CourseDetail() {
                 <button
                   type="button"
                   onClick={handleEnroll}
-                  disabled={enrolling || (Number(course.price) > 0 && paymentConfig.loaded && !paymentConfig.configured)}
+                  disabled={enrolling || (paidCourseDisplay && paymentConfig.loaded && !paymentConfig.configured)}
                   aria-busy={enrolling}
                   className="wn-btn wn-btn--primary wn-btn--block wn-btn--lg min-h-[44px] disabled:opacity-60"
                 >
                   {enrolling
                     ? copy.preparing
-                    : Number(course.price) > 0
+                    : paidCourseDisplay
                       ? paymentConfig.loaded && !paymentConfig.configured
                         ? copy.transfersConfiguring
                         : copy.transferProof

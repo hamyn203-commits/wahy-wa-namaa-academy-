@@ -111,7 +111,7 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const subscribeStep = studentPage.locator('section.wn-student-next-step');
     await subscribeStep.getByRole('button', { name: 'اشتراك', exact: true }).click();
     await expect(studentPage).toHaveURL(/\/ar\/plans/);
-    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك القرآنية من 20/ })).toBeVisible();
+    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك القرآنية من 19/ })).toBeVisible();
     await expect(studentPage.getByRole('heading', { name: 'الحلقة الجماعية المركّزة' })).toBeVisible();
     await expect(studentPage.getByText('45 دقيقة', { exact: true }).first()).toBeVisible();
     await expect(studentPage.getByText('30 دقيقة', { exact: true }).first()).toBeVisible();
@@ -119,17 +119,17 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     await expect(studentPage.getByRole('tab', { name: /قسم الرجال والأطفال/ })).toBeVisible();
     await expect(studentPage.getByRole('tab', { name: /قسم السيدات/ })).toBeVisible();
 
-    await studentPage.getByRole('button', { name: '24 حصص' }).click();
+    await studentPage.getByRole('button', { name: /24 حصص/ }).click();
     const privatePlan = studentPage.locator('article').filter({ hasText: 'الباقة الفردية المركّزة' }).first();
     await expect(privatePlan.getByText('24 حصص في الباقة')).toBeVisible();
-    await expect(privatePlan.getByText(/1920 ج/)).toBeVisible();
+    await expect(privatePlan.getByText(/1440 ج/)).toBeVisible();
 
     const groupPlan = studentPage.locator('article').filter({ hasText: 'الحلقة الجماعية المركّزة' }).first();
     await groupPlan.getByRole('button', { name: 'اختيار الخطة', exact: true }).click();
 
     await expect(studentPage).toHaveURL(/\/ar\/payment\/manual\?subscription=/);
     await expect(studentPage.getByRole('heading', { name: 'إتمام الاشتراك والتحويل' })).toBeVisible();
-    await expect(studentPage.getByText(/(?:480|٤٨٠)\s*EGP/)).toBeVisible();
+    await expect(studentPage.getByText(/(?:456|٤٥٦)\s*EGP/)).toBeVisible();
     await expect(studentPage.getByText('e2e@instapay', { exact: true })).toBeVisible();
     await expect(studentPage.getByText('عايز تدرس مع مين؟', { exact: true })).toBeVisible();
     const teacherSelect = studentPage.getByRole('combobox', { name: 'اختيار الشيخ أو المعلمة' });

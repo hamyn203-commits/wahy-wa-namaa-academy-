@@ -78,14 +78,15 @@ const PLAN_DEFS = [
     id: 'focused',
     nameAr: 'الحلقة الجماعية المركّزة',
     nameEn: 'Focused Group Circle',
-    price: 20,
-    packPricesMinorEg: { 8: 2500, 12: 2000, 24: 2000 },
+    price: 19,
+    anchorPrice: 25,
+    packPricesMinorEg: { 8: 2500, 12: 2000, 24: 1900 },
     allowedSessionPacks: [8, 12, 24],
     studentsAr: 'من 3 إلى 5 طلاب',
     studentsEn: '3–5 students',
     image: '/images/plans/men-focused.jpg?v=2',
     imageWomen: '/images/plans/women-focused.jpg?v=2',
-    badgeAr: 'تبدأ من 20 ج • 3–5 طلاب',
+    badgeAr: 'تبدأ من 19 ج • 3–5 طلاب',
     badgeEn: 'Focused • 3–5 learners',
     tone: 'mint',
     durationAr: '45 دقيقة',
@@ -93,19 +94,21 @@ const PLAN_DEFS = [
     featuresAr: [
       'مجموعة صغيرة مركّزة من 3 إلى 5 طلاب فقط',
       'مدة ثابتة 45 دقيقة تضمن تسميعاً وافراً لكل طالب',
-      '20 ج/حصة لباقات 12 و24 حصة (25 ج لباقة 8 حصص)',
+      'خصم باقات يصل إلى 24% (19 ج لباقة 24 حصة و20 ج لـ 12 حصة)',
     ],
     featuresEn: [
       'Small focused circle of only 3 to 5 learners',
       'Fixed 45-minute live session with generous recitation time',
-      'Monthly packs of 8, 12, or 24 sessions',
+      'Progressive pack savings on 12 & 24 monthly sessions',
     ],
   },
   {
     id: 'mini',
     nameAr: 'حلقة الإخوة والثنائية',
     nameEn: 'Siblings & Dual Circle',
-    price: 45,
+    price: 35,
+    anchorPrice: 45,
+    packPricesMinorEg: { 8: 4500, 12: 3900, 24: 3500 },
     allowedSessionPacks: [8, 12, 24],
     studentsAr: 'من 2 إلى 3 طلاب (إخوة أو ثنائي)',
     studentsEn: '2–3 students (siblings or dual)',
@@ -119,7 +122,7 @@ const PLAN_DEFS = [
     featuresAr: [
       'مثالية لأخوين أو 3 إخوة في حلقة عائلية واحدة',
       'تبدأ فوراً للإخوة بدون انتظار اكتمال مجموعة',
-      'اهتمام شبه فردي ومدة 45 دقيقة (8 أو 12 أو 24 حصة)',
+      'اهتمام شبه فردي 45 دقيقة وتوفير حتى 22% للباقات الأكبر',
     ],
     featuresEn: [
       'Ideal for 2 or 3 siblings together with one tutor',
@@ -131,7 +134,9 @@ const PLAN_DEFS = [
     id: 'private',
     nameAr: 'الباقة الفردية المركّزة (1-on-1)',
     nameEn: 'Focused Private 1-on-1',
-    price: 80,
+    price: 60,
+    anchorPrice: 85,
+    packPricesMinorEg: { 4: 8500, 8: 7500, 12: 6900, 24: 6000 },
     allowedSessionPacks: [4, 8, 12, 24],
     studentsAr: 'طالب واحد فقط (1-on-1)',
     studentsEn: '1 student (1-on-1)',
@@ -146,19 +151,21 @@ const PLAN_DEFS = [
     featuresAr: [
       'معلم أو معلمة مخصصة للطالب وحده (1-on-1)',
       'بداية فورية ومرونة كاملة في اختيار المواعيد',
-      '30 دقيقة مركّزة مثالية للأطفال والحفظ المنتظم',
+      '30 دقيقة مركّزة مع توفير يصل إلى 29% على الباقات الكبيرة',
     ],
     featuresEn: [
       'Dedicated 1-on-1 tutor with undivided attention',
       'Immediate start & flexible personal scheduling',
-      'Focused 30-minute session ideal for kids & steady Hifz',
+      'Focused 30-minute session with up to 38% pack savings',
     ],
   },
   {
     id: 'private_intensive',
     nameAr: 'الفردية المكثّفة والإجازة (1-on-1)',
     nameEn: 'Intensive Private & Ijazah',
-    price: 150,
+    price: 110,
+    anchorPrice: 150,
+    packPricesMinorEg: { 4: 15000, 8: 13500, 12: 12500, 24: 11000 },
     allowedSessionPacks: [4, 8, 12, 24],
     studentsAr: 'طالب واحد • ختم وإجازة',
     studentsEn: '1 student • Intensive & Ijazah',
@@ -172,7 +179,7 @@ const PLAN_DEFS = [
     featuresAr: [
       'ساعة كاملة فردية خالصة (60 دقيقة 1-on-1)',
       'مخصصة للختم والمراجعة الكبيرة والإجازة بالسند',
-      'خطة فردية مخصصة بالكامل مع كبار المعلمين المجازين',
+      'خطة فردية مخصصة مع كبار المعلمين وتوفير حتى 27%',
     ],
     featuresEn: [
       'Full 60-minute 1-on-1 private session',
@@ -611,9 +618,12 @@ export default function PlansPage() {
     [catalog]
   );
 
-  const packageOptions = Array.isArray(catalog?.sessionPacks) && catalog.sessionPacks.length
-    ? catalog.sessionPacks
-    : [4, 8, 12, 24];
+  const packageOptions = useMemo(
+    () => (Array.isArray(catalog?.sessionPacks) && catalog.sessionPacks.length
+      ? catalog.sessionPacks
+      : [4, 8, 12, 24]),
+    [catalog]
+  );
 
   const billingCurrency = catalog?.currency === 'USD' ? 'USD' : 'EGP';
   const currencyLabels = currencyLabelsFor(billingCurrency, isRTL);
@@ -652,13 +662,25 @@ export default function PlansPage() {
           : plan.price * 100;
 
     const minBaseMinor = serverPlan ? Number(serverPlan.pricePerSessionMinor) : plan.price * 100;
+    const rawAnchorMinor = serverPlan && hasPositiveNumber(serverPlan.basePricePerSessionMinor)
+      ? Number(serverPlan.basePricePerSessionMinor)
+      : (plan.anchorPrice || plan.price) * 100;
+    const anchorMinor = Math.max(priceMinor, rawAnchorMinor);
+    const savingsPercent = anchorMinor > priceMinor
+      ? Math.round(((anchorMinor - priceMinor) / anchorMinor) * 100)
+      : 0;
     const packageTotalMinor = priceMinor * effectiveSessionCount;
+    const totalSavingsMinor = Math.max(0, (anchorMinor - priceMinor) * effectiveSessionCount);
 
     return {
       ...plan,
       allowedPacks,
       effectiveSessionCount,
       minBaseMinor,
+      anchorMinor,
+      anchorDisplay: formatMajorNumber(anchorMinor),
+      savingsPercent,
+      totalSavingsMinor,
       priceMinor,
       price: priceMinor / 100,
       priceDisplay: formatMajorNumber(priceMinor),
@@ -674,9 +696,29 @@ export default function PlansPage() {
     };
   }), [activeDefs, serverPlans, sessionCount, billingCurrency, localCurrencyHint, isRTL]);
 
+  const packMaxSavingsMap = useMemo(() => {
+    const map = {};
+    for (const count of packageOptions) {
+      let maxPct = 0;
+      for (const def of PLAN_DEFS) {
+        const sPlan = serverPlans.get(def.id);
+        const allowed = Array.isArray(sPlan?.allowedSessionPacks) ? sPlan.allowedSessionPacks : (def.allowedSessionPacks || []);
+        if (!allowed.includes(count)) continue;
+        const packVal = sPlan?.packPricesMinor?.[count] ?? (billingCurrency === 'EGP' ? def.packPricesMinorEg?.[count] : null);
+        const anchorVal = sPlan?.basePricePerSessionMinor ?? ((def.anchorPrice || def.price) * 100);
+        if (packVal && anchorVal > packVal) {
+          const pct = Math.round(((anchorVal - packVal) / anchorVal) * 100);
+          if (pct > maxPct) maxPct = pct;
+        }
+      }
+      map[count] = maxPct;
+    }
+    return map;
+  }, [packageOptions, serverPlans, billingCurrency]);
+
   const minPlan = plans.find((plan) => plan.id === 'focused') || plans[0];
-  const minFormattedPrice = formatRegionalMoney(minPlan?.minBaseMinor ?? 2000, billingCurrency, locale);
-  const minDisplayNum = formatMajorNumber(minPlan?.minBaseMinor ?? 2000);
+  const minFormattedPrice = formatRegionalMoney(minPlan?.minBaseMinor ?? 1900, billingCurrency, locale);
+  const minDisplayNum = formatMajorNumber(minPlan?.minBaseMinor ?? 1900);
   const dynamicHeroTitle = isRTL
     ? `ابدأ رحلتك القرآنية من ${minFormattedPrice} للحصة`
     : `Start your Quran journey from ${minFormattedPrice} per session`;
@@ -926,17 +968,25 @@ export default function PlansPage() {
 
               <div className="wn-plans-frequency" role="group" aria-label={copy.sessionsAria}>
                 <span>{copy.sessionsLabel}</span>
-                {packageOptions.map((count) => (
-                  <button
-                    type="button"
-                    key={count}
-                    aria-pressed={sessionCount === count}
-                    className={sessionCount === count ? 'is-active' : ''}
-                    onClick={() => setSessionCount(count)}
-                  >
-                    {count} {count === 12 ? copy.sessionWordSingle : copy.sessionsWord}
-                  </button>
-                ))}
+                {packageOptions.map((count) => {
+                  const maxSave = packMaxSavingsMap[count] || 0;
+                  return (
+                    <button
+                      type="button"
+                      key={count}
+                      aria-pressed={sessionCount === count}
+                      className={sessionCount === count ? 'is-active' : ''}
+                      onClick={() => setSessionCount(count)}
+                    >
+                      <span>{count} {count === 12 ? copy.sessionWordSingle : copy.sessionsWord}</span>
+                      {maxSave > 0 ? (
+                        <em className="wn-plans-frequency__save">
+                          -{maxSave}%
+                        </em>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1048,6 +1098,18 @@ export default function PlansPage() {
                       <strong>{isRTL ? plan.durationAr : plan.durationEn}</strong>
                     </div>
 
+                    {plan.savingsPercent > 0 ? (
+                      <div className="wn-plan-card__savings-row">
+                        <del className="wn-plan-card__anchor">
+                          {billingCurrency === 'USD' ? '$' : ''}
+                          {plan.anchorDisplay} {currencyLabels.short}
+                        </del>
+                        <span className="wn-plan-card__save-pill">
+                          {isRTL ? `وفّر ${plan.savingsPercent}%` : `Save ${plan.savingsPercent}%`}
+                        </span>
+                      </div>
+                    ) : null}
+
                     <div className="wn-plan-card__price">
                       <span>{plan.from ? copy.fromWord : ''}</span>
                       <strong>
@@ -1073,6 +1135,13 @@ export default function PlansPage() {
                         {plan.packageLocalHint ? <small className="wn-plan-card__monthly-hint"> ({plan.packageLocalHint})</small> : null}
                       </strong>
                     </div>
+                    {plan.totalSavingsMinor > 0 ? (
+                      <div className="wn-plan-card__saved-note">
+                        {isRTL
+                          ? `وفّرت ${formatRegionalMoney(plan.totalSavingsMinor, billingCurrency, locale)} في هذه الباقة`
+                          : `You save ${formatRegionalMoney(plan.totalSavingsMinor, billingCurrency, locale)} on this pack`}
+                      </div>
+                    ) : null}
 
                     <ul>
                       {(isRTL ? plan.featuresAr : plan.featuresEn).map((feature) => (
@@ -1103,6 +1172,32 @@ export default function PlansPage() {
                 </article>
               ))}
             </div>
+
+            {!renewalSource && (
+              <div className="wn-plans-guarantees" aria-label={isRTL ? 'ضمانات أكاديمية وحي ونماء' : 'Academy guarantees'}>
+                <div className="wn-plans-guarantee-item">
+                  <ShieldCheck size={20} aria-hidden="true" />
+                  <div>
+                    <strong>{isRTL ? 'حصة تقييم مجانية أولاً' : 'Free trial assessment first'}</strong>
+                    <p>{isRTL ? 'جرّب مستوى المعلم وجودة التلاوة مجاناً قبل دفع أي اشتراك.' : 'Experience your tutor and class quality free before paying.'}</p>
+                  </div>
+                </div>
+                <div className="wn-plans-guarantee-item">
+                  <BadgeCheck size={20} aria-hidden="true" />
+                  <div>
+                    <strong>{isRTL ? 'ضمان استبدال المعلم مجاناً' : 'Free tutor switch guarantee'}</strong>
+                    <p>{isRTL ? 'يمكنك طلب تغيير المعلم أو الموعد في أي وقت دون أي رسوم إضافية.' : 'Switch your tutor or schedule anytime at zero extra cost.'}</p>
+                  </div>
+                </div>
+                <div className="wn-plans-guarantee-item">
+                  <BookOpenCheck size={20} aria-hidden="true" />
+                  <div>
+                    <strong>{isRTL ? 'بدون رسوم تسجيل أو مصاريف خفية' : 'Zero registration or hidden fees'}</strong>
+                    <p>{isRTL ? 'تدفع قيمة حصصك فقط، ولا تُخصم الحصة عند الاعتذار المسبق.' : 'Pay strictly for your sessions; excused absences are preserved.'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {visiblePlans.length > 1 && (
               <div className="wn-plans-compare">
@@ -1170,6 +1265,32 @@ export default function PlansPage() {
                 </p>
               </div>
             </div>
+            {!renewalSource && (
+              <aside className="wn-plans-courses-upsell">
+                <div>
+                  <span className="wn-plans-courses-upsell__eyebrow">
+                    <Sparkles size={14} aria-hidden="true" />
+                    {isRTL ? 'دورات تأسيسية وتخصصية مسجّلة' : 'Structured Self-Paced Courses'}
+                  </span>
+                  <h3>
+                    {isRTL
+                      ? 'تبحث عن دورة تأسيس أو تجويد أو تحفة الأطفال والجزريّة بدفعة واحدة؟'
+                      : 'Looking for one-time Tajweed, Noor Al-Bayan, or Jazariyyah courses?'}
+                  </h3>
+                  <p>
+                    {isRTL
+                      ? (billingCurrency === 'EGP'
+                        ? 'استكشف دوراتنا المنهجية المتكاملة — تبدأ من دورة الفاتحة المجانية وحتى 149 ج.م فقط مع وصول مفتوح وشهادة إتمام.'
+                        : 'Explore our structured self-paced courses — starting with our Free Al-Fatiha course and affordable lifetime access.')
+                      : 'Explore our structured self-paced courses — starting from Free with lifetime access and verifiable certificates.'}
+                  </p>
+                </div>
+                <LocalizedLink to="/courses" locale={locale} className="wn-plans-courses-upsell__cta">
+                  <span>{isRTL ? 'تصفّح الدورات والأسعار' : 'Explore Courses'}</span>
+                  <ArrowIcon size={16} aria-hidden="true" />
+                </LocalizedLink>
+              </aside>
+            )}
           </div>
         </section>
 

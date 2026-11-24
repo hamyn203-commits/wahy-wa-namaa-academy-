@@ -1397,7 +1397,8 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
   try {
     const {
       titleAr, titleEn, descAr, descEn, slug, category = 'quran', level = 'beginner',
-      price = 0, instructorId, image = '/courses/default.jpg', status = 'published', programs = [],
+      price = 0, priceEgp, compareAtUsd, compareAtEgp,
+      instructorId, image = '/courses/default.jpg', status = 'published', programs = [],
     } = req.body;
 
     const cleanTitleAr = String(titleAr || '').trim();
@@ -1408,14 +1409,25 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(instructorId)) {
       return res.status(400).json({ error: 'معرف المعلم غير صالح' });
     }
+
+    const { buildRegionalCoursePrices } = require('../config/coursePricing');
+    const { regionalPrices, compareAtPrices } = buildRegionalCoursePrices({
+      priceUsd: price,
+      priceEgp,
+      compareAtUsd,
+      compareAtEgp,
+    });
+
     const course = await Course.create({
       title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
       description: { ar: String(descAr || cleanTitleAr).trim(), en: String(descEn || titleEn || cleanTitleAr).trim() },
       slug: cleanSlug,
       category,
       level,
-      price,
+      price: Math.max(0, Number(price || 0)),
       currency: 'USD',
+      ...(regionalPrices ? { regionalPrices } : {}),
+      ...(compareAtPrices ? { compareAtPrices } : {}),
       duration: '3 months',
       durationInHours: 20,
       instructor: instructorId,
@@ -1439,6 +1451,112 @@ router.post('/courses', protect, authorize('admin'), async (req, res) => {
   }
 });
 
+router.post('/courses/seed-official-catalog', protect, authorize('admin'), async (req, res) => {
+  try {
+    const requestedInstructorId = req.body?.instructorId;
+    let instructor = null;
+    if (requestedInstructorId && mongoose.Types.ObjectId.isValid(String(requestedInstructorId))) {
+      instructor = await Teacher.findOne({ _id: requestedInstructorId, status: 'approved' }).select('_id');
+    }
+    if (!instructor) {
+      instructor = await Teacher.findOne({ status: 'approved' }).sort({ isFeatured: -1, createdAt: 1 }).select('_id');
+    }
+    if (!instructor) {
+      return res.status(400).json({
+        error: 'يجب اعتماد معلم واحد على الأقل قبل نشر كتالوج الدورات الرسمي',
+        code: 'APPROVED_INSTRUCTOR_REQUIRED',
+      });
+    }
+
+    const { OFFICIAL_ACADEMY_COURSES } = require('../config/coursePricing');
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const spec of OFFICIAL_ACADEMY_COURSES) {
+      let course = await Course.findOne({ slug: spec.slug });
+      if (!course) {
+        course = await Course.create({
+          title: spec.title,
+          description: spec.description,
+          slug: spec.slug,
+          category: spec.category,
+          programs: [...spec.programs],
+          level: spec.level,
+          price: spec.price,
+          currency: spec.currency,
+          regionalPrices: spec.regionalPrices ? { ...spec.regionalPrices } : undefined,
+          compareAtPrices: spec.compareAtPrices ? { ...spec.compareAtPrices } : undefined,
+          duration: spec.duration,
+          durationInHours: spec.durationInHours,
+          instructor: instructor._id,
+          image: spec.image,
+          learningOutcomes: spec.learningOutcomes,
+          status: 'published',
+          publishedAt: new Date(),
+          certificate: { enabled: true },
+          stats: { enrolled: 0, completed: 0, rating: { average: 0, count: 0 } },
+        });
+        createdCount += 1;
+      } else {
+        course.title = spec.title;
+        course.description = spec.description;
+        course.category = spec.category;
+        course.programs = [...spec.programs];
+        course.level = spec.level;
+        course.price = spec.price;
+        course.currency = spec.currency;
+        course.regionalPrices = spec.regionalPrices ? { ...spec.regionalPrices } : undefined;
+        course.compareAtPrices = spec.compareAtPrices ? { ...spec.compareAtPrices } : undefined;
+        course.duration = spec.duration;
+        course.durationInHours = spec.durationInHours;
+        course.image = spec.image;
+        course.learningOutcomes = spec.learningOutcomes;
+        if (!course.publishedAt) course.publishedAt = new Date();
+        course.status = 'published';
+        await course.save();
+        updatedCount += 1;
+      }
+
+      const existingLessonsCount = await Lesson.countDocuments({ course: course._id });
+      if (existingLessonsCount === 0 && Array.isArray(spec.starterLessons) && spec.starterLessons.length > 0) {
+        const insertedLessons = await Lesson.insertMany(
+          spec.starterLessons.map((lessonSpec) => ({
+            title: lessonSpec.title,
+            slug: lessonSpec.slug,
+            course: course._id,
+            order: lessonSpec.order,
+            type: lessonSpec.type || 'text',
+            duration: lessonSpec.duration || 15,
+            isFree: Boolean(lessonSpec.isFree),
+            isPublished: true,
+            publishedAt: new Date(),
+            content: { text: lessonSpec.text },
+          }))
+        );
+        course.lessons = insertedLessons.map((item) => item._id);
+        await course.save();
+      }
+    }
+
+    await logAdminAction({
+      req,
+      action: 'course.official_catalog_seeded',
+      entityType: 'course',
+      entityId: instructor._id,
+      metadata: { createdCount, updatedCount, totalCatalog: OFFICIAL_ACADEMY_COURSES.length },
+    });
+
+    return res.status(200).json({
+      message: 'تم نشر وتحديث كتالوج الدورات الرسمي بنجاح',
+      createdCount,
+      updatedCount,
+      totalCatalog: OFFICIAL_ACADEMY_COURSES.length,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
 router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -1447,12 +1565,23 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ error: 'الدورة غير موجودة' });
 
-    const { titleAr, titleEn, descAr, descEn, price, status, image } = req.body;
+    const { titleAr, titleEn, descAr, descEn, price, priceEgp, compareAtUsd, compareAtEgp, status, image } = req.body;
     if (titleAr) { course.title.ar = titleAr; if (!titleEn) course.title.en = titleAr; }
     if (titleEn) course.title.en = titleEn;
     if (descAr) course.description.ar = descAr;
     if (descEn) course.description.en = descEn;
     if (price != null) course.price = price;
+    if (priceEgp !== undefined) {
+      const { buildRegionalCoursePrices } = require('../config/coursePricing');
+      const { regionalPrices, compareAtPrices } = buildRegionalCoursePrices({
+        priceUsd: price != null ? price : course.price,
+        priceEgp,
+        compareAtUsd,
+        compareAtEgp,
+      });
+      if (regionalPrices) course.regionalPrices = regionalPrices;
+      if (compareAtPrices) course.compareAtPrices = compareAtPrices;
+    }
     if (image) course.image = image;
     if (status) {
       course.status = status;
