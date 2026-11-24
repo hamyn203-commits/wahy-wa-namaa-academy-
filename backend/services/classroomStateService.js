@@ -273,6 +273,8 @@ function normalizeClassroomState(raw = {}) {
       chatMode: ALLOWED_CHAT_MODES.has(ctrl.chatMode) ? ctrl.chatMode : 'teacher_only',
       allowHandRaise: ctrl.allowHandRaise !== undefined ? Boolean(ctrl.allowHandRaise) : true,
       studentPointerAllowed: Boolean(ctrl.studentPointerAllowed),
+      sessionEnded: Boolean(ctrl.sessionEnded),
+      endedAtMs: Number(ctrl.endedAtMs) || 0,
     },
     updatedAtMs: Number(src.updatedAtMs) || 0,
   };
@@ -583,6 +585,10 @@ function applyHostStatePatch(existingRaw = {}, patch = {}) {
       if (!next.controls.studentPointerAllowed) {
         next.mushaf.studentPointer = null;
       }
+    }
+    if (pc.sessionEnded !== undefined) {
+      next.controls.sessionEnded = Boolean(pc.sessionEnded);
+      next.controls.endedAtMs = next.controls.sessionEnded ? (Number(pc.endedAtMs) || now) : 0;
     }
   }
 

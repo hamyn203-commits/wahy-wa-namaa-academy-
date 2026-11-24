@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import {
   Award,
   Bell,
+  CheckCircle,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -106,6 +107,7 @@ export default function TeacherLiveClassroomScreen() {
   const [dockExpanded, setDockExpanded] = useState(true);
   const [roomState, setRoomState] = useState<RemoteClassroomState>({});
   const [statusFeedback, setStatusFeedback] = useState<string>('');
+  const [endingSession, setEndingSession] = useState(false);
   const prevAlertsCountRef = useRef(0);
   const webViewRef = useRef<WebView | null>(null);
   const pushedWebTokenRef = useRef<string | null>(null);
@@ -192,6 +194,50 @@ export default function TeacherLiveClassroomScreen() {
     }
   };
 
+  const endSessionForEveryone = useCallback(async () => {
+    if (!rawRoom || endingSession) return;
+    setEndingSession(true);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await api.post(`/api/live/sessions/${encodeURIComponent(rawRoom)}/end`, {}, { auth: true });
+    } catch {
+      try {
+        await api.patch(
+          `/api/live/sessions/${encodeURIComponent(rawRoom)}/live`,
+          { isLive: false, endSession: true },
+          { auth: true }
+        );
+      } catch {
+        // non-blocking
+      }
+    }
+    router.replace('/(tabs)/sessions');
+  }, [rawRoom, endingSession, router]);
+
+  const confirmLeaveOrEnd = useCallback(() => {
+    Alert.alert(
+      locale === 'ar' ? 'إنهاء الحصة المباشرة؟' : 'End Live Session?',
+      locale === 'ar'
+        ? 'اختر «إنهاء الحصة للجميع» لإغلاق الغرفة عند الطالب وإرسال طلب التقييم له فوراً، أو «مغادرة مؤقتة» للخروج دون إغلاق الغرفة.'
+        : 'Choose "End Session for All" to close the room for learners and prompt rating, or "Leave Temporarily".',
+      [
+        {
+          text: locale === 'ar' ? 'إنهاء الحصة للجميع' : 'End Session for All',
+          style: 'destructive',
+          onPress: () => void endSessionForEveryone(),
+        },
+        {
+          text: locale === 'ar' ? 'مغادرة مؤقتة' : 'Leave Temporarily',
+          onPress: () => router.back(),
+        },
+        {
+          text: locale === 'ar' ? 'البقاء' : 'Stay',
+          style: 'cancel',
+        },
+      ]
+    );
+  }, [locale, endSessionForEveryone, router]);
+
   const classroomUrl = `${SITE_URL}/${locale}/live/${cleanRoom}`;
   const injectedAuthJs = token
     ? `try { window.sessionStorage.setItem('wwn_mobile_token', ${JSON.stringify(token)}); } catch (e) {} true;`
@@ -232,7 +278,21 @@ export default function TeacherLiveClassroomScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => router.back()}
+            disabled={endingSession}
+            onPress={() => void endSessionForEveryone()}
+            style={({ pressed }) => [styles.endRoomBtn, (pressed || endingSession) && styles.pressed]}
+            accessibilityRole="button"
+          >
+            <CheckCircle size={13} color={colors.emeraldNight} />
+            <Text style={styles.endRoomText}>
+              {endingSession
+                ? locale === 'ar' ? 'جاري الإنهاء…' : 'Ending…'
+                : locale === 'ar' ? 'إنهاء الحصة' : 'End'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={confirmLeaveOrEnd}
             style={({ pressed }) => [styles.exitBtn, pressed && styles.pressed]}
             accessibilityRole="button"
           >
@@ -526,6 +586,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(212, 175, 107, 0.35)',
   },
   dockToggleText: { color: colors.goldBright, fontSize: 11, fontFamily: fonts.bold },
+  endRoomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.goldBright,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  endRoomText: { color: colors.emeraldNight, fontSize: 11, fontFamily: fonts.bold },
   exitBtn: {
     flexDirection: 'row',
     alignItems: 'center',

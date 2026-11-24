@@ -73,6 +73,8 @@ const INITIAL_CLASSROOM_STATE = {
     chatMode: 'teacher_only',
     allowHandRaise: true,
     studentPointerAllowed: false,
+    sessionEnded: false,
+    endedAtMs: 0,
   },
   updatedAtMs: 0,
 };
@@ -92,10 +94,15 @@ export default function useClassroomSync({
   const [classroomState, setClassroomState] = useState(() => initialServerState || INITIAL_CLASSROOM_STATE);
   const [studentOpenMistakes, setStudentOpenMistakes] = useState([]);
   const [syncConnected, setSyncConnected] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(() => Boolean(initialServerState?.controls?.sessionEnded));
+  const [syncedSessionContext, setSyncedSessionContext] = useState(null);
   const latestVersionRef = useRef(initialServerState?.updatedAtMs || 0);
 
   const applyIncomingState = useCallback((incoming, force = false) => {
     if (!incoming || typeof incoming !== 'object') return;
+    if (incoming.controls?.sessionEnded) {
+      setSessionEnded(true);
+    }
     const incomingTs = Number(incoming.updatedAtMs) || 0;
     if (!force && incomingTs > 0 && incomingTs < latestVersionRef.current) {
       return;
@@ -119,6 +126,12 @@ export default function useClassroomSync({
     if (!roomId) return null;
     try {
       const res = await api.get(`/api/live/sessions/${encodeURIComponent(roomId)}/state`, { auth: true });
+      if (res?.sessionContext) {
+        setSyncedSessionContext(res.sessionContext);
+      }
+      if (res?.sessionEnded || res?.classroomState?.controls?.sessionEnded) {
+        setSessionEnded(true);
+      }
       if (res?.classroomState) {
         applyIncomingState(res.classroomState, force);
         setSyncConnected(true);
@@ -156,6 +169,9 @@ export default function useClassroomSync({
         if (msg?.type === 'CLASSROOM_SYNC') {
           const senderId = String(participant?.identity || '');
           const fromHost = senderId.startsWith('teacher:') || senderId.startsWith('admin:');
+          if (fromHost && (msg.roomEnded || msg.state?.controls?.sessionEnded)) {
+            setSessionEnded(true);
+          }
           if (fromHost && msg.state) {
             // Preserve anti-cheat redaction on non-hosts if game is active
             const safeState = !isHost && msg.state.activeGame?.status === 'active'
@@ -326,11 +342,47 @@ export default function useClassroomSync({
     }
   }, [isHost, primaryStudentUserId, updateClassroomState, refreshStudentMemory]);
 
+  const endClassroomForAll = useCallback(async () => {
+    if (!isHost || !roomId) return false;
+    const endedPacketState = {
+      ...classroomState,
+      controls: {
+        ...(classroomState?.controls || {}),
+        sessionEnded: true,
+        endedAtMs: Date.now(),
+      },
+      updatedAtMs: Date.now(),
+    };
+    publishRealtimePacket({
+      type: 'CLASSROOM_SYNC',
+      roomEnded: true,
+      state: endedPacketState,
+    });
+    try {
+      await api.post(`/api/live/sessions/${encodeURIComponent(roomId)}/end`, {}, { auth: true });
+      return true;
+    } catch {
+      try {
+        await api.patch(
+          `/api/live/sessions/${encodeURIComponent(roomId)}/live`,
+          { isLive: false, endSession: true },
+          { auth: true }
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }, [isHost, roomId, classroomState, publishRealtimePacket]);
+
   return {
     classroomState,
+    sessionEnded,
+    syncedSessionContext,
     syncConnected,
     studentOpenMistakes,
     updateClassroomState,
+    endClassroomForAll,
     submitGameAnswer,
     ringListenerBell,
     submitWhiteboardStudentAction,

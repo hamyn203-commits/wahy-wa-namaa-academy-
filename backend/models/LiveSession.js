@@ -19,6 +19,12 @@ const LiveSessionSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   subject: { type: String, default: 'general' },
   isLive: { type: Boolean, default: false },
+  endedAt: { type: Date, default: null },
+  endedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
   participants: { type: Number, default: 0 },
   classroomState: {
     type: mongoose.Schema.Types.Mixed,

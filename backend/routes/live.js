@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-const { AccessToken, TrackSource } = require('livekit-server-sdk');
+const { AccessToken, TrackSource, RoomServiceClient } = require('livekit-server-sdk');
 const LiveSession = require('../models/LiveSession');
 const User = require('../models/User');
 const Session = require('../models/Session');
@@ -26,6 +26,21 @@ const LIVEKIT_URL = process.env.LIVEKIT_URL || '';
 
 function isLiveKitConfigured() {
   return Boolean(LIVEKIT_API_KEY && LIVEKIT_API_SECRET && LIVEKIT_URL);
+}
+
+async function closeLiveKitRoomIfActive(roomName) {
+  if (!roomName || !isLiveKitConfigured() || typeof RoomServiceClient !== 'function') return;
+  if (LIVEKIT_URL.includes('.example.')) return;
+  try {
+    const httpUrl = LIVEKIT_URL.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://');
+    const roomService = new RoomServiceClient(httpUrl, LIVEKIT_API_KEY, LIVEKIT_API_SECRET);
+    await Promise.race([
+      roomService.deleteRoom(String(roomName)),
+      new Promise((resolve) => setTimeout(resolve, 1200)),
+    ]);
+  } catch {
+    // Non-blocking if room is already closed or SFU is unreachable
+  }
 }
 
 async function createToken({ roomName, identity, participantName, canPublish, isHost = false, isObserver = false }) {
@@ -66,46 +81,72 @@ async function sessionIncludesStudent(session, studentId) {
   return false;
 }
 
-async function getRoomAccess(liveSession, user) {
+async function getRoomAccess(liveSession, user, { allowEndedStateRead = false, allowHostReopen = false } = {}) {
   if (!liveSession || !user) {
-    return { allowed: false, isHost: false, isObserver: false, bookedSession: null };
+    return { allowed: false, isHost: false, isObserver: false, bookedSession: null, sessionEnded: false };
   }
 
   if (user.role === 'admin') {
     const bookedSession = liveSession.session
-      ? await Session.findById(liveSession.session).select('student teacher circle attendance scheduledAt duration timezone status')
+      ? await Session.findById(liveSession.session).select('student teacher circle attendance scheduledAt duration timezone status type')
       : null;
-    return { allowed: true, isHost: true, isObserver: false, bookedSession };
+    const sessionEnded = Boolean(
+      liveSession.endedAt ||
+      liveSession.classroomState?.controls?.sessionEnded ||
+      bookedSession?.status === 'completed'
+    );
+    return { allowed: true, isHost: true, isObserver: false, bookedSession, sessionEnded };
   }
 
   if (!liveSession.session) {
-    return { allowed: false, isHost: false, isObserver: false, bookedSession: null };
+    return { allowed: false, isHost: false, isObserver: false, bookedSession: null, sessionEnded: false };
   }
 
   const bookedSession = await Session.findById(liveSession.session)
-    .select('student teacher circle attendance scheduledAt duration timezone status');
+    .select('student teacher circle attendance scheduledAt duration timezone status type');
 
-  if (!bookedSession || bookedSession.status !== 'accepted') {
-    return { allowed: false, isHost: false, isObserver: false, bookedSession };
+  if (!bookedSession) {
+    return { allowed: false, isHost: false, isObserver: false, bookedSession: null, sessionEnded: false };
   }
+
+  const sessionEnded = Boolean(
+    liveSession.endedAt ||
+    liveSession.classroomState?.controls?.sessionEnded ||
+    bookedSession.status === 'completed'
+  );
+
+  const allowedStatuses = allowEndedStateRead ? ['accepted', 'completed'] : ['accepted'];
+  if (!allowedStatuses.includes(bookedSession.status)) {
+    return { allowed: false, isHost: false, isObserver: false, bookedSession, sessionEnded };
+  }
+
+  if (sessionEnded && !allowEndedStateRead) {
+    const canTeacherReopen = allowHostReopen && user.role === 'teacher' && bookedSession.status === 'accepted';
+    if (!canTeacherReopen) {
+      return { allowed: false, isHost: false, isObserver: false, bookedSession, sessionEnded: true };
+    }
+  }
+
+  const withinWindow = (allowEndedStateRead && sessionEnded)
+    ? true
+    : sessionParticipantWindow(bookedSession).within;
 
   if (user.role === 'teacher') {
     const teacher = await Teacher.findOne({ user: user.id }).select('_id');
-    const allowed = Boolean(teacher && String(bookedSession.teacher) === String(teacher._id))
-      && sessionParticipantWindow(bookedSession).within;
-    return { allowed, isHost: allowed, isObserver: false, bookedSession };
+    const allowed = Boolean(teacher && String(bookedSession.teacher) === String(teacher._id)) && withinWindow;
+    return { allowed, isHost: allowed, isObserver: false, bookedSession, sessionEnded };
   }
 
   if (user.role === 'student') {
     const assigned = await sessionIncludesStudent(bookedSession, user.id);
-    const allowed = assigned && sessionParticipantWindow(bookedSession).within;
-    return { allowed, isHost: false, isObserver: false, bookedSession };
+    const allowed = assigned && withinWindow;
+    return { allowed, isHost: false, isObserver: false, bookedSession, sessionEnded };
   }
 
   if (user.role === 'guardian') {
     const guardian = await Guardian.findOne({ user: user.id, isActive: true }).select('children.student children.permissions');
     if (!guardian) {
-      return { allowed: false, isHost: false, isObserver: true, bookedSession };
+      return { allowed: false, isHost: false, isObserver: true, bookedSession, sessionEnded };
     }
 
     let assigned = false;
@@ -117,12 +158,12 @@ async function getRoomAccess(liveSession, user) {
       }
     }
 
-    const allowed = assigned && sessionParticipantWindow(bookedSession).within;
-    return { allowed, isHost: false, isObserver: true, bookedSession };
+    const allowed = assigned && withinWindow;
+    return { allowed, isHost: false, isObserver: true, bookedSession, sessionEnded };
   }
 
   // Supervisors need an explicit future assignment model; fail closed until then.
-  return { allowed: false, isHost: false, isObserver: false, bookedSession };
+  return { allowed: false, isHost: false, isObserver: false, bookedSession, sessionEnded };
 }
 
 function presentLiveSession(liveSession, access) {
@@ -160,8 +201,38 @@ async function buildSessionContext(liveSession, bookedSession) {
       avatar: String(u.name || 'ط').trim().charAt(0) || 'ط',
     }));
   }
+  let teacherId = null;
+  let teacherName = '';
+  if (bookedSession?.teacher) {
+    if (typeof bookedSession.teacher === 'object' && bookedSession.teacher._id) {
+      teacherId = String(bookedSession.teacher._id);
+      teacherName = String(
+        bookedSession.teacher.personalInfo?.fullName || bookedSession.teacher.user?.name || ''
+      ).trim();
+    } else {
+      teacherId = String(bookedSession.teacher);
+    }
+    if (!teacherName && teacherId && (Boolean(mongoose.connection?.db) || Teacher.findById !== mongoose.Model.findById)) {
+      try {
+        const q = Teacher.findById(teacherId);
+        const teacherDoc = typeof q?.select === 'function'
+          ? await q.select('personalInfo.fullName user').lean()
+          : await q;
+        teacherName = String(teacherDoc?.personalInfo?.fullName || '').trim();
+        if (!teacherName && teacherDoc?.user) {
+          const uDoc = await User.findById(teacherDoc.user).select('name').lean().catch(() => null);
+          teacherName = String(uDoc?.name || '').trim();
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+  }
   return {
     sessionId: bookedSession?._id ? String(bookedSession._id) : null,
+    sessionType: bookedSession?.type || 'regular',
+    teacherId,
+    teacherName,
     title: liveSession.title || 'حلقة تعليمية',
     subject: liveSession.subject || 'quran',
     scheduledAt: bookedSession?.scheduledAt || liveSession.scheduledAt || null,
@@ -285,9 +356,21 @@ router.post('/token', verifyAccessToken, async (req, res) => {
 
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
 
-    const access = await getRoomAccess(liveSession, req.user);
+    const access = await getRoomAccess(liveSession, req.user, { allowHostReopen: true });
     if (!access.allowed) {
-      return res.status(403).json({ message: 'You are not assigned to this live session' });
+      return res.status(403).json({
+        message: access.sessionEnded ? 'انتهت هذه الحصة بالفعل' : 'You are not assigned to this live session',
+        ...(access.sessionEnded ? { code: 'SESSION_ENDED', sessionEnded: true } : {}),
+      });
+    }
+
+    if (access.isHost && access.sessionEnded && access.bookedSession?.status === 'accepted') {
+      const reopenedState = applyHostStatePatch(liveSession.classroomState, {
+        controls: { sessionEnded: false, endedAtMs: 0 },
+      });
+      liveSession.endedAt = null;
+      liveSession.endedBy = null;
+      await persistClassroomState(liveSession, reopenedState);
     }
 
     const role = req.user.role;
@@ -566,13 +649,17 @@ router.get('/sessions/:roomId', verifyAccessToken, async (req, res) => {
     const liveSession = await findLiveSessionByRoomOrSession(req.params.roomId);
     if (!liveSession) return res.status(404).json({ message: 'Session not found' });
 
-    const access = await getRoomAccess(liveSession, req.user);
+    const access = await getRoomAccess(liveSession, req.user, { allowEndedStateRead: true });
     if (!access.allowed) {
       return res.status(403).json({ message: 'You are not assigned to this live session' });
     }
 
     const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
-    return res.json({ ...presentLiveSession(liveSession, access), sessionContext });
+    return res.json({
+      ...presentLiveSession(liveSession, access),
+      sessionEnded: Boolean(access.sessionEnded),
+      sessionContext,
+    });
   } catch {
     return res.status(500).json({ message: 'Failed to get session' });
   }
@@ -599,23 +686,83 @@ router.delete('/sessions/:roomId', verifyAccessToken, requireRole('teacher', 'ad
   }
 });
 
+async function endLiveSessionRoom(liveSession, endedByUserId = null) {
+  const now = Date.now();
+  const nextState = applyHostStatePatch(liveSession.classroomState, {
+    controls: { sessionEnded: true, endedAtMs: now },
+  });
+  liveSession.isLive = false;
+  liveSession.endedAt = new Date(now);
+  if (endedByUserId && mongoose.Types.ObjectId.isValid(String(endedByUserId))) {
+    liveSession.endedBy = endedByUserId;
+  }
+  await persistClassroomState(liveSession, nextState);
+  await closeLiveKitRoomIfActive(liveSession.roomId);
+  return nextState;
+}
+
 router.patch('/sessions/:roomId/live', verifyAccessToken, requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    const { liveSession, access } = await canManageRoom(req.params.roomId, req.user);
-    if (!liveSession) return res.status(404).json({ message: 'Session not found' });
+    const wantsLive = Boolean(req.body.isLive);
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(
+      req.params.roomId,
+      req.user,
+      { allowEndedStateRead: !wantsLive }
+    );
+    if (notFound || !liveSession) return res.status(404).json({ message: 'Session not found' });
     if (!access?.allowed || !access?.isHost) return res.status(403).json({ message: 'Not authorized' });
 
-    liveSession.isLive = Boolean(req.body.isLive);
-    await liveSession.save();
+    if (!wantsLive && req.body.endSession !== false) {
+      await endLiveSessionRoom(liveSession, req.user.id);
+    } else {
+      liveSession.isLive = wantsLive;
+      if (typeof liveSession.save === 'function') {
+        await liveSession.save();
+      }
+    }
 
     const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
-    return res.json({ ...presentLiveSession(liveSession, access), sessionContext });
+    return res.json({
+      ...presentLiveSession(liveSession, access),
+      sessionEnded: !wantsLive && req.body.endSession !== false,
+      sessionContext,
+    });
   } catch {
     return res.status(500).json({ message: 'Failed to update session' });
   }
 });
 
-async function resolveAuthorizedRoomForState(roomName, user) {
+router.post('/sessions/:roomId/end', verifyAccessToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(
+      req.params.roomId,
+      req.user,
+      { allowEndedStateRead: true }
+    );
+    if (notFound || !liveSession) return res.status(404).json({ message: 'Session not found' });
+    if (!access?.allowed || !access?.isHost) {
+      return res.status(403).json({ message: 'Not authorized to end this live session' });
+    }
+
+    const nextState = await endLiveSessionRoom(liveSession, req.user.id);
+    const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
+
+    return res.json({
+      ok: true,
+      roomId: liveSession.roomId,
+      sessionEnded: true,
+      sessionContext,
+      classroomState: presentClassroomState(nextState, {
+        isHost: true,
+        viewerUserId: req.user.id,
+      }),
+    });
+  } catch {
+    return res.status(500).json({ message: 'Failed to end live session' });
+  }
+});
+
+async function resolveAuthorizedRoomForState(roomName, user, accessOptions = {}) {
   let liveSession = await findLiveSessionByRoomOrSession(roomName);
   const bookedIdFromRoom = bookedSessionIdFromRoomName(roomName);
 
@@ -652,7 +799,7 @@ async function resolveAuthorizedRoomForState(roomName, user) {
     return { liveSession: null, access: null, notFound: true };
   }
 
-  const access = await getRoomAccess(liveSession, user);
+  const access = await getRoomAccess(liveSession, user, accessOptions);
   return { liveSession, access, notFound: false };
 }
 
@@ -666,35 +813,61 @@ async function persistClassroomState(liveSession, nextState) {
   } else if (liveSession._id && typeof LiveSession.updateOne === 'function') {
     await LiveSession.updateOne(
       { _id: liveSession._id },
-      { $set: { classroomState: nextState } }
+      {
+        $set: {
+          classroomState: nextState,
+          isLive: Boolean(liveSession.isLive),
+          ...(liveSession.endedAt !== undefined ? { endedAt: liveSession.endedAt } : {}),
+        },
+      }
     ).catch(() => {});
   }
 }
 
 router.get('/sessions/:roomId/state', verifyAccessToken, async (req, res) => {
   try {
-    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(req.params.roomId, req.user);
+    const { liveSession, access, notFound } = await resolveAuthorizedRoomForState(
+      req.params.roomId,
+      req.user,
+      { allowEndedStateRead: true }
+    );
     if (notFound) return res.status(404).json({ message: 'Session not found' });
     if (!access?.allowed) {
       return res.status(403).json({ message: 'You are not assigned to this live session' });
     }
 
+    const sessionEnded = Boolean(
+      access.sessionEnded ||
+      liveSession.endedAt ||
+      liveSession.classroomState?.controls?.sessionEnded ||
+      access.bookedSession?.status === 'completed'
+    );
+    const presentedState = presentClassroomState(liveSession.classroomState, {
+      isHost: Boolean(access.isHost),
+      viewerUserId: req.user.id,
+    });
+    if (sessionEnded) {
+      presentedState.controls = {
+        ...(presentedState.controls || {}),
+        sessionEnded: true,
+        endedAtMs: presentedState.controls?.endedAtMs || (liveSession.endedAt ? new Date(liveSession.endedAt).getTime() : Date.now()),
+      };
+    }
+
     const sessionContext = await buildSessionContext(liveSession, access.bookedSession);
     return res.json({
       roomId: liveSession.roomId,
+      sessionEnded,
       canManage: Boolean(access.isHost),
       isObserver: Boolean(access.isObserver),
       permissions: {
         role: req.user.role,
         isHost: Boolean(access.isHost),
         isObserver: Boolean(access.isObserver),
-        canPublish: !access.isObserver && ['student', 'teacher', 'admin'].includes(req.user.role),
+        canPublish: !access.isObserver && !sessionEnded && ['student', 'teacher', 'admin'].includes(req.user.role),
       },
       sessionContext,
-      classroomState: presentClassroomState(liveSession.classroomState, {
-        isHost: Boolean(access.isHost),
-        viewerUserId: req.user.id,
-      }),
+      classroomState: presentedState,
     });
   } catch {
     return res.status(500).json({ message: 'Failed to load classroom state' });

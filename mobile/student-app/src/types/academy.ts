@@ -51,6 +51,12 @@ export interface SessionTeacher {
   };
 }
 
+export interface SessionFeedbackEntry {
+  rating?: number;
+  comment?: string;
+  wouldContinue?: boolean;
+}
+
 export interface SessionItem {
   _id: string;
   type: 'trial' | 'regular' | 'group_circle';
@@ -66,6 +72,8 @@ export interface SessionItem {
     _id?: string;
     name?: string;
   };
+  myFeedback?: SessionFeedbackEntry | null;
+  studentFeedback?: SessionFeedbackEntry;
 }
 
 export interface HomeworkItem {
