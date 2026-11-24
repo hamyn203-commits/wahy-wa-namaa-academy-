@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BookOpen, CheckCircle2, GraduationCap, PlayCircle } from 'lucide-react-native';
+import { BookOpen, CheckCircle2, Clock, GraduationCap, PlayCircle } from 'lucide-react-native';
 import { useI18n } from '../src/i18n/I18nProvider';
 import { api } from '../src/lib/api';
 import { IslamicHero } from '../src/components/IslamicHero';
@@ -27,6 +27,35 @@ function pickText(v: string | LocalizedText | undefined, locale: 'ar' | 'en'): s
   if (!v) return '';
   if (typeof v === 'string') return v;
   return v[locale] || v.ar || v.en || '';
+}
+
+function resolveMobileCoursePrice(course: CourseItem, locale: 'ar' | 'en') {
+  const rp = course.regionalPricing;
+  const currency = rp?.currency
+    ? (rp.currency === 'USD' ? 'USD' : 'EGP')
+    : (String(course.currency || 'USD').toUpperCase() === 'EGP' ? 'EGP' : 'USD');
+  const rawPrice = rp && rp.price !== undefined && rp.price !== null
+    ? Number(rp.price)
+    : Number(course.price ?? 0);
+  const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : 0;
+  const isFree = price === 0;
+  const compareAt = rp?.compareAtPrice && Number(rp.compareAtPrice) > price ? Number(rp.compareAtPrice) : null;
+  const discountPct = compareAt ? Math.round(((compareAt - price) / compareAt) * 100) : 0;
+
+  const formatAmt = (amt: number) => {
+    const clean = Number.isInteger(amt) ? String(amt) : amt.toFixed(2).replace(/0$/, '');
+    if (currency === 'USD') return `$${clean}`;
+    return locale === 'ar' ? `${clean} ج.م` : `${clean} EGP`;
+  };
+
+  return {
+    isFree,
+    price,
+    currency,
+    discountPct,
+    priceLabel: isFree ? (locale === 'ar' ? 'مجاني بالكامل' : 'Free') : formatAmt(price),
+    compareAtLabel: compareAt ? formatAmt(compareAt) : '',
+  };
 }
 
 export default function CoursesScreen() {
@@ -87,10 +116,28 @@ export default function CoursesScreen() {
     }
   };
 
-  const enrollInCourse = async (courseId: string) => {
-    setEnrollingId(courseId);
+  const handleCourseAction = async (course: CourseItem) => {
+    const pricing = resolveMobileCoursePrice(course, locale);
+    if (!pricing.isFree) {
+      if (!course.slug) {
+        Alert.alert(t.brandShort, locale === 'ar' ? 'معرّف الدورة غير مكتمل.' : 'Course slug missing.');
+        return;
+      }
+      router.push({
+        pathname: '/manual-payment',
+        params: {
+          courseSlug: course.slug,
+          planName: pickText(course.title, locale),
+          totalAmount: String(pricing.price),
+          currency: pricing.currency,
+        },
+      });
+      return;
+    }
+
+    setEnrollingId(course._id);
     try {
-      await api.post(`/api/courses/${encodeURIComponent(courseId)}/enroll`, {}, { auth: true });
+      await api.post(`/api/courses/${encodeURIComponent(course._id)}/enroll`, {}, { auth: true });
       Alert.alert(
         t.common.success,
         locale === 'ar' ? 'تم تسجيلك في الدورة بنجاح!' : 'Enrolled in course successfully!'
@@ -143,35 +190,41 @@ export default function CoursesScreen() {
               title={locale === 'ar' ? 'لا توجد دروس منشورة بعد' : 'No published lessons yet'}
             />
           ) : (
-            lessons.map((lesson, index) => (
-              <View key={lesson._id} style={styles.card}>
-                <View style={[styles.cardHead, { flexDirection: rowDir }]}>
-                  <View style={styles.lessonNum}>
-                    <Text style={styles.lessonNumText}>{lesson.order || index + 1}</Text>
+            lessons.map((lesson, index) => {
+              const lessonBodyText =
+                pickText(lesson.content?.text, locale)
+                || pickText(lesson.content?.summary, locale)
+                || pickText(lesson.content?.body, locale);
+              return (
+                <View key={lesson._id} style={styles.card}>
+                  <View style={[styles.cardHead, { flexDirection: rowDir }]}>
+                    <View style={styles.lessonNum}>
+                      <Text style={styles.lessonNumText}>{lesson.order || index + 1}</Text>
+                    </View>
+                    <Text style={[styles.cardTitle, { textAlign: align, flex: 1 }]}>
+                      {pickText(lesson.title, locale)}
+                    </Text>
+                    {lesson.completed ? <CheckCircle2 size={20} color={colors.emerald} /> : null}
                   </View>
-                  <Text style={[styles.cardTitle, { textAlign: align, flex: 1 }]}>
-                    {pickText(lesson.title, locale)}
-                  </Text>
-                  {lesson.completed ? <CheckCircle2 size={20} color={colors.emerald} /> : null}
+                  {pickText(lesson.description, locale) ? (
+                    <Text style={[styles.desc, { textAlign: align }]}>{pickText(lesson.description, locale)}</Text>
+                  ) : null}
+                  {lessonBodyText ? (
+                    <Text style={[styles.lessonBody, { textAlign: align }]}>
+                      {lessonBodyText}
+                    </Text>
+                  ) : null}
+                  {!lesson.completed ? (
+                    <PrimaryButton
+                      label={locale === 'ar' ? 'تحديد الدرس كمكتمل' : 'Mark Lesson Complete'}
+                      variant="secondary"
+                      loading={completingLessonId === lesson._id}
+                      onPress={() => void completeLesson(lesson._id)}
+                    />
+                  ) : null}
                 </View>
-                {pickText(lesson.description, locale) ? (
-                  <Text style={[styles.desc, { textAlign: align }]}>{pickText(lesson.description, locale)}</Text>
-                ) : null}
-                {lesson.content?.text || lesson.content?.summary ? (
-                  <Text style={[styles.lessonBody, { textAlign: align }]}>
-                    {lesson.content.text || lesson.content.summary}
-                  </Text>
-                ) : null}
-                {!lesson.completed ? (
-                  <PrimaryButton
-                    label={locale === 'ar' ? 'تحديد الدرس كمكتمل' : 'Mark Lesson Complete'}
-                    variant="secondary"
-                    loading={completingLessonId === lesson._id}
-                    onPress={() => void completeLesson(lesson._id)}
-                  />
-                ) : null}
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       </SafeAreaView>
@@ -184,7 +237,11 @@ export default function CoursesScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <IslamicHero
         title={locale === 'ar' ? 'الدورات والمحتوى التعليمي' : 'Courses & Lessons'}
-        subtitle={locale === 'ar' ? 'تعلّم التجويد والعلوم الشرعية من داخل التطبيق.' : 'Study Tajweed and Islamic courses directly in-app.'}
+        subtitle={
+          locale === 'ar'
+            ? 'دورات تأسيسية وتجويد ومتون من داخل التطبيق بتسعير محلي مخفّض.'
+            : 'Structured Tajweed, Hifz, and Foundation courses directly in-app.'
+        }
         isRTL={isRTL}
         onBack={() => router.back()}
         compact
@@ -225,7 +282,7 @@ export default function CoursesScreen() {
               <StateView
                 mode="empty"
                 title={locale === 'ar' ? 'لم تسجل في أي دورة بعد' : 'No enrolled courses yet'}
-                description={locale === 'ar' ? 'استكشف دورات الأكاديمية وسجّل فيها مجاناً أو ضمن باقتك.' : 'Explore academy courses and enroll right away.'}
+                description={locale === 'ar' ? 'استكشف دورات الأكاديمية المجانية والمتخصصة وسجّل فيها فوراً.' : 'Explore academy courses and enroll right away.'}
                 actionLabel={locale === 'ar' ? 'استكشف الدورات' : 'Explore Courses'}
                 onAction={() => setTab('explore')}
               />
@@ -268,6 +325,7 @@ export default function CoursesScreen() {
           }
           renderItem={({ item }) => {
             const isEnrolled = enrolledIds.has(item._id);
+            const pricing = resolveMobileCoursePrice(item, locale);
             return (
               <View style={styles.card}>
                 <View style={[styles.cardHead, { flexDirection: rowDir }]}>
@@ -281,15 +339,40 @@ export default function CoursesScreen() {
                     {pickText(item.description, locale)}
                   </Text>
                 ) : null}
+
+                <View style={[styles.priceMetaRow, { flexDirection: rowDir }]}>
+                  <View style={[styles.priceGroup, { flexDirection: rowDir }]}>
+                    <Text style={[styles.priceBadgeText, pricing.isFree && styles.freeBadgeText]}>
+                      {pricing.priceLabel}
+                    </Text>
+                    {pricing.compareAtLabel ? (
+                      <Text style={styles.compareAtText}>{pricing.compareAtLabel}</Text>
+                    ) : null}
+                    {pricing.discountPct > 0 ? (
+                      <View style={styles.discountPill}>
+                        <Text style={styles.discountPillText}>-{pricing.discountPct}%</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {item.duration ? (
+                    <View style={[styles.durationTag, { flexDirection: rowDir }]}>
+                      <Clock size={12} color={colors.textSecondary} />
+                      <Text style={styles.durationTagText}>{item.duration}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
                 <PrimaryButton
                   label={
                     isEnrolled
-                      ? locale === 'ar' ? 'فتح الدروس' : 'Open Lessons'
-                      : locale === 'ar' ? 'التسجيل في الدورة' : 'Enroll Now'
+                      ? (locale === 'ar' ? 'فتح الدروس' : 'Open Lessons')
+                      : pricing.isFree
+                        ? (locale === 'ar' ? 'ابدأ الدورة مجاناً' : 'Enroll Free')
+                        : (locale === 'ar' ? `الالتحاق بالدورة — ${pricing.priceLabel}` : `Enroll — ${pricing.priceLabel}`)
                   }
-                  variant={isEnrolled ? 'primary' : 'secondary'}
+                  variant={isEnrolled ? 'primary' : pricing.isFree ? 'gold' : 'secondary'}
                   loading={enrollingId === item._id}
-                  onPress={() => (isEnrolled ? void openCourseLessons(item) : void enrollInCourse(item._id))}
+                  onPress={() => (isEnrolled ? void openCourseLessons(item) : void handleCourseAction(item))}
                 />
               </View>
             );
@@ -336,6 +419,27 @@ const styles = StyleSheet.create({
   cardHead: { alignItems: 'center', gap: spacing.sm },
   cardTitle: { fontSize: 16, fontFamily: fonts.extraBold, color: colors.emeraldDark },
   desc: { fontSize: 13, fontFamily: fonts.regular, color: colors.textSecondary, lineHeight: 20 },
+  priceMetaRow: { alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: spacing.xs },
+  priceGroup: { alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  priceBadgeText: { fontSize: 18, fontFamily: fonts.extraBold, color: colors.emerald },
+  freeBadgeText: { color: colors.emeraldDark },
+  compareAtText: {
+    fontSize: 12,
+    fontFamily: fonts.bold,
+    color: colors.textTertiary,
+    textDecorationLine: 'line-through',
+  },
+  discountPill: {
+    backgroundColor: colors.goldSoft,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  discountPillText: { fontSize: 10, fontFamily: fonts.extraBold, color: colors.goldDark },
+  durationTag: { alignItems: 'center', gap: 4 },
+  durationTagText: { fontSize: 11, fontFamily: fonts.medium, color: colors.textSecondary },
   lessonNum: {
     width: 32,
     height: 32,

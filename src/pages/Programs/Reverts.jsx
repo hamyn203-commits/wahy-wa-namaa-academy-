@@ -3,6 +3,7 @@ import { HeartHandshake, Globe2, Users, ArrowLeft, ArrowRight, BookOpen, Refresh
 import { useCallback, useState, useEffect } from 'react';
 import { useI18n } from '../../i18n';
 import { localizedPath } from '../../lib/locale';
+import { formatCourseRegionalDisplay } from '../../lib/regionalPricing';
 import GlobalHeader from '../../components/GlobalHeader';
 import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
@@ -254,12 +255,17 @@ export default function RevertsProgram() {
                 <BookOpen size={22} aria-hidden="true" /> {copy.pathsTitle}
               </h2>
               <div className="grid md:grid-cols-2 gap-4">
-                {courses.map((c) => (
-                  <Link key={c._id} to={localizedPath(`/courses/${c.slug}`, locale)} className="wn-program-card p-4">
-                    <p className="font-bold text-[var(--wn-heading)]">{pickText(c.title)}</p>
-                    <p className="text-sm text-[var(--wn-link)] mt-1">{c.price} {c.currency}</p>
-                  </Link>
-                ))}
+                {courses.map((c) => {
+                  const pricing = formatCourseRegionalDisplay(c, locale, isRTL);
+                  return (
+                    <Link key={c._id} to={localizedPath(`/courses/${c.slug}`, locale)} className="wn-program-card p-4">
+                      <p className="font-bold text-[var(--wn-heading)]">{pickText(c.title)}</p>
+                      <p className="text-sm font-bold text-[var(--wn-link)] mt-1">
+                        {pricing.isFree ? (t.courses?.free || (isRTL ? 'مجاني' : 'Free')) : pricing.formattedPrice}
+                      </p>
+                    </Link>
+                  );
+                })}
               </div>
             </>
           ) : null}

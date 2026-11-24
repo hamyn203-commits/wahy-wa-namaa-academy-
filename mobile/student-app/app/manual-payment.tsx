@@ -59,7 +59,8 @@ const FALLBACK_METHODS: PaymentMethodConfig[] = [
 export default function ManualPaymentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
-    subscriptionId: string;
+    subscriptionId?: string;
+    courseSlug?: string;
     planName?: string;
     sessionCount?: string;
     totalAmount?: string;
@@ -68,6 +69,7 @@ export default function ManualPaymentScreen() {
   }>();
   const { user } = useAuth();
   const { locale, isRTL, t } = useI18n();
+  const isCoursePayment = Boolean(params.courseSlug && !params.subscriptionId);
 
   const [methods, setMethods] = useState<PaymentMethodConfig[]>(FALLBACK_METHODS);
   const [recipientName, setRecipientName] = useState('');
@@ -176,11 +178,16 @@ export default function ManualPaymentScreen() {
 
   const handleSubmitPayment = async () => {
     const subId = String(params.subscriptionId || '').trim();
-    if (!subId) {
+    const courseSlug = String(params.courseSlug || '').trim();
+    if (!isCoursePayment && !subId) {
       Alert.alert(t.brandShort, locale === 'ar' ? 'معرّف الاشتراك غير موجود.' : 'Missing subscription ID.');
       return;
     }
-    if (!selectedTeacherId) {
+    if (isCoursePayment && !courseSlug) {
+      Alert.alert(t.brandShort, locale === 'ar' ? 'معرّف الدورة غير موجود.' : 'Missing course slug.');
+      return;
+    }
+    if (!isCoursePayment && !selectedTeacherId) {
       Alert.alert(
         t.brandShort,
         locale === 'ar' ? 'يرجى اختيار الشيخ / المعلم المفضل أولاً.' : 'Please choose your preferred teacher first.'
@@ -216,19 +223,34 @@ export default function ManualPaymentScreen() {
         fileSize: pickedImage.fileSize,
       });
 
-      await api.post(
-        `/api/payments/subscription/${encodeURIComponent(subId)}/manual`,
-        {
-          method: selectedMethodId,
-          preferredTeacherId: selectedTeacherId,
-          transferReference: cleanRef,
-          proofReference: uploaded.url,
-          proofFilename: uploaded.name,
-          proofContentType: uploaded.contentType,
-          proofSize: uploaded.size,
-        },
-        { auth: true }
-      );
+      if (isCoursePayment) {
+        await api.post(
+          `/api/payments/course/${encodeURIComponent(courseSlug)}/manual`,
+          {
+            method: selectedMethodId,
+            transferReference: cleanRef,
+            proofReference: uploaded.url,
+            proofFilename: uploaded.name,
+            proofContentType: uploaded.contentType,
+            proofSize: uploaded.size,
+          },
+          { auth: true }
+        );
+      } else {
+        await api.post(
+          `/api/payments/subscription/${encodeURIComponent(subId)}/manual`,
+          {
+            method: selectedMethodId,
+            preferredTeacherId: selectedTeacherId,
+            transferReference: cleanRef,
+            proofReference: uploaded.url,
+            proofFilename: uploaded.name,
+            proofContentType: uploaded.contentType,
+            proofSize: uploaded.size,
+          },
+          { auth: true }
+        );
+      }
 
       setSubmittedDone(true);
     } catch (err) {
@@ -252,9 +274,9 @@ export default function ManualPaymentScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <IslamicHero
           title={locale === 'ar' ? 'تم استلام إثبات التحويل' : 'Transfer Proof Submitted'}
-          subtitle={locale === 'ar' ? 'طلبك الآن لدى الإدارة للمراجعة والتسكين.' : 'Your payment is now under Admin review.'}
+          subtitle={locale === 'ar' ? 'طلبك الآن لدى الإدارة للمراجعة والتفعيل.' : 'Your payment is now under Admin review.'}
           isRTL={isRTL}
-          onBack={() => router.replace('/plans')}
+          onBack={() => router.replace(isCoursePayment ? '/courses' : '/plans')}
           compact
         />
         <ScrollView style={styles.scroll} contentContainerStyle={styles.doneContent}>
@@ -312,11 +334,15 @@ export default function ManualPaymentScreen() {
           {/* Order Summary Banner */}
           <View style={styles.orderCard}>
             <Text style={[styles.orderPlan, { textAlign: align }]}>
-              {params.planName || (locale === 'ar' ? 'باقة الحلقات' : 'Circle Plan')}
+              {params.planName || (isCoursePayment
+                ? (locale === 'ar' ? 'دورة تعليمية' : 'Academy Course')
+                : (locale === 'ar' ? 'باقة الحلقات' : 'Circle Plan'))}
             </Text>
             <View style={[styles.orderRow, { flexDirection: rowDir }]}>
               <Text style={styles.orderMeta}>
-                {params.sessionCount ? `${params.sessionCount} ${locale === 'ar' ? 'حصص' : 'sessions'}` : ''}
+                {isCoursePayment
+                  ? (locale === 'ar' ? 'وصول مفتوح لكامل دروس الدورة' : 'Full lifetime course access')
+                  : (params.sessionCount ? `${params.sessionCount} ${locale === 'ar' ? 'حصص' : 'sessions'}` : '')}
               </Text>
               <Text style={styles.orderTotal}>
                 {params.totalAmount || '—'} {params.currency || 'EGP'}
@@ -375,51 +401,55 @@ export default function ManualPaymentScreen() {
                 })}
               </View>
 
-              {/* Step 2: Choose Preferred Sheikh / Teacher */}
-              <View style={styles.card}>
-                <Text style={[styles.stepHeading, { textAlign: align }]}>
-                  {locale === 'ar'
-                    ? (isLadiesSection ? '٢) اختاري المعلمة المفضلة للتسكين' : '٢) اختر الشيخ / المعلم المفضل للتسكين')
-                    : '2) Select Your Preferred Teacher'}
-                </Text>
-
-                {teachers.length === 0 ? (
-                  <Text style={[styles.helperText, { textAlign: align }]}>
-                    {locale === 'ar' ? 'لا يوجد معلمون متاحون حالياً لهذا القسم.' : 'No teachers available for this section right now.'}
+              {/* Step 2: Choose Preferred Sheikh / Teacher (Subscriptions Only) */}
+              {!isCoursePayment ? (
+                <View style={styles.card}>
+                  <Text style={[styles.stepHeading, { textAlign: align }]}>
+                    {locale === 'ar'
+                      ? (isLadiesSection ? '٢) اختاري المعلمة المفضلة للتسكين' : '٢) اختر الشيخ / المعلم المفضل للتسكين')
+                      : '2) Select Your Preferred Teacher'}
                   </Text>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.teacherStrip}>
-                    {teachers.map((item) => {
-                      const active = selectedTeacherId === item._id;
-                      const name = item.personalInfo?.fullName || item.user?.name || t.sessions.teacherFallback;
-                      const rating = Number(item.rating?.average || 5).toFixed(1);
-                      const photoUrl = resolveTeacherPhotoUrl(item);
-                      return (
-                        <Pressable
-                          key={item._id}
-                          onPress={() => setSelectedTeacherId(item._id)}
-                          style={[styles.teacherChip, active && styles.teacherChipActive]}
-                        >
-                          <TeacherAvatar uri={photoUrl} name={name} size={46} highlight={active} />
-                          <Text style={[styles.teacherName, active && { color: colors.emeraldDark }]} numberOfLines={1}>
-                            {name}
-                          </Text>
-                          <View style={styles.teacherMetaRow}>
-                            <Star size={11} color={colors.goldDark} fill={colors.gold} />
-                            <Text style={styles.teacherRating}>{rating}</Text>
-                            {item.isVerified ? <UserCheck size={12} color={colors.emerald} /> : null}
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
+
+                  {teachers.length === 0 ? (
+                    <Text style={[styles.helperText, { textAlign: align }]}>
+                      {locale === 'ar' ? 'لا يوجد معلمون متاحون حالياً لهذا القسم.' : 'No teachers available for this section right now.'}
+                    </Text>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.teacherStrip}>
+                      {teachers.map((item) => {
+                        const active = selectedTeacherId === item._id;
+                        const name = item.personalInfo?.fullName || item.user?.name || t.sessions.teacherFallback;
+                        const rating = Number(item.rating?.average || 5).toFixed(1);
+                        const photoUrl = resolveTeacherPhotoUrl(item);
+                        return (
+                          <Pressable
+                            key={item._id}
+                            onPress={() => setSelectedTeacherId(item._id)}
+                            style={[styles.teacherChip, active && styles.teacherChipActive]}
+                          >
+                            <TeacherAvatar uri={photoUrl} name={name} size={46} highlight={active} />
+                            <Text style={[styles.teacherName, active && { color: colors.emeraldDark }]} numberOfLines={1}>
+                              {name}
+                            </Text>
+                            <View style={styles.teacherMetaRow}>
+                              <Star size={11} color={colors.goldDark} fill={colors.gold} />
+                              <Text style={styles.teacherRating}>{rating}</Text>
+                              {item.isVerified ? <UserCheck size={12} color={colors.emerald} /> : null}
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+                </View>
+              ) : null}
 
               {/* Step 3: Transfer Reference + Receipt Screenshot */}
               <View style={styles.card}>
                 <Text style={[styles.stepHeading, { textAlign: align }]}>
-                  {locale === 'ar' ? '٣) أدخل بيانات التحويل وصورة الإيصال' : '3) Enter Reference & Upload Receipt'}
+                  {locale === 'ar'
+                    ? (isCoursePayment ? '٢) أدخل بيانات التحويل وصورة الإيصال' : '٣) أدخل بيانات التحويل وصورة الإيصال')
+                    : (isCoursePayment ? '2) Enter Reference & Upload Receipt' : '3) Enter Reference & Upload Receipt')}
                 </Text>
 
                 <View style={styles.field}>

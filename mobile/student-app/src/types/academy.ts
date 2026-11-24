@@ -123,6 +123,10 @@ export interface PlanCatalogItem {
   maxStudents?: number;
   pricePerSession?: number;
   pricePerSessionMinor?: number;
+  basePricePerSessionMinor?: number;
+  maxSavingsPercent?: number;
+  allowedSessionPacks?: number[];
+  packPricesMinor?: Record<string, number> | null;
   currency?: string;
   features?: { ar?: string[]; en?: string[] } | string[];
   popular?: boolean;
@@ -133,7 +137,15 @@ export interface PlanCatalogResponse {
   currency?: string;
   region?: string;
   countryCode?: string;
+  regionLabel?: { ar?: string; en?: string };
+  localCurrencyHint?: {
+    code: string;
+    ratePerUsd: number;
+    symbolAr?: string;
+    symbolEn?: string;
+  } | null;
   plans?: PlanCatalogItem[];
+  sessionPacks?: number[];
   allowedSessionCounts?: number[];
 }
 
@@ -266,6 +278,24 @@ export interface CourseItem {
   category?: string;
   level?: string;
   price?: number;
+  currency?: string;
+  duration?: string;
+  regionalPricing?: {
+    region?: string;
+    price?: number;
+    currency?: string;
+    amountMinor?: number;
+    isFree?: boolean;
+    compareAtPrice?: number | null;
+    discountPercent?: number;
+    hasRegionalOverride?: boolean;
+    localCurrencyHint?: {
+      code: string;
+      ratePerUsd: number;
+      symbolAr?: string;
+      symbolEn?: string;
+    } | null;
+  };
   image?: string;
   stats?: {
     enrolled?: number;
@@ -289,9 +319,9 @@ export interface CourseLesson {
   title?: string | LocalizedText;
   description?: string | LocalizedText;
   content?: {
-    text?: string;
-    body?: string;
-    summary?: string;
+    text?: string | LocalizedText;
+    body?: string | LocalizedText;
+    summary?: string | LocalizedText;
   };
   type?: string;
   duration?: number;

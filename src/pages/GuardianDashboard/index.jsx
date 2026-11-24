@@ -63,11 +63,12 @@ const SUBSCRIPTION_STATUS_STYLES = {
 };
 
 const DEFAULT_PLAN_LABELS = {
-  community: 'حلقة عامة',
-  group: 'حلقة مجموعات (باقة 5-10 طلاب)',
-  focused: 'حلقة مركزة (باقة 3-5 طلاب)',
-  mini: 'حلقة مصغرة (باقة 2-3 طلاب)',
-  private: 'حلقة خاصة (فردية 1:1)',
+  community: 'حلقة عامة (تاريخية)',
+  group: 'حلقة مجموعات (تاريخية)',
+  focused: 'الحلقة الجماعية المركّزة (3–5 طلاب • 45 دقيقة)',
+  mini: 'حلقة الإخوة والثنائية (2–3 طلاب • 45 دقيقة)',
+  private: 'الباقة الفردية المركّزة (1-on-1 • 30 دقيقة)',
+  private_intensive: 'الفردية المكثّفة والإجازة (1-on-1 • 60 دقيقة)',
 };
 
 export default function GuardianDashboard() {
