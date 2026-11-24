@@ -47,54 +47,58 @@ test('Geo-IP region resolution maps Egypt, GCC, West, and International tiers ac
   assert.equal(resolveRegionForCountry(''), 'EG');
 });
 
-test('quoteSubscription enforces integer minor-unit pricing per regional tier', () => {
-  // Egypt -> EGP: focused 8 sessions = 2500 minor (25 EGP), 12 sessions = 2000 minor (20 EGP)
+test('quoteSubscription enforces progressive integer minor-unit pricing per regional tier', () => {
+  // Egypt -> EGP: focused 8 = 2500, 12 = 2000, 24 = 1900; private 12 = 6900
   const eg8 = quoteSubscription({ planKey: 'focused', sessionCount: 8, countryCode: 'EG' });
   assert.equal(eg8.currency, 'EGP');
   assert.equal(eg8.region, 'EG');
   assert.equal(eg8.pricePerSessionMinor, 2500);
   assert.equal(eg8.totalAmountMinor, 20000);
 
-  const eg12 = quoteSubscription({ planKey: 'focused', sessionCount: 12, countryCode: 'EG' });
-  assert.equal(eg12.pricePerSessionMinor, 2000);
-  assert.equal(eg12.totalAmountMinor, 24000);
+  const eg24 = quoteSubscription({ planKey: 'focused', sessionCount: 24, countryCode: 'EG' });
+  assert.equal(eg24.pricePerSessionMinor, 1900);
+  assert.equal(eg24.totalAmountMinor, 45600);
 
-  // Saudi Arabia (GCC) -> USD: focused $3.50 * 12 = $42.00; private $6.50 * 8 = $52.00; intensive $12.00 * 8 = $96.00
+  const egPriv12 = quoteSubscription({ planKey: 'private', sessionCount: 12, countryCode: 'EG' });
+  assert.equal(egPriv12.pricePerSessionMinor, 6900);
+  assert.equal(egPriv12.totalAmountMinor, 82800);
+
+  // Saudi Arabia (GCC) -> USD: focused 12 = $2.75 ($33); private 8 = $4.75 ($38 ≈ 143 SAR); intensive 8 = $9.00 ($72)
   const saFocused = quoteSubscription({ planKey: 'focused', sessionCount: 12, countryCode: 'SA' });
   assert.equal(saFocused.currency, 'USD');
   assert.equal(saFocused.region, 'GCC');
-  assert.equal(saFocused.pricePerSessionMinor, 350);
-  assert.equal(saFocused.totalAmountMinor, 4200);
+  assert.equal(saFocused.pricePerSessionMinor, 275);
+  assert.equal(saFocused.totalAmountMinor, 3300);
 
   const saPrivate = quoteSubscription({ planKey: 'private', sessionCount: 8, countryCode: 'SA' });
-  assert.equal(saPrivate.pricePerSessionMinor, 650);
-  assert.equal(saPrivate.totalAmountMinor, 5200);
+  assert.equal(saPrivate.pricePerSessionMinor, 475);
+  assert.equal(saPrivate.totalAmountMinor, 3800);
 
   const saIntensive = quoteSubscription({ planKey: 'private_intensive', sessionCount: 8, countryCode: 'SA' });
-  assert.equal(saIntensive.pricePerSessionMinor, 1200);
-  assert.equal(saIntensive.totalAmountMinor, 9600);
+  assert.equal(saIntensive.pricePerSessionMinor, 900);
+  assert.equal(saIntensive.totalAmountMinor, 7200);
 
-  // USA (WEST) -> USD: focused $4.50 * 12 = $54.00; private $8.50 * 8 = $68.00; intensive $15.00 * 8 = $120.00
+  // USA (WEST) -> USD: focused 12 = $3.25 ($39); private 8 = $5.25 ($42); intensive 8 = $10.00 ($80)
   const usFocused = quoteSubscription({ planKey: 'focused', sessionCount: 12, countryCode: 'US' });
   assert.equal(usFocused.currency, 'USD');
   assert.equal(usFocused.region, 'WEST');
-  assert.equal(usFocused.pricePerSessionMinor, 450);
-  assert.equal(usFocused.totalAmountMinor, 5400);
+  assert.equal(usFocused.pricePerSessionMinor, 325);
+  assert.equal(usFocused.totalAmountMinor, 3900);
 
   const usPrivate = quoteSubscription({ planKey: 'private', sessionCount: 8, countryCode: 'US' });
-  assert.equal(usPrivate.pricePerSessionMinor, 850);
-  assert.equal(usPrivate.totalAmountMinor, 6800);
+  assert.equal(usPrivate.pricePerSessionMinor, 525);
+  assert.equal(usPrivate.totalAmountMinor, 4200);
 
   const usIntensive = quoteSubscription({ planKey: 'private_intensive', sessionCount: 8, countryCode: 'US' });
-  assert.equal(usIntensive.pricePerSessionMinor, 1500);
-  assert.equal(usIntensive.totalAmountMinor, 12000);
+  assert.equal(usIntensive.pricePerSessionMinor, 1000);
+  assert.equal(usIntensive.totalAmountMinor, 8000);
 
-  // Turkey (INTL) -> USD: focused $2.50 * 12 = $30.00
+  // Turkey (INTL) -> USD: focused 12 = $2.00 ($24)
   const trFocused = quoteSubscription({ planKey: 'focused', sessionCount: 12, countryCode: 'TR' });
   assert.equal(trFocused.currency, 'USD');
   assert.equal(trFocused.region, 'INTL');
-  assert.equal(trFocused.pricePerSessionMinor, 250);
-  assert.equal(trFocused.totalAmountMinor, 3000);
+  assert.equal(trFocused.pricePerSessionMinor, 200);
+  assert.equal(trFocused.totalAmountMinor, 2400);
 });
 
 test('Production detectCountryFromRequest ignores client query/mock spoofing and trusts only edge IP headers', () => {
@@ -131,8 +135,9 @@ test('GET /api/subscriptions/plans returns dynamic regional pricing with Vary & 
   assert.equal(egData.currency, 'EGP');
   assert.equal(egData.region, 'EG');
   assert.equal(egData.plans[0].key, 'focused');
-  assert.equal(egData.plans[0].pricePerSessionMinor, 2000);
-  assert.deepEqual(egData.plans[0].packPricesMinor, { '8': 2500, '12': 2000, '24': 2000 });
+  assert.equal(egData.plans[0].pricePerSessionMinor, 1900);
+  assert.equal(egData.plans[0].basePricePerSessionMinor, 2500);
+  assert.deepEqual(egData.plans[0].packPricesMinor, { '8': 2500, '12': 2000, '24': 1900 });
   assert.equal(egData.localCurrencyHint, null);
   assert.match(String(egRes.headers.get('cache-control') || ''), /no-store/i);
 
@@ -143,7 +148,8 @@ test('GET /api/subscriptions/plans returns dynamic regional pricing with Vary & 
   assert.equal(saRes.status, 200);
   assert.equal(saData.currency, 'USD');
   assert.equal(saData.region, 'GCC');
-  assert.equal(saData.plans[0].pricePerSessionMinor, 350);
+  assert.equal(saData.plans[0].pricePerSessionMinor, 250);
+  assert.equal(saData.plans[0].basePricePerSessionMinor, 325);
   assert.equal(saData.localCurrencyHint.code, 'SAR');
 
   const usRes = await fetch(`${baseUrl}/api/subscriptions/plans`, {
@@ -153,7 +159,8 @@ test('GET /api/subscriptions/plans returns dynamic regional pricing with Vary & 
   assert.equal(usRes.status, 200);
   assert.equal(usData.currency, 'USD');
   assert.equal(usData.region, 'WEST');
-  assert.equal(usData.plans[0].pricePerSessionMinor, 450);
+  assert.equal(usData.plans[0].pricePerSessionMinor, 275);
+  assert.equal(usData.plans[0].basePricePerSessionMinor, 375);
   assert.equal(usData.localCurrencyHint, null);
 
   const defaultCatalog = publicPlanCatalog();

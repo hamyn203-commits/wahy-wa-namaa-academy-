@@ -1095,3 +1095,161 @@
   font-size: var(--wn-text-xs);
   font-weight: 700;
 }
+
+.wn-plans-frequency button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.wn-plans-frequency__save {
+  font-style: normal;
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+  padding: 0.12rem 0.42rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold-soft);
+  color: var(--wn-badge-gold-text);
+}
+
+.wn-plans-frequency button.is-active .wn-plans-frequency__save {
+  background: var(--wn-gold);
+  color: var(--wn-emerald-deep);
+}
+
+.wn-plan-card__savings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  margin-bottom: -0.75rem;
+}
+
+.wn-plan-card__anchor {
+  font-size: var(--wn-text-xs);
+  font-weight: 700;
+  color: var(--wn-text-tertiary);
+  text-decoration: line-through;
+}
+
+.wn-plan-card__save-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.55rem;
+  border-radius: var(--wn-radius-pill);
+  background: var(--wn-gold-soft);
+  border: 1px solid color-mix(in srgb, var(--wn-gold) 45%, var(--wn-border));
+  color: var(--wn-badge-gold-text);
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+}
+
+.wn-plan-card__saved-note {
+  margin-top: 0.45rem;
+  font-size: var(--wn-text-2xs);
+  font-weight: 700;
+  color: var(--wn-emerald);
+}
+
+[data-theme="dark"] .wn-plan-card__saved-note {
+  color: var(--wn-teal);
+}
+
+.wn-plans-guarantees {
+  margin-top: 1.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.wn-plans-guarantee-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--wn-radius-lg);
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface);
+}
+
+.wn-plans-guarantee-item > svg {
+  flex-shrink: 0;
+  color: var(--wn-emerald);
+  margin-top: 0.1rem;
+}
+
+.wn-plans-guarantee-item strong {
+  display: block;
+  font-size: var(--wn-text-xs);
+  font-weight: 800;
+  color: var(--wn-heading);
+}
+
+.wn-plans-guarantee-item p {
+  margin-top: 0.2rem;
+  font-size: var(--wn-text-2xs);
+  line-height: 1.65;
+  color: var(--wn-text-secondary);
+}
+
+.wn-plans-courses-upsell {
+  margin-top: 1.35rem;
+  padding: 1.35rem 1.5rem;
+  border-radius: var(--wn-radius-xl);
+  border: 1px solid var(--wn-border-mint);
+  background: var(--wn-surface-mint);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wn-plans-courses-upsell__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--wn-text-2xs);
+  font-weight: 800;
+  color: var(--wn-emerald);
+}
+
+.wn-plans-courses-upsell h3 {
+  margin-top: 0.25rem;
+  font-size: var(--wn-text-base);
+  font-weight: 800;
+  color: var(--wn-heading);
+}
+
+.wn-plans-courses-upsell p {
+  margin-top: 0.25rem;
+  max-width: 44rem;
+  font-size: var(--wn-text-xs);
+  line-height: 1.7;
+  color: var(--wn-text-secondary);
+}
+
+.wn-plans-courses-upsell__cta {
+  min-height: var(--wn-control-md);
+  padding: 0.55rem 1.15rem;
+  border-radius: var(--wn-radius-md);
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
+  font-size: var(--wn-text-xs);
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wn-plans-courses-upsell__cta:hover {
+  background: var(--wn-emerald-hover);
+}
+
+@media (max-width: 900px) {
+  .wn-plans-guarantees {
+    grid-template-columns: 1fr;
+  }
+}

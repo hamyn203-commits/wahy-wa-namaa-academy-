@@ -51,6 +51,18 @@ const CourseSchema = new mongoose.Schema({
     type: String,
     default: 'USD'
   },
+  regionalPrices: {
+    EG: { type: Number, min: 0 },
+    GCC: { type: Number, min: 0 },
+    WEST: { type: Number, min: 0 },
+    INTL: { type: Number, min: 0 }
+  },
+  compareAtPrices: {
+    EG: { type: Number, min: 0 },
+    GCC: { type: Number, min: 0 },
+    WEST: { type: Number, min: 0 },
+    INTL: { type: Number, min: 0 }
+  },
   duration: {
     type: String,
     required: true

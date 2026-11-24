@@ -13,7 +13,7 @@ const {
   publicPlanCatalog,
 } = require('../config/subscriptionPlans');
 
-test('subscription catalog exposes the four profitable active plans and hides legacy community/group plans', () => {
+test('subscription catalog exposes the four profitable active plans with volume-discount anchors and hides legacy plans', () => {
   const catalog = publicPlanCatalog();
 
   assert.deepEqual(catalog.sessionPacks, [4, 8, 12, 24]);
@@ -29,31 +29,38 @@ test('subscription catalog exposes the four profitable active plans and hides le
   assert.equal(isActivePlan('community'), false);
   assert.equal(isActivePlan('group'), false);
 
-  assert.equal(getPlan('focused').pricePerSessionMinor, 2000);
+  assert.equal(getPlan('focused').pricePerSessionMinor, 1900);
+  assert.equal(getPlan('focused').basePricePerSessionMinor, 2500);
   assert.equal(getPlan('focused').minStudents, 3);
   assert.equal(getPlan('focused').maxStudents, 5);
   assert.equal(getPlan('focused').durationMinMinutes, 45);
   assert.equal(getPlan('focused').durationMaxMinutes, 45);
   assert.deepEqual(getPlan('focused').allowedSessionPacks, [8, 12, 24]);
 
-  assert.equal(getPlan('mini').pricePerSessionMinor, 4500);
+  assert.equal(getPlan('mini').pricePerSessionMinor, 3500);
+  assert.equal(getPlan('mini').basePricePerSessionMinor, 4500);
   assert.equal(getPlan('mini').minStudents, 2);
   assert.equal(getPlan('mini').maxStudents, 3);
   assert.equal(getPlan('mini').durationMinMinutes, 45);
   assert.equal(getPlan('mini').durationMaxMinutes, 45);
   assert.deepEqual(getPlan('mini').allowedSessionPacks, [8, 12, 24]);
 
-  assert.equal(getPlan('private').pricePerSessionMinor, 8000);
+  assert.equal(getPlan('private').pricePerSessionMinor, 6000);
+  assert.equal(getPlan('private').basePricePerSessionMinor, 8500);
   assert.equal(getPlan('private').maxStudents, 1);
   assert.equal(getPlan('private').durationMinMinutes, 30);
   assert.equal(getPlan('private').durationMaxMinutes, 30);
   assert.deepEqual(getPlan('private').allowedSessionPacks, [4, 8, 12, 24]);
 
-  assert.equal(getPlan('private_intensive').pricePerSessionMinor, 15000);
+  assert.equal(getPlan('private_intensive').pricePerSessionMinor, 11000);
+  assert.equal(getPlan('private_intensive').basePricePerSessionMinor, 15000);
   assert.equal(getPlan('private_intensive').maxStudents, 1);
   assert.equal(getPlan('private_intensive').durationMinMinutes, 60);
   assert.equal(getPlan('private_intensive').durationMaxMinutes, 60);
   assert.deepEqual(getPlan('private_intensive').allowedSessionPacks, [4, 8, 12, 24]);
+
+  assert.equal(catalog.plans[0].maxSavingsPercent, 24);
+  assert.equal(catalog.plans[2].maxSavingsPercent, 29);
 
   // Legacy plans remain resolvable via getPlan() for existing renewals and circles
   assert.equal(getPlan('community').minStudents, 15);
@@ -63,19 +70,22 @@ test('subscription catalog exposes the four profitable active plans and hides le
   assert.deepEqual(SECTIONS, ['men_children', 'ladies']);
 });
 
-test('subscription quote enforces 8/12/24 minimum packs on group/dual circles and tiered 25/20 EGP pricing on focused', () => {
-  // Focused: 8 sessions -> 25 EGP (2500 minor, total 20000); 12 & 24 -> 20 EGP (2000 minor)
-  const focused8 = quoteSubscription({ planKey: 'focused', sessionCount: 8, countryCode: 'EG' });
-  assert.equal(focused8.pricePerSessionMinor, 2500);
-  assert.equal(focused8.totalAmountMinor, 20000);
+test('subscription quote enforces progressive pack discounts across all four plans and blocks 4-session group packs', () => {
+  const expectedEgPacks = {
+    focused: { 8: 2500, 12: 2000, 24: 1900 },
+    mini: { 8: 4500, 12: 3900, 24: 3500 },
+    private: { 4: 8500, 8: 7500, 12: 6900, 24: 6000 },
+    private_intensive: { 4: 15000, 8: 13500, 12: 12500, 24: 11000 },
+  };
 
-  const focused12 = quoteSubscription({ planKey: 'focused', sessionCount: 12, countryCode: 'EG' });
-  assert.equal(focused12.pricePerSessionMinor, 2000);
-  assert.equal(focused12.totalAmountMinor, 24000);
-
-  const focused24 = quoteSubscription({ planKey: 'focused', sessionCount: 24, countryCode: 'EG' });
-  assert.equal(focused24.pricePerSessionMinor, 2000);
-  assert.equal(focused24.totalAmountMinor, 48000);
+  for (const [planKey, packMap] of Object.entries(expectedEgPacks)) {
+    for (const [countStr, expectedMinor] of Object.entries(packMap)) {
+      const count = Number(countStr);
+      const quote = quoteSubscription({ planKey, sessionCount: count, countryCode: 'EG' });
+      assert.equal(quote.pricePerSessionMinor, expectedMinor);
+      assert.equal(quote.totalAmountMinor, expectedMinor * count);
+    }
+  }
 
   assert.throws(
     () => quoteSubscription({ planKey: 'focused', sessionCount: 4 }),
@@ -86,20 +96,6 @@ test('subscription quote enforces 8/12/24 minimum packs on group/dual circles an
     () => quoteSubscription({ planKey: 'mini', sessionCount: 4 }),
     (error) => error.code === 'SUBSCRIPTION_PACK_INVALID'
   );
-
-  const mini12 = quoteSubscription({ planKey: 'mini', sessionCount: 12 });
-  assert.equal(mini12.pricePerSessionMinor, 4500);
-  assert.equal(mini12.totalAmountMinor, 54000);
-
-  for (const count of [4, 8, 12, 24]) {
-    const priv = quoteSubscription({ planKey: 'private', sessionCount: count });
-    assert.equal(priv.pricePerSessionMinor, 8000);
-    assert.equal(priv.totalAmountMinor, 8000 * count);
-
-    const privInt = quoteSubscription({ planKey: 'private_intensive', sessionCount: count });
-    assert.equal(privInt.pricePerSessionMinor, 15000);
-    assert.equal(privInt.totalAmountMinor, 15000 * count);
-  }
 });
 
 test('subscription quote rejects unknown plans and arbitrary package sizes', () => {

@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { BookOpen, Check, Loader2, Trash2, Upload, Video } from 'lucide-react';
+import { BookOpen, Check, Loader2, Sparkles, Trash2, Upload, Video } from 'lucide-react';
 import EmptyState from '../../components/shared/EmptyState';
 import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
@@ -20,11 +20,13 @@ export default function AdminCoursesTab({
   courseProgramFilter,
   setCourseProgramFilter,
   seeding,
+  seedingCatalog = false,
   uploading,
   creatingCourse,
   addingLesson,
   togglingCourseId,
   onSeedDemoCourse,
+  onSeedOfficialCatalog,
   onAddCourse,
   onSelectCourse,
   onToggleCourseStatus,
@@ -32,7 +34,7 @@ export default function AdminCoursesTab({
   onAddLesson,
   onUploadVideo,
 }) {
-  const { locale, t } = useI18n();
+  const { locale, isRTL, t } = useI18n();
   const tc = t.adminPortal.tabs.courses;
   const formId = useId();
   const showDemoSeedCard = Boolean(import.meta.env.DEV);
@@ -43,6 +45,39 @@ export default function AdminCoursesTab({
 
   return (
     <div className="space-y-6">
+      {onSeedOfficialCatalog ? (
+        <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="max-w-2xl">
+            <h3 className="font-bold text-[var(--wn-heading)] flex items-center gap-2">
+              <Sparkles size={17} className="text-[var(--wn-emerald)]" aria-hidden="true" />
+              <span>
+                {isRTL
+                  ? 'نشر / تحديث كتالوج الدورات الرسمي (5 دورات بتسعير مصر والدولي)'
+                  : 'Publish / Sync Official 5-Course Catalog (EGP & Regional USD)'}
+              </span>
+            </h3>
+            <p className="text-xs text-[var(--wn-text-secondary)] mt-1 leading-6">
+              {isRTL
+                ? 'ينشر دورة الفاتحة المجانية لجذب المشتركين + 4 دورات تأسيس وتجويد وحفظ وجزرية بأسعار مدروسة لمصر (149–249 ج.م) والخليج وأوروبا (9–29 دولار).'
+                : 'Publishes the Free Al-Fatiha Lead-Magnet course + 4 structured courses with calibrated EGP (149–249 EGP) and regional USD pricing.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onSeedOfficialCatalog}
+            disabled={seedingCatalog || approved.length === 0}
+            className="min-h-[44px] px-4 py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60"
+          >
+            {seedingCatalog && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
+            <span>
+              {seedingCatalog
+                ? tc.creating
+                : (isRTL ? 'نشر الكتالوج الرسمي الآن' : 'Publish Official Catalog')}
+            </span>
+          </button>
+        </div>
+      ) : null}
+
       {showDemoSeedCard ? (
         <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-5 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -111,19 +146,35 @@ export default function AdminCoursesTab({
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor={`${formId}-price`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-            {tc.fields.price}
-          </label>
-          <input
-            id={`${formId}-price`}
-            type="number"
-            min="0"
-            placeholder={tc.fields.price}
-            value={courseForm.price}
-            onChange={(e) => setCourseForm((p) => ({ ...p, price: Number(e.target.value) }))}
-            className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label htmlFor={`${formId}-price-egp`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+              {isRTL ? 'السعر لمصر (ج.م)' : 'Egypt Price (EGP)'}
+            </label>
+            <input
+              id={`${formId}-price-egp`}
+              type="number"
+              min="0"
+              placeholder={isRTL ? 'مثال: 179' : 'e.g. 179'}
+              value={courseForm.priceEgp ?? ''}
+              onChange={(e) => setCourseForm((p) => ({ ...p, priceEgp: e.target.value === '' ? '' : Number(e.target.value) }))}
+              className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor={`${formId}-price`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+              {isRTL ? 'السعر الدولي ($)' : tc.fields.price}
+            </label>
+            <input
+              id={`${formId}-price`}
+              type="number"
+              min="0"
+              placeholder={tc.fields.price}
+              value={courseForm.price}
+              onChange={(e) => setCourseForm((p) => ({ ...p, price: Number(e.target.value) }))}
+              className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
         </div>
         <div className="md:col-span-2">
           <label htmlFor={`${formId}-desc`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
@@ -211,7 +262,7 @@ export default function AdminCoursesTab({
                   >
                     <p className="font-semibold text-[var(--wn-heading)] truncate">{titleText}</p>
                     <p className="text-xs text-[var(--wn-text-secondary)]">
-                      {c.slug} — {c.status} — {c.price}$ {(c.programs || []).length ? `[${c.programs.join(',')}]` : ''}
+                      {c.slug} — {c.status} — {c.regionalPrices?.EG != null ? `${c.regionalPrices.EG} ج.م / ` : ''}{c.price}$ {(c.programs || []).length ? `[${c.programs.join(',')}]` : ''}
                     </p>
                   </button>
                   <div className="flex items-center gap-2 shrink-0">

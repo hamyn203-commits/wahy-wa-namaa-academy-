@@ -7,6 +7,8 @@ const Lesson = require('../models/Lesson');
 const Enrollment = require('../models/Enrollment');
 const objectStorage = require('../services/objectStorage');
 const { protect, authorize, attachTeacherProfile } = require('../middleware/auth');
+const { detectCountryFromRequest } = require('../config/geoPricing');
+const { resolveCoursePricing } = require('../config/coursePricing');
 
 function sanitizeCourseLessonMedia(lessonDoc) {
   const lesson = typeof lessonDoc?.toObject === 'function' ? lessonDoc.toObject() : { ...lessonDoc };
@@ -51,6 +53,8 @@ const ALLOWED_COURSE_FIELDS = [
   'level',
   'price',
   'currency',
+  'regionalPrices',
+  'compareAtPrices',
   'duration',
   'durationInHours',
   'image',
@@ -210,8 +214,17 @@ router.get('/', async (req, res) => {
       Course.countDocuments(filter)
     ]);
 
+    const countryCode = detectCountryFromRequest(req);
+    const enrichedCourses = courses.map((courseDoc) => {
+      const item = typeof courseDoc?.toJSON === 'function' ? courseDoc.toJSON() : { ...courseDoc };
+      item.regionalPricing = resolveCoursePricing(item, countryCode);
+      return item;
+    });
+
+    res.setHeader('Vary', 'x-vercel-ip-country, cf-ipcountry');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({
-      courses,
+      courses: enrichedCourses,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -270,7 +283,13 @@ router.get('/:slug', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    res.json(course);
+    const countryCode = detectCountryFromRequest(req);
+    const payload = typeof course.toJSON === 'function' ? course.toJSON() : { ...course };
+    payload.regionalPricing = resolveCoursePricing(payload, countryCode);
+
+    res.setHeader('Vary', 'x-vercel-ip-country, cf-ipcountry');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(payload);
   } catch (error) {
     console.error('Get course error:', error);
     res.status(500).json({ error: 'Failed to fetch course' });
@@ -334,7 +353,7 @@ router.put('/:id', protect, attachTeacherProfile, authorize('admin', 'teacher'),
     }
 
     if (req.user.role !== 'admin' && course.status === 'published') {
-      const lockedCommercialFields = ['price', 'currency', 'slug', 'certificate', 'status'];
+      const lockedCommercialFields = ['price', 'currency', 'regionalPrices', 'compareAtPrices', 'slug', 'certificate', 'status'];
       const attemptedLockedField = lockedCommercialFields.find(
         (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field) && req.body[field] !== undefined
       );
@@ -411,7 +430,12 @@ router.post('/:id/enroll', protect, authorize('student'), async (req, res) => {
       return res.status(400).json({ error: 'Already enrolled in this course' });
     }
 
-    if (Number(course.price || 0) > 0) {
+    const resolvedPricing = resolveCoursePricing(course, detectCountryFromRequest(req));
+    const effectivePrice = resolvedPricing.hasRegionalOverride
+      ? resolvedPricing.price
+      : Number(course.price || 0);
+
+    if (effectivePrice > 0) {
       return res.status(402).json({
         error: 'Payment is required before enrollment',
         code: 'PAYMENT_REQUIRED'

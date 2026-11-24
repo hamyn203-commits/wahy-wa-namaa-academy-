@@ -256,7 +256,14 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
 
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    if (Number(course.price || 0) <= 0) {
+    const { detectCountryFromRequest } = require('../config/geoPricing');
+    const { resolveCoursePricing } = require('../config/coursePricing');
+    const resolvedCoursePrice = resolveCoursePricing(course, detectCountryFromRequest(req));
+    const effectivePrice = resolvedCoursePrice.hasRegionalOverride
+      ? resolvedCoursePrice.price
+      : Number(course.price || 0);
+
+    if (effectivePrice <= 0) {
       return res.status(400).json({
         error: 'This course does not require payment',
         code: 'FREE_COURSE_USE_ENROLLMENT',
@@ -290,8 +297,12 @@ router.post('/course/:slug/checkout', protect, authorize('student'), async (req,
       });
     }
 
-    const currency = normalizeCurrency(course.currency || 'USD');
-    const amountMinor = toMinorUnits(course.price, currency);
+    const currency = normalizeCurrency(
+      resolvedCoursePrice.hasRegionalOverride ? resolvedCoursePrice.currency : (course.currency || 'USD')
+    );
+    const amountMinor = resolvedCoursePrice.hasRegionalOverride
+      ? toMinorUnits(resolvedCoursePrice.price, currency)
+      : toMinorUnits(course.price, currency);
 
     const recentWindow = new Date(Date.now() - 60 * 60 * 1000);
     const activePendingCheckout = await Payment.findOne({
@@ -415,7 +426,15 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
     });
 
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (Number(course.price || 0) <= 0) {
+
+    const { detectCountryFromRequest } = require('../config/geoPricing');
+    const { resolveCoursePricing } = require('../config/coursePricing');
+    const resolvedCoursePrice = resolveCoursePricing(course, detectCountryFromRequest(req));
+    const effectivePrice = resolvedCoursePrice.hasRegionalOverride
+      ? resolvedCoursePrice.price
+      : Number(course.price || 0);
+
+    if (effectivePrice <= 0) {
       return res.status(400).json({
         error: 'This course does not require payment',
         code: 'FREE_COURSE_USE_ENROLLMENT',
@@ -484,8 +503,12 @@ router.post('/course/:slug/manual', protect, authorize('student'), async (req, r
       transferReference: normalizedRef,
     });
 
-    const currency = normalizeCurrency(course.currency || 'EGP');
-    const amountMinor = toMinorUnits(course.price, currency);
+    const currency = normalizeCurrency(
+      resolvedCoursePrice.hasRegionalOverride ? resolvedCoursePrice.currency : (course.currency || 'EGP')
+    );
+    const amountMinor = resolvedCoursePrice.hasRegionalOverride
+      ? toMinorUnits(resolvedCoursePrice.price, currency)
+      : toMinorUnits(course.price, currency);
 
     await Payment.ensureProviderReferencePartialIndex?.().catch(() => {});
     const manualIdempotencyKey = `manual:${crypto.randomUUID()}`;

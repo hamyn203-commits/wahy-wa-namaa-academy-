@@ -23,7 +23,7 @@ import GlobalFooter from '../../components/GlobalFooter';
 import SEOHead from '../../components/SEOHead';
 import { useSEO } from '../../hooks/useSEO';
 import Skeleton from '../../components/shared/Skeleton';
-import { useMarket } from '../../context/MarketProvider';
+import { formatCourseRegionalDisplay } from '../../lib/regionalPricing';
 import api from '../../lib/api';
 import '../../styles/public-experience.css';
 
@@ -438,7 +438,6 @@ function localizedValue(value, locale, isRTL) {
 
 const CourseCard = memo(function CourseCard({ course, locale, isRTL, copy }) {
   const { t } = useI18n();
-  const { displayPrice } = useMarket();
   const ArrowIcon = isRTL ? ArrowLeft : ArrowRight;
 
   const levelLabels = {
@@ -448,7 +447,8 @@ const CourseCard = memo(function CourseCard({ course, locale, isRTL, copy }) {
   };
 
   const hasRating = Number(course.reviews) > 0 && Number(course.rating) > 0;
-  const isFree = Number(course.price) === 0;
+  const pricing = formatCourseRegionalDisplay(course, locale, isRTL);
+  const isFree = pricing.isFree;
   const courseTitle = localizedValue(course.title, locale, isRTL);
 
   return (
@@ -474,9 +474,24 @@ const CourseCard = memo(function CourseCard({ course, locale, isRTL, copy }) {
         </div>
 
         <div className="wn-course-card__footer">
-          <span className="wn-course-price">
-            {isFree ? (t.courses?.free || copy.free) : displayPrice(course.price, course.currency || 'USD')}
-          </span>
+          <div className="flex flex-col">
+            {pricing.discountPercent > 0 ? (
+              <div className="flex items-center gap-1.5 text-xs">
+                <del className="text-[var(--wn-text-tertiary)]">{pricing.formattedCompareAt}</del>
+                <span className="rounded-full bg-[var(--wn-gold-soft)] px-2 py-0.5 text-[11px] font-extrabold text-[var(--wn-badge-gold-text)]">
+                  -{pricing.discountPercent}%
+                </span>
+              </div>
+            ) : null}
+            <span className="wn-course-price">
+              {isFree ? (t.courses?.free || copy.free) : pricing.formattedPrice}
+            </span>
+            {pricing.localHint ? (
+              <span className="text-[11px] font-semibold text-[var(--wn-text-tertiary)]">
+                {pricing.localHint}
+              </span>
+            ) : null}
+          </div>
           <Link
             to={localizedPath('/courses/' + (course.slug || course.id), locale)}
             className="wn-course-card__link min-h-[44px] min-w-[44px]"
@@ -522,20 +537,28 @@ export default function Courses() {
     api.get('/api/courses')
       .then((data) => {
         const source = Array.isArray(data?.courses) ? data.courses : [];
-        setCourses(source.map((course) => ({
-          id: course._id || course.slug,
-          slug: course.slug,
-          title: course.title,
-          description: course.description,
-          level: course.level || 'beginner',
-          category: course.category || 'quran',
-          price: course.price ?? 0,
-          currency: course.currency || 'USD',
-          duration: course.duration || (course.durationInHours ? course.durationInHours + 'h' : ''),
-          students: course.stats?.enrolled || 0,
-          rating: course.stats?.rating?.average || 0,
-          reviews: course.stats?.rating?.count || 0,
-        })));
+        setCourses(source.map((course) => {
+          const rp = course.regionalPricing || null;
+          const effectivePrice = rp && rp.price !== undefined
+            ? Number(rp.price || 0)
+            : Number(course.price ?? 0);
+          return {
+            id: course._id || course.slug,
+            slug: course.slug,
+            title: course.title,
+            description: course.description,
+            level: course.level || 'beginner',
+            category: course.category || 'quran',
+            price: course.price ?? 0,
+            currency: course.currency || 'USD',
+            regionalPricing: rp,
+            effectivePrice,
+            duration: course.duration || (course.durationInHours ? course.durationInHours + 'h' : ''),
+            students: course.stats?.enrolled || 0,
+            rating: course.stats?.rating?.average || 0,
+            reviews: course.stats?.rating?.count || 0,
+          };
+        }));
       })
       .catch((err) => {
         setCourses([]);
@@ -563,8 +586,8 @@ export default function Courses() {
     return [...filtered].sort((a, b) => {
       if (sortBy === 'popular') return b.students - a.students;
       if (sortBy === 'rating') return b.rating - a.rating;
-      if (sortBy === 'price-low') return a.price - b.price;
-      if (sortBy === 'price-high') return b.price - a.price;
+      if (sortBy === 'price-low') return (a.effectivePrice ?? a.price) - (b.effectivePrice ?? b.price);
+      if (sortBy === 'price-high') return (b.effectivePrice ?? b.price) - (a.effectivePrice ?? a.price);
       return 0;
     });
   }, [courses, locale, isRTL, searchQuery, selectedCategory, selectedLevel, sortBy]);
@@ -731,6 +754,15 @@ export default function Courses() {
                 <BookOpen size={48} aria-hidden="true" />
                 <h3>{copy.emptyTitle}</h3>
                 <p>{copy.emptyDesc}</p>
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                  <Link to={localizedPath('/plans', locale)} className="wn-btn wn-btn--primary min-h-[44px]">
+                    <span>{isRTL ? 'استكشف باقات الحلقات المباشرة' : 'Explore Live Plans'}</span>
+                    <ArrowIcon size={15} aria-hidden="true" />
+                  </Link>
+                  <Link to={localizedPath('/free-trial', locale)} className="wn-btn wn-btn--secondary min-h-[44px]">
+                    <span>{isRTL ? 'احجز حصة تقييم مجانية' : 'Book Free Trial'}</span>
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="wn-public-grid">

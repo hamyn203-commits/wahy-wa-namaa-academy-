@@ -95,12 +95,13 @@ export default function AdminDashboard() {
   const [confirmDeleteModal, setConfirmDeleteModal] = useState(null);
   const [reviewPromptModal, setReviewPromptModal] = useState(null);
 
-  const [courseForm, setCourseForm] = useState({ titleAr: '', slug: '', instructorId: '', price: 0, descAr: '', programs: [] });
+  const [courseForm, setCourseForm] = useState({ titleAr: '', slug: '', instructorId: '', price: 0, priceEgp: '', descAr: '', programs: [] });
   const [lessonForm, setLessonForm] = useState({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', duration: 10 });
   const [blogForm, setBlogForm] = useState({ slug: '', titleAr: '', excerptAr: '', contentAr: '' });
 
   const [uploading, setUploading] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [seedingCatalog, setSeedingCatalog] = useState(false);
   const [addingTeacher, setAddingTeacher] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [addingLesson, setAddingLesson] = useState(false);
@@ -649,6 +650,24 @@ export default function AdminDashboard() {
     }
   };
 
+  const seedOfficialCatalog = async () => {
+    if (seedingCatalog) return;
+    setSeedingCatalog(true);
+    try {
+      const r = await api.post(
+        '/api/admin/courses/seed-official-catalog',
+        { instructorId: courseForm.instructorId || approved[0]?._id },
+        { auth: true }
+      );
+      toast.success(r.message || (isRTL ? 'تم نشر كتالوج الدورات الرسمي' : 'Official course catalog published'));
+      await loadCourses();
+    } catch (e) {
+      toast.error(e.message || tt.courseCreateFailed);
+    } finally {
+      setSeedingCatalog(false);
+    }
+  };
+
   const addTeacher = async (e) => {
     e.preventDefault();
     if (addingTeacher) return;
@@ -671,9 +690,13 @@ export default function AdminDashboard() {
     if (creatingCourse) return;
     setCreatingCourse(true);
     try {
-      await api.post('/api/admin/courses', courseForm, { auth: true });
+      const payload = {
+        ...courseForm,
+        priceEgp: courseForm.priceEgp === '' ? undefined : Number(courseForm.priceEgp),
+      };
+      await api.post('/api/admin/courses', payload, { auth: true });
       toast.success(tt.courseCreated);
-      setCourseForm({ titleAr: '', slug: '', instructorId: '', price: 0, descAr: '', programs: [] });
+      setCourseForm({ titleAr: '', slug: '', instructorId: '', price: 0, priceEgp: '', descAr: '', programs: [] });
       await loadCourses();
     } catch (e) {
       toast.error(e.message || tt.courseCreateFailed);
@@ -1425,11 +1448,13 @@ export default function AdminDashboard() {
                 courseProgramFilter={courseProgramFilter}
                 setCourseProgramFilter={setCourseProgramFilter}
                 seeding={seeding}
+                seedingCatalog={seedingCatalog}
                 uploading={uploading}
                 creatingCourse={creatingCourse}
                 addingLesson={addingLesson}
                 togglingCourseId={togglingCourseId}
                 onSeedDemoCourse={seedDemoCourse}
+                onSeedOfficialCatalog={seedOfficialCatalog}
                 onAddCourse={addCourse}
                 onSelectCourse={(id) => {
                   setSelectedCourse(id);

@@ -7,7 +7,8 @@ const PLANS = Object.freeze({
   focused: Object.freeze({
     key: 'focused',
     category: 'group_focused',
-    pricePerSessionMinor: 2000,
+    pricePerSessionMinor: 1900,
+    basePricePerSessionMinor: 2500,
     minStudents: 3,
     maxStudents: 5,
     durationMinMinutes: 45,
@@ -20,7 +21,8 @@ const PLANS = Object.freeze({
   mini: Object.freeze({
     key: 'mini',
     category: 'siblings_dual',
-    pricePerSessionMinor: 4500,
+    pricePerSessionMinor: 3500,
+    basePricePerSessionMinor: 4500,
     minStudents: 2,
     maxStudents: 3,
     durationMinMinutes: 45,
@@ -32,7 +34,8 @@ const PLANS = Object.freeze({
   private: Object.freeze({
     key: 'private',
     category: 'individual',
-    pricePerSessionMinor: 8000,
+    pricePerSessionMinor: 6000,
+    basePricePerSessionMinor: 8500,
     minStudents: 1,
     maxStudents: 1,
     durationMinMinutes: 30,
@@ -44,7 +47,8 @@ const PLANS = Object.freeze({
   private_intensive: Object.freeze({
     key: 'private_intensive',
     category: 'individual',
-    pricePerSessionMinor: 15000,
+    pricePerSessionMinor: 11000,
+    basePricePerSessionMinor: 15000,
     minStudents: 1,
     maxStudents: 1,
     durationMinMinutes: 60,
@@ -164,11 +168,17 @@ function publicPlanCatalog({ countryCode = 'EG' } = {}) {
     sessionPacks: [...SESSION_PACKS],
     sections: [...SECTIONS],
     plans: Object.values(PLANS).map((plan) => {
-      const basePriceMinor = tier.pricesMinor[plan.key] ?? plan.pricePerSessionMinor;
+      const minPriceMinor = tier.pricesMinor[plan.key] ?? plan.pricePerSessionMinor;
+      const anchorPriceMinor = tier.basePricesMinor?.[plan.key] ?? plan.basePricePerSessionMinor ?? minPriceMinor;
       const packMap = tier.packPricesMinor?.[plan.key] || null;
+      const maxSavingsPercent = anchorPriceMinor > minPriceMinor
+        ? Math.round(((anchorPriceMinor - minPriceMinor) / anchorPriceMinor) * 100)
+        : 0;
       return {
         ...plan,
-        pricePerSessionMinor: basePriceMinor,
+        pricePerSessionMinor: minPriceMinor,
+        basePricePerSessionMinor: anchorPriceMinor,
+        maxSavingsPercent,
         packPricesMinor: packMap ? { ...packMap } : null,
       };
     }),
