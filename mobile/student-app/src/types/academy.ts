@@ -268,6 +268,12 @@ export interface TrialRequestItem {
   createdAt?: string;
   scheduledAt?: string;
   preferredTimeSlot?: string;
+  assignedTeacher?: SessionTeacher;
+  scheduledSession?: {
+    _id?: string;
+    scheduledAt?: string;
+    status?: string;
+  };
 }
 
 export interface CourseItem {

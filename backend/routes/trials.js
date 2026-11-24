@@ -8,9 +8,15 @@ const GroupCircle = require('../models/GroupCircle');
 const User = require('../models/User');
 const { protect, authorize, readAccessTokenIfValid } = require('../middleware/auth');
 const meetingService = require('../services/meetingService');
-const { notifyUser, notifyAdmins } = require('../utils/notify');
+const { notifyUser, notifyAdmins, notifyTeacherForSessionRequest } = require('../utils/notify');
 const { logAdminAction } = require('../services/adminAudit');
-const { parseRequestedDateTime, teacherAvailabilityDecision, overlaps, safeTimeZone } = require('../services/sessionScheduling');
+const {
+  parseRequestedDateTime,
+  teacherAvailabilityDecision,
+  generateTeacherSlotStarts,
+  overlaps,
+  safeTimeZone,
+} = require('../services/sessionScheduling');
 const { sessionParticipantWindow } = require('../services/sessionAccess');
 const { requireActiveGuardianProfile } = require('../utils/guardianSafeguarding');
 const rateLimit = require('express-rate-limit');
@@ -159,9 +165,23 @@ router.post('/', publicTrialLimiter, readAccessTokenIfValid, async (req, res) =>
     const { preferredTimeSlot, preferredDay, preferredDate } = resolvePreferredSchedule(req.body);
     const currentLevel = String(req.body.currentLevel || '').trim().slice(0, 40);
     const referenceNumber = String(req.body.referenceNumber || '').trim().slice(0, 40) || undefined;
+    const rawTeacherId = String(req.body.teacherId || req.body.preferredTeacherId || '').trim();
 
     if (isMockMode && !isDBConnected()) {
       const mockTrialId = 'mock-trial-' + Date.now();
+      const mockDirectSession = rawTeacherId
+        ? {
+            _id: 'mock-session-direct-' + Date.now(),
+            teacher: rawTeacherId,
+            type: 'trial',
+            status: 'pending',
+            scheduledAt: req.body.scheduledAt
+              ? new Date(req.body.scheduledAt)
+              : (preferredDate || new Date(Date.now() + 86400000)),
+            duration: 30,
+            timezone: safeTimeZone(req.body.timezone || 'Africa/Cairo'),
+          }
+        : undefined;
       const mockObj = {
         _id: mockTrialId,
         studentName: studentName.trim(),
@@ -175,22 +195,225 @@ router.post('/', publicTrialLimiter, readAccessTokenIfValid, async (req, res) =>
         preferredDate,
         currentLevel,
         referenceNumber,
+        assignedTeacher: rawTeacherId || undefined,
+        scheduledSession: mockDirectSession,
         studentUser: req.user?.role === 'student' ? req.user.id : undefined,
         submittedBy: req.user?.id,
-        status: 'pending',
+        status: rawTeacherId ? 'scheduled' : 'pending',
         createdAt: new Date().toISOString()
       };
       MOCK_TRIALS.unshift(mockObj);
       return res.status(201).json({
         success: true,
-        message: 'تم استقبال طلب الحصة التجريبية المجانية بنجاح! سيتواصل معك منسق الأكاديمية عبر الواتساب لتأكيد الموعد.',
+        directTeacherAssigned: Boolean(rawTeacherId),
+        message: rawTeacherId
+          ? 'تم إرسال طلب الحصة التجريبية مباشرة إلى المعلم المختار بنجاح! سيصلك إشعار فور تأكيد الموعد.'
+          : 'تم استقبال طلب الحصة التجريبية المجانية بنجاح! سيتواصل معك منسق الأكاديمية عبر الواتساب لتأكيد الموعد.',
         trialId: mockTrialId,
-        trial: mockObj
+        trial: mockObj,
+        ...(mockDirectSession ? { session: mockDirectSession } : {}),
       });
     }
 
     // Link the request to the signed-in account (student directly, guardian as submitter).
     const signedInId = req.user?.id && isObjectIdLike(req.user.id) ? req.user.id : undefined;
+
+    // Direct-to-Teacher Flow: when the student/guardian explicitly selects a teacher,
+    // route the trial session straight to that teacher without requiring admin assignment,
+    // and send Administration an informational (FYI) notification only.
+    if (rawTeacherId) {
+      if (!isObjectIdLike(rawTeacherId)) {
+        return res.status(400).json({ error: 'معرف المعلم المختار غير صالح', code: 'INVALID_TEACHER_ID' });
+      }
+      const chosenTeacher = await Teacher.findOne({
+        _id: rawTeacherId,
+        status: 'approved',
+        isVerified: true,
+      }).populate('user', 'name email');
+
+      if (!chosenTeacher) {
+        return res.status(404).json({ error: 'المعلم المختار غير موجود أو غير متاح حالياً' });
+      }
+
+      const linkedStudentDoc = signedInId && req.user?.role === 'student'
+        ? await User.findById(signedInId).select('gender age enrollmentSection')
+        : null;
+
+      const { assertGenderAndAgeCompatibility } = require('../utils/safeguarding');
+      try {
+        assertGenderAndAgeCompatibility({
+          student: {
+            gender: linkedStudentDoc?.gender || gender,
+            age: linkedStudentDoc?.age ?? parsedAge,
+          },
+          teacher: chosenTeacher,
+          section: linkedStudentDoc?.enrollmentSection || null,
+        });
+      } catch (sgErr) {
+        return res.status(sgErr?.status || 403).json({
+          error: String(sgErr?.publicMessage || sgErr?.message || 'لا يتوافق هذا الاختيار مع ضوابط الخصوصية والأمان بالأكاديمية'),
+          code: sgErr?.code || 'SAFEGUARDING_VALIDATION_FAILED',
+        });
+      }
+
+      const resolvedTimezone = safeTimeZone(
+        req.body.timezone || chosenTeacher.availabilityTimezone || 'Africa/Cairo'
+      );
+
+      const activeSessions = await Session.find({
+        teacher: chosenTeacher._id,
+        status: { $in: ['pending', 'accepted', 'completed'] },
+      }).select('scheduledAt duration');
+
+      let sessionDate = null;
+      if (req.body.scheduledAt) {
+        sessionDate = parseRequestedDateTime(req.body.scheduledAt, resolvedTimezone);
+        if (!sessionDate || sessionDate.getTime() <= Date.now()) {
+          return res.status(400).json({
+            error: 'يرجى اختيار موعد مستقبلي صحيح للحصة التجريبية',
+            code: 'INVALID_SESSION_TIME',
+          });
+        }
+        const availability = teacherAvailabilityDecision(chosenTeacher, sessionDate, 30);
+        if (!availability.allowed) {
+          return res.status(409).json({
+            error: 'هذا الموعد خارج أوقات توفر المعلم المختار — يرجى اختيار وقت آخر',
+            code: availability.code || 'TEACHER_UNAVAILABLE',
+          });
+        }
+        const hasConflict = (activeSessions || []).some((s) =>
+          overlaps(sessionDate, 30, s.scheduledAt, s.duration || 60)
+        );
+        if (hasConflict) {
+          return res.status(409).json({
+            error: 'هذا الموعد محجوز بالفعل لدى المعلم — يرجى اختيار موعد آخر',
+            code: 'TEACHER_SLOT_CONFLICT',
+          });
+        }
+      } else {
+        // Auto-select the nearest open slot for this teacher matching preferredDate / preferredTimeSlot
+        const hasConfiguredAvailability =
+          Array.isArray(chosenTeacher.availability) && chosenTeacher.availability.length > 0;
+        if (hasConfiguredAvailability) {
+          const generated = generateTeacherSlotStarts(chosenTeacher, {
+            days: 14,
+            intervalMinutes: 30,
+            durationMinutes: 30,
+          }).filter(
+            (slot) =>
+              !(activeSessions || []).some((s) =>
+                overlaps(slot.startsAt, 30, s.scheduledAt, s.duration || 60)
+              )
+          );
+          if (generated.length > 0) {
+            const targetDateKey = preferredDate
+              ? preferredDate.toISOString().slice(0, 10)
+              : '';
+            const sameDay = targetDateKey
+              ? generated.find((slot) => slot.teacherLocalDate === targetDateKey)
+              : null;
+            sessionDate = (sameDay || generated[0]).startsAt;
+          }
+        }
+        if (!sessionDate) {
+          const fallbackHour =
+            preferredTimeSlot === 'morning' ? 10 : preferredTimeSlot === 'afternoon' ? 15 : 19;
+          const baseDay = preferredDate && preferredDate.getTime() > Date.now()
+            ? new Date(preferredDate)
+            : new Date(Date.now() + 24 * 60 * 60 * 1000);
+          baseDay.setUTCHours(fallbackHour, 0, 0, 0);
+          if (baseDay.getTime() <= Date.now() + 30 * 60 * 1000) {
+            baseDay.setUTCDate(baseDay.getUTCDate() + 1);
+          }
+          // Shift by 30m increments if occupied
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            const candidate = new Date(baseDay.getTime() + attempt * 30 * 60 * 1000);
+            const occupied = (activeSessions || []).some((s) =>
+              overlaps(candidate, 30, s.scheduledAt, s.duration || 60)
+            );
+            if (!occupied) {
+              sessionDate = candidate;
+              break;
+            }
+          }
+          if (!sessionDate) {
+            sessionDate = new Date(Date.now() + 26 * 60 * 60 * 1000);
+          }
+        }
+      }
+
+      const directSession = await Session.create({
+        teacher: chosenTeacher._id,
+        student: signedInId && req.user?.role === 'student' ? signedInId : undefined,
+        type: 'trial',
+        status: 'pending',
+        scheduledAt: sessionDate,
+        duration: 30,
+        timezone: resolvedTimezone,
+        agreedHourlyRate: Number(chosenTeacher.hourlyRate || 50),
+        notes: notes ? String(notes).slice(0, 1500) : ('حصة تجريبية للطالب: ' + studentName.trim()),
+      });
+
+      const directTrial = new TrialRequest({
+        studentName: studentName.trim(),
+        guardianName: cleanGuardianName,
+        whatsappPhone: cleanWhatsApp,
+        phone: phone ? normalizePhone(phone) : cleanWhatsApp,
+        email: email ? String(email).toLowerCase().trim() : '',
+        age: parsedAge,
+        gender,
+        preferredTrack: track,
+        preferredTeacherGender: chosenTeacher.personalInfo?.gender || teacherGender,
+        country: country || 'مصر',
+        city: city || 'القاهرة',
+        preferredDate: sessionDate,
+        preferredTimeSlot,
+        preferredDay,
+        currentLevel,
+        referenceNumber,
+        assignedTeacher: chosenTeacher._id,
+        scheduledSession: directSession._id,
+        studentUser: signedInId && req.user?.role === 'student' ? signedInId : undefined,
+        submittedBy: signedInId,
+        status: 'scheduled',
+        notes: notes || '',
+      });
+
+      await directTrial.save();
+
+      const teacherUserId = chosenTeacher.user?._id || chosenTeacher.user;
+      const teacherName = chosenTeacher.personalInfo?.fullName || chosenTeacher.user?.name || 'المعلم';
+      const localWhen = sessionDate.toLocaleString('ar-EG', { timeZone: resolvedTimezone });
+
+      if (teacherUserId) {
+        notifyTeacherForSessionRequest(directSession, teacherUserId).catch((notifyErr) =>
+          console.warn('Direct trial teacher notification error:', notifyErr.message)
+        );
+      }
+
+      notifyAdmins({
+        type: 'system',
+        title: {
+          ar: 'إشعار محاضرة تجريبية مباشرة (للعلم)',
+          en: 'Direct trial class booked (FYI)',
+        },
+        message: {
+          ar: `اختار الطالب ${directTrial.studentName} المعلم ${teacherName} مباشرة لحصة تجريبية في موعد ${localWhen} (${resolvedTimezone}) — أُرسلت للمعلم مباشرة ولا تتطلب تعيين معلم من الإدارة.`,
+          en: `${directTrial.studentName} booked a trial directly with ${teacherName} for ${sessionDate.toISOString()} — routed directly to the teacher.`,
+        },
+        data: { trialId: directTrial._id, session: directSession._id, actionUrl: '/admin/trials' },
+        priority: 'medium',
+      }).catch((notifyErr) => console.warn('Direct trial admin notification error:', notifyErr.message));
+
+      return res.status(201).json({
+        success: true,
+        directTeacherAssigned: true,
+        message: `تم إرسال طلب الحصة التجريبية مباشرة إلى ${teacherName}! سيصلك إشعار فور تأكيد المعلم للموعد.`,
+        trialId: directTrial._id,
+        trial: directTrial,
+        session: directSession,
+      });
+    }
 
     const trial = new TrialRequest({
       studentName: studentName.trim(),

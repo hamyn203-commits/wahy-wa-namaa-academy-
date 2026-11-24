@@ -95,11 +95,8 @@ export default function BookSession() {
       return;
     }
     if (!user?.name?.trim() || !user?.phone?.trim() || (user?.onboarding?.required && !user?.onboarding?.completed)) {
-      navigate(localizedPath('/profile/setup', locale) + '?next=' + encodeURIComponent(localizedPath('/journey', locale)), { replace: true });
-      return;
-    }
-    if (user?.onboarding?.trackSelected !== true) {
-      navigate(localizedPath('/journey', locale), { replace: true });
+      const returnToBooking = localizedPath('/book-trial/' + teacherId, locale);
+      navigate(localizedPath('/profile/setup', locale) + '?next=' + encodeURIComponent(returnToBooking), { replace: true });
       return;
     }
 
