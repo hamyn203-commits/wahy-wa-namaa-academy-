@@ -64,6 +64,9 @@ export default function RootLayout() {
                 <Stack.Screen name="support" />
                 <Stack.Screen name="guardian-child" />
                 <Stack.Screen name="edit-profile" />
+                <Stack.Screen name="games/index" />
+                <Stack.Screen name="games/play" />
+                <Stack.Screen name="khatmah" />
                 <Stack.Screen name="live/[roomId]" options={{ animation: 'fade' }} />
               </Stack>
             </UpdateGate>

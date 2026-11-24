@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   LiveKitRoom,
@@ -17,27 +17,49 @@ import '../../components/classroom/classroom.css';
 import {
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff,
   PhoneOff, Users, MessageSquare, Send, X, ArrowRight, ArrowLeft,
-  Languages, BookOpen, Shield, Sparkles, AlertTriangle, Eye, Clock, CheckCircle2, RotateCcw
+  BookOpen, Shield, Sparkles, AlertTriangle, Eye, Clock, CheckCircle2,
+  RotateCcw, Trophy, Wifi, Maximize2, Minimize2, Gamepad2, PenTool
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '../../components/BrandLogo';
 import api from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth.jsx';
-import { LangSelect } from '../../components/live/SessionTranslateChat';
-import { translateText } from '../../lib/translateApi';
-import { detectBrowserLocale, localizedPath, resolveIntlLocale } from '../../lib/locale';
+import { localizedPath, resolveIntlLocale } from '../../lib/locale';
 import { dashboardPathForRole } from '../../lib/navigation';
 import { useI18n } from '../../i18n';
 import { useToast } from '../../context/ToastProvider';
 import SyncedMushaf from '../../components/classroom/SyncedMushaf';
 import CircleTurnManager from '../../components/classroom/CircleTurnManager';
+import LiveQuranGameArena from '../../components/classroom/LiveQuranGameArena';
+import TajweedMakharijModal from '../../components/classroom/TajweedMakharijModal';
+import LiveEncouragementOverlay from '../../components/classroom/LiveEncouragementOverlay';
+import useClassroomSync from '../../components/classroom/useClassroomSync';
 import { inspectMessage } from '../../components/classroom/ChatSafetyFilter';
 
-function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionContext, onEndAndEvaluate }) {
+const SmartQuranWhiteboard = lazy(() => import('../../components/classroom/SmartQuranWhiteboard'));
+
+function ClassroomStageCore({
+  room = null,
+  localParticipant = null,
+  participants = [],
+  isHost,
+  isObserver,
+  currentUserId = '',
+  participantName,
+  roomId,
+  sessionContext,
+  initialServerState = null,
+  onEndAndEvaluate,
+  onBackToDashboard = null,
+  hasLiveKitMedia = false,
+}) {
   const { locale, dir, isRTL, t } = useI18n();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState('mushaf'); // 'mushaf' | 'circle' | 'video'
+  const [activeTab, setActiveTab] = useState('mushaf'); // 'mushaf' | 'games' | 'circle' | 'video'
+  const [focusMode, setFocusMode] = useState(false);
+  const [lowDataMode, setLowDataMode] = useState(false);
+  const [currentPageData, setCurrentPageData] = useState(null);
 
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -47,58 +69,86 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
   const [unreadCount, setUnreadCount] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const chatEndRef = useRef(null);
+  const lastAutoSwitchedRoundRef = useRef('');
+  const lastTeleportNonceRef = useRef(initialServerState?.whiteboard?.teleportNonce || 0);
+  const lastBoardPermRef = useRef(initialServerState?.whiteboard?.permission || 'teacher_only');
 
-  const [myLang, setMyLang] = useState(() => locale || detectBrowserLocale());
-  const [partnerLang, setPartnerLang] = useState(() => ((locale || detectBrowserLocale()) === 'ar' ? 'id' : 'ar'));
-  const [autoTranslate, setAutoTranslate] = useState(false);
-  const autoTranslateBudgetRef = useRef({ windowStart: 0, count: 0 });
+  const primaryStudentUserId = useMemo(() => {
+    if (!isHost && !isObserver && currentUserId) return String(currentUserId);
+    const firstRoster = sessionContext?.roster?.[0];
+    if (firstRoster?.userId) return String(firstRoster.userId);
+    if (firstRoster?.id && String(firstRoster.id).startsWith('student:')) {
+      return String(firstRoster.id).slice('student:'.length);
+    }
+    return '';
+  }, [isHost, isObserver, currentUserId, sessionContext]);
 
-  const participants = useParticipants();
-  const room = useRoomContext();
-  const localParticipant = useLocalParticipant();
+  const {
+    classroomState,
+    studentOpenMistakes,
+    updateClassroomState,
+    submitGameAnswer,
+    ringListenerBell,
+    submitWhiteboardStudentAction,
+    pinStudentMistake,
+    undoOrResolveMistake,
+  } = useClassroomSync({
+    roomId,
+    room,
+    localParticipant,
+    isHost,
+    isObserver,
+    initialServerState,
+    primaryStudentUserId,
+  });
 
-  const addMessage = useCallback(async (text, sender, isMe, lang) => {
+  // Auto-focus learners onto the Live Challenges tab whenever the teacher launches a new game round
+  useEffect(() => {
+    const g = classroomState?.activeGame;
+    if (g?.status === 'active' && g?.roundId && g.roundId !== lastAutoSwitchedRoundRef.current) {
+      lastAutoSwitchedRoundRef.current = g.roundId;
+      if (!isHost) {
+        setActiveTab('games');
+      }
+    }
+  }, [classroomState?.activeGame, isHost]);
+
+  // Auto-focus learners onto the Smart Whiteboard when the teacher teleports a verse or opens mini-boards
+  useEffect(() => {
+    const wb = classroomState?.whiteboard;
+    if (!wb) return;
+    const nextNonce = wb.teleportNonce || 0;
+    const nextPerm = wb.permission || 'teacher_only';
+    if (nextNonce > lastTeleportNonceRef.current) {
+      lastTeleportNonceRef.current = nextNonce;
+      if (!isHost) setActiveTab('whiteboard');
+    }
+    if (nextPerm !== lastBoardPermRef.current) {
+      lastBoardPermRef.current = nextPerm;
+      if (!isHost && (nextPerm === 'all_miniboards' || nextPerm === 'delegated')) {
+        setActiveTab('whiteboard');
+      }
+    }
+  }, [classroomState?.whiteboard, isHost]);
+
+  const addMessage = useCallback((text, sender, isMe) => {
     const cleanText = String(text || '').trim().slice(0, 1000);
     if (!cleanText) return;
     if (!isMe) {
       const incomingCheck = inspectMessage(cleanText);
-      if (!incomingCheck.isSafe) {
-        return;
-      }
-    }
-    const safeLang = ['ar', 'en', 'fr', 'de', 'tr', 'ur', 'id', 'ms', 'ku'].includes(String(lang || '').toLowerCase())
-      ? String(lang).toLowerCase()
-      : 'ar';
-    let displayText = cleanText;
-    let original = null;
-    if (autoTranslate && !isMe && safeLang && safeLang !== myLang) {
-      const now = Date.now();
-      const budget = autoTranslateBudgetRef.current;
-      if (now - budget.windowStart > 60000) {
-        budget.windowStart = now;
-        budget.count = 0;
-      }
-      if (budget.count < 15) {
-        budget.count += 1;
-        try {
-          displayText = await translateText(cleanText, safeLang, myLang, { auth: true });
-          original = cleanText;
-        } catch { /* keep original */ }
-      }
+      if (!incomingCheck.isSafe) return;
     }
     setChatMessages((prev) => [...prev, {
       id: `${Date.now()}-${Math.random()}`,
       sender,
-      text: displayText,
-      original,
-      lang: safeLang,
+      text: cleanText,
       timestamp: new Date().toLocaleTimeString(resolveIntlLocale(locale), { hour: '2-digit', minute: '2-digit' }),
       isMe,
     }]);
     if (!showChat && !isMe) {
       setUnreadCount((c) => c + 1);
     }
-  }, [autoTranslate, myLang, showChat, locale]);
+  }, [showChat, locale]);
 
   useEffect(() => {
     if (showChat) {
@@ -118,44 +168,47 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
     }
   }, [isHost, roomId]);
 
+  useEffect(() => {
+    if (!room) return undefined;
+
+    const handleDataReceived = (payload, participant) => {
+      try {
+        const raw = new TextDecoder().decode(payload);
+        const message = JSON.parse(raw);
+
+        if (
+          message.type === 'MUSHAF_ACTION' ||
+          message.type === 'CIRCLE_ACTION' ||
+          message.type === 'CLASSROOM_SYNC'
+        ) {
+          return;
+        }
+
+        if (message.text) {
+          addMessage(
+            message.text,
+            participant?.name || t.live.room.unknownSender,
+            false
+          );
+        }
+      } catch {
+        // ignore non-chat payloads
+      }
+    };
+
+    room.on('dataReceived', handleDataReceived);
+    return () => room.off('dataReceived', handleDataReceived);
+  }, [room, addMessage, t]);
+
   const formatElapsed = (sec) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  useEffect(() => {
-    if (!room) return;
-
-    const handleDataReceived = async (payload, participant) => {
-      try {
-        const raw = new TextDecoder().decode(payload);
-        const message = JSON.parse(raw);
-
-        if (message.type === 'MUSHAF_ACTION' || message.type === 'CIRCLE_ACTION') {
-          return;
-        }
-
-        if (message.text) {
-          await addMessage(
-            message.text,
-            participant?.name || t.live.room.unknownSender,
-            false,
-            message.lang || 'ar'
-          );
-        }
-      } catch (e) {
-        console.error('Failed to parse incoming message:', e);
-      }
-    };
-
-    room.on('dataReceived', handleDataReceived);
-    return () => room.off('dataReceived', handleDataReceived);
-  }, [room, myLang, autoTranslate, addMessage, t]);
-
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (isObserver || !newMessage.trim() || !localParticipant.localParticipant) return;
+    if (isObserver || !newMessage.trim() || !localParticipant?.localParticipant) return;
 
     const inspection = inspectMessage(newMessage);
     if (!inspection.isSafe) {
@@ -171,7 +224,6 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
     const messageData = {
       type: 'chat',
       text: newMessage,
-      lang: myLang,
       timestamp: Date.now(),
     };
 
@@ -185,17 +237,32 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
         id: Date.now(),
         sender: t.live.room.meSender,
         text: newMessage,
-        lang: myLang,
         timestamp: new Date().toLocaleTimeString(resolveIntlLocale(locale), { hour: '2-digit', minute: '2-digit' }),
         isMe: true,
       }]);
       setNewMessage('');
-    } catch (error) {
-      console.error('Failed to send message:', error);
+    } catch {
       setChatError(t.live.room.chatSendError);
       toast.error(t.live.room.chatSendError);
     }
   };
+
+  const toggleLowDataMode = () => {
+    const next = !lowDataMode;
+    setLowDataMode(next);
+    if (next && localParticipant?.localParticipant) {
+      try {
+        localParticipant.localParticipant.setCameraEnabled(false);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const activeLabModal = classroomState?.tajweedLab?.activeModal || 'none';
+  const isTajweedModalOpen = ['metronome', 'makharij', 'qaida'].includes(activeLabModal);
+  const totalStars = classroomState?.engagement?.totalStars || 0;
+  const isGameActive = classroomState?.activeGame?.status === 'active';
 
   return (
     <div className="live-room-container" dir={dir}>
@@ -214,7 +281,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
 
       <div className="live-room-header">
         <div className="live-room-header-right">
-          <BrandLogo size={40} variant="light" />
+          <BrandLogo size={38} variant="light" />
           <div className="live-room-info">
             <div className="flex flex-wrap items-center gap-2">
               <h2>{sessionContext?.title || t.live.title}</h2>
@@ -233,15 +300,21 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
                   {t.live.room.roleStudent}
                 </span>
               )}
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-400/20 text-amber-200 inline-flex items-center gap-1">
+                <Trophy size={12} aria-hidden="true" />
+                <span>{totalStars} ⭐</span>
+              </span>
             </div>
             <div className="live-room-stats">
               <span className="live-badge">
                 <span className="live-dot"></span>
-                {t.live.live}
+                {hasLiveKitMedia ? t.live.live : t.live.room.smartClassroomBadge}
               </span>
               <span className="participants-count">
-                <Users size={16} aria-hidden="true" />
-                {participants.length} {t.live.participants} • <Clock size={13} className="inline ms-1" aria-hidden="true" />{formatElapsed(elapsedSeconds)}
+                <Users size={15} aria-hidden="true" />
+                {hasLiveKitMedia ? `${participants.length} ${t.live.participants} • ` : ''}
+                <Clock size={13} className="inline ms-1" aria-hidden="true" />
+                {formatElapsed(elapsedSeconds)}
               </span>
             </div>
           </div>
@@ -259,6 +332,37 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
             <BookOpen size={16} aria-hidden="true" />
             <span>{t.live.room.mushafTab}</span>
           </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'whiteboard'}
+            aria-label={t.live.room.whiteboardTab}
+            className={`room-tab-btn relative ${activeTab === 'whiteboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('whiteboard')}
+          >
+            <PenTool size={16} aria-hidden="true" />
+            <span>{t.live.room.whiteboardTab}</span>
+            {classroomState?.whiteboard?.permission === 'all_miniboards' && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400" aria-hidden="true" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'games'}
+            aria-label={t.live.room.gamesTab}
+            className={`room-tab-btn relative ${activeTab === 'games' ? 'active' : ''}`}
+            onClick={() => setActiveTab('games')}
+          >
+            <Gamepad2 size={16} aria-hidden="true" />
+            <span>{t.live.room.gamesTab}</span>
+            {isGameActive && (
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" aria-hidden="true" />
+            )}
+          </button>
+
           <button
             type="button"
             role="tab"
@@ -270,56 +374,197 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
             <Users size={16} aria-hidden="true" />
             <span>{t.live.room.circleTab}</span>
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'video'}
-            aria-label={t.live.room.videoTab}
-            className={`room-tab-btn ${activeTab === 'video' ? 'active' : ''}`}
-            onClick={() => setActiveTab('video')}
-          >
-            <Video size={16} aria-hidden="true" />
-            <span>{t.live.room.videoTab}</span>
-          </button>
+
+          {hasLiveKitMedia && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'video'}
+              aria-label={t.live.room.videoTab}
+              className={`room-tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+              onClick={() => setActiveTab('video')}
+            >
+              <Video size={16} aria-hidden="true" />
+              <span>{t.live.room.videoTab}</span>
+            </button>
+          )}
         </div>
 
-        <div className="live-room-header-left flex items-center gap-2">
+        <div className="live-room-header-left flex items-center gap-1.5">
+          {isHost && (
+            <button
+              type="button"
+              onClick={() =>
+                updateClassroomState({
+                  tajweedLab: { activeModal: isTajweedModalOpen ? 'none' : 'metronome' },
+                })
+              }
+              className="min-h-[42px] px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-200 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              title="فتح مختبر التجويد ومخارج الحروف واللوح النوراني"
+            >
+              <Sparkles size={15} aria-hidden="true" />
+              <span className="hidden xl:inline">{t.live.room.tajweedLabBtn}</span>
+            </button>
+          )}
+
+          {hasLiveKitMedia && (
+            <>
+              <button
+                type="button"
+                onClick={toggleLowDataMode}
+                aria-pressed={lowDataMode}
+                className={`min-h-[42px] px-2.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+                  lowDataMode ? 'bg-emerald-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white/85'
+                }`}
+                title="وضع توفير الباقة والاتصال الضعيف (صوت نقي + مصحف متزامن باستهلاك أقل 99%)"
+              >
+                <Wifi size={15} aria-hidden="true" />
+                <span className="hidden xl:inline">{t.live.room.lowDataBtn}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFocusMode((f) => !f)}
+                aria-pressed={focusMode}
+                className={`min-h-[42px] px-2.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+                  focusMode ? 'bg-amber-500 text-slate-950' : 'bg-white/10 hover:bg-white/20 text-white/85'
+                }`}
+                title={t.live.room.focusModeBtn}
+              >
+                {focusMode ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
+              </button>
+            </>
+          )}
+
           {isHost && onEndAndEvaluate && (
             <button
               type="button"
               onClick={onEndAndEvaluate}
-              className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+              className="min-h-[42px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
               title={t.live.room.endAndEvaluateTitle}
             >
               <CheckCircle2 size={15} aria-hidden="true" />
-              <span>{t.live.room.endAndEvaluate}</span>
+              <span className="hidden sm:inline">{t.live.room.endAndEvaluate}</span>
             </button>
           )}
-          <button
-            type="button"
-            className={`chat-toggle-btn ${showChat ? 'active' : ''}`}
-            onClick={() => { setShowChat((v) => !v); setUnreadCount(0); }}
-            aria-label={t.live.room.chatToggleTitle}
-            aria-expanded={showChat}
-            title={t.live.room.chatToggleTitle}
-          >
-            <MessageSquare size={20} aria-hidden="true" />
-            {unreadCount > 0 && (
-              <span className="chat-badge">{unreadCount}</span>
-            )}
-          </button>
+
+          {onBackToDashboard && (
+            <button
+              type="button"
+              onClick={onBackToDashboard}
+              className="min-h-[42px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              {isRTL ? <ArrowRight size={15} aria-hidden="true" /> : <ArrowLeft size={15} aria-hidden="true" />}
+              <span className="hidden sm:inline">{t.live.room.backToDashboard}</span>
+            </button>
+          )}
+
+          {hasLiveKitMedia && (
+            <button
+              type="button"
+              className={`chat-toggle-btn ${showChat ? 'active' : ''}`}
+              onClick={() => { setShowChat((v) => !v); setUnreadCount(0); }}
+              aria-label={t.live.room.chatToggleTitle}
+              aria-expanded={showChat}
+              title={t.live.room.chatToggleTitle}
+            >
+              <MessageSquare size={20} aria-hidden="true" />
+              {unreadCount > 0 && (
+                <span className="chat-badge">{unreadCount}</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* شريط أوسمة التشجيع الروحانية + تنبيهات المستمع اليقظ + آداب المجلس */}
+      <LiveEncouragementOverlay
+        isTeacher={isHost}
+        engagement={classroomState?.engagement}
+        tajweedLabState={classroomState?.tajweedLab}
+        pinnedMistakes={classroomState?.mushaf?.pinnedMistakes || []}
+        onSendReaction={(reaction) =>
+          updateClassroomState({
+            reaction: { ...reaction, targetStudentId: primaryStudentUserId },
+          })
+        }
+        onRewardListener={(alertId) => updateClassroomState({ rewardListenerAlertId: alertId })}
+        onClearListeners={() => updateClassroomState({ clearListenerAlerts: true })}
+        onTriggerRitual={(ritualType) => updateClassroomState({ tajweedLab: { ritualType } })}
+        dir={dir}
+      />
 
       <div className="live-room-main">
         <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-900">
           {activeTab === 'mushaf' && (
-            <div className="w-full h-full p-2 flex flex-col">
+            <div className="w-full h-full p-1.5 md:p-2 flex flex-col">
               <SyncedMushaf
                 room={room}
                 localParticipant={localParticipant}
                 isTeacher={isHost}
                 isObserver={isObserver}
+                mushafState={classroomState?.mushaf}
+                studentOpenMistakes={studentOpenMistakes}
+                onSyncMushaf={(mushafPatch) => updateClassroomState({ mushaf: mushafPatch })}
+                onPinMistake={pinStudentMistake}
+                onUndoOrResolveMistake={undoOrResolveMistake}
+                onRingListenerBell={ringListenerBell}
+                onOpenTajweedLab={() => updateClassroomState({ tajweedLab: { activeModal: 'metronome' } })}
+                onTeleportToWhiteboard={(textToBoard) => {
+                  updateClassroomState({
+                    whiteboard: {
+                      mode: 'ayah',
+                      ayahText: textToBoard,
+                      stripTashkeel: false,
+                      syllableMode: false,
+                      clearMainBoard: true,
+                      teleport: true,
+                    },
+                  });
+                  setActiveTab('whiteboard');
+                }}
+                onPageDataReady={setCurrentPageData}
+              />
+            </div>
+          )}
+
+          {activeTab === 'whiteboard' && (
+            <div className="w-full h-full bg-[var(--wn-bg)] overflow-hidden flex flex-col">
+              <Suspense
+                fallback={
+                  <div className="flex-1 flex items-center justify-center text-sm font-bold text-[var(--wn-text-secondary)]">
+                    جاري فتح السبورة الذكية…
+                  </div>
+                }
+              >
+                <SmartQuranWhiteboard
+                  isTeacher={isHost}
+                  isObserver={isObserver}
+                  currentUserId={currentUserId}
+                  rosterStudents={sessionContext?.roster || []}
+                  whiteboardState={classroomState?.whiteboard}
+                  onHostUpdateWhiteboard={(wbPatch) => updateClassroomState({ whiteboard: wbPatch })}
+                  onStudentWhiteboardAction={submitWhiteboardStudentAction}
+                  dir={dir}
+                />
+              </Suspense>
+            </div>
+          )}
+
+          {activeTab === 'games' && (
+            <div className="w-full h-full bg-[var(--wn-bg)] overflow-hidden flex flex-col">
+              <LiveQuranGameArena
+                isTeacher={isHost}
+                isObserver={isObserver}
+                currentUserId={currentUserId}
+                activeGame={classroomState?.activeGame}
+                engagement={classroomState?.engagement}
+                currentPageData={currentPageData}
+                onLaunchGame={(gamePayload) => updateClassroomState({ activeGame: gamePayload })}
+                onRevealGame={() => updateClassroomState({ activeGame: { status: 'revealed' } })}
+                onResetGame={() => updateClassroomState({ activeGame: { status: 'idle' } })}
+                onSubmitAnswer={submitGameAnswer}
+                dir={dir}
               />
             </div>
           )}
@@ -339,17 +584,24 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
             </div>
           )}
 
-          {activeTab === 'video' && (
+          {hasLiveKitMedia && activeTab === 'video' && (
             <div className="video-area">
               <VideoConference />
             </div>
           )}
 
-          <RoomAudioRenderer />
+          {/* شريط الفيديو العائم (PiP) بجانب المصحف والألعاب ليتفوق على زووم وميت */}
+          {hasLiveKitMedia && activeTab !== 'video' && !focusMode && !lowDataMode && (
+            <div className="hidden md:block absolute bottom-4 end-4 w-64 h-44 rounded-2xl overflow-hidden border-2 border-[var(--wn-gold)] shadow-2xl z-30 bg-slate-950">
+              <VideoConference />
+            </div>
+          )}
+
+          {hasLiveKitMedia && <RoomAudioRenderer />}
         </div>
 
         <AnimatePresence>
-          {showChat && (
+          {hasLiveKitMedia && showChat && (
             <motion.div
               className="chat-panel"
               initial={{ x: isRTL ? -300 : 300, opacity: 0 }}
@@ -369,20 +621,6 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
                 </button>
               </div>
 
-              <div className="p-3 border-b border-[var(--wn-border)] bg-[var(--wn-surface-soft)] space-y-2">
-                <div className="flex items-center gap-2 text-xs font-medium text-[var(--wn-text-accent)]">
-                  <Languages size={14} aria-hidden="true" /> {t.live.room.liveTranslationLabel}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <LangSelect label={t.live.room.myLang} value={myLang} onChange={setMyLang} uiLocale={locale} />
-                  <LangSelect label={t.live.room.translateTo} value={partnerLang} onChange={setPartnerLang} uiLocale={locale} />
-                </div>
-                <label className="flex items-center gap-2 text-xs text-[var(--wn-text-primary)] cursor-pointer min-h-[44px]">
-                  <input type="checkbox" checked={autoTranslate} onChange={(e) => setAutoTranslate(e.target.checked)} />
-                  <span>{t.live.room.autoTranslateToggle}</span>
-                </label>
-              </div>
-
               <div className="chat-messages">
                 {chatMessages.length === 0 ? (
                   <div className="chat-empty">
@@ -398,9 +636,6 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
                       </div>
                       <p className="message-text">{msg.text}</p>
                       <span ref={chatEndRef} />
-                      {msg.original && msg.original !== msg.text && (
-                        <p className="text-xs text-[var(--wn-text-secondary)] mt-1 italic">{msg.original}</p>
-                      )}
                     </div>
                   ))
                 )}
@@ -417,7 +652,7 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
                     type="button"
                     onClick={() => setSafetyWarning(null)}
                     aria-label={t.live.chatSafetyDismiss}
-                    className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
+                    className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg font-bold cursor-pointer"
                   >
                     <X size={16} aria-hidden="true" />
                   </button>
@@ -458,41 +693,72 @@ function LiveRoomContent({ isHost, isObserver, participantName, roomId, sessionC
         </AnimatePresence>
       </div>
 
-      <div className="live-room-controls">
-        <div className="controls-group">
-          {isObserver ? (
-            <div className="observer-media-locked" title={t.live.room.observerMediaLocked}>
-              <div className="observer-lock-pill">
-                <MicOff size={18} className="text-red-400" aria-hidden="true" />
-                <VideoOff size={18} className="text-red-400" aria-hidden="true" />
-                <span>{t.live.room.observerMediaLocked}</span>
+      {hasLiveKitMedia && (
+        <div className="live-room-controls">
+          <div className="controls-group">
+            {isObserver ? (
+              <div className="observer-media-locked" title={t.live.room.observerMediaLocked}>
+                <div className="observer-lock-pill">
+                  <MicOff size={18} className="text-red-400" aria-hidden="true" />
+                  <VideoOff size={18} className="text-red-400" aria-hidden="true" />
+                  <span>{t.live.room.observerMediaLocked}</span>
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              <TrackToggle source="microphone">
-                {(isEnabled) => (isEnabled ? <Mic size={24} /> : <MicOff size={24} />)}
-              </TrackToggle>
-
-              <TrackToggle source="camera">
-                {(isEnabled) => (isEnabled ? <Video size={24} /> : <VideoOff size={24} />)}
-              </TrackToggle>
-
-              {isHost && (
-                <TrackToggle source="screen_share">
-                  {(isEnabled) => (isEnabled ? <Monitor size={24} /> : <MonitorOff size={24} />)}
+            ) : (
+              <>
+                <TrackToggle source="microphone">
+                  {(isEnabled) => (isEnabled ? <Mic size={24} /> : <MicOff size={24} />)}
                 </TrackToggle>
-              )}
-            </>
-          )}
-        </div>
 
-        <DisconnectButton>
-          <PhoneOff size={24} aria-hidden="true" />
-          <span>{t.live.leave}</span>
-        </DisconnectButton>
-      </div>
+                <TrackToggle source="camera">
+                  {(isEnabled) => (isEnabled ? <Video size={24} /> : <VideoOff size={24} />)}
+                </TrackToggle>
+
+                {isHost && (
+                  <TrackToggle source="screen_share">
+                    {(isEnabled) => (isEnabled ? <Monitor size={24} /> : <MonitorOff size={24} />)}
+                  </TrackToggle>
+                )}
+              </>
+            )}
+          </div>
+
+          <DisconnectButton>
+            <PhoneOff size={24} aria-hidden="true" />
+            <span>{t.live.leave}</span>
+          </DisconnectButton>
+        </div>
+      )}
+
+      {/* مختبر التجويد ومخارج الحروف واللوح النوراني الحي المتزامن */}
+      <TajweedMakharijModal
+        isOpen={isTajweedModalOpen}
+        onClose={() => {
+          if (isHost) {
+            updateClassroomState({ tajweedLab: { activeModal: 'none' } });
+          }
+        }}
+        isTeacher={isHost}
+        tajweedLabState={classroomState?.tajweedLab}
+        onUpdateLab={(labPatch) => updateClassroomState({ tajweedLab: labPatch })}
+        dir={dir}
+      />
     </div>
+  );
+}
+
+function LiveKitConnectedStage(props) {
+  const participants = useParticipants();
+  const room = useRoomContext();
+  const localParticipant = useLocalParticipant();
+  return (
+    <ClassroomStageCore
+      {...props}
+      room={room}
+      localParticipant={localParticipant}
+      participants={participants}
+      hasLiveKitMedia
+    />
   );
 }
 
@@ -503,13 +769,14 @@ export default function LiveRoom() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [token, setToken] = useState(null);
+  const [resolvedRoomId, setResolvedRoomId] = useState(roomId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sessionContext, setSessionContext] = useState(null);
   const [serverPermissions, setServerPermissions] = useState(null);
+  const [initialClassroomState, setInitialClassroomState] = useState(null);
   const [resolvedServerUrl, setResolvedServerUrl] = useState('');
   const [standalonePreview, setStandalonePreview] = useState(false);
-  const [previewTab, setPreviewTab] = useState('mushaf');
   const [retryNonce, setRetryNonce] = useState(0);
 
   const role = serverPermissions?.role || user?.role || '';
@@ -518,11 +785,11 @@ export default function LiveRoom() {
   const participantName = user?.name || user?.email || (isObserver ? t.live.room.roleObserver : isHost ? t.live.room.roleTeacher : t.live.room.roleStudent);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading) return undefined;
 
     if (!isAuthenticated) {
       navigate(localizedPath('/login', locale), { replace: true });
-      return;
+      return undefined;
     }
 
     let cancelled = false;
@@ -538,17 +805,33 @@ export default function LiveRoom() {
 
         if (cancelled) return;
         setToken(data.token);
+        if (data.roomId) setResolvedRoomId(data.roomId);
         if (data.permissions) setServerPermissions(data.permissions);
         if (data.sessionContext) setSessionContext(data.sessionContext);
+        if (data.classroomState) setInitialClassroomState(data.classroomState);
         if (data.serverUrl) setResolvedServerUrl(data.serverUrl);
       } catch (err) {
         if (cancelled) return;
-        setError(err.message || t.live.room.tokenError);
-        api.get('/api/live/sessions/' + encodeURIComponent(roomId), { auth: true })
-          .then((s) => {
-            if (!cancelled && s?.sessionContext) setSessionContext(s.sessionContext);
-          })
-          .catch(() => {});
+        // Attempt to hydrate synced Smart Classroom state even if LiveKit media server is unavailable
+        try {
+          const fallbackState = await api.get('/api/live/sessions/' + encodeURIComponent(roomId) + '/state', { auth: true });
+          if (!cancelled && fallbackState) {
+            if (fallbackState.roomId) setResolvedRoomId(fallbackState.roomId);
+            if (fallbackState.permissions) setServerPermissions(fallbackState.permissions);
+            if (fallbackState.sessionContext) setSessionContext(fallbackState.sessionContext);
+            if (fallbackState.classroomState) setInitialClassroomState(fallbackState.classroomState);
+            // If LiveKit is simply not configured yet (503), launch directly into the Synced Smart Classroom!
+            if (err?.status === 503) {
+              setStandalonePreview(true);
+              return;
+            }
+          }
+        } catch {
+          // keep primary error if unauthorized or session missing
+        }
+        if (!cancelled) {
+          setError(err.message || t.live.room.tokenError);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -569,8 +852,9 @@ export default function LiveRoom() {
   }
 
   const handleEndAndEvaluate = async () => {
-    if (isHost && roomId) {
-      await api.patch('/api/live/sessions/' + encodeURIComponent(roomId) + '/live', { isLive: false }, { auth: true }).catch(() => {});
+    const activeRoom = resolvedRoomId || roomId;
+    if (isHost && activeRoom) {
+      await api.patch('/api/live/sessions/' + encodeURIComponent(activeRoom) + '/live', { isLive: false }, { auth: true }).catch(() => {});
     }
     if (role === 'teacher' && sessionContext?.sessionId) {
       navigate(localizedPath(`/teacher/dashboard?tab=sessions&evaluate=${encodeURIComponent(sessionContext.sessionId)}`, locale));
@@ -581,76 +865,18 @@ export default function LiveRoom() {
 
   if (standalonePreview) {
     return (
-      <div className="live-room-container" dir={dir}>
-        <div className="live-room-header">
-          <div className="live-room-header-right">
-            <BrandLogo size={40} variant="light" />
-            <div className="live-room-info">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2>{sessionContext?.title || t.live.title}</h2>
-                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900">
-                  {t.live.room.smartClassroomBadge}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="live-room-tabs" role="tablist" aria-label={t.live.title}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={previewTab === 'mushaf'}
-              aria-label={t.live.room.mushafTab}
-              className={`room-tab-btn ${previewTab === 'mushaf' ? 'active' : ''}`}
-              onClick={() => setPreviewTab('mushaf')}
-            >
-              <BookOpen size={16} aria-hidden="true" />
-              <span>{t.live.room.mushafTab}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={previewTab === 'circle'}
-              aria-label={t.live.room.circleTab}
-              className={`room-tab-btn ${previewTab === 'circle' ? 'active' : ''}`}
-              onClick={() => setPreviewTab('circle')}
-            >
-              <Users size={16} aria-hidden="true" />
-              <span>{t.live.room.circleTab}</span>
-            </button>
-          </div>
-          <div className="live-room-header-left">
-            <button
-              type="button"
-              onClick={() => navigate(dashboardPathForRole(role, locale))}
-              className="min-h-[44px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
-            >
-              {isRTL ? <ArrowRight size={15} aria-hidden="true" /> : <ArrowLeft size={15} aria-hidden="true" />}
-              <span>{t.live.room.backToDashboard}</span>
-            </button>
-          </div>
-        </div>
-        <div className="live-room-main">
-          <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-900">
-            {previewTab === 'mushaf' ? (
-              <div className="w-full h-full p-2 flex flex-col">
-                <SyncedMushaf room={null} localParticipant={null} isTeacher={isHost} isObserver={isObserver} />
-              </div>
-            ) : (
-              <div className="w-full h-full p-3 flex flex-col overflow-y-auto">
-                <CircleTurnManager
-                  room={null}
-                  localParticipant={null}
-                  participants={[]}
-                  isTeacher={isHost}
-                  isObserver={isObserver}
-                  currentUserName={participantName}
-                  rosterStudents={sessionContext?.roster || []}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ClassroomStageCore
+        isHost={isHost}
+        isObserver={isObserver}
+        currentUserId={user?.id || user?._id || ''}
+        participantName={participantName}
+        roomId={resolvedRoomId || roomId}
+        sessionContext={sessionContext}
+        initialServerState={initialClassroomState}
+        onEndAndEvaluate={isHost ? handleEndAndEvaluate : null}
+        onBackToDashboard={() => navigate(dashboardPathForRole(role, locale))}
+        hasLiveKitMedia={false}
+      />
     );
   }
 
@@ -677,16 +903,6 @@ export default function LiveRoom() {
             <BookOpen size={18} aria-hidden="true" />
             <span>{t.live.room.openSmartClassroom}</span>
           </button>
-          {sessionContext?.sessionId && (
-            <button
-              type="button"
-              onClick={() => navigate(localizedPath(`/meeting/${sessionContext.sessionId}`, locale))}
-              className="min-h-[44px] px-4 py-2.5 rounded-xl border border-white/20 text-white font-semibold hover:bg-white/10 inline-flex items-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)]"
-            >
-              <Languages size={18} aria-hidden="true" />
-              <span>{t.live.room.altMeetingRoom}</span>
-            </button>
-          )}
           <button
             type="button"
             onClick={() => navigate(dashboardPathForRole(role, locale))}
@@ -715,12 +931,14 @@ export default function LiveRoom() {
       data-lk-theme="default"
       onDisconnected={() => navigate(dashboardPathForRole(role, locale))}
     >
-      <LiveRoomContent
+      <LiveKitConnectedStage
         isHost={isHost}
         isObserver={isObserver}
+        currentUserId={user?.id || user?._id || ''}
         participantName={participantName}
-        roomId={roomId}
+        roomId={resolvedRoomId || roomId}
         sessionContext={sessionContext}
+        initialServerState={initialClassroomState}
         onEndAndEvaluate={isHost ? handleEndAndEvaluate : null}
       />
     </LiveKitRoom>

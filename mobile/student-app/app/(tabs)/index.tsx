@@ -485,6 +485,52 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
 
+              {/* Interactive Quran Games Arcade Banner (Anti-Boredom Fun Hifz) */}
+              <Pressable
+                onPress={() => router.push('/games')}
+                style={({ pressed }) => [styles.gamesBanner, pressed && styles.tilePressed]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.cardHeadBetween, { flexDirection: rowDir }]}>
+                  <View style={[styles.cardHead, { flexDirection: rowDir }]}>
+                    <Sparkles size={18} color={colors.goldDark} />
+                    <Text style={styles.gamesBannerTitle}>
+                      {locale === 'ar' ? '🎮 عالم الألعاب القرآنية التفاعلية' : '🎮 Quran Interactive Games'}
+                    </Text>
+                  </View>
+                  <View style={styles.gamesCtaChip}>
+                    <Text style={styles.gamesCtaText}>{locale === 'ar' ? 'العب الآن' : 'Play'}</Text>
+                  </View>
+                </View>
+                <Text style={[styles.gamesBannerSub, { textAlign: align }]}>
+                  {locale === 'ar'
+                    ? 'رتّب الآيات • صائد التجويد • الكلمة المفقودة • ازرع حديقتك القرآنية 🌳'
+                    : 'Ayah Puzzle • Tajweed Hunter • Missing Word • Grow your Quran Garden 🌳'}
+                </Text>
+              </Pressable>
+
+              {/* 30-Juz Khatmah Map & Teacher Mushaf Notes Card */}
+              <Pressable
+                onPress={() => router.push('/khatmah')}
+                style={({ pressed }) => [styles.khatmahBanner, pressed && styles.tilePressed]}
+                accessibilityRole="button"
+              >
+                <View style={[styles.cardHeadBetween, { flexDirection: rowDir }]}>
+                  <View style={[styles.cardHead, { flexDirection: rowDir }]}>
+                    <Award size={18} color={colors.emerald} />
+                    <Text style={styles.khatmahBannerTitle}>
+                      {locale === 'ar' ? '🗺️ خريطة ختمتي (30 جزءاً) وملاحظات شيخي' : '🗺️ My 30-Juz Khatmah & Teacher Notes'}
+                    </Text>
+                  </View>
+                  <Text style={styles.moreLink}>{locale === 'ar' ? 'عرض' : 'View'}</Text>
+                </View>
+                <Text style={[styles.emptyLine, { textAlign: align }]}>
+                  {locale === 'ar'
+                    ? 'شاهد الأجزاء المعتمدة ومواضع المراجعة الملوّنة على مصحفك'
+                    : 'See certified Juz & color-coded Mushaf corrections from your teacher'}
+                </Text>
+              </Pressable>
+
               {/* All Academy Services In-App Hub */}
               <View style={styles.sectionBlock}>
                 <Text style={[styles.sectionHeading, { textAlign: align }]}>{t.home.servicesTitle}</Text>
@@ -1055,4 +1101,50 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   childName: { fontSize: 15, fontFamily: fonts.bold, color: colors.emeraldDark },
+  gamesBanner: {
+    backgroundColor: colors.goldSoft,
+    borderRadius: radius.xl,
+    borderWidth: 1.5,
+    borderColor: colors.gold,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    ...shadows.card,
+  },
+  gamesBannerTitle: {
+    fontSize: 15,
+    fontFamily: fonts.extraBold,
+    color: colors.emeraldDeep,
+  },
+  gamesBannerSub: {
+    fontSize: 12,
+    fontFamily: fonts.semiBold,
+    color: colors.goldDark,
+    lineHeight: 20,
+  },
+  gamesCtaChip: {
+    backgroundColor: colors.emerald,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  gamesCtaText: {
+    fontSize: 12,
+    fontFamily: fonts.bold,
+    color: colors.white,
+  },
+  khatmahBanner: {
+    backgroundColor: colors.white,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderMint,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    ...shadows.card,
+  },
+  khatmahBannerTitle: {
+    fontSize: 14,
+    fontFamily: fonts.extraBold,
+    color: colors.emeraldDark,
+    flexShrink: 1,
+  },
 });

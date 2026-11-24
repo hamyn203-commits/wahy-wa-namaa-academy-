@@ -476,6 +476,7 @@ app.use('/api/certificates', require('./routes/certificates'));
 app.use('/api/assignments', require('./routes/assignments'));
 app.use('/api/quizzes', require('./routes/quizzes'));
 app.use('/api/progress', require('./routes/progress'));
+app.use('/api/mushaf-progress', require('./routes/mushafProgress'));
 app.use('/api/guardians', require('./routes/guardians'));
 app.use('/api/guardian', require('./routes/guardian'));
 app.use('/api/gamification', require('./routes/gamification'));

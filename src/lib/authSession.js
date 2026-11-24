@@ -3,8 +3,26 @@ import { API_BASE_URL } from '../config';
 let accessToken = null;
 let refreshPromise = null;
 
+function getMobileWebViewToken() {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return null;
+    const raw = window.sessionStorage.getItem('wwn_mobile_token');
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(trimmed) ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getAccessToken() {
-  return accessToken;
+  if (accessToken) return accessToken;
+  const mobileToken = getMobileWebViewToken();
+  if (mobileToken) {
+    accessToken = mobileToken;
+    return mobileToken;
+  }
+  return null;
 }
 
 export function setAccessToken(token) {
