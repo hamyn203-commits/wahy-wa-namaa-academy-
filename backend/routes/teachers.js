@@ -300,6 +300,16 @@ const PUBLIC_TEACHER_SELECT =
 const PUBLIC_TEACHER_LIST_SELECT =
   'user personalInfo.fullName personalInfo.gender personalInfo.country personalInfo.city academicInfo.specialization academicInfo.qualification quranInfo languages rating stats hourlyRate isVerified isFeatured media.profilePhoto media.introductionVideo media.recitationVideo availabilityTimezone createdAt';
 
+function normalizePublicMediaField(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'not-provided') return '';
+  if (raw.includes('/api/uploads/public?ref=')) return raw;
+  if (/^https:\/\/[a-z0-9]+\.private\.blob\.vercel-storage\.com\/uploads\/(?:teacher-public|student-avatar)\//i.test(raw)) {
+    return objectStorage.publicProxyUrl(raw) || raw;
+  }
+  return raw;
+}
+
 function sanitizePublicTeacher(doc) {
   const teacher = typeof doc?.toObject === 'function' ? doc.toObject() : { ...doc };
 
@@ -322,11 +332,27 @@ function sanitizePublicTeacher(doc) {
     };
   }
 
+  if (teacher.media && typeof teacher.media === 'object') {
+    const nextMedia = { ...teacher.media };
+    for (const key of ['profilePhoto', 'introductionVideo', 'recitationVideo', 'teachingMethodVideo']) {
+      if (nextMedia[key] !== undefined) {
+        nextMedia[key] = normalizePublicMediaField(nextMedia[key]);
+      }
+    }
+    if (Array.isArray(nextMedia.additionalVideos)) {
+      nextMedia.additionalVideos = nextMedia.additionalVideos.map(normalizePublicMediaField).filter(Boolean);
+    }
+    if (Array.isArray(nextMedia.audioRecordings)) {
+      nextMedia.audioRecordings = nextMedia.audioRecordings.map(normalizePublicMediaField).filter(Boolean);
+    }
+    teacher.media = nextMedia;
+  }
+
   if (teacher.user && typeof teacher.user === 'object') {
     teacher.user = {
       _id: teacher.user._id,
       name: teacher.user.name,
-      avatar: teacher.user.avatar,
+      avatar: normalizePublicMediaField(teacher.user.avatar),
       bio: teacher.user.bio,
     };
   }

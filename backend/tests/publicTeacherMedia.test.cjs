@@ -209,3 +209,43 @@ test('public GET /api/teachers and GET /api/teachers/:id strip sensitive fields,
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('frontend teacherPublicImage and teacherPublicVideo preserve /api/uploads/public proxy for Vercel Blob teacher media instead of stripping to 404 /uploads/teacher-public/*', async () => {
+  const path = require('node:path');
+  const { pathToFileURL } = require('node:url');
+  const mediaModuleUrl = pathToFileURL(path.resolve(__dirname, '..', '..', 'src', 'lib', 'teacherMedia.js')).href;
+  const { teacherPublicImage, teacherPublicVideo, teacherPublicAudio } = await import(mediaModuleUrl);
+
+  const blobPhoto = 'https://aq8k9adykv45hcpa.private.blob.vercel-storage.com/uploads/teacher-public/teacher-phone-201225787858-phone.wahywanamaa.local/photo.jpg';
+  const proxiedPhoto = `https://api.wahywanamaa.com/api/uploads/public?ref=${encodeURIComponent(blobPhoto)}`;
+
+  const blobVideo = 'https://aq8k9adykv45hcpa.private.blob.vercel-storage.com/uploads/teacher-public/teacher-phone-201225787858-phone.wahywanamaa.local/recitation.mp4';
+  const proxiedVideo = `https://api.wahywanamaa.com/api/uploads/public?ref=${encodeURIComponent(blobVideo)}`;
+
+  const blobAudio = 'https://aq8k9adykv45hcpa.private.blob.vercel-storage.com/uploads/teacher-public/teacher-phone-201225787858-phone.wahywanamaa.local/sample.mp3';
+  const proxiedAudio = `https://api.wahywanamaa.com/api/uploads/public?ref=${encodeURIComponent(blobAudio)}`;
+
+  // 1. Proxied and raw Vercel Blob teacher videos MUST resolve to same-origin /api/uploads/public?ref=... (NOT /uploads/teacher-public/...)
+  assert.equal(teacherPublicVideo(proxiedVideo), `/api/uploads/public?ref=${encodeURIComponent(blobVideo)}`);
+  assert.equal(teacherPublicVideo(blobVideo), `/api/uploads/public?ref=${encodeURIComponent(blobVideo)}`);
+
+  // 2. Proxied and raw Vercel Blob teacher photos MUST resolve to same-origin /api/uploads/public?ref=... (NOT /uploads/teacher-public/...)
+  assert.equal(teacherPublicImage(proxiedPhoto), `/api/uploads/public?ref=${encodeURIComponent(blobPhoto)}`);
+  assert.equal(teacherPublicImage(blobPhoto), `/api/uploads/public?ref=${encodeURIComponent(blobPhoto)}`);
+
+  // 3. Audio clips resolve cleanly to /api/uploads/public?ref=...
+  assert.equal(typeof teacherPublicAudio, 'function');
+  assert.equal(teacherPublicAudio(proxiedAudio), `/api/uploads/public?ref=${encodeURIComponent(blobAudio)}`);
+
+  // 4. Private KYC or paid course-media blob paths must NEVER be turned into public URLs
+  const privateDoc = 'https://aq8k9adykv45hcpa.private.blob.vercel-storage.com/uploads/teacher-private/u1/id.jpg';
+  const paidCourseVideo = 'https://aq8k9adykv45hcpa.private.blob.vercel-storage.com/uploads/course-media/c1/lesson.mp4';
+  assert.equal(teacherPublicImage(privateDoc), '/default-teacher.png');
+  assert.equal(teacherPublicVideo(privateDoc), '');
+  assert.equal(teacherPublicVideo(paidCourseVideo), '');
+  assert.equal(teacherPublicImage(paidCourseVideo), '/default-teacher.png');
+
+  // 5. Local relative E2E / legacy paths continue working
+  assert.equal(teacherPublicVideo('/e2e-recitation.mp4'), '/e2e-recitation.mp4');
+  assert.equal(teacherPublicVideo('/uploads/teachers/public/legacy.mp4'), '/uploads/teachers/public/legacy.mp4');
+});

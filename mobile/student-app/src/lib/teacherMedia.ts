@@ -35,22 +35,24 @@ export function resolvePublicMediaUrl(raw?: string | null, kind: 'image' | 'vide
     const pathname = parsed.pathname;
 
     // Normalize public proxy refs onto our primary API_BASE_URL
-    if (pathname === '/api/uploads/public') {
+    if (pathname === '/api/uploads/public' || pathname.endsWith('/api/uploads/public')) {
       const original = unwrapPublicRef(reference);
       if (!original || original === reference) return null;
-      return `${API_BASE_URL}/api/uploads/public?ref=${encodeURIComponent(original)}`;
+      return resolvePublicMediaUrl(original, kind);
     }
 
-    // Legacy raw Vercel Blob URLs must be proxied via /api/uploads/public
+    // Raw Vercel Blob URLs must be proxied via /api/uploads/public (only public teacher/avatar paths)
     if (
       parsed.protocol === 'https:'
       && parsed.hostname.endsWith('.blob.vercel-storage.com')
-      && (pathname.startsWith('/uploads/teacher-public/') || pathname.startsWith('/uploads/course-media/'))
     ) {
-      return `${API_BASE_URL}/api/uploads/public?ref=${encodeURIComponent(reference)}`;
+      if (pathname.startsWith('/uploads/teacher-public/') || (kind === 'image' && pathname.startsWith('/uploads/student-avatar/'))) {
+        return `${API_BASE_URL}/api/uploads/public?ref=${encodeURIComponent(reference)}`;
+      }
+      return null;
     }
 
-    if (pathname.startsWith('/uploads/teachers/public/') || pathname.startsWith('/uploads/teacher-public/')) {
+    if (parsed.hostname === 'wahy.invalid' && (pathname.startsWith('/uploads/teachers/public/') || pathname.startsWith('/uploads/teacher-public/'))) {
       return `${API_BASE_URL}${pathname}`;
     }
 

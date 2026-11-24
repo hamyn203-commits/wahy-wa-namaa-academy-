@@ -13,8 +13,7 @@ const { validateUploadMetadata } = require('../config/uploadPolicy');
 const { registerVerificationTokenUpload } = require('./verification');
 const { validateTeacherInvite, extractClientIp } = require('../services/teacherInvite');
 const { syntheticPhoneEmail } = require('../utils/phone');
-
-const MAX_PUBLIC_MEDIA_RANGE_CHUNK = Math.floor(3.5 * 1024 * 1024);
+const { boundedMediaRange } = require('../utils/mediaByteRange');
 
 function escapeRegexLiteral(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -63,8 +62,39 @@ const SAFE_PUBLIC_CONTENT_TYPES = new Set([
   'audio/mpeg',
   'audio/wav',
   'audio/ogg',
+  'audio/mp4',
   'application/pdf',
 ]);
+
+const EXTENSION_MIME_FALLBACKS = Object.freeze({
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.pdf': 'application/pdf',
+});
+
+function resolveSafePublicMime(rawContentType, pathname = '') {
+  const normalized = String(rawContentType || '').split(';', 1)[0].trim().toLowerCase();
+  const mapped = normalized === 'image/jpg'
+    ? 'image/jpeg'
+    : (normalized === 'audio/x-m4a' || normalized === 'audio/m4a')
+      ? 'audio/mp4'
+      : normalized === 'video/x-m4v'
+        ? 'video/mp4'
+        : normalized;
+  if (SAFE_PUBLIC_CONTENT_TYPES.has(mapped)) return mapped;
+  const ext = path.posix.extname(String(pathname || '')).toLowerCase();
+  return EXTENSION_MIME_FALLBACKS[ext] || 'application/octet-stream';
+}
 
 async function verifyClientIdentity(payload = {}, req = null) {
   const secret = getAccessSecret();
@@ -335,58 +365,114 @@ router.get('/public', async (req, res) => {
       }
     }
 
-    // Streamable public videos/audio must bypass the serverless 4.5 MB proxy cap and
-    // Edge Cache Range-chunking bugs by issuing a short-lived signed CDN redirect with
-    // true HTTP 206 Partial Content, Content-Range, and Content-Length support.
-    const isStreamableMedia = /\.(?:mp4|mov|webm|mp3|wav|m4a|ogg)$/i.test(pathname);
-    if (isStreamableMedia && (storage.getDriver() === 'vercel-blob' || storage.getDriver() === 's3')) {
-      const signed = await storage.createTemporaryReadUrl(reference, { expiresIn: 20 * 60 }).catch(() => null);
-      if (signed?.url) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Vary', 'Range');
-        return res.redirect(302, signed.url);
-      }
-    }
-
-    let boundedRangeHeader = null;
+    // Streamable public videos/audio must NEVER 302-redirect to *.private.blob.vercel-storage.com
+    // (browser CORP blocks private Blob responses) and must NEVER stream unbounded full files
+    // (> 4.5 MB crashes Vercel Serverless Functions). Stream bounded 2 MiB HTTP 206 byte ranges
+    // directly from same-origin /api/uploads/public with Cache-Control: no-store + Vary: Range.
+    const isStreamableMedia = /\.(?:mp4|m4v|mov|webm|mp3|wav|m4a|ogg)$/i.test(pathname);
     const rawRange = String(req.headers.range || '').trim();
-    if (rawRange) {
-      const rangeMatch = rawRange.match(/^bytes=(\d+)-(\d*)$/i);
-      if (!rangeMatch) {
+
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
+    res.setHeader('Vary', 'Range');
+
+    if ((isStreamableMedia || Boolean(rawRange)) && (storage.getDriver() === 'vercel-blob' || storage.getDriver() === 's3')) {
+      res.setHeader('Cache-Control', 'no-store');
+
+      const meta = await storage.inspectPrivateMedia(reference);
+      const totalSize = Number(meta?.sizeBytes);
+      if (!meta || !Number.isSafeInteger(totalSize) || totalSize <= 0) {
+        return res.status(404).end();
+      }
+
+      let selection;
+      try {
+        selection = boundedMediaRange(rawRange, totalSize);
+      } catch {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
         return res.status(416).end();
       }
-      const start = Number(rangeMatch[1]);
-      const requestedEnd = rangeMatch[2] ? Number(rangeMatch[2]) : (start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || requestedEnd < start) {
-        return res.status(416).end();
+
+      const { start, end, size } = selection;
+      const expectedBytes = end - start + 1;
+      const expectedRange = `bytes ${start}-${end}/${size}`;
+
+      const result = await storage.getPrivateObject(reference, {
+        headers: { Range: `bytes=${start}-${end}` },
+      });
+      if (!result?.stream) return res.status(404).end();
+
+      // @vercel/blob get() always reports statusCode: 200 even for 206 range responses,
+      // while preserving the upstream content-range header.
+      const actualRange = result.headers?.get?.('content-range') || result.blob?.contentRange || '';
+      if (actualRange && actualRange !== expectedRange) {
+        if (typeof result.stream.cancel === 'function') await result.stream.cancel().catch(() => {});
+        else result.stream.destroy?.();
+        return res.status(502).end();
       }
-      const clampedEnd = Math.min(requestedEnd, start + MAX_PUBLIC_MEDIA_RANGE_CHUNK - 1);
-      boundedRangeHeader = `bytes=${start}-${clampedEnd}`;
+
+      const safeContentType = resolveSafePublicMime(meta.contentType || result.blob?.contentType, pathname);
+      res.setHeader('Content-Type', safeContentType);
+      res.setHeader('Content-Length', String(expectedBytes));
+      if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
+
+      const isPartial = Boolean(rawRange) || start > 0 || end < size - 1;
+      if (isPartial) {
+        res.status(206);
+        res.setHeader('Content-Range', expectedRange);
+      } else {
+        res.status(200);
+      }
+
+      if (typeof result.stream.pipe === 'function') {
+        const abortStream = () => {
+          result.stream.destroy?.();
+        };
+        req.on('close', abortStream);
+        res.on('finish', () => req.off('close', abortStream));
+        return result.stream.pipe(res);
+      }
+
+      const reader = result.stream.getReader?.();
+      if (!reader) return res.status(500).end();
+
+      const cancelOnClose = () => {
+        reader.cancel().catch(() => {});
+      };
+      req.on('close', cancelOnClose);
+
+      try {
+        let remaining = expectedBytes;
+        while (remaining > 0) {
+          const { done, value } = await reader.read();
+          if (done || res.writableEnded || res.destroyed) break;
+          const part = Buffer.from(value);
+          const slice = part.subarray(0, remaining);
+          res.write(slice);
+          remaining -= slice.length;
+        }
+      } finally {
+        req.off('close', cancelOnClose);
+        await reader.cancel().catch(() => {});
+      }
+      return res.writableEnded ? undefined : res.end();
     }
 
     const result = await storage.getPrivateObject(reference, {
       ifNoneMatch: req.headers['if-none-match'],
-      ...(boundedRangeHeader ? { headers: { Range: boundedRangeHeader } } : {}),
     });
 
     if (!result) return res.status(404).end();
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
     if (result.statusCode === 304) return res.status(304).end();
 
-    const rawType = String(result.blob?.contentType || '').split(';', 1)[0].trim().toLowerCase();
-    const safeContentType = SAFE_PUBLIC_CONTENT_TYPES.has(rawType)
-      ? rawType
-      : 'application/octet-stream';
+    const safeContentType = resolveSafePublicMime(result.blob?.contentType, pathname);
     res.setHeader('Content-Type', safeContentType);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; sandbox");
-    res.setHeader('Cache-Control', boundedRangeHeader ? 'no-store' : 'public, max-age=86400, stale-while-revalidate=604800');
-    res.setHeader('Vary', 'Range');
-    if (result.blob?.etag) res.setHeader('ETag', result.blob.etag);
-    const contentRange = result.headers?.get?.('content-range') || result.blob?.contentRange || null;
-    if (result.statusCode === 206 && contentRange) {
-      res.status(206);
-      res.setHeader('Content-Range', contentRange);
+    if (Number.isSafeInteger(result.blob?.size) && result.blob.size > 0) {
+      res.setHeader('Content-Length', String(result.blob.size));
     }
 
     if (result.stream?.pipe) {
@@ -413,7 +499,8 @@ router.get('/public', async (req, res) => {
     return res.writableEnded ? undefined : res.end();
   } catch (error) {
     console.error('Public media stream failed:', error.message);
-    return res.status(404).end();
+    if (!res.headersSent) return res.status(404).end();
+    return res.destroy();
   }
 });
 

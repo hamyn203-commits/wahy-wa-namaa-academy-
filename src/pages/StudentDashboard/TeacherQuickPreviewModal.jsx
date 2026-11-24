@@ -40,6 +40,8 @@ export default function TeacherQuickPreviewModal({
   const [loadError, setLoadError] = useState(false);
   const [retrySeq, setRetrySeq] = useState(0);
   const [playingKind, setPlayingKind] = useState('');
+  const [videoError, setVideoError] = useState(false);
+  const [videoRetryNonce, setVideoRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!teacherId) return undefined;
@@ -47,6 +49,7 @@ export default function TeacherQuickPreviewModal({
     setLoadingDetails(true);
     setLoadError(false);
     setPlayingKind('');
+    setVideoError(false);
     setBundle({ teacher, reviews: [], availability: { configured: false, slots: [] } });
 
     fetchTeacherBundle(teacherId)
@@ -167,7 +170,10 @@ export default function TeacherQuickPreviewModal({
               {introUrl && (
                 <button
                   type="button"
-                  onClick={() => setPlayingKind((current) => (current === 'intro' ? '' : 'intro'))}
+                  onClick={() => {
+                    setVideoError(false);
+                    setPlayingKind((current) => (current === 'intro' ? '' : 'intro'));
+                  }}
                   className={`min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
                     playingKind === 'intro'
                       ? 'border-[var(--wn-emerald-deep)] bg-[var(--wn-emerald-deep)] text-[var(--wn-text-inverse)]'
@@ -181,7 +187,10 @@ export default function TeacherQuickPreviewModal({
               {recitationUrl && (
                 <button
                   type="button"
-                  onClick={() => setPlayingKind((current) => (current === 'recitation' ? '' : 'recitation'))}
+                  onClick={() => {
+                    setVideoError(false);
+                    setPlayingKind((current) => (current === 'recitation' ? '' : 'recitation'));
+                  }}
                   className={`min-h-[44px] inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--wn-focus)] ${
                     playingKind === 'recitation'
                       ? 'border-[var(--wn-emerald-deep)] bg-[var(--wn-emerald-deep)] text-[var(--wn-text-inverse)]'
@@ -195,9 +204,33 @@ export default function TeacherQuickPreviewModal({
             </div>
             {activeVideoUrl && (
               <div className="overflow-hidden rounded-2xl bg-[var(--wn-emerald-deep)]">
-                <video key={activeVideoUrl} controls autoPlay playsInline preload="metadata" className="aspect-video w-full">
-                  <source src={activeVideoUrl} />
-                </video>
+                <video
+                  key={`${activeVideoUrl}-${videoRetryNonce}`}
+                  src={activeVideoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={() => setVideoError(false)}
+                  onError={() => setVideoError(true)}
+                  className="aspect-video w-full"
+                />
+                {videoError && (
+                  <div role="alert" className="flex flex-wrap items-center justify-between gap-2 bg-[var(--wn-danger-soft)] px-3.5 py-2 text-xs text-[var(--wn-text-danger)]">
+                    <span>{t?.student?.errors?.loadFailed || (activeLocale === 'ar' ? 'تعذر تشغيل الفيديو حاليًا.' : 'Could not play this video right now.')}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVideoError(false);
+                        setVideoRetryNonce((n) => n + 1);
+                      }}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-2.5 py-1 font-bold text-[var(--wn-text-primary)]"
+                    >
+                      <RefreshCw size={13} aria-hidden="true" />
+                      <span>{common.retry || (activeLocale === 'ar' ? 'إعادة المحاولة' : 'Try again')}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

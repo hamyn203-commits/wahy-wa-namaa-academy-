@@ -59,6 +59,8 @@ export default function StudentTeacherMarketplace({ teachers = [], locale: propL
   ];
 
   const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState(false);
+  const [previewRetryNonce, setPreviewRetryNonce] = useState(0);
   const [favorites, setFavorites] = useState(new Set());
   const [togglingFavId, setTogglingFavId] = useState('');
   const [compare, setCompare] = useState([]);
@@ -104,6 +106,7 @@ export default function StudentTeacherMarketplace({ teachers = [], locale: propL
   );
 
   const togglePreview = (teacherId, mode) => {
+    setPreviewError(false);
     setPreview((current) => (
       current?.teacherId === teacherId && current?.mode === mode
         ? null
@@ -498,9 +501,33 @@ export default function StudentTeacherMarketplace({ teachers = [], locale: propL
 
                 {previewUrl && (
                   <div className="mt-3 rounded-xl overflow-hidden bg-[var(--wn-surface-dark)]">
-                    <video key={previewUrl} controls preload="metadata" className="w-full max-h-64">
-                      <source src={previewUrl} />
-                    </video>
+                    <video
+                      key={`${previewUrl}-${previewRetryNonce}`}
+                      src={previewUrl}
+                      controls
+                      autoPlay
+                      playsInline
+                      preload="metadata"
+                      onLoadedData={() => setPreviewError(false)}
+                      onError={() => setPreviewError(true)}
+                      className="w-full max-h-64"
+                    />
+                    {previewError && (
+                      <div role="alert" className="flex flex-wrap items-center justify-between gap-2 bg-[var(--wn-danger-soft)] px-3 py-2 text-xs text-[var(--wn-text-danger)]">
+                        <span>{t?.student?.errors?.loadFailed || (activeLocale === 'ar' ? 'تعذر تشغيل الفيديو حاليًا.' : 'Could not play this video right now.')}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewError(false);
+                            setPreviewRetryNonce((n) => n + 1);
+                          }}
+                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface)] px-2.5 py-1 font-bold text-[var(--wn-text-primary)]"
+                        >
+                          <RefreshCw size={13} aria-hidden="true" />
+                          <span>{common.retry || (activeLocale === 'ar' ? 'إعادة المحاولة' : 'Try again')}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
