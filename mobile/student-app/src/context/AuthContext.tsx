@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { api, ApiError, trackMobileAppVisit } from '../lib/api';
 import { secureStorage } from '../lib/secureStorage';
 import { AcademyUser } from '../types/academy';
@@ -41,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const clearSession = useCallback(async () => {
-    api.setAccessToken(null);
+    api.clearTokensInMemory();
     await secureStorage.clearAuthTokens();
     setUser(null);
   }, []);
@@ -60,6 +61,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedAccess) {
       api.setAccessToken(storedAccess);
     }
+    if (storedRefresh) {
+      api.setRefreshToken(storedRefresh);
+    }
 
     try {
       const response = await api.get<{ user?: AcademyUser } & AcademyUser>('/api/auth/me', { auth: true });
@@ -69,12 +73,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await secureStorage.setCachedUser(resolved as unknown as Record<string, unknown>);
     } catch (error) {
       // Only clear session on explicit auth/role rejection.
-      // Never log the student out on transient network/offline errors or server hiccups!
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        await clearSession();
+      // Never log the student out on transient network/offline/WAF errors or server hiccups!
+      if (
+        error instanceof ApiError
+        && (
+          error.status === 401
+          || (error.status === 403 && (error.code === 'WRONG_APP_AUDIENCE' || error.code === 'ACCOUNT_DEACTIVATED'))
+        )
+      ) {
+        const remainingRefresh = await secureStorage.getRefreshToken();
+        if (!remainingRefresh || error.status === 403) {
+          await clearSession();
+        }
       }
     }
   }, [assertLearnerRole, clearSession]);
+
+  const lastForegroundWarmupRef = useRef(0);
 
   useEffect(() => {
     api.setUnauthorizedHandler(() => {
@@ -89,8 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           secureStorage.getAccessToken(),
           secureStorage.getRefreshToken(),
         ]);
+        if (storedAccess) api.setAccessToken(storedAccess);
+        if (storedRefresh) api.setRefreshToken(storedRefresh);
         if (mounted && cachedUser && (storedAccess || storedRefresh)) {
-          if (storedAccess) api.setAccessToken(storedAccess);
           setUser(cachedUser);
           setLoading(false);
         }
@@ -100,8 +116,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mounted) setLoading(false);
       }
     })();
+
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && Date.now() - lastForegroundWarmupRef.current > 90 * 1000) {
+        lastForegroundWarmupRef.current = Date.now();
+        void api.hydrateToken().catch(() => {});
+      }
+    });
+
     return () => {
       mounted = false;
+      sub.remove();
       api.setUnauthorizedHandler(null);
     };
   }, [refreshUser]);
@@ -125,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await secureStorage.setAccessToken(response.accessToken);
       }
       if (response.refreshToken) {
+        api.setRefreshToken(response.refreshToken);
         await secureStorage.setRefreshToken(response.refreshToken);
       }
       if (loggedUser) {
@@ -157,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await secureStorage.setAccessToken(response.accessToken);
       }
       if (response.refreshToken) {
+        api.setRefreshToken(response.refreshToken);
         await secureStorage.setRefreshToken(response.refreshToken);
       }
       if (createdUser) {

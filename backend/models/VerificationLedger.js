@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const VerificationLedgerSchema = new mongoose.Schema({
   kind: {
     type: String,
-    enum: ['email_send_quota', 'token_jti', 'refresh_jti', 'password_reset_quota', 'rate_limit'],
+    enum: ['email_send_quota', 'token_jti', 'refresh_jti', 'logout_jti', 'password_reset_quota', 'rate_limit'],
     required: true,
   },
   key: {
