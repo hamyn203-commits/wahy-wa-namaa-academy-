@@ -17,11 +17,20 @@ const REGIONAL_TIERS = Object.freeze({
     currency: 'EGP',
     label: Object.freeze({ ar: 'مصر', en: 'Egypt' }),
     pricesMinor: Object.freeze({
-      community: 1000, // 10 EGP
-      group: 2000,     // 20 EGP
-      focused: 3500,   // 35 EGP
-      mini: 5000,      // 50 EGP
-      private: 10000,  // 100 EGP
+      focused: 2000,           // Starts at 20 EGP (12/24 sessions); 25 EGP on 8 sessions
+      mini: 4500,              // 45 EGP (2–3 students, 45 min)
+      private: 8000,           // 80 EGP (1-on-1, 30 min)
+      private_intensive: 15000, // 150 EGP (1-on-1, 60 min)
+      // Legacy renewal fallbacks
+      community: 1000,
+      group: 2000,
+    }),
+    packPricesMinor: Object.freeze({
+      focused: Object.freeze({
+        8: 2500,  // 25 EGP * 8 = 200 EGP/month
+        12: 2000, // 20 EGP * 12 = 240 EGP/month
+        24: 2000, // 20 EGP * 24 = 480 EGP/month
+      }),
     }),
   }),
   GCC: Object.freeze({
@@ -29,36 +38,42 @@ const REGIONAL_TIERS = Object.freeze({
     currency: 'USD',
     label: Object.freeze({ ar: 'دول الخليج العربي', en: 'Gulf Region (GCC)' }),
     pricesMinor: Object.freeze({
-      community: 150,  // $1.50
-      group: 250,      // $2.50
-      focused: 400,    // $4.00
-      mini: 550,       // $5.50
-      private: 850,    // $8.50
+      focused: 350,            // $3.50
+      mini: 550,               // $5.50
+      private: 650,            // $6.50
+      private_intensive: 1200, // $12.00
+      community: 150,
+      group: 250,
     }),
+    packPricesMinor: Object.freeze({}),
   }),
   WEST: Object.freeze({
     region: 'WEST',
     currency: 'USD',
     label: Object.freeze({ ar: 'أوروبا وأمريكا وأستراليا', en: 'North America, Europe & Australia' }),
     pricesMinor: Object.freeze({
-      community: 200,  // $2.00
-      group: 300,      // $3.00
-      focused: 500,    // $5.00
-      mini: 700,       // $7.00
-      private: 1000,   // $10.00
+      focused: 450,            // $4.50
+      mini: 700,               // $7.00
+      private: 850,            // $8.50
+      private_intensive: 1500, // $15.00
+      community: 200,
+      group: 300,
     }),
+    packPricesMinor: Object.freeze({}),
   }),
   INTL: Object.freeze({
     region: 'INTL',
     currency: 'USD',
     label: Object.freeze({ ar: 'الدولي', en: 'International' }),
     pricesMinor: Object.freeze({
-      community: 100,  // $1.00
-      group: 150,      // $1.50
-      focused: 250,    // $2.50
-      mini: 350,       // $3.50
-      private: 600,    // $6.00
+      focused: 250,            // $2.50
+      mini: 400,               // $4.00
+      private: 500,            // $5.00
+      private_intensive: 900,  // $9.00
+      community: 100,
+      group: 150,
     }),
+    packPricesMinor: Object.freeze({}),
   }),
 });
 
@@ -116,6 +131,7 @@ function getTierForCountry(countryCode) {
     currency: tier.currency,
     regionLabel: tier.label,
     pricesMinor: tier.pricesMinor,
+    packPricesMinor: tier.packPricesMinor || {},
     localCurrencyHint: tier.currency === 'USD' ? (LOCAL_CURRENCY_HINTS[normalizedCode] || null) : null,
   };
 }

@@ -37,144 +37,203 @@ const LIVE_ONLINE_LABEL = {
 
 const PROGRAM_CONTEXT = {
   kids: {
-    recommendedPlan: 'group',
-    titleAr: 'تحفيظ القرآن للأطفال',
-    titleEn: 'Quran Memorization for Kids',
-    noteAr: 'رشّحنا لك «الحلقة الجماعية» لأنها تجمع بين التحفيز التفاعلي والمتابعة القريبة للأطفال، ويمكنك اختيار أي باقة أخرى أو التبديل بين الأقسام بحرية.',
-    noteEn: 'We highlighted the Group Circle for warm, interactive peer motivation for children — and you can freely choose any other plan or section below.',
+    recommendedPlan: 'private',
+    titleAr: 'تحفيظ القرآن وتأسيس الأطفال',
+    titleEn: 'Quran Memorization & Kids Foundation',
+    noteAr: 'رشّحنا لك «الباقة الفردية المركّزة (30 دقيقة)» لأنها أنسب لتركيز الطفل وتبدأ فوراً، ويمكنك اختيار حلقة الإخوة (2–3 طلاب) أو الحلقة الجماعية المركّزة (3–5 طلاب) بحرية.',
+    noteEn: 'We highlighted the 30-minute Private 1-on-1 Plan for focused child attention and immediate start — or choose Siblings/Dual or Focused Group below.',
   },
   hifz: {
-    recommendedPlan: 'focused',
+    recommendedPlan: 'private',
     titleAr: 'الحفظ والمراجعة المتقنة',
     titleEn: 'Mastered Hifz & Revision',
-    noteAr: 'رشّحنا لك «الحلقة المركزة» لوقت تسميع ومراجعة أكبر يضمن تثبيت المحفوظ، ويمكنك اختيار أي باقة أخرى تناسب جدولك.',
-    noteEn: 'We highlighted the Focused Circle for generous recitation and revision time — and you can freely choose any other plan below.',
+    noteAr: 'رشّحنا لك «الباقة الفردية المركّزة (1-on-1)» لبداية فورية وتسميع متقن، كما يمكنك اختيار الحلقة الجماعية المركّزة (3–5 طلاب) أو الفردية المكثّفة (60 دقيقة).',
+    noteEn: 'We highlighted the Focused Private 1-on-1 Plan for immediate start and dedicated revision — or choose any other plan below.',
   },
   tajweed: {
-    recommendedPlan: 'focused',
+    recommendedPlan: 'private',
     titleAr: 'تصحيح التلاوة والتجويد',
     titleEn: 'Recitation Correction & Tajweed',
-    noteAr: 'رشّحنا لك «الحلقة المركزة» لتصحيح المخارج وأحكام التجويد عملياً مع المعلم بدقة أكبر، ويمكنك اختيار أي باقة أخرى بحرية.',
-    noteEn: 'We highlighted the Focused Circle for thorough live articulation and Tajweed coaching — and you can freely choose any other plan below.',
+    noteAr: 'رشّحنا لك «الباقة الفردية المركّزة (1-on-1)» لتصحيح المخارج وأحكام التجويد عملياً مع المعلم بدقة أكبر، أو اختر الفردية المكثّفة (60 دقيقة).',
+    noteEn: 'We highlighted the Private 1-on-1 Plan for thorough live articulation and Tajweed coaching.',
   },
   understanding: {
-    recommendedPlan: 'group',
+    recommendedPlan: 'focused',
     titleAr: 'الفهم والتدبر واللسان العربي',
     titleEn: 'Understanding, Tadabbur & Arabic',
-    noteAr: 'رشّحنا لك «الحلقة الجماعية» لتبادل التدبر وبناء الصلة بالمعاني القرآنية بتكلفة مناسبة، ويمكنك اختيار أي باقة أخرى أدناه.',
-    noteEn: 'We highlighted the Group Circle for engaging reflection and Arabic fluency — and you can freely choose any other plan below.',
+    noteAr: 'رشّحنا لك «الحلقة الجماعية المركّزة (3–5 طلاب)» لتبادل التدبر وبناء الصلة بالمعاني القرآنية بتكلفة اقتصادية مدروسة.',
+    noteEn: 'We highlighted the Focused Group Circle (3–5 learners) for engaging reflection and Arabic fluency.',
   },
   ijazah: {
-    recommendedPlan: 'private',
+    recommendedPlan: 'private_intensive',
     titleAr: 'الإجازة والسند المتصل',
     titleEn: 'Ijazah & Connected Sanad',
-    noteAr: 'رشّحنا لك «الحلقة الفردية الخاصة» لتفرّغ الشيخ أو المعلمة المجازة بالكامل لعرض ختمتك بالضبط والإتقان، ويمكنك اختيار أي باقة أخرى أدناه.',
-    noteEn: 'We highlighted the Private 1-on-1 Plan for dedicated Sanad recitation with a certified scholar — and you can freely choose any other plan below.',
+    noteAr: 'رشّحنا لك «الفردية المكثّفة والإجازة (60 دقيقة)» لتفرّغ الشيخ أو المعلمة المجازة بالكامل لعرض ختمتك بالضبط والإتقان.',
+    noteEn: 'We highlighted the 60-minute Intensive Private & Ijazah Plan for dedicated Sanad recitation with a certified scholar.',
   },
 };
 
 const PLAN_DEFS = [
   {
-    id: 'community',
-    nameAr: 'الحلقة الاقتصادية الكبرى',
-    nameEn: 'Community Circle',
-    price: 10,
-    studentsAr: 'من 15 إلى 20 طالب',
-    studentsEn: '15–20 students',
-    image: '/images/plans/men-community.jpg?v=2',
-    imageWomen: '/images/plans/women-community.jpg?v=2',
-    badgeAr: 'الأوفر',
-    badgeEn: 'Best value',
-    tone: 'mint',
-    durationAr: 'من ساعة إلى ساعتين',
-    durationEn: '1–2 hours',
-    featuresAr: ['حلقة جماعية منظمة', 'تسميع بالدور', 'مناسبة للاستمرار بتكلفة منخفضة'],
-    featuresEn: ['Structured group circle', 'Turn-based recitation', 'Lowest-cost continuous learning'],
-  },
-  {
-    id: 'group',
-    nameAr: 'الحلقة الجماعية',
-    nameEn: 'Group Circle',
-    price: 20,
-    studentsAr: 'من 5 إلى 10 طلاب',
-    studentsEn: '5–10 students',
-    image: '/images/plans/men-group.jpg?v=2',
-    imageWomen: '/images/plans/women-group.jpg?v=2',
-    badgeAr: 'الأكثر طلبًا',
-    badgeEn: 'Most popular',
-    tone: 'emerald',
-    featured: true,
-    durationAr: 'من ساعة إلى ساعتين',
-    durationEn: '1–2 hours',
-    featuresAr: ['متابعة أكبر لكل طالب', 'وقت تسميع أفضل', 'توازن ممتاز بين السعر والمتابعة'],
-    featuresEn: ['More attention per learner', 'More recitation time', 'Strong price-to-attention balance'],
-  },
-  {
     id: 'focused',
-    nameAr: 'الحلقة المركزة',
-    nameEn: 'Focused Circle',
-    price: 35,
+    nameAr: 'الحلقة الجماعية المركّزة',
+    nameEn: 'Focused Group Circle',
+    price: 20,
+    packPricesMinorEg: { 8: 2500, 12: 2000, 24: 2000 },
+    allowedSessionPacks: [8, 12, 24],
     studentsAr: 'من 3 إلى 5 طلاب',
     studentsEn: '3–5 students',
     image: '/images/plans/men-focused.jpg?v=2',
     imageWomen: '/images/plans/women-focused.jpg?v=2',
-    badgeAr: 'متابعة أقوى',
-    badgeEn: 'More focus',
-    tone: 'teal',
-    durationAr: 'ساعة ونصف',
-    durationEn: '90 minutes',
-    featuresAr: ['مجموعة صغيرة', 'تصحيح وتوجيه أكثر', 'مناسبة للحفظ والمراجعة المكثفة'],
-    featuresEn: ['Small group', 'More correction and coaching', 'Ideal for focused memorization'],
+    badgeAr: 'تبدأ من 20 ج • 3–5 طلاب',
+    badgeEn: 'Focused • 3–5 learners',
+    tone: 'mint',
+    durationAr: '45 دقيقة',
+    durationEn: '45 minutes',
+    featuresAr: [
+      'مجموعة صغيرة مركّزة من 3 إلى 5 طلاب فقط',
+      'مدة ثابتة 45 دقيقة تضمن تسميعاً وافراً لكل طالب',
+      '20 ج/حصة لباقات 12 و24 حصة (25 ج لباقة 8 حصص)',
+    ],
+    featuresEn: [
+      'Small focused circle of only 3 to 5 learners',
+      'Fixed 45-minute live session with generous recitation time',
+      'Monthly packs of 8, 12, or 24 sessions',
+    ],
   },
   {
     id: 'mini',
-    nameAr: 'الحلقة المصغرة',
-    nameEn: 'Mini Circle',
-    price: 50,
-    studentsAr: 'من 2 إلى 3 طلاب',
-    studentsEn: '2–3 students',
+    nameAr: 'حلقة الإخوة والثنائية',
+    nameEn: 'Siblings & Dual Circle',
+    price: 45,
+    allowedSessionPacks: [8, 12, 24],
+    studentsAr: 'من 2 إلى 3 طلاب (إخوة أو ثنائي)',
+    studentsEn: '2–3 students (siblings or dual)',
     image: '/images/plans/men-mini.jpg?v=2',
     imageWomen: '/images/plans/women-mini.jpg?v=2',
-    badgeAr: 'شبه فردي',
-    badgeEn: 'Semi-private',
+    badgeAr: 'مثالية للإخوة • بدون انتظار',
+    badgeEn: 'Siblings & Dual • Fast start',
     tone: 'gold',
-    durationAr: 'ساعة أو أقل',
-    durationEn: 'Up to 60 minutes',
-    featuresAr: ['اهتمام شبه فردي', 'وقت أكبر للتسميع', 'خطة متابعة أدق'],
-    featuresEn: ['Near-private attention', 'More recitation time', 'More precise follow-up'],
+    durationAr: '45 دقيقة',
+    durationEn: '45 minutes',
+    featuresAr: [
+      'مثالية لأخوين أو 3 إخوة في حلقة عائلية واحدة',
+      'تبدأ فوراً للإخوة بدون انتظار اكتمال مجموعة',
+      'اهتمام شبه فردي ومدة 45 دقيقة (8 أو 12 أو 24 حصة)',
+    ],
+    featuresEn: [
+      'Ideal for 2 or 3 siblings together with one tutor',
+      'Starts immediately for siblings with zero waiting',
+      'Near-individual coaching • 45 minutes per session',
+    ],
   },
   {
     id: 'private',
-    nameAr: 'الحصة الفردية',
-    nameEn: 'Private Session',
-    price: 100,
-    studentsAr: 'طالب واحد',
-    studentsEn: '1 student',
+    nameAr: 'الباقة الفردية المركّزة (1-on-1)',
+    nameEn: 'Focused Private 1-on-1',
+    price: 80,
+    allowedSessionPacks: [4, 8, 12, 24],
+    studentsAr: 'طالب واحد فقط (1-on-1)',
+    studentsEn: '1 student (1-on-1)',
     image: '/images/plans/men-private.jpg?v=2',
     imageWomen: '/images/plans/women-private.jpg?v=2',
-    badgeAr: 'أعلى متابعة',
-    badgeEn: 'Maximum attention',
+    badgeAr: 'الأكثر طلبًا • يبدأ فوراً',
+    badgeEn: 'Most popular • Instant start',
+    tone: 'emerald',
+    featured: true,
+    durationAr: '30 دقيقة',
+    durationEn: '30 minutes',
+    featuresAr: [
+      'معلم أو معلمة مخصصة للطالب وحده (1-on-1)',
+      'بداية فورية ومرونة كاملة في اختيار المواعيد',
+      '30 دقيقة مركّزة مثالية للأطفال والحفظ المنتظم',
+    ],
+    featuresEn: [
+      'Dedicated 1-on-1 tutor with undivided attention',
+      'Immediate start & flexible personal scheduling',
+      'Focused 30-minute session ideal for kids & steady Hifz',
+    ],
+  },
+  {
+    id: 'private_intensive',
+    nameAr: 'الفردية المكثّفة والإجازة (1-on-1)',
+    nameEn: 'Intensive Private & Ijazah',
+    price: 150,
+    allowedSessionPacks: [4, 8, 12, 24],
+    studentsAr: 'طالب واحد • ختم وإجازة',
+    studentsEn: '1 student • Intensive & Ijazah',
+    image: '/images/programs/program-ijazah.jpg',
+    imageWomen: '/images/plans/women-private.jpg?v=2',
+    badgeAr: 'ساعة كاملة • إتقان وسند',
+    badgeEn: 'Full 60 min • Mastery & Sanad',
     tone: 'ink',
-    from: true,
-    durationAr: 'ساعة أو أقل',
-    durationEn: 'Up to 60 minutes',
-    featuresAr: ['طالب واحد مع المعلم', 'خطة مخصصة بالكامل', 'أقصى مرونة وتركيز'],
-    featuresEn: ['One learner with the tutor', 'Fully personalized plan', 'Maximum flexibility and focus'],
+    durationAr: '60 دقيقة',
+    durationEn: '60 minutes',
+    featuresAr: [
+      'ساعة كاملة فردية خالصة (60 دقيقة 1-on-1)',
+      'مخصصة للختم والمراجعة الكبيرة والإجازة بالسند',
+      'خطة فردية مخصصة بالكامل مع كبار المعلمين المجازين',
+    ],
+    featuresEn: [
+      'Full 60-minute 1-on-1 private session',
+      'Designed for intensive revision, Khatmah & Sanad Ijazah',
+      'Personalized curriculum with certified scholars',
+    ],
   },
 ];
 
+// Used strictly when an existing subscriber opens ?renew=<id> for a legacy plan.
+const LEGACY_RENEWAL_DEFS = {
+  community: {
+    id: 'community',
+    nameAr: 'الحلقة الاقتصادية الكبرى',
+    nameEn: 'Community Circle',
+    price: 10,
+    allowedSessionPacks: [4, 8, 12, 24],
+    studentsAr: 'حلقة جماعية قائمة',
+    studentsEn: 'Existing community circle',
+    image: '/images/plans/men-community.jpg?v=2',
+    imageWomen: '/images/plans/women-community.jpg?v=2',
+    badgeAr: 'تجديد باقة قائمة',
+    badgeEn: 'Legacy renewal',
+    tone: 'mint',
+    durationAr: 'من ساعة إلى ساعتين',
+    durationEn: '1–2 hours',
+    featuresAr: ['تجديد لنفس الحلقة والمعلم الحالي'],
+    featuresEn: ['Renewal for your current circle and tutor'],
+  },
+  group: {
+    id: 'group',
+    nameAr: 'الحلقة الجماعية',
+    nameEn: 'Group Circle',
+    price: 20,
+    allowedSessionPacks: [4, 8, 12, 24],
+    studentsAr: 'حلقة جماعية قائمة',
+    studentsEn: 'Existing group circle',
+    image: '/images/plans/men-group.jpg?v=2',
+    imageWomen: '/images/plans/women-group.jpg?v=2',
+    badgeAr: 'تجديد باقة قائمة',
+    badgeEn: 'Legacy renewal',
+    tone: 'emerald',
+    durationAr: 'من ساعة إلى ساعتين',
+    durationEn: '1–2 hours',
+    featuresAr: ['تجديد لنفس الحلقة والمعلم الحالي'],
+    featuresEn: ['Renewal for your current circle and tutor'],
+  },
+};
+
 const PLANS_COPY = {
   ar: {
-    pageTitle: 'خطط الاشتراك | أكاديمية وحي ونماء',
-    pageDesc: 'خطط مرنة لتعلّم القرآن تبدأ من 10 جنيه للحصة مع حلقات جماعية، مجموعات مركزة، وحصص فردية، وقسم سيدات مستقل.',
+    pageTitle: 'خطط الاشتراك والأسعار | أكاديمية وحي ونماء',
+    pageDesc: 'باقات فردية خاصة (30 و60 دقيقة)، حلقات إخوة وثنائية، وحلقات جماعية مركّزة (3–5 طلاب) تبدأ من 20 جنيه للحصة.',
     home: 'الرئيسية',
     breadcrumb: 'خطط الاشتراك',
-    kicker: 'خطط تناسب كل بيت',
-    heroTitle: 'ابدأ رحلتك مع القرآن من 10 جنيه للحصة',
-    heroDesc: 'كلما صغر حجم الحلقة زاد وقت المتابعة والتسميع لكل طالب. اختر المستوى الذي يناسب ميزانيتك واحتياجك.',
+    kicker: 'باقات مدروسة تبدأ معك فوراً',
+    heroTitle: 'ابدأ رحلتك القرآنية بحلقات مركّزة وحصص فردية متقنة',
+    heroDesc: 'اختر بين الخصوصية الفردية الكاملة (1-on-1)، أو حلقة الإخوة العائلية، أو المجموعة المركّزة الصغيرة (3 إلى 5 طلاب فقط).',
     proof1: 'معلمون ومعلمات معتمدون',
-    proof2: 'حفظ وتجويد وتأسيس',
-    proof3: 'مدة مرنة حسب نوع الخطة',
+    proof2: 'تبدأ الفردية والإخوة فوراً بدون انتظار',
+    proof3: 'مدة حصة ثابتة ومحددة بدقة',
     startAt: 'تبدأ من',
     currencyLong: 'جنيه',
     currencyShort: 'ج',
@@ -185,12 +244,12 @@ const PLANS_COPY = {
     womenTitle: 'قسم السيدات',
     womenDesc: 'معلمات متخصصات وبيئة مريحة',
     sessionsAria: 'عدد الحصص في الباقة',
-    sessionsLabel: 'عدد الحصص',
+    sessionsLabel: 'عدد الحصص شهرياً',
     sessionsWord: 'حصص',
     sessionWordSingle: 'حصة',
-    catalogKicker: '5 خطط واضحة',
-    catalogTitle: 'كلما قل العدد، زادت المتابعة',
-    catalogDesc: 'السعر المعروض هو سعر الطالب للحصة الواحدة. اختر 4 أو 8 أو 12 أو 24 حصة، وسيظهر إجمالي الباقة تلقائيًا.',
+    catalogKicker: '4 باقات واضحة ومتوازنة',
+    catalogTitle: 'اختر مستوى الخصوصية والمدة الأنسب لك أو لطفلك',
+    catalogDesc: 'الحصص الفردية وحلقات الإخوة تبدأ فوراً. الحلقات الجماعية المركّزة (3–5 طلاب) متاحة باشتراك 8 أو 12 أو 24 حصة لضمان الاستقرار.',
     durationLabel: 'مدة الحصة:',
     fromWord: 'من ',
     perSessionUnit: '/ الحصة',
@@ -198,28 +257,28 @@ const PLANS_COPY = {
     saving: 'جاري الحفظ...',
     renewBtn: 'تجديد الباقة',
     chooseBtn: 'اختيار الخطة',
-    compareTitle: 'جدول المقارنة السريع بين الخطط',
+    compareTitle: 'جدول المقارنة السريع بين الباقات',
     compareDesc: 'مقارنة شاملة حسب عدد الطلاب ومدة الحصة والتكلفة الإجمالية للباقة المختارة.',
-    colPlan: 'الخطة',
+    colPlan: 'الباقة',
     colSize: 'عدد الطلاب',
     colDuration: 'مدة الحصة',
     colPerSession: 'سعر الحصة',
-    colTotal: 'إجمالي',
+    colTotal: 'إجمالي الباقة',
     bottomKicker: 'لسه محتار؟',
-    bottomTitle: 'ابدأ بالتجربة، وبعدها نرشح لك الخطة الأنسب',
+    bottomTitle: 'ابدأ بحصة تجريبية مجانية، وبعدها نرشح لك الباقة الأنسب',
     bottomBtn: 'اختيار معلم',
   },
   en: {
-    pageTitle: 'Subscription Plans | Wahy Wa Namaa Academy',
-    pageDesc: 'Flexible Quran learning plans starting from 10 EGP per session, with group, focused, private, and women-only learning options.',
+    pageTitle: 'Subscription Plans & Pricing | Wahy Wa Namaa Academy',
+    pageDesc: 'Private 1-on-1 Quran sessions (30 & 60 min), Siblings/Dual circles (2–3 learners), and Focused Group circles (3–5 learners).',
     home: 'Home',
     breadcrumb: 'Plans & Pricing',
-    kicker: 'Plans for every learner',
-    heroTitle: 'Start your Quran journey from 10 EGP per session',
-    heroDesc: 'Smaller circles give each learner more recitation and tutor attention. Choose the balance that fits your goals and budget.',
-    proof1: 'Approved tutors',
-    proof2: 'Hifz, Tajweed & foundation',
-    proof3: 'Flexible duration by plan',
+    kicker: 'Clear plans built for real progress',
+    heroTitle: 'Focused 1-on-1 & small-circle Quran plans',
+    heroDesc: 'Choose dedicated 1-on-1 private coaching, an immediate siblings circle, or a small focused circle of 3 to 5 learners.',
+    proof1: 'Approved certified tutors',
+    proof2: 'Instant start on private & sibling plans',
+    proof3: 'Fixed, transparent session durations',
     startAt: 'Starting at',
     currencyLong: 'EGP',
     currencyShort: 'EGP',
@@ -230,12 +289,12 @@ const PLANS_COPY = {
     womenTitle: 'Women’s section',
     womenDesc: 'Female tutors in a comfortable environment',
     sessionsAria: 'Sessions in package',
-    sessionsLabel: 'Sessions',
+    sessionsLabel: 'Monthly sessions',
     sessionsWord: 'sessions',
     sessionWordSingle: 'sessions',
-    catalogKicker: '5 clear plans',
-    catalogTitle: 'Fewer learners. More tutor attention.',
-    catalogDesc: 'Prices are per learner, per session. Choose 4, 8, 12, or 24 sessions and the package total updates automatically.',
+    catalogKicker: '4 clear plans',
+    catalogTitle: 'More focus, faster progress, zero overcrowded rooms',
+    catalogDesc: 'Private 1-on-1 plans offer 4, 8, 12, or 24 sessions. Focused group (3–5) and dual/siblings (2–3) circles use 8, 12, or 24 sessions.',
     durationLabel: 'Session duration:',
     fromWord: 'from ',
     perSessionUnit: '/ session',
@@ -244,26 +303,25 @@ const PLANS_COPY = {
     renewBtn: 'Renew package',
     chooseBtn: 'Choose plan',
     compareTitle: 'Quick Plan Comparison',
-    compareDesc: 'Side-by-side comparison of group size, session duration, and package total.',
+    compareDesc: 'Compare group size, fixed session duration, and package total.',
     colPlan: 'Plan',
-    colSize: 'Group size',
-    colDuration: 'Session duration',
+    colSize: 'Learners',
+    colDuration: 'Duration',
     colPerSession: 'Per session',
-    colTotal: 'Total',
+    colTotal: 'Package total',
     bottomKicker: 'Not sure yet?',
-    bottomTitle: 'Start with a trial, then we recommend the best plan',
+    bottomTitle: 'Start with a free trial, then we recommend the best plan',
     bottomBtn: 'Choose a tutor',
   },
   fr: {
     pageTitle: 'Forfaits d’abonnement | Académie Wahy Wa Namaa',
     home: 'Accueil',
     breadcrumb: 'Forfaits & Tarifs',
-    kicker: 'Des forfaits pour chaque foyer',
-    heroTitle: 'Commencez votre parcours coranique dès 10 EGP par séance',
-    heroDesc: 'Plus le cercle est restreint, plus chaque élève bénéficie d’écoute et d’attention personnalisée.',
+    kicker: 'Des forfaits clairs pour chaque foyer',
+    heroDesc: 'Cours particuliers 1-on-1 (30 ou 60 min), formule fratrie (2–3 élèves) ou petit cercle concentré (3–5 élèves).',
     proof1: 'Enseignants certifiés',
-    proof2: 'Hifz, Tajwid & Bases',
-    proof3: 'Durée flexible selon le forfait',
+    proof2: 'Hifz, Tajwid & Ijazah',
+    proof3: 'Durée fixe et transparente',
     startAt: 'À partir de',
     perSession: 'par séance',
     sectionLabel: 'Choisir la section',
@@ -285,12 +343,11 @@ const PLANS_COPY = {
     pageTitle: 'Abo-Pläne | Wahy Wa Namaa Akademie',
     home: 'Startseite',
     breadcrumb: 'Pläne & Preise',
-    kicker: 'Pläne für jeden Lernenden',
-    heroTitle: 'Starten Sie Ihre Koran-Reise ab 10 EGP pro Sitzung',
-    heroDesc: 'Kleinere Lerngruppen bieten mehr Rezitationszeit und persönliche Betreuung.',
-    proof1: 'Geprüfte Lehrkräfte',
-    proof2: 'Hifz, Tadschwid & Grundlagen',
-    proof3: 'Flexible Dauer je Plan',
+    kicker: 'Klare Pläne für nachhaltigen Lernerfolg',
+    heroDesc: '1-zu-1 Einzelunterricht (30 oder 60 Min.), Geschwistergruppe (2–3) oder Fokusgruppe (3–5 Lernende).',
+    proof1: 'Zertifizierte Lehrkräfte',
+    proof2: 'Hifz, Tadschwid & Idschaza',
+    proof3: 'Feste Unterrichtsdauer',
     startAt: 'Ab',
     perSession: 'pro Sitzung',
     sectionLabel: 'Bereich wählen',
@@ -312,12 +369,11 @@ const PLANS_COPY = {
     pageTitle: 'Abonelik Planları | Wahy Wa Namaa Akademisi',
     home: 'Ana Sayfa',
     breadcrumb: 'Planlar ve Fiyatlar',
-    kicker: 'Herkese uygun planlar',
-    heroTitle: 'Ders başına 10 EGP’den başlayan fiyatlarla Kur’an yolculuğunuza başlayın',
-    heroDesc: 'Halka küçüldükçe her öğrenciye ayrılan dinleme ve takip süresi artar.',
+    kicker: 'Her öğrenciye uygun net planlar',
+    heroDesc: 'Birebir özel ders (30/60 dk), kardeş halkası (2–3 kişi) veya odaklı küçük grup (3–5 öğrenci).',
     proof1: 'Onaylı eğitmenler',
-    proof2: 'Hıfz, Tecvid ve Temel Eğitim',
-    proof3: 'Plana göre esnek süre',
+    proof2: 'Hıfz, Tecvid ve İcazet',
+    proof3: 'Sabit ve net ders süresi',
     startAt: 'Başlangıç',
     perSession: 'ders başı',
     sectionLabel: 'Bölüm seçin',
@@ -340,11 +396,10 @@ const PLANS_COPY = {
     home: 'صفحہ اول',
     breadcrumb: 'پلانز اور قیمتیں',
     kicker: 'ہر گھرانے کے لیے موزوں پلانز',
-    heroTitle: 'فی سیشن 10 EGP سے اپنا قرآنی سفر شروع کریں',
-    heroDesc: 'حلقہ جتنا چھوٹا ہوگا، ہر طالب علم کو اتنا ہی زیادہ وقت اور توجہ ملے گی۔',
+    heroDesc: 'انفرادی 1-on-1 کلاسز (30 یا 60 منٹ)، بہن بھائیوں کا حلقہ (2–3 طلبہ)، یا مختصر گروپ (3–5 طلبہ)۔',
     proof1: 'مستند معلمین و معلمات',
-    proof2: 'حفظ، تجوید اور بنیاد',
-    proof3: 'پلان کے مطابق لچکدار دورانیہ',
+    proof2: 'حفظ، تجوید اور اجازہ',
+    proof3: 'مقررہ اور واضح دورانیہ',
     startAt: 'ابتداء از',
     perSession: 'فی سیشن',
     sectionLabel: 'شعبہ منتخب کریں',
@@ -366,12 +421,11 @@ const PLANS_COPY = {
     pageTitle: 'Paket Langganan | Akademi Wahy Wa Namaa',
     home: 'Beranda',
     breadcrumb: 'Paket & Harga',
-    kicker: 'Paket untuk setiap pelajar',
-    heroTitle: 'Mulai perjalanan Al-Qur’an dari 10 EGP per sesi',
-    heroDesc: 'Semakin kecil kelompok, semakin banyak waktu setoran dan perhatian pengajar untuk setiap siswa.',
+    kicker: 'Paket terarah untuk setiap pelajar',
+    heroDesc: 'Kelas privat 1-on-1 (30/60 menit), kelas kakak-adik (2–3 siswa), atau kelompok fokus kecil (3–5 siswa).',
     proof1: 'Pengajar terverifikasi',
-    proof2: 'Tahfidz, Tajwid & Dasar',
-    proof3: 'Durasi fleksibel sesuai paket',
+    proof2: 'Tahfidz, Tajwid & Sanad',
+    proof3: 'Durasi sesi tetap & jelas',
     startAt: 'Mulai dari',
     perSession: 'per sesi',
     sectionLabel: 'Pilih bagian',
@@ -393,12 +447,11 @@ const PLANS_COPY = {
     pageTitle: 'Pelan Langganan | Akademi Wahy Wa Namaa',
     home: 'Utama',
     breadcrumb: 'Pelan & Harga',
-    kicker: 'Pelan untuk setiap pelajar',
-    heroTitle: 'Mulakan perjalanan Al-Quran daripada 10 EGP setiap sesi',
-    heroDesc: 'Kumpulan yang lebih kecil memberi lebih masa bacaan dan perhatian guru kepada setiap pelajar.',
+    kicker: 'Pelan jelas untuk setiap pelajar',
+    heroDesc: 'Kelas peribadi 1-on-1 (30/60 minit), kelas adik-beradik (2–3 pelajar), atau kumpulan fokus kecil (3–5 pelajar).',
     proof1: 'Guru bertauliah',
-    proof2: 'Hafazan, Tajwid & Asas',
-    proof3: 'Tempoh fleksibel mengikut pelan',
+    proof2: 'Hafazan, Tajwid & Sanad',
+    proof3: 'Tempoh sesi tetap & jelas',
     startAt: 'Bermula dari',
     perSession: 'setiap sesi',
     sectionLabel: 'Pilih bahagian',
@@ -420,12 +473,11 @@ const PLANS_COPY = {
     pageTitle: 'پلانەکانی بەشداریکردن | ئەکادیمیای وەحی و نەما',
     home: 'سەرەتا',
     breadcrumb: 'پلان و نرخەکان',
-    kicker: 'پلان بۆ هەموو ماڵێک',
-    heroTitle: 'گەشتە قورئانییەکەت لە 10 EGP بۆ هەر وانەیەک دەست پێبکە',
-    heroDesc: 'تا ژمارەی فێرخوازان کەمتر بێت، کاتی گوێگرتن و بەدواداچوون بۆ هەر فێرخوازێک زیاتر دەبێت.',
+    kicker: 'پلانی ڕوون بۆ هەموو ماڵێک',
+    heroDesc: 'وانەی تایبەتی تاکەکەسی (٣٠ یان ٦٠ خولەک)، بازنەی خوشک و براکان (٢–٣ قوتابی)، یان گرووپی بچووکی چڕ (٣–٥ قوتابی).',
     proof1: 'مامۆستایانی باوەڕپێکراو',
-    proof2: 'لەبەرکردن، تەجوید و بنەما',
-    proof3: 'ماوەی گونجاو بەپێی پلان',
+    proof2: 'لەبەرکردن، تەجوید و ئیجازە',
+    proof3: 'ماوەی وانەی دیاریکراو',
     startAt: 'دەست پێدەکات لە',
     perSession: 'بۆ هەر وانەیەک',
     sectionLabel: 'هەڵبژاردنی بەش',
@@ -468,7 +520,7 @@ export default function PlansPage() {
     ? user.enrollmentSection : null;
   const [sessionCount, setSessionCount] = useState(() => {
     const requestedSessions = Number(searchParams.get('sessions'));
-    return [4, 8, 12, 24].includes(requestedSessions) ? requestedSessions : 8;
+    return [4, 8, 12, 24].includes(requestedSessions) ? requestedSessions : 12;
   });
   const [catalog, setCatalog] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -476,58 +528,74 @@ export default function PlansPage() {
   const [renewalSource, setRenewalSource] = useState(null);
   const generalTabRef = useRef(null);
   const womenTabRef = useRef(null);
+  const didAutoScrollPlanRef = useRef(false);
 
   useEffect(() => {
-    if (!renewalId && enrolledSection) setTimeout(() => setAudience(enrolledSection === 'ladies' ? 'women' : 'general'), 0);
-  }, [enrolledSection, renewalId]);
+    if (enrolledSection) {
+      setAudience(enrolledSection === 'ladies' ? 'women' : 'general');
+      return;
+    }
+    const requestedSection = searchParams.get('section');
+    if (requestedSection === 'women' || requestedSection === 'ladies') {
+      setAudience('women');
+    } else if (requestedSection === 'men' || requestedSection === 'general' || requestedSection === 'men_children') {
+      setAudience('general');
+    }
+  }, [enrolledSection, searchParams]);
 
   useEffect(() => {
-    if (!requestedProgramId || !PROGRAM_CONTEXT[requestedProgramId]) return;
+    const requestedSessions = Number(searchParams.get('sessions'));
+    if ([4, 8, 12, 24].includes(requestedSessions)) {
+      setSessionCount(requestedSessions);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!requestedPlanId || didAutoScrollPlanRef.current) return;
+    didAutoScrollPlanRef.current = true;
     const timer = window.setTimeout(() => {
-      document.getElementById('plans-control-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 120);
+      document.getElementById('plan-' + requestedPlanId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 180);
     return () => window.clearTimeout(timer);
-  }, [requestedProgramId]);
+  }, [requestedPlanId]);
 
-  function clearProgramContext() {
+  const clearProgramContext = () => {
     const next = new URLSearchParams(searchParams);
     next.delete('program');
-    next.delete('plan');
     setSearchParams(next, { replace: true });
-  }
+  };
 
   useEffect(() => {
     let cancelled = false;
-    let endpoint = '/api/subscriptions/plans';
-    if (import.meta.env.DEV) {
-      const devCountry = searchParams.get('country');
-      if (devCountry) endpoint += '?country=' + encodeURIComponent(devCountry);
-    }
-
-    api.get(endpoint)
+    api.get('/api/subscriptions/plans')
       .then((data) => {
         if (!cancelled) setCatalog(data);
       })
-      .catch(() => {
-        // Keep the embedded catalog as a resilient display fallback.
-      });
+      .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
-    if (!renewalId || !isAuthenticated || !['student', 'guardian'].includes(user?.role)) return;
+    if (!renewalId || !isAuthenticated || !['student', 'guardian'].includes(user?.role)) {
+      setRenewalSource(null);
+      return undefined;
+    }
 
     let cancelled = false;
-    api.get('/api/subscriptions/' + encodeURIComponent(renewalId), { auth: true })
+    api.get('/api/subscriptions/me', { auth: true })
       .then((data) => {
-        if (cancelled || !data?.subscription) return;
-        const source = data.subscription;
-        setRenewalSource(source);
-        setSessionCount(Number(source.sessionCount || 8));
-        setAudience(source.section === 'ladies' ? 'women' : 'general');
+        if (cancelled) return;
+        const found = (data?.subscriptions || []).find((item) => String(item._id) === renewalId) || null;
+        setRenewalSource(found);
+        if (found) {
+          setAudience(found.section === 'ladies' ? 'women' : 'general');
+          if ([4, 8, 12, 24].includes(Number(found.sessionCount))) {
+            setSessionCount(Number(found.sessionCount));
+          }
+        }
       })
       .catch((error) => {
         if (!cancelled) toast.error(error.message || (isRTL ? 'تعذر تحميل بيانات التجديد.' : 'Could not load renewal details.'));
@@ -554,25 +622,49 @@ export default function PlansPage() {
     ? (catalog?.regionLabel?.ar || 'مصر')
     : (catalog?.regionLabel?.en || 'Egypt');
 
-  const plans = useMemo(() => PLAN_DEFS.map((plan) => {
+  const activeDefs = useMemo(() => {
+    if (renewalSource && LEGACY_RENEWAL_DEFS[renewalSource.planKey]) {
+      return [LEGACY_RENEWAL_DEFS[renewalSource.planKey]];
+    }
+    return PLAN_DEFS;
+  }, [renewalSource]);
+
+  const plans = useMemo(() => activeDefs.map((plan) => {
     const serverPlan = serverPlans.get(plan.id);
-    const priceMinor = serverPlan ? Number(serverPlan.pricePerSessionMinor) : plan.price * 100;
-    const packageTotalMinor = priceMinor * sessionCount;
-    const minStudents = serverPlan?.minStudents;
-    const maxStudents = serverPlan?.maxStudents;
+    const allowedPacks = Array.isArray(serverPlan?.allowedSessionPacks) && serverPlan.allowedSessionPacks.length
+      ? serverPlan.allowedSessionPacks
+      : (plan.allowedSessionPacks || [4, 8, 12, 24]);
+    const effectiveSessionCount = allowedPacks.includes(sessionCount)
+      ? sessionCount
+      : allowedPacks[0];
+
+    const serverPackPrice = serverPlan?.packPricesMinor?.[effectiveSessionCount];
+    const clientEgPackPrice = !serverPlan && billingCurrency === 'EGP'
+      ? plan.packPricesMinorEg?.[effectiveSessionCount]
+      : undefined;
+    const hasPositiveNumber = (val) => val != null && Number.isFinite(Number(val)) && Number(val) > 0;
+    const priceMinor = hasPositiveNumber(serverPackPrice)
+      ? Number(serverPackPrice)
+      : hasPositiveNumber(clientEgPackPrice)
+        ? Number(clientEgPackPrice)
+        : serverPlan
+          ? Number(serverPlan.pricePerSessionMinor)
+          : plan.price * 100;
+
+    const minBaseMinor = serverPlan ? Number(serverPlan.pricePerSessionMinor) : plan.price * 100;
+    const packageTotalMinor = priceMinor * effectiveSessionCount;
 
     return {
       ...plan,
+      allowedPacks,
+      effectiveSessionCount,
+      minBaseMinor,
       priceMinor,
       price: priceMinor / 100,
       priceDisplay: formatMajorNumber(priceMinor),
       priceLocalHint: formatLocalEquivalent(priceMinor, billingCurrency, localCurrencyHint, isRTL),
-      studentsAr: minStudents && maxStudents
-        ? (minStudents === maxStudents ? `${minStudents === 1 ? 'طالب واحد' : minStudents + ' طلاب'}` : `من ${minStudents} إلى ${maxStudents} طالب`)
-        : plan.studentsAr,
-      studentsEn: minStudents && maxStudents
-        ? (minStudents === maxStudents ? `${minStudents} student` : `${minStudents}–${maxStudents} students`)
-        : plan.studentsEn,
+      studentsAr: plan.studentsAr,
+      studentsEn: plan.studentsEn,
       durationAr: serverPlan?.durationLabel?.ar || plan.durationAr,
       durationEn: serverPlan?.durationLabel?.en || plan.durationEn,
       packageTotalMinor,
@@ -580,10 +672,11 @@ export default function PlansPage() {
       packageTotalDisplay: formatMajorNumber(packageTotalMinor),
       packageLocalHint: formatLocalEquivalent(packageTotalMinor, billingCurrency, localCurrencyHint, isRTL),
     };
-  }), [serverPlans, sessionCount, billingCurrency, localCurrencyHint, isRTL]);
+  }), [activeDefs, serverPlans, sessionCount, billingCurrency, localCurrencyHint, isRTL]);
 
-  const minPlan = plans[0];
-  const minFormattedPrice = formatRegionalMoney(minPlan?.priceMinor ?? 1000, billingCurrency, locale);
+  const minPlan = plans.find((plan) => plan.id === 'focused') || plans[0];
+  const minFormattedPrice = formatRegionalMoney(minPlan?.minBaseMinor ?? 2000, billingCurrency, locale);
+  const minDisplayNum = formatMajorNumber(minPlan?.minBaseMinor ?? 2000);
   const dynamicHeroTitle = isRTL
     ? `ابدأ رحلتك القرآنية من ${minFormattedPrice} للحصة`
     : `Start your Quran journey from ${minFormattedPrice} per session`;
@@ -616,19 +709,20 @@ export default function PlansPage() {
       return;
     }
 
+    const chosenSessionCount = plan.effectiveSessionCount || sessionCount;
     setSelectingPlan(plan.id);
     try {
       const data = renewalSource
         ? await api.post(
             '/api/subscriptions/' + encodeURIComponent(renewalSource._id) + '/renew',
-            { sessionCount },
+            { sessionCount: chosenSessionCount },
             { auth: true }
           )
         : await api.post('/api/subscriptions/select', {
             planKey: plan.id,
             studentId: targetStudentId || undefined,
             section: enrolledSection || (audience === 'women' ? 'ladies' : 'men_children'),
-            sessionCount,
+            sessionCount: chosenSessionCount,
           }, { auth: true });
 
       setSelection(data.subscription || null);
@@ -721,11 +815,11 @@ export default function PlansPage() {
 
             <div className="wn-plans-hero__visual">
               <img
-                src={audience === 'women' ? '/images/plans/women-community.jpg?v=2' : '/images/plans/men-community.jpg?v=2'}
+                src={audience === 'women' ? '/images/plans/women-private.jpg?v=2' : '/images/plans/men-private.jpg?v=2'}
                 decoding="async"
                 alt={isRTL
                   ? (audience === 'women' ? 'حصة قرآن مباشرة أونلاين لقسم السيدات من البيت' : 'حلقة قرآن مباشرة أونلاين لقسم الرجال والأطفال من البيت')
-                  : (audience === 'women' ? 'Live online women Quran class from home' : 'Live online group Quran class from home')}
+                  : (audience === 'women' ? 'Live online women Quran class from home' : 'Live online Quran class from home')}
               />
               <span className="wn-plan-card__live-tag wn-plan-card__live-tag--hero">
                 <span className="wn-plan-card__live-dot" aria-hidden="true" />
@@ -736,7 +830,7 @@ export default function PlansPage() {
                 <small>{copy.startAt}</small>
                 <strong>
                   {billingCurrency === 'USD' ? '$' : ''}
-                  {minPlan?.priceDisplay || '10'}{' '}
+                  {minDisplayNum || '20'}{' '}
                   <em>{currencyLabels.long}</em>
                 </strong>
                 <span>
@@ -895,17 +989,19 @@ export default function PlansPage() {
           className="wn-plans-catalog"
         >
           <div className="wn-plans-container">
-            <div className="wn-plans-heading">
-              <span>{copy.catalogKicker}</span>
-              <h2>{copy.catalogTitle}</h2>
-              <p>{copy.catalogDesc}</p>
-              {billingCurrency === 'USD' ? (
-                <div className="wn-plans-usd-note" role="note">
-                  <Globe size={15} aria-hidden="true" />
-                  <span>{usdLocalEquivalentNote(isRTL)}</span>
-                </div>
-              ) : null}
-            </div>
+            {!renewalSource && (
+              <div className="wn-plans-heading">
+                <span>{copy.catalogKicker}</span>
+                <h2>{copy.catalogTitle}</h2>
+                <p>{copy.catalogDesc}</p>
+                {billingCurrency === 'USD' ? (
+                  <div className="wn-plans-usd-note" role="note">
+                    <Globe size={15} aria-hidden="true" />
+                    <span>{usdLocalEquivalentNote(isRTL)}</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             <div className="wn-plans-grid">
               {visiblePlans.map((plan) => (
@@ -970,7 +1066,7 @@ export default function PlansPage() {
                     ) : null}
 
                     <div className="wn-plan-card__monthly">
-                      <span>{sessionCount} {sessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord} {copy.inPackage}</span>
+                      <span>{plan.effectiveSessionCount} {plan.effectiveSessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord} {copy.inPackage}</span>
                       <strong>
                         {plan.from ? copy.fromWord : ''}
                         {formatRegionalMoney(plan.packageTotalMinor, billingCurrency, locale)}
@@ -1048,6 +1144,11 @@ export default function PlansPage() {
                               {plan.from ? copy.fromWord : ''}
                               {formatRegionalMoney(plan.packageTotalMinor, billingCurrency, locale)}
                             </strong>
+                            {plan.effectiveSessionCount !== sessionCount ? (
+                              <div className="wn-plans-compare__hint">
+                                ({plan.effectiveSessionCount} {plan.effectiveSessionCount === 12 ? copy.sessionWordSingle : copy.sessionsWord})
+                              </div>
+                            ) : null}
                             {plan.packageLocalHint ? <div className="wn-plans-compare__hint">{plan.packageLocalHint}</div> : null}
                           </td>
                         </tr>
@@ -1061,11 +1162,11 @@ export default function PlansPage() {
             <div className="wn-plans-note">
               <UserRound size={21} aria-hidden="true" />
               <div>
-                <strong>{isRTL ? 'التسكين حسب المستوى والعمر' : 'Placement by level and age'}</strong>
+                <strong>{isRTL ? 'بداية فورية للفردي والإخوة وتسكين سريع للمجموعات المركّزة' : 'Instant start for Private & Siblings, fast placement for Focused Groups'}</strong>
                 <p>
                   {isRTL
-                    ? `بعد الحصة التجريبية نرشح الحلقة الأنسب للطالب. الحلقة الاقتصادية (${minFormattedPrice}) تبدأ عند اكتمال الحد الأدنى المناسب للتشغيل.`
-                    : `After the trial, we recommend the best-fit circle. The community plan (${minFormattedPrice}) starts once the minimum viable group is formed.`}
+                    ? `الحصص الفردية وحلقات الإخوة تبدأ مباشرة مع المعلم المختار بدون انتظار. الحلقة الجماعية المركّزة (3 إلى 5 طلاب، تبدأ من ${minFormattedPrice}) تنطلق فور اكتمال 3 طلاب في نفس المستوى.`
+                    : `Private 1-on-1 and Siblings circles start immediately with your chosen tutor. Focused Group circles (3–5 learners, from ${minFormattedPrice}) launch as soon as 3 matched learners enroll.`}
                 </p>
               </div>
             </div>

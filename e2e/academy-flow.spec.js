@@ -111,20 +111,20 @@ test.describe('Wahy Wa Namaa core academy journey', () => {
     const subscribeStep = studentPage.locator('section.wn-student-next-step');
     await subscribeStep.getByRole('button', { name: 'اشتراك', exact: true }).click();
     await expect(studentPage).toHaveURL(/\/ar\/plans/);
-    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك (?:القرآنية|مع القرآن) من 10/ })).toBeVisible();
-    await expect(studentPage.getByRole('heading', { name: 'الحلقة الجماعية' })).toBeVisible();
-    await expect(studentPage.getByText('من ساعة إلى ساعتين', { exact: true }).first()).toBeVisible();
-    await expect(studentPage.getByText('ساعة ونصف', { exact: true }).first()).toBeVisible();
-    await expect(studentPage.getByText('ساعة أو أقل', { exact: true }).first()).toBeVisible();
+    await expect(studentPage.getByRole('heading', { name: /ابدأ رحلتك القرآنية من 20/ })).toBeVisible();
+    await expect(studentPage.getByRole('heading', { name: 'الحلقة الجماعية المركّزة' })).toBeVisible();
+    await expect(studentPage.getByText('45 دقيقة', { exact: true }).first()).toBeVisible();
+    await expect(studentPage.getByText('30 دقيقة', { exact: true }).first()).toBeVisible();
+    await expect(studentPage.getByText('60 دقيقة', { exact: true }).first()).toBeVisible();
     await expect(studentPage.getByRole('tab', { name: /قسم الرجال والأطفال/ })).toBeVisible();
     await expect(studentPage.getByRole('tab', { name: /قسم السيدات/ })).toBeVisible();
 
     await studentPage.getByRole('button', { name: '24 حصص' }).click();
-    const privatePlan = studentPage.locator('article').filter({ hasText: 'الحصة الفردية' }).first();
+    const privatePlan = studentPage.locator('article').filter({ hasText: 'الباقة الفردية المركّزة' }).first();
     await expect(privatePlan.getByText('24 حصص في الباقة')).toBeVisible();
-    await expect(privatePlan.getByText(/2400 ج/)).toBeVisible();
+    await expect(privatePlan.getByText(/1920 ج/)).toBeVisible();
 
-    const groupPlan = studentPage.locator('article').filter({ hasText: 'الحلقة الجماعية' }).first();
+    const groupPlan = studentPage.locator('article').filter({ hasText: 'الحلقة الجماعية المركّزة' }).first();
     await groupPlan.getByRole('button', { name: 'اختيار الخطة', exact: true }).click();
 
     await expect(studentPage).toHaveURL(/\/ar\/payment\/manual\?subscription=/);

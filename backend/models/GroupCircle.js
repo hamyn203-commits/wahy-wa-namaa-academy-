@@ -74,7 +74,7 @@ const GroupCircleSchema = new mongoose.Schema({
   },
   subscriptionPlanKey: {
     type: String,
-    enum: ['community', 'group', 'focused', 'mini', 'private'],
+    enum: ['community', 'group', 'focused', 'mini', 'private', 'private_intensive'],
     default: undefined
   },
   startedAt: Date,

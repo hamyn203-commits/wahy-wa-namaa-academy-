@@ -6,14 +6,35 @@ export const DEFAULT_REGIONAL_PRICING = {
   currency: 'EGP',
   localCurrencyHint: null,
   pricesMinor: {
+    focused: 2000,
+    mini: 4500,
+    private: 8000,
+    private_intensive: 15000,
+    // Legacy renewal fallbacks
     community: 1000,
     group: 2000,
-    focused: 3500,
-    mini: 5000,
-    private: 10000,
   },
-  minPriceMinor: 1000,
+  packPricesMinor: {
+    focused: {
+      8: 2500,
+      12: 2000,
+      24: 2000,
+    },
+  },
+  minPriceMinor: 2000,
 };
+
+export function resolveRegionalPlanPriceMinor(regionalPricing, planKey, sessionCount, fallbackMajor = 0) {
+  const packOverride = regionalPricing?.packPricesMinor?.[planKey]?.[sessionCount];
+  if (packOverride != null && Number.isFinite(Number(packOverride)) && Number(packOverride) > 0) {
+    return Number(packOverride);
+  }
+  const baseMinor = regionalPricing?.pricesMinor?.[planKey];
+  if (baseMinor != null && Number.isFinite(Number(baseMinor)) && Number(baseMinor) > 0) {
+    return Number(baseMinor);
+  }
+  return Math.round(Number(fallbackMajor || 0) * 100);
+}
 
 export function formatMajorNumber(minorUnits) {
   const major = Number(minorUnits || 0) / 100;
@@ -70,12 +91,16 @@ export function normalizeCatalogToRegionalPricing(catalog) {
   }
 
   const pricesMinor = { ...DEFAULT_REGIONAL_PRICING.pricesMinor };
+  const packPricesMinor = {};
   let minPriceMinor = Infinity;
   for (const plan of catalog.plans) {
     if (plan?.key && Number.isFinite(Number(plan.pricePerSessionMinor))) {
       const val = Number(plan.pricePerSessionMinor);
       pricesMinor[plan.key] = val;
       if (val < minPriceMinor) minPriceMinor = val;
+      if (plan.packPricesMinor && typeof plan.packPricesMinor === 'object') {
+        packPricesMinor[plan.key] = { ...plan.packPricesMinor };
+      }
     }
   }
 
@@ -87,6 +112,7 @@ export function normalizeCatalogToRegionalPricing(catalog) {
     currency: catalog.currency === 'USD' ? 'USD' : 'EGP',
     localCurrencyHint: catalog.localCurrencyHint || null,
     pricesMinor,
+    packPricesMinor,
     minPriceMinor: Number.isFinite(minPriceMinor) ? minPriceMinor : DEFAULT_REGIONAL_PRICING.minPriceMinor,
   };
 }

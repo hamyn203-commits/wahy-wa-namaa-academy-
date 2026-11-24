@@ -14,7 +14,7 @@ const StudentSubscriptionSchema = new mongoose.Schema({
   },
   planKey: {
     type: String,
-    enum: ['community', 'group', 'focused', 'mini', 'private'],
+    enum: ['community', 'group', 'focused', 'mini', 'private', 'private_intensive'],
     required: true,
   },
   section: {
