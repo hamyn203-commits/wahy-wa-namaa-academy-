@@ -12,7 +12,8 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
   });
   page.on('response', (res) => {
     const isIntentionalLaunchNoGo = res.url().includes('/api/launch-readiness') && res.status() === 503;
-    if (res.url().includes('/api/') && res.status() >= 500 && !isIntentionalLaunchNoGo) {
+    const isOptionalRealtimeUnconfigured = res.url().includes('/api/notifications/realtime-token') && res.status() === 503;
+    if (res.url().includes('/api/') && res.status() >= 500 && !isIntentionalLaunchNoGo && !isOptionalRealtimeUnconfigured) {
       serverErrors.push(`${res.status()} ${res.request().method()} ${res.url()}`);
     }
   });
