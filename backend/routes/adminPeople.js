@@ -18,7 +18,7 @@ const TeacherUpdate = require('../models/TeacherUpdate');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const StudentSubscription = require('../models/StudentSubscription');
 const GroupCircle = require('../models/GroupCircle');
-const { getSubscriptionPlan } = require('../config/subscriptionPlans');
+const { getPlan: getSubscriptionPlan } = require('../config/subscriptionPlans');
 const { protect, authorize } = require('../middleware/auth');
 const { maskPhone } = require('../utils/phone');
 const { logAdminAction } = require('../services/adminAudit');
@@ -92,21 +92,41 @@ function studentSessionRow(session, studentId) {
 
 router.use(protect, authorize('admin'));
 
-// Admin-only directory. Paginated and intentionally excludes sensitive family data.
+// Admin-only directory. Paginated and enriched with operational summaries.
 router.get('/directory', async (req, res) => {
   try {
     const role = ['student', 'guardian'].includes(req.query.role) ? req.query.role : 'all';
     const status = ['active', 'inactive'].includes(req.query.status) ? req.query.status : 'all';
+    const section = ['men_children', 'ladies'].includes(req.query.section) ? req.query.section : 'all';
+    const track = ['memorization', 'tajweed_ijazah', 'kids_foundation'].includes(req.query.track) ? req.query.track : 'all';
+    const focus = ['all', 'awaiting_placement', 'low_balance', 'unassigned', 'minors_without_guardian'].includes(req.query.focus)
+      ? req.query.focus
+      : 'all';
     const q = String(req.query.q || '').trim().slice(0, 120);
     const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
     const limit = Math.max(1, Math.min(50, Number.parseInt(req.query.limit, 10) || 15));
+
     if (isMockMode && !isDBConnected()) {
       const allUsers = getMockUsers();
+      const mockSubs = getMockSubscriptions();
+      const mockTeachers = getMockTeachers();
       const filtered = allUsers.filter((u) => {
         if (role === 'all' && !['student', 'guardian'].includes(u.role)) return false;
         if (role !== 'all' && u.role !== role) return false;
         if (status === 'active' && u.isActive === false) return false;
         if (status === 'inactive' && u.isActive !== false) return false;
+        if (section !== 'all' && u.role === 'student') {
+          const resolvedSec = u.enrollmentSection || (u.gender === 'female' ? 'ladies' : 'men_children');
+          if (resolvedSec !== section) return false;
+        }
+        if (track !== 'all' && u.role === 'student' && (u.preferredTrack || 'memorization') !== track) return false;
+        const openSub = u.role === 'student'
+          ? mockSubs.find((s) => String(s.student?._id || s.student) === String(u._id) && ['awaiting_placement', 'placed', 'active', 'paused'].includes(s.status))
+          : null;
+        if (focus === 'awaiting_placement' && (!openSub || openSub.status !== 'awaiting_placement')) return false;
+        if (focus === 'low_balance' && (!openSub || !['active', 'placed'].includes(openSub.status) || Number(openSub.sessionsRemaining ?? 99) > 2)) return false;
+        if (focus === 'unassigned' && (u.role !== 'student' || u.circle || openSub?.circle)) return false;
+        if (focus === 'minors_without_guardian' && (u.role !== 'student' || Number(u.age ?? 18) >= 18 || u.guardian)) return false;
         if (q) {
           const lower = q.toLowerCase();
           return (
@@ -119,7 +139,28 @@ router.get('/directory', async (req, res) => {
         return true;
       });
       const total = filtered.length;
-      const people = filtered.slice((page - 1) * limit, page * limit);
+      const people = filtered.slice((page - 1) * limit, page * limit).map((u) => {
+        const circleDoc = u.circle ? findMockCircleById(u.circle) : null;
+        const sub = u.role === 'student'
+          ? mockSubs.find((s) => String(s.student?._id || s.student) === String(u._id) && ['awaiting_placement', 'placed', 'active', 'paused'].includes(s.status))
+          : null;
+        const prefTeacher = sub?.preferredTeacher
+          ? mockTeachers.find((t) => String(t._id) === String(sub.preferredTeacher?._id || sub.preferredTeacher))
+          : null;
+        return {
+          ...u,
+          circle: circleDoc ? { _id: circleDoc._id, name: circleDoc.name, status: circleDoc.status } : null,
+          activeSubscription: sub ? {
+            _id: sub._id,
+            planKey: sub.planKey,
+            status: sub.status,
+            sessionsRemaining: sub.sessionsRemaining,
+            sessionCount: sub.sessionCount,
+            isScholarship: Boolean(sub.isScholarship),
+            teacherName: prefTeacher?.personalInfo?.fullName || null,
+          } : null,
+        };
+      });
       return res.json({
         people,
         total,
@@ -130,28 +171,198 @@ router.get('/directory', async (req, res) => {
           student: allUsers.filter((u) => u.role === 'student').length,
           guardian: allUsers.filter((u) => u.role === 'guardian').length,
         },
+        pulse: {
+          awaitingPlacement: mockSubs.filter((s) => s.status === 'awaiting_placement').length,
+          lowBalance: mockSubs.filter((s) => ['active', 'placed'].includes(s.status) && Number(s.sessionsRemaining ?? 99) <= 2).length,
+          minorsWithoutGuardian: allUsers.filter((u) => u.role === 'student' && u.isActive !== false && Number(u.age ?? 18) < 18 && !u.guardian).length,
+        },
       });
     }
+
+    const canQueryAux = Boolean(mongoose.connection?.db) || StudentSubscription.distinct !== mongoose.Model.distinct;
+    let focusStudentIds = null;
+
+    if (canQueryAux && focus !== 'all') {
+      if (focus === 'awaiting_placement') {
+        focusStudentIds = await StudentSubscription.distinct('student', { status: 'awaiting_placement' });
+      } else if (focus === 'low_balance') {
+        focusStudentIds = await StudentSubscription.distinct('student', {
+          status: { $in: ['active', 'placed'] },
+          sessionsRemaining: { $lte: 2 },
+        });
+      } else if (focus === 'minors_without_guardian') {
+        const linkedMinorIds = await Guardian.distinct('children.student', { isActive: { $ne: false } });
+        focusStudentIds = { excludeIds: linkedMinorIds, minorsOnly: true };
+      }
+    }
+
+    const effectiveRole = focus !== 'all' ? 'student' : role;
     const filter = {
-      role: role === 'all' ? { $in: ['student', 'guardian'] } : role,
+      role: effectiveRole === 'all' ? { $in: ['student', 'guardian'] } : effectiveRole,
       ...(status === 'active' ? { isActive: { $ne: false } } : {}),
       ...(status === 'inactive' ? { isActive: false } : {}),
     };
+
+    if (section !== 'all') {
+      if (section === 'ladies') {
+        filter.$and = [...(filter.$and || []), { $or: [{ enrollmentSection: 'ladies' }, { enrollmentSection: { $exists: false }, gender: 'female' }] }];
+      } else {
+        filter.$and = [...(filter.$and || []), { $or: [{ enrollmentSection: 'men_children' }, { enrollmentSection: { $exists: false }, gender: { $ne: 'female' } }] }];
+      }
+    }
+    if (track !== 'all') {
+      filter.preferredTrack = track;
+    }
+    if (focus === 'unassigned') {
+      filter.$and = [...(filter.$and || []), { $or: [{ circle: null }, { circle: { $exists: false } }] }];
+    } else if (Array.isArray(focusStudentIds)) {
+      filter._id = { $in: focusStudentIds };
+    } else if (focusStudentIds?.minorsOnly) {
+      filter.age = { $lt: 18 };
+      if (focusStudentIds.excludeIds.length > 0) {
+        filter._id = { $nin: focusStudentIds.excludeIds };
+      }
+    }
+
     if (q) {
       const regex = new RegExp(escapeRegex(q), 'i');
-      filter.$or = [{ name: regex }, { email: regex }, { phone: regex }];
-      if (mongoose.Types.ObjectId.isValid(q)) filter.$or.push({ _id: q });
+      const searchOr = [{ name: regex }, { email: regex }, { phone: regex }, { whatsappPhone: regex }];
+      if (mongoose.Types.ObjectId.isValid(q)) searchOr.push({ _id: q });
+      filter.$and = [...(filter.$and || []), { $or: searchOr }];
     }
-    const [people, total, studentCount, guardianCount] = await Promise.all([
-      User.find(filter).select('_id name email role isActive createdAt lastLogin')
-        .sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+
+    const [rawPeople, total, studentCount, guardianCount] = await Promise.all([
+      User.find(filter)
+        .select('_id name email phone whatsappPhone role gender enrollmentSection age currentLevel preferredTrack circle isActive createdAt lastLogin')
+        .populate('circle', 'name code status')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
       User.countDocuments(filter),
       User.countDocuments({ role: 'student' }),
       User.countDocuments({ role: 'guardian' }),
     ]);
+
+    let pulse = { awaitingPlacement: 0, lowBalance: 0, minorsWithoutGuardian: 0 };
+    let people = rawPeople || [];
+
+    if (canQueryAux) {
+      const studentPageIds = people.filter((p) => p.role === 'student').map((p) => p._id);
+      const guardianPageIds = people.filter((p) => p.role === 'guardian').map((p) => p._id);
+
+      const [
+        pageSubs,
+        studentGuardianDocs,
+        guardianDocs,
+        awaitingStudentIds,
+        lowBalanceStudentIds,
+        linkedChildIds,
+      ] = await Promise.all([
+        studentPageIds.length
+          ? StudentSubscription.find({
+              student: { $in: studentPageIds },
+              status: { $in: ['awaiting_placement', 'placed', 'active', 'paused', 'payment_review'] },
+            })
+              .sort({ createdAt: -1 })
+              .populate({
+                path: 'preferredTeacher',
+                select: 'personalInfo.fullName user',
+                populate: { path: 'user', select: 'name' },
+              })
+              .select('student planKey status sessionsRemaining sessionCount isScholarship preferredTeacher pricingSnapshot')
+              .lean()
+              .catch(() => [])
+          : [],
+        studentPageIds.length
+          ? Guardian.find({ 'children.student': { $in: studentPageIds }, isActive: { $ne: false } })
+              .select('children.student')
+              .lean()
+              .catch(() => [])
+          : [],
+        guardianPageIds.length
+          ? Guardian.find({ user: { $in: guardianPageIds } })
+              .select('user children.student')
+              .lean()
+              .catch(() => [])
+          : [],
+        StudentSubscription.distinct('student', { status: 'awaiting_placement' }).catch(() => []),
+        StudentSubscription.distinct('student', {
+          status: { $in: ['active', 'placed'] },
+          sessionsRemaining: { $lte: 2 },
+        }).catch(() => []),
+        Guardian.distinct('children.student', { isActive: { $ne: false } }).catch(() => []),
+      ]);
+
+      const minorsWithoutGuardian = await User.countDocuments({
+        role: 'student',
+        isActive: { $ne: false },
+        age: { $lt: 18 },
+        ...(linkedChildIds.length ? { _id: { $nin: linkedChildIds } } : {}),
+      }).catch(() => 0);
+
+      pulse = {
+        awaitingPlacement: awaitingStudentIds.length,
+        lowBalance: lowBalanceStudentIds.length,
+        minorsWithoutGuardian,
+      };
+
+      const subByStudent = new Map();
+      for (const sub of pageSubs) {
+        const sid = String(sub.student);
+        if (!subByStudent.has(sid)) {
+          subByStudent.set(sid, {
+            _id: sub._id,
+            planKey: sub.planKey,
+            planNameAr: sub.pricingSnapshot?.nameAr || '',
+            planNameEn: sub.pricingSnapshot?.nameEn || '',
+            status: sub.status,
+            sessionsRemaining: sub.sessionsRemaining,
+            sessionCount: sub.sessionCount,
+            isScholarship: Boolean(sub.isScholarship),
+            teacherId: sub.preferredTeacher?._id || null,
+            teacherName: sub.preferredTeacher ? teacherName(sub.preferredTeacher) : null,
+          });
+        }
+      }
+
+      const guardianCountByStudent = new Map();
+      for (const gDoc of studentGuardianDocs) {
+        for (const child of gDoc.children || []) {
+          const cid = String(child.student);
+          guardianCountByStudent.set(cid, (guardianCountByStudent.get(cid) || 0) + 1);
+        }
+      }
+
+      const childrenCountByGuardian = new Map();
+      for (const gDoc of guardianDocs) {
+        childrenCountByGuardian.set(String(gDoc.user), (gDoc.children || []).length);
+      }
+
+      people = people.map((person) => {
+        const pid = String(person._id);
+        if (person.role === 'student') {
+          return {
+            ...person,
+            activeSubscription: subByStudent.get(pid) || null,
+            guardiansCount: guardianCountByStudent.get(pid) || 0,
+          };
+        }
+        return {
+          ...person,
+          childrenCount: childrenCountByGuardian.get(pid) || 0,
+        };
+      });
+    }
+
     return res.json({
-      people, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)),
+      people,
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
       counts: { student: studentCount, guardian: guardianCount },
+      pulse,
     });
   } catch (error) {
     return res.status(500).json({ error: 'Failed to load people directory' });
@@ -1203,6 +1414,685 @@ router.get('/guardians/:id', async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.patch('/students/:id/subscriptions/:subId', async (req, res) => {
+  try {
+    const action = String(req.body?.action || '').trim();
+    const reason = String(req.body?.reason || '').trim().slice(0, 300);
+    if (reason.length < 3) {
+      return res.status(400).json({
+        error: 'يرجى كتابة سبب واضح للتعديل في سجل التدقيق (3 أحرف على الأقل)',
+        code: 'AUDIT_REASON_REQUIRED',
+      });
+    }
+
+    if (isMockMode && !isDBConnected()) {
+      const mockStudent = findMockUserById(req.params.id);
+      if (!mockStudent || mockStudent.role !== 'student') {
+        return res.status(404).json({ error: 'الطالب غير موجود' });
+      }
+      const sub = getMockSubscriptions().find(
+        (s) => String(s._id) === String(req.params.subId) && String(s.student?._id || s.student) === String(mockStudent._id)
+      );
+      if (!sub) return res.status(404).json({ error: 'الاشتراك غير موجود' });
+
+      if (action === 'change-teacher') {
+        sub.preferredTeacher = req.body?.preferredTeacherId || null;
+      } else if (action === 'restore-credit') {
+        if (Number(sub.sessionsUsed || 0) <= 0) {
+          return res.status(409).json({ error: 'لا توجد حصص مستهلكة لاستعادتها في هذه الباقة', code: 'NO_CONSUMED_CREDITS' });
+        }
+        sub.sessionsUsed = Math.max(0, Number(sub.sessionsUsed || 0) - 1);
+        sub.sessionsRemaining = Number(sub.sessionsRemaining || 0) + 1;
+        if (sub.status === 'completed') sub.status = sub.circle ? 'active' : 'awaiting_placement';
+      } else if (action === 'deduct-credit') {
+        if (Number(sub.sessionsRemaining || 0) <= 0) {
+          return res.status(409).json({ error: 'لا يوجد رصيد متبقٍ لخصمه', code: 'NO_REMAINING_CREDITS' });
+        }
+        sub.sessionsUsed = Number(sub.sessionsUsed || 0) + 1;
+        sub.sessionsRemaining = Math.max(0, Number(sub.sessionsRemaining || 0) - 1);
+        if (sub.sessionsRemaining === 0) sub.status = 'completed';
+      } else if (action === 'set-status') {
+        const nextStatus = String(req.body?.status || '').trim();
+        if (!['paused', 'active', 'cancelled'].includes(nextStatus)) {
+          return res.status(400).json({ error: 'الحالة المطلوبة غير مدعومة' });
+        }
+        sub.status = nextStatus === 'active' && !sub.circle ? 'awaiting_placement' : nextStatus;
+        if (nextStatus === 'cancelled') sub.circle = null;
+      } else {
+        return res.status(400).json({ error: 'إجراء الاشتراك غير مدعوم' });
+      }
+      return res.json({ success: true, subscription: sub });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.params.subId)) {
+      return res.status(400).json({ error: 'معرف الطالب أو الاشتراك غير صالح' });
+    }
+
+    const [student, sub] = await Promise.all([
+      User.findOne({ _id: req.params.id, role: 'student' }),
+      StudentSubscription.findOne({ _id: req.params.subId, student: req.params.id }),
+    ]);
+
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+    if (!sub) return res.status(404).json({ error: 'الاشتراك غير موجود' });
+
+    const now = new Date();
+    let auditAction = 'student.subscription.updated';
+    const metadata = { subscriptionId: String(sub._id), action };
+
+    if (action === 'change-teacher') {
+      const rawTeacherId = String(req.body?.preferredTeacherId || '').trim();
+      if (!rawTeacherId) {
+        const previousTeacher = sub.preferredTeacher ? String(sub.preferredTeacher) : null;
+        sub.preferredTeacher = null;
+        auditAction = 'student.subscription.teacher-unlocked';
+        metadata.previousTeacher = previousTeacher;
+      } else {
+        if (!mongoose.Types.ObjectId.isValid(rawTeacherId)) {
+          return res.status(400).json({ error: 'معرف المعلم غير صالح', code: 'INVALID_TEACHER_ID' });
+        }
+        const nextTeacher = await Teacher.findOne({
+          _id: rawTeacherId,
+          status: 'approved',
+          isVerified: true,
+        }).select('personalInfo.gender personalInfo.fullName');
+        if (!nextTeacher) {
+          return res.status(404).json({ error: 'المعلم المختار غير موجود أو غير معتمد', code: 'TEACHER_NOT_APPROVED' });
+        }
+        try {
+          assertGenderAndAgeCompatibility({
+            student,
+            teacher: nextTeacher,
+            section: sub.section || student.enrollmentSection,
+          });
+        } catch (safeguardErr) {
+          return res.status(safeguardErr.status || 409).json({
+            error: safeguardErr.publicMessage || 'المعلم المختار لا يتوافق مع جنس وعمر الطالب',
+            code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
+          });
+        }
+
+        if (sub.circle) {
+          const currentCircle = await GroupCircle.findById(sub.circle).select('teacher students').lean();
+          if (currentCircle && String(currentCircle.teacher) !== String(nextTeacher._id)) {
+            await Promise.all([
+              GroupCircle.updateOne({ _id: sub.circle }, { $pull: { students: student._id } }),
+              User.updateOne({ _id: student._id, circle: sub.circle }, { $unset: { circle: 1 } }),
+              Session.updateMany(
+                {
+                  circle: sub.circle,
+                  status: { $in: ['pending', 'accepted'] },
+                  scheduledAt: { $gt: now },
+                },
+                { $pull: { attendance: { student: student._id } } }
+              ),
+            ]);
+            sub.circle = null;
+            if (['placed', 'active'].includes(sub.status)) {
+              sub.status = 'awaiting_placement';
+            }
+            metadata.detachedFromCircle = String(currentCircle._id);
+          }
+        }
+
+        await Session.updateMany(
+          {
+            student: student._id,
+            type: 'regular',
+            status: { $in: ['pending', 'accepted'] },
+            scheduledAt: { $gt: now },
+          },
+          { $set: { teacher: nextTeacher._id } }
+        );
+
+        sub.preferredTeacher = nextTeacher._id;
+        auditAction = 'student.subscription.teacher-changed';
+        metadata.nextTeacherId = String(nextTeacher._id);
+      }
+      await sub.save();
+    } else if (action === 'restore-credit') {
+      if (Number(sub.sessionsUsed || 0) <= 0) {
+        return res.status(409).json({
+          error: 'لا توجد حصص مستهلكة لاستعادتها كتعويض في هذه الباقة (الرصيد كامل بالفعل)',
+          code: 'NO_CONSUMED_CREDITS',
+        });
+      }
+      sub.sessionsUsed = Math.max(0, Number(sub.sessionsUsed) - 1);
+      sub.sessionsRemaining = Math.min(sub.sessionCount, Number(sub.sessionsRemaining) + 1);
+      if (sub.status === 'completed' && sub.sessionsRemaining > 0) {
+        sub.status = sub.circle ? 'active' : 'awaiting_placement';
+        sub.completedAt = undefined;
+      }
+      await sub.save();
+      auditAction = 'student.subscription.credit-restored';
+      metadata.sessionsRemaining = sub.sessionsRemaining;
+    } else if (action === 'deduct-credit') {
+      if (Number(sub.sessionsRemaining || 0) <= 0) {
+        return res.status(409).json({
+          error: 'لا يوجد رصيد حصص متبقٍ لخصمه من هذه الباقة',
+          code: 'NO_REMAINING_CREDITS',
+        });
+      }
+      sub.sessionsUsed = Math.min(sub.sessionCount, Number(sub.sessionsUsed || 0) + 1);
+      sub.sessionsRemaining = Math.max(0, Number(sub.sessionsRemaining) - 1);
+      if (sub.sessionsRemaining === 0) {
+        sub.status = 'completed';
+        sub.completedAt = now;
+      }
+      await sub.save();
+      auditAction = 'student.subscription.credit-deducted';
+      metadata.sessionsRemaining = sub.sessionsRemaining;
+    } else if (action === 'upgrade-package') {
+      const nextCount = Number(req.body?.sessionCount);
+      if (![4, 8, 12, 24].includes(nextCount) || nextCount < Number(sub.sessionsUsed || 0)) {
+        return res.status(400).json({
+          error: 'حجم الباقة الجديد غير صالح أو أقل من عدد الحصص المستهلكة فعلياً',
+          code: 'INVALID_PACKAGE_SIZE',
+        });
+      }
+      sub.sessionCount = nextCount;
+      sub.sessionsRemaining = nextCount - Number(sub.sessionsUsed || 0);
+      if (!sub.isScholarship) {
+        sub.totalAmountMinor = Number(sub.pricePerSessionMinor || 0) * nextCount;
+      }
+      if (sub.status === 'completed' && sub.sessionsRemaining > 0) {
+        sub.status = sub.circle ? 'active' : 'awaiting_placement';
+      }
+      await sub.save();
+      auditAction = 'student.subscription.package-resized';
+      metadata.sessionCount = sub.sessionCount;
+      metadata.sessionsRemaining = sub.sessionsRemaining;
+    } else if (action === 'set-status') {
+      const requestedStatus = String(req.body?.status || '').trim();
+      if (!['paused', 'active', 'cancelled'].includes(requestedStatus)) {
+        return res.status(400).json({ error: 'حالة الاشتراك المطلوبة غير مدعومة' });
+      }
+      if (['completed', 'cancelled', 'expired'].includes(sub.status) && requestedStatus !== sub.status) {
+        return res.status(409).json({
+          error: 'لا يمكن إعادة فتح اشتراك منتهٍ أو ملغى؛ أنشئ اشتراكاً أو منحة جديدة',
+          code: 'SUBSCRIPTION_TERMINAL_STATE',
+        });
+      }
+      if (requestedStatus === 'cancelled') {
+        const oldCircleId = sub.circle;
+        sub.status = 'cancelled';
+        sub.circle = null;
+        await sub.save();
+        if (oldCircleId) {
+          await Promise.all([
+            GroupCircle.updateOne({ _id: oldCircleId }, { $pull: { students: student._id } }),
+            User.updateOne({ _id: student._id, circle: oldCircleId }, { $unset: { circle: 1 } }),
+            Session.updateMany(
+              { circle: oldCircleId, status: { $in: ['pending', 'accepted'] }, scheduledAt: { $gt: now } },
+              { $pull: { attendance: { student: student._id } } }
+            ),
+          ]);
+        }
+      } else if (requestedStatus === 'paused') {
+        sub.status = 'paused';
+        await sub.save();
+      } else {
+        sub.status = sub.circle ? 'active' : 'awaiting_placement';
+        await sub.save();
+      }
+      auditAction = `student.subscription.status-${sub.status}`;
+    } else {
+      return res.status(400).json({ error: 'إجراء الاشتراك غير معروف' });
+    }
+
+    await logAdminAction({
+      req,
+      action: auditAction,
+      entityType: 'student',
+      entityId: String(student._id),
+      reason,
+      metadata,
+    }).catch(() => {});
+
+    return res.json({ success: true, subscription: sub });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/students/:id/scholarships', async (req, res) => {
+  try {
+    const planKey = String(req.body?.planKey || 'group').trim();
+    const sessionCount = [4, 8, 12, 24].includes(Number(req.body?.sessionCount)) ? Number(req.body?.sessionCount) : 8;
+    const preferredTeacherId = String(req.body?.preferredTeacherId || '').trim();
+    const reason = String(req.body?.reason || '').trim().slice(0, 300);
+
+    if (reason.length < 3) {
+      return res.status(400).json({
+        error: 'يرجى تسجيل سبب المنحة الدراسية في سجل التدقيق',
+        code: 'AUDIT_REASON_REQUIRED',
+      });
+    }
+
+    if (isMockMode && !isDBConnected()) {
+      const mockStudent = findMockUserById(req.params.id);
+      if (!mockStudent || mockStudent.role !== 'student') {
+        return res.status(404).json({ error: 'الطالب غير موجود' });
+      }
+      const created = addMockSubscription({
+        student: mockStudent._id,
+        planKey,
+        section: mockStudent.enrollmentSection || (mockStudent.gender === 'female' ? 'ladies' : 'men_children'),
+        sessionCount,
+        sessionsUsed: 0,
+        sessionsRemaining: sessionCount,
+        currency: 'EGP',
+        pricePerSessionMinor: 0,
+        totalAmountMinor: 0,
+        isScholarship: true,
+        status: 'awaiting_placement',
+        preferredTeacher: preferredTeacherId || null,
+        paidAt: new Date(),
+      });
+      return res.status(201).json({ success: true, subscription: created });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid student id' });
+    }
+    const student = await User.findOne({ _id: req.params.id, role: 'student' });
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+
+    const existingOpen = await StudentSubscription.findOne({
+      student: student._id,
+      status: { $in: ['awaiting_placement', 'placed', 'active', 'paused'] },
+    }).select('_id status');
+    if (existingOpen) {
+      return res.status(409).json({
+        error: 'لدى الطالب اشتراك مفتوح بالفعل؛ عدّل الاشتراك الحالي أو ألغِه قبل منح باقة جديدة',
+        code: 'SUBSCRIPTION_ALREADY_OPEN',
+      });
+    }
+
+    const resolvedSection = VALID_ENROLLMENT_SECTIONS.has(student.enrollmentSection)
+      ? student.enrollmentSection
+      : (student.gender === 'female' ? 'ladies' : 'men_children');
+
+    let verifiedTeacherId = null;
+    if (preferredTeacherId) {
+      if (!mongoose.Types.ObjectId.isValid(preferredTeacherId)) {
+        return res.status(400).json({ error: 'معرف المعلم غير صالح' });
+      }
+      const teacherDoc = await Teacher.findOne({ _id: preferredTeacherId, status: 'approved', isVerified: true }).select('personalInfo.gender');
+      if (!teacherDoc) {
+        return res.status(404).json({ error: 'المعلم المختار غير موجود أو غير معتمد' });
+      }
+      try {
+        assertGenderAndAgeCompatibility({
+          student,
+          teacher: teacherDoc,
+          section: resolvedSection,
+        });
+      } catch (safeguardErr) {
+        return res.status(safeguardErr.status || 409).json({
+          error: safeguardErr.publicMessage || 'المعلم المختار لا يتوافق مع جنس وعمر الطالب',
+          code: safeguardErr.code || 'SAFEGUARDING_VIOLATION',
+        });
+      }
+      verifiedTeacherId = teacherDoc._id;
+    }
+
+    const plan = getSubscriptionPlan(planKey) || getSubscriptionPlan('group');
+    const createdSub = await StudentSubscription.create({
+      student: student._id,
+      planKey: plan.key,
+      section: resolvedSection,
+      sessionCount,
+      sessionsUsed: 0,
+      sessionsRemaining: sessionCount,
+      currency: 'EGP',
+      pricePerSessionMinor: 0,
+      totalAmountMinor: 0,
+      isScholarship: true,
+      status: 'awaiting_placement',
+      preferredTeacher: verifiedTeacherId,
+      paidAt: new Date(),
+      pricingSnapshot: {
+        minStudents: plan.minStudents,
+        maxStudents: plan.maxStudents,
+        durationMinMinutes: plan.durationMinMinutes,
+        durationMaxMinutes: plan.durationMaxMinutes,
+        nameAr: plan.nameAr || plan.name?.ar,
+        nameEn: plan.nameEn || plan.name?.en,
+        durationLabelAr: plan.durationLabelAr || plan.durationLabel?.ar,
+        durationLabelEn: plan.durationLabelEn || plan.durationLabel?.en,
+      },
+    });
+
+    await logAdminAction({
+      req,
+      action: 'student.scholarship.granted',
+      entityType: 'student',
+      entityId: String(student._id),
+      reason,
+      metadata: {
+        subscriptionId: String(createdSub._id),
+        planKey: plan.key,
+        sessionCount,
+        preferredTeacherId: verifiedTeacherId ? String(verifiedTeacherId) : null,
+      },
+    }).catch(() => {});
+
+    return res.status(201).json({ success: true, subscription: createdSub });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.put('/guardians/:id', async (req, res) => {
+  try {
+    if (isMockMode && !isDBConnected()) {
+      const mockGuardian = findMockUserById(req.params.id);
+      if (!mockGuardian || mockGuardian.role !== 'guardian') {
+        return res.status(404).json({ error: 'ولي الأمر غير موجود' });
+      }
+      const { name, email, phone, isActive, newPassword } = req.body || {};
+      if (typeof name === 'string' && name.trim()) mockGuardian.name = name.trim();
+      if (typeof email === 'string' && email.trim()) mockGuardian.email = email.toLowerCase().trim();
+      if (phone !== undefined) mockGuardian.phone = String(phone || '').trim();
+      if (typeof isActive === 'boolean') mockGuardian.isActive = isActive;
+      if (newPassword && String(newPassword).trim().length >= 8) mockGuardian.password = String(newPassword).trim();
+      return res.json({ success: true, guardian: mockGuardian });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid guardian id' });
+    }
+
+    const guardianUser = await User.findOne({ _id: req.params.id, role: 'guardian' })
+      .select('+password +refreshTokenVersion +sessionsRevokedAt');
+    if (!guardianUser) return res.status(404).json({ error: 'ولي الأمر غير موجود' });
+
+    const { name, email, phone, isActive, newPassword, adminReason } = req.body || {};
+    if (typeof name === 'string' && name.trim()) {
+      guardianUser.name = name.trim();
+    }
+    if (typeof email === 'string' && email.trim()) {
+      const normalizedEmail = email.toLowerCase().trim();
+      if (normalizedEmail !== guardianUser.email) {
+        const dup = await User.findOne({ email: normalizedEmail, _id: { $ne: guardianUser._id } });
+        if (dup) return res.status(409).json({ error: 'البريد الإلكتروني مستخدم بالفعل لحساب آخر' });
+        guardianUser.email = normalizedEmail;
+        guardianUser.googleSubject = undefined;
+        guardianUser.emailVerified = false;
+      }
+    }
+    if (phone !== undefined && String(phone).trim()) {
+      guardianUser.phone = String(phone).trim();
+    }
+
+    let revokeSessions = false;
+    if (typeof isActive === 'boolean') {
+      if (isActive === false && guardianUser.isActive !== false) revokeSessions = true;
+      guardianUser.isActive = isActive;
+      await Guardian.updateOne({ user: guardianUser._id }, { $set: { isActive } }).catch(() => {});
+    }
+    if (newPassword && String(newPassword).trim()) {
+      if (String(newPassword).trim().length < 8) {
+        return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
+      }
+      guardianUser.password = String(newPassword).trim();
+      revokeSessions = true;
+    }
+    if (revokeSessions) {
+      guardianUser.refreshTokenVersion = Number(guardianUser.refreshTokenVersion || 0) + 1;
+      guardianUser.sessionsRevokedAt = new Date();
+    }
+
+    await guardianUser.save();
+
+    await logAdminAction({
+      req,
+      action: 'guardian.admin-profile.updated',
+      entityType: 'guardian',
+      entityId: String(guardianUser._id),
+      reason: String(adminReason || 'تحديث حساب ولي الأمر من Family 360').trim().slice(0, 200),
+      metadata: {
+        fields: Object.keys(req.body || {}).filter((k) => !['newPassword', 'password', 'adminReason'].includes(k)),
+      },
+    }).catch(() => {});
+
+    return res.json({ success: true, guardian: guardianUser });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/guardians/:id/link-student', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid guardian id' });
+    }
+    const relationship = ['father', 'mother', 'guardian', 'other'].includes(req.body?.relationship)
+      ? req.body.relationship
+      : 'guardian';
+    const studentQuery = String(req.body?.studentIdentifier || req.body?.studentId || '').trim();
+    const reason = String(req.body?.reason || 'ربط إداري مباشر بين ولي الأمر والطالب').trim().slice(0, 240);
+
+    if (!studentQuery) {
+      return res.status(400).json({ error: 'أدخل بريد الطالب أو معرّفه للربط' });
+    }
+
+    const guardianUser = await User.findOne({ _id: req.params.id, role: 'guardian' });
+    if (!guardianUser) return res.status(404).json({ error: 'ولي الأمر غير موجود' });
+
+    const studentFilter = mongoose.Types.ObjectId.isValid(studentQuery)
+      ? { _id: studentQuery, role: 'student' }
+      : { email: studentQuery.toLowerCase(), role: 'student' };
+    const student = await User.findOne(studentFilter);
+    if (!student) {
+      return res.status(404).json({ error: 'لم يُعثر على حساب طالب بهذا البريد أو المعرّف' });
+    }
+
+    let guardianProfile = await Guardian.findOne({ user: guardianUser._id });
+    if (!guardianProfile) {
+      guardianProfile = await Guardian.create({
+        user: guardianUser._id,
+        isActive: guardianUser.isActive !== false,
+        children: [],
+      });
+    }
+
+    const alreadyLinked = (guardianProfile.children || []).some(
+      (c) => String(c.student) === String(student._id)
+    );
+    if (alreadyLinked) {
+      return res.status(409).json({ error: 'هذا الطالب مرتبط بالفعل بحساب ولي الأمر' });
+    }
+
+    await guardianProfile.addChild(student._id, relationship, {
+      viewProgress: true,
+      viewGrades: true,
+      viewAttendance: true,
+      receiveNotifications: true,
+      approveEnrollments: Boolean(Number(student.age) < 18 || req.body?.approveEnrollments),
+    });
+
+    await Promise.all([
+      User.findByIdAndUpdate(guardianUser._id, { $addToSet: { children: student._id } }),
+      User.findByIdAndUpdate(student._id, {
+        $set: {
+          guardian: guardianUser._id,
+          'privacyConsent.parentalConsentVerified': true,
+          'privacyConsent.parentalConsentAt': new Date(),
+        },
+      }),
+      GuardianInvitation.updateMany(
+        { student: student._id, status: 'pending' },
+        { $set: { status: 'accepted', respondedBy: guardianUser._id, respondedAt: new Date() } }
+      ),
+    ]);
+
+    await logAdminAction({
+      req,
+      action: 'guardian.student-linked-by-admin',
+      entityType: 'guardian',
+      entityId: String(guardianUser._id),
+      reason,
+      metadata: { studentId: String(student._id), relationship },
+    }).catch(() => {});
+
+    return res.status(201).json({ success: true, studentId: String(student._id) });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.delete('/guardians/:id/unlink-student/:studentId', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.params.studentId)) {
+      return res.status(400).json({ error: 'Invalid guardian or student id' });
+    }
+    const guardianProfile = await Guardian.findOne({
+      user: req.params.id,
+      'children.student': req.params.studentId,
+    });
+    if (!guardianProfile) {
+      return res.status(404).json({ error: 'الربط غير موجود' });
+    }
+
+    await guardianProfile.removeChild(req.params.studentId);
+    await User.findByIdAndUpdate(req.params.id, { $pull: { children: req.params.studentId } });
+
+    const alternateGuardian = await Guardian.findOne({
+      user: { $ne: req.params.id },
+      'children.student': req.params.studentId,
+      isActive: { $ne: false },
+    }).select('user');
+
+    if (alternateGuardian?.user) {
+      await User.updateOne(
+        { _id: req.params.studentId, guardian: req.params.id },
+        { $set: { guardian: alternateGuardian.user } }
+      );
+    } else {
+      await User.updateOne(
+        { _id: req.params.studentId, guardian: req.params.id },
+        { $unset: { guardian: 1 }, $set: { 'privacyConsent.parentalConsentVerified': false } }
+      );
+    }
+
+    await logAdminAction({
+      req,
+      action: 'guardian.student-unlinked-by-admin',
+      entityType: 'guardian',
+      entityId: String(req.params.id),
+      reason: String(req.query?.reason || req.body?.reason || 'فك ربط طالب من حساب ولي الأمر').trim().slice(0, 240),
+      metadata: { studentId: String(req.params.studentId) },
+    }).catch(() => {});
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.post('/guardian-links/:invitationId/action', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.invitationId)) {
+      return res.status(400).json({ error: 'Invalid invitation id' });
+    }
+    const action = String(req.body?.action || '').trim();
+    if (!['cancel', 'approve'].includes(action)) {
+      return res.status(400).json({ error: 'الإجراء المطلوب غير مدعوم' });
+    }
+
+    const invitation = await GuardianInvitation.findById(req.params.invitationId)
+      .select('+guardianPhone +guardianPhoneNormalized');
+    if (!invitation) return res.status(404).json({ error: 'دعوة الربط غير موجودة' });
+    if (invitation.status !== 'pending') {
+      return res.status(409).json({ error: 'هذه الدعوة لم تعد معلقة' });
+    }
+
+    if (action === 'cancel') {
+      invitation.status = 'cancelled';
+      invitation.respondedAt = new Date();
+      await invitation.save();
+
+      await logAdminAction({
+        req,
+        action: 'guardian-links.cancelled-by-admin',
+        entityType: 'guardian-links',
+        entityId: String(invitation._id),
+        reason: String(req.body?.reason || 'إلغاء دعوة ربط ولي أمر معلقة من الإدارة').slice(0, 240),
+        metadata: { studentId: String(invitation.student) },
+      }).catch(() => {});
+
+      return res.json({ success: true, status: 'cancelled' });
+    }
+
+    // action === 'approve': find matching active guardian user by normalized phone or supplied guardianEmail
+    const suppliedEmail = String(req.body?.guardianEmail || '').trim().toLowerCase();
+    let guardianUser = null;
+    if (suppliedEmail) {
+      guardianUser = await User.findOne({ email: suppliedEmail, role: 'guardian', isActive: { $ne: false } });
+    } else if (invitation.guardianPhoneNormalized) {
+      const matches = await User.find({
+        role: 'guardian',
+        isActive: { $ne: false },
+        phoneNormalized: invitation.guardianPhoneNormalized,
+      }).limit(2);
+      if (matches.length === 1) guardianUser = matches[0];
+    }
+
+    if (!guardianUser) {
+      return res.status(404).json({
+        error: 'لا يوجد حساب ولي أمر مسجل يطابق رقم الهاتف بعد؛ اطلب من ولي الأمر إنشاء حسابه أولاً أو أدخل بريده الإلكتروني',
+        code: 'GUARDIAN_ACCOUNT_NOT_FOUND',
+      });
+    }
+
+    let guardianProfile = await Guardian.findOne({ user: guardianUser._id });
+    if (!guardianProfile) {
+      guardianProfile = await Guardian.create({ user: guardianUser._id, isActive: true, children: [] });
+    }
+    const alreadyLinked = (guardianProfile.children || []).some(
+      (c) => String(c.student) === String(invitation.student)
+    );
+    if (!alreadyLinked) {
+      await guardianProfile.addChild(invitation.student, invitation.relationship || 'guardian', {
+        viewProgress: true,
+        viewGrades: true,
+        viewAttendance: true,
+        receiveNotifications: true,
+      });
+    }
+
+    invitation.status = 'accepted';
+    invitation.respondedBy = guardianUser._id;
+    invitation.respondedAt = new Date();
+    await Promise.all([
+      invitation.save(),
+      User.findByIdAndUpdate(guardianUser._id, { $addToSet: { children: invitation.student } }),
+      User.findByIdAndUpdate(invitation.student, {
+        $set: {
+          guardian: guardianUser._id,
+          'privacyConsent.parentalConsentVerified': true,
+          'privacyConsent.parentalConsentAt': new Date(),
+        },
+      }),
+    ]);
+
+    await logAdminAction({
+      req,
+      action: 'guardian-links.approved-by-admin',
+      entityType: 'guardian-links',
+      entityId: String(invitation._id),
+      reason: String(req.body?.reason || 'اعتماد ربط ولي الأمر بالطالب من الإدارة').slice(0, 240),
+      metadata: { studentId: String(invitation.student), guardianId: String(guardianUser._id) },
+    }).catch(() => {});
+
+    return res.json({ success: true, status: 'accepted', guardianId: String(guardianUser._id) });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

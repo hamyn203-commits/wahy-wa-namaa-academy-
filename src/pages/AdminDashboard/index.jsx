@@ -35,6 +35,7 @@ import Student360Dossier from './Student360Dossier';
 import TeacherReviewDossier from './TeacherReviewDossier';
 import TeacherReviewQueue from './TeacherReviewQueue';
 import TeacherInviteLinksPanel from './TeacherInviteLinksPanel';
+import TeacherSafeActionModal from './TeacherSafeActionModal';
 
 const ALLOWED_TABS = [
   'overview', 'analytics', 'people', 'sessions', 'system',
@@ -78,8 +79,13 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({});
   const [pending, setPending] = useState([]);
   const [approved, setApproved] = useState([]);
+  const [archivedTeachers, setArchivedTeachers] = useState([]);
+  const [teacherDirectoryCounts, setTeacherDirectoryCounts] = useState({});
+  const [teachersSubTab, setTeachersSubTab] = useState('active');
+  const [showGuardianLinks, setShowGuardianLinks] = useState(false);
   const [pendingProfileChanges, setPendingProfileChanges] = useState([]);
   const [teacherQuery, setTeacherQuery] = useState('');
+  const [teacherGenderFilter, setTeacherGenderFilter] = useState('all');
   const [messages, setMessages] = useState([]);
   const [courses, setCourses] = useState([]);
   const [blogPosts, setBlogPosts] = useState([]);
@@ -89,10 +95,12 @@ export default function AdminDashboard() {
 
   const [replyText, setReplyText] = useState({});
   const [teacherForm, setTeacherForm] = useState({
-    name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true, isPublic: true,
+    name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, isPublic: true,
   });
+  const [teacherFiles, setTeacherFiles] = useState({ profilePhoto: null, recitationVideo: null });
   const [payoutModal, setPayoutModal] = useState(null);
   const [confirmDeleteModal, setConfirmDeleteModal] = useState(null);
+  const [teacherSafeModal, setTeacherSafeModal] = useState(null);
   const [reviewPromptModal, setReviewPromptModal] = useState(null);
 
   const [courseForm, setCourseForm] = useState({ titleAr: '', slug: '', instructorId: '', price: 0, priceEgp: '', descAr: '', programs: [] });
@@ -132,6 +140,27 @@ export default function AdminDashboard() {
   const [studentDossierLoading, setStudentDossierLoading] = useState(false);
   const [familyDossier, setFamilyDossier] = useState(null);
   const [familyDossierLoading, setFamilyDossierLoading] = useState(false);
+  const teacherDossierReqRef = useRef(0);
+  const studentDossierReqRef = useRef(0);
+  const familyDossierReqRef = useRef(0);
+
+  const closeTeacherDossier = useCallback(() => {
+    teacherDossierReqRef.current += 1;
+    setTeacherDossier(null);
+    setTeacherDossierLoading(false);
+  }, []);
+
+  const closeStudentDossier = useCallback(() => {
+    studentDossierReqRef.current += 1;
+    setStudentDossier(null);
+    setStudentDossierLoading(false);
+  }, []);
+
+  const closeFamilyDossier = useCallback(() => {
+    familyDossierReqRef.current += 1;
+    setFamilyDossier(null);
+    setFamilyDossierLoading(false);
+  }, []);
 
   const navigateAdmin = useCallback((target) => {
     if (typeof target !== 'string') return;
@@ -176,6 +205,16 @@ export default function AdminDashboard() {
   }, [formatPendingLoadError, tt.pendingLoadFailed]);
 
   const loadApprovedTeachers = useCallback(async () => {
+    try {
+      const dirResult = await api.get('/api/admin/teachers/directory?status=approved&limit=100', { auth: true });
+      if (Array.isArray(dirResult?.teachers)) {
+        setApproved(dirResult.teachers);
+        if (dirResult.counts) setTeacherDirectoryCounts(dirResult.counts);
+        return;
+      }
+    } catch {
+      // Fallback to legacy endpoint if directory route is unavailable.
+    }
     const value = await api.get('/api/admin/teachers/approved', { auth: true });
     setApproved(Array.isArray(value) ? value : (value?.teachers || []));
   }, []);
@@ -186,9 +225,10 @@ export default function AdminDashboard() {
   }, []);
 
   const loadTeachersTab = useCallback(async () => {
-    const [pendingResult, approvedResult, profileChangesResult] = await Promise.allSettled([
+    const [pendingResult, approvedDirResult, archivedDirResult, profileChangesResult] = await Promise.allSettled([
       api.get('/api/admin/teachers/pending', { auth: true }),
-      api.get('/api/admin/teachers/approved', { auth: true }),
+      api.get('/api/admin/teachers/directory?status=approved&limit=100', { auth: true }),
+      api.get('/api/admin/teachers/directory?status=archived&limit=60', { auth: true }),
       api.get('/api/teachers/admin/profile-changes/pending', { auth: true }),
     ]);
 
@@ -198,9 +238,15 @@ export default function AdminDashboard() {
       lastPendingRefreshAtRef.current = Date.now();
       pendingRateLimitedUntilRef.current = 0;
     }
-    if (approvedResult.status === 'fulfilled') {
-      const value = approvedResult.value;
+    if (approvedDirResult.status === 'fulfilled') {
+      const value = approvedDirResult.value;
       setApproved(Array.isArray(value) ? value : (value?.teachers || []));
+      if (value?.counts) setTeacherDirectoryCounts(value.counts);
+    } else {
+      await loadApprovedTeachers().catch(() => {});
+    }
+    if (archivedDirResult.status === 'fulfilled') {
+      setArchivedTeachers(archivedDirResult.value?.teachers || []);
     }
     if (profileChangesResult.status === 'fulfilled') {
       setPendingProfileChanges(profileChangesResult.value?.requests || []);
@@ -212,7 +258,7 @@ export default function AdminDashboard() {
       }
       throw new Error(formatPendingLoadError(pendingResult.reason));
     }
-  }, [formatPendingLoadError]);
+  }, [formatPendingLoadError, loadApprovedTeachers]);
 
   const loadCore = useCallback(async () => {
     const [statsResult, pendingResult, approvedResult, healthResult, commandResult, profileChangesResult] = await Promise.allSettled([
@@ -445,7 +491,7 @@ export default function AdminDashboard() {
         'request-changes': tt.teacherChangesRequested,
       };
       toast.success(labels[action] || tt.teacherUpdated);
-      setTeacherDossier(null);
+      closeTeacherDossier();
       await loadCore();
       return true;
     } catch (error) {
@@ -455,16 +501,24 @@ export default function AdminDashboard() {
   };
 
   const openTeacherDossier = async (teacherId) => {
+    if (!teacherId) return;
+    const reqId = ++teacherDossierReqRef.current;
     setTeacherDossierLoading(true);
     setTeacherDossier({ teacher: { _id: teacherId } });
     try {
       const result = await api.get(`/api/teachers/admin/${teacherId}/review-dossier`, { auth: true });
-      setTeacherDossier(result);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossier(result);
+      }
     } catch (error) {
-      setTeacherDossier(null);
-      toast.error(error.message || tt.dossierLoadFailed);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossier(null);
+        toast.error(error.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setTeacherDossierLoading(false);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossierLoading(false);
+      }
     }
   };
 
@@ -487,33 +541,47 @@ export default function AdminDashboard() {
 
   const openStudentDossier = async (studentId) => {
     if (!studentId) return;
-    setFamilyDossier(null);
+    closeFamilyDossier();
+    const reqId = ++studentDossierReqRef.current;
     setStudentDossierLoading(true);
     setStudentDossier({ student: { _id: studentId } });
     try {
       const result = await api.get(`/api/admin/people/students/${studentId}`, { auth: true });
-      setStudentDossier(result);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossier(result);
+      }
     } catch (error) {
-      setStudentDossier(null);
-      toast.error(error.message || tt.dossierLoadFailed);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossier(null);
+        toast.error(error.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setStudentDossierLoading(false);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossierLoading(false);
+      }
     }
   };
 
   const openFamilyDossier = async (guardianId) => {
     if (!guardianId) return;
-    setStudentDossier(null);
+    closeStudentDossier();
+    const reqId = ++familyDossierReqRef.current;
     setFamilyDossierLoading(true);
     setFamilyDossier({ guardian: { _id: guardianId } });
     try {
       const result = await api.get(`/api/admin/people/guardians/${guardianId}`, { auth: true });
-      setFamilyDossier(result);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossier(result);
+      }
     } catch (error) {
-      setFamilyDossier(null);
-      toast.error(error.message || tt.familyLoadFailed);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossier(null);
+        toast.error(error.message || tt.familyLoadFailed);
+      }
     } finally {
-      setFamilyDossierLoading(false);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossierLoading(false);
+      }
     }
   };
 
@@ -673,11 +741,26 @@ export default function AdminDashboard() {
     if (addingTeacher) return;
     setAddingTeacher(true);
     try {
-      const autoApprove = teacherForm.autoApprove !== false;
-      await api.post('/api/admin/teachers', { ...teacherForm, autoApprove, isPublic: teacherForm.isPublic !== false }, { auth: true });
-      toast.success(autoApprove ? tt.teacherCreatedApproved : tt.teacherCreatedReview);
-      setTeacherForm({ name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, autoApprove: true, isPublic: true });
+      const uploadedFiles = {};
+      if (teacherFiles.profilePhoto) {
+        uploadedFiles.profilePhoto = await uploadFileDirect(teacherFiles.profilePhoto, 'teacher-public');
+      }
+      if (teacherFiles.recitationVideo) {
+        uploadedFiles.recitationVideo = await uploadFileDirect(teacherFiles.recitationVideo, 'teacher-public');
+      }
+      const created = await api.post('/api/admin/teachers', {
+        ...teacherForm,
+        isPublic: teacherForm.isPublic !== false,
+        uploadedFiles: Object.keys(uploadedFiles).length ? uploadedFiles : undefined,
+      }, { auth: true });
+      toast.success(tt.teacherCreatedReview);
+      setTeacherForm({ name: '', email: '', password: '', phone: '', country: '', city: '', gender: 'male', hourlyRate: 50, isPublic: true });
+      setTeacherFiles({ profilePhoto: null, recitationVideo: null });
+      setTeachersSubTab('review');
       await load();
+      if (created?.teacher?._id) {
+        await openTeacherDossier(created.teacher._id);
+      }
     } catch (e) {
       toast.error(e.message || tt.teacherCreateFailed);
     } finally {
@@ -885,10 +968,10 @@ export default function AdminDashboard() {
       toast.success(tt.deleted);
       setConfirmDeleteModal(null);
       if (type === 'teacher' && String(teacherDossier?.teacher?._id) === String(id)) {
-        setTeacherDossier(null);
+        closeTeacherDossier();
       }
       if (type === 'student' && String(studentDossier?.student?._id) === String(id)) {
-        setStudentDossier(null);
+        closeStudentDossier();
       }
       if (type === 'lesson') await loadLessons(selectedCourse);
       else if (type === 'course') await loadCourses();
@@ -902,6 +985,10 @@ export default function AdminDashboard() {
   };
 
   const deleteItem = (type, id, label = '') => {
+    if (type === 'teacher') {
+      setTeacherSafeModal({ teacherId: id, label, mode: 'delete' });
+      return;
+    }
     setConfirmDeleteModal({ type, id, label });
   };
 
@@ -914,12 +1001,15 @@ export default function AdminDashboard() {
   };
 
   const filteredApprovedTeachers = approved.filter((teacher) => {
+    if (teacherGenderFilter !== 'all' && (teacher.personalInfo?.gender || 'male') !== teacherGenderFilter) {
+      return false;
+    }
     const term = teacherQuery.trim().toLocaleLowerCase();
     if (!term) return true;
     return [
       teacher.user?.name, teacher.personalInfo?.fullName,
       teacher.user?.email, teacher.personalInfo?.country,
-      teacher.personalInfo?.city,
+      teacher.personalInfo?.city, teacher.personalInfo?.phone,
     ].some((value) => String(value || '').toLocaleLowerCase().includes(term));
   });
 
@@ -1036,7 +1126,7 @@ export default function AdminDashboard() {
 
             {tab === 'people' && (
               <>
-                {focus === 'guardian-links' ? (
+                {(focus === 'guardian-links' || showGuardianLinks) ? (
                   <AdminGuardianLinksPanel onOpenStudent={openStudentDossier} />
                 ) : null}
                 <div ref={peopleDirectoryRef}>
@@ -1045,6 +1135,9 @@ export default function AdminDashboard() {
                     onOpenStudent={openStudentDossier}
                     onOpenGuardian={openFamilyDossier}
                     approvedTeachers={approved}
+                    showingGuardianLinks={focus === 'guardian-links' || showGuardianLinks}
+                    onToggleGuardianLinks={() => setShowGuardianLinks((v) => !v)}
+                    pendingGuardianLinksCount={actionCountById['guardian-links'] || 0}
                   />
                 </div>
                 <section className="wn-admin-people-home">
@@ -1155,185 +1248,326 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
 
-                {pendingProfileChanges.length > 0 && (
-                  <section className="wn-dashboard-surface border-[var(--wn-status-warn-border)] bg-[var(--wn-status-warn-bg)]">
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div>
-                        <h3 className="font-bold text-[var(--wn-heading)]">
-                          {tTeachers.profileChangesTitle.replace('{count}', String(pendingProfileChanges.length))}
-                        </h3>
-                        <p className="text-xs text-[var(--wn-status-warn-text)] mt-1">{tTeachers.profileChangesNote}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {pendingProfileChanges.map((request) => {
-                        const teacher = request.teacher || {};
-                        return (
-                          <article
-                            key={request._id}
-                            className="rounded-xl border border-[var(--wn-status-warn-border)] bg-[var(--wn-surface)] p-4 flex flex-wrap items-center justify-between gap-3"
-                          >
-                            <div>
-                              <strong className="block text-[var(--wn-heading)]">
-                                {teacher.personalInfo?.fullName || teacher.user?.name || ta.dossiers.reviewQueue.teacherFallback}
-                              </strong>
-                              <small className="block text-[var(--wn-text-secondary)]">{teacher.user?.email || ''}</small>
-                              <small className="block text-[var(--wn-text-secondary)] mt-1">
-                                {formatMsg(tTeachers.fieldsCount, { count: (request.changedFields || []).length })} · {request.createdAt ? new Date(request.createdAt).toLocaleString(intlLocale) : ''}
-                              </small>
-                            </div>
-                            <button
-                              type="button"
-                              className="wn-btn wn-btn--primary min-h-[44px]"
-                              onClick={() => openTeacherDossier(teacher._id)}
-                            >
-                              {tTeachers.reviewChangesBtn}
-                            </button>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
+                <div className="wn-dashboard-surface flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2" role="tablist" aria-label={isRTL ? 'أقسام إدارة المعلمين' : 'Teacher management sections'}>
+                    {[
+                      {
+                        id: 'active',
+                        label: isRTL ? `المعلمون المعتمدون (${approved.length})` : `Approved (${approved.length})`,
+                      },
+                      {
+                        id: 'review',
+                        label: isRTL
+                          ? `طابور المراجعة والتعديلات (${pending.length + pendingProfileChanges.length})`
+                          : `Review Queue (${pending.length + pendingProfileChanges.length})`,
+                        alert: (pending.length + pendingProfileChanges.length) > 0,
+                      },
+                      {
+                        id: 'invites',
+                        label: isRTL ? 'الدعوات والإضافة المباشرة' : 'Invites & Direct Add',
+                      },
+                      {
+                        id: 'archived',
+                        label: isRTL
+                          ? `الأرشيف والموقوفون (${archivedTeachers.length || (Number(teacherDirectoryCounts.suspended || 0) + Number(teacherDirectoryCounts.rejected || 0))})`
+                          : `Archived & Suspended (${archivedTeachers.length})`,
+                      },
+                    ].map((sub) => (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={teachersSubTab === sub.id}
+                        onClick={() => setTeachersSubTab(sub.id)}
+                        className={`min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold border transition inline-flex items-center gap-2 ${
+                          teachersSubTab === sub.id
+                            ? 'bg-[var(--wn-emerald)] text-[var(--wn-text-inverse)] border-[var(--wn-emerald)]'
+                            : sub.alert
+                              ? 'bg-[var(--wn-status-warn-bg)] text-[var(--wn-status-warn-text)] border-[var(--wn-status-warn-border)]'
+                              : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-primary)] border-[var(--wn-border)] hover:border-[var(--wn-border-strong)]'
+                        }`}
+                      >
+                        <span>{sub.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="wn-btn wn-btn--secondary min-h-[44px] inline-flex items-center gap-1.5 disabled:opacity-60"
+                    onClick={refreshTeachersSection}
+                    disabled={refreshingTeachers || loading}
+                  >
+                    <RefreshCw size={14} className={refreshingTeachers ? 'animate-spin' : ''} aria-hidden="true" />
+                    <span>{tTeachers.refresh}</span>
+                  </button>
+                </div>
+
+                {teachersSubTab === 'review' && (
+                  <div className="space-y-6">
+                    {pendingProfileChanges.length > 0 && (
+                      <section className="wn-dashboard-surface border-[var(--wn-status-warn-border)] bg-[var(--wn-status-warn-bg)]">
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div>
+                            <h3 className="font-bold text-[var(--wn-heading)]">
+                              {tTeachers.profileChangesTitle.replace('{count}', String(pendingProfileChanges.length))}
+                            </h3>
+                            <p className="text-xs text-[var(--wn-status-warn-text)] mt-1">{tTeachers.profileChangesNote}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {pendingProfileChanges.map((request) => {
+                            const teacher = request.teacher || {};
+                            return (
+                              <article
+                                key={request._id}
+                                className="rounded-xl border border-[var(--wn-status-warn-border)] bg-[var(--wn-surface)] p-4 flex flex-wrap items-center justify-between gap-3"
+                              >
+                                <div>
+                                  <strong className="block text-[var(--wn-heading)]">
+                                    {teacher.personalInfo?.fullName || teacher.user?.name || ta.dossiers.reviewQueue.teacherFallback}
+                                  </strong>
+                                  <small className="block text-[var(--wn-text-secondary)]">{teacher.user?.email || ''}</small>
+                                  <small className="block text-[var(--wn-text-secondary)] mt-1">
+                                    {formatMsg(tTeachers.fieldsCount, { count: (request.changedFields || []).length })} · {request.createdAt ? new Date(request.createdAt).toLocaleString(intlLocale) : ''}
+                                  </small>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="wn-btn wn-btn--primary min-h-[44px]"
+                                  onClick={() => openTeacherDossier(teacher._id)}
+                                >
+                                  {tTeachers.reviewChangesBtn}
+                                </button>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
+
+                    <TeacherReviewQueue
+                      teachers={pending}
+                      loading={loading}
+                      onRefresh={loadPendingTeachers}
+                      onOpenDossier={openTeacherDossier}
+                    />
+                  </div>
                 )}
 
-                <TeacherInviteLinksPanel onOpenDossier={openTeacherDossier} />
+                {teachersSubTab === 'invites' && (
+                  <div className="space-y-6">
+                    <TeacherInviteLinksPanel onOpenDossier={openTeacherDossier} />
 
-                <TeacherReviewQueue
-                  teachers={pending}
-                  loading={loading}
-                  onRefresh={loadPendingTeachers}
-                  onOpenDossier={openTeacherDossier}
-                />
+                    <form onSubmit={addTeacher} className="wn-dashboard-surface space-y-3">
+                      <div>
+                        <h3 className="font-bold text-[var(--wn-heading)] flex items-center gap-2">
+                          <Plus size={18} aria-hidden="true" />
+                          <span>{tTeachers.addTitle}</span>
+                        </h3>
+                        <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+                          {isRTL
+                            ? 'يدخل الحساب الجديد بوابة المراجعة (Teacher 360) تلقائياً لاستكمال أو فحص الوسائط والوثائق قبل التفعيل العام.'
+                            : 'New teacher accounts enter the Teacher 360 Review Gate automatically so media and IDs can be verified before going live.'}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {teacherFormFields.map((field) => (
+                          <div key={field.key}>
+                            <label htmlFor={`${formId}-tf-${field.key}`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+                              {field.label}
+                            </label>
+                            <input
+                              id={`${formId}-tf-${field.key}`}
+                              required={field.required}
+                              type={field.type}
+                              placeholder={field.label}
+                              value={teacherForm[field.key]}
+                              onChange={(e) => setTeacherForm((p) => ({ ...p, [field.key]: e.target.value }))}
+                              className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div>
+                          <label htmlFor={`${formId}-tf-country`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+                            {tTeachers.fields.country}
+                          </label>
+                          <input
+                            id={`${formId}-tf-country`}
+                            placeholder={tTeachers.fields.country}
+                            value={teacherForm.country}
+                            onChange={(e) => setTeacherForm((p) => ({ ...p, country: e.target.value }))}
+                            className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor={`${formId}-tf-city`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+                            {tTeachers.fields.city}
+                          </label>
+                          <input
+                            id={`${formId}-tf-city`}
+                            placeholder={tTeachers.fields.city}
+                            value={teacherForm.city}
+                            onChange={(e) => setTeacherForm((p) => ({ ...p, city: e.target.value }))}
+                            className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor={`${formId}-tf-gender`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+                            {tTeachers.fields.gender}
+                          </label>
+                          <select
+                            id={`${formId}-tf-gender`}
+                            value={teacherForm.gender || 'male'}
+                            onChange={(e) => setTeacherForm((p) => ({ ...p, gender: e.target.value }))}
+                            className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                            aria-label={tTeachers.fields.gender}
+                          >
+                            <option value="male">{tTeachers.fields.genderMale}</option>
+                            <option value="female">{tTeachers.fields.genderFemale}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`${formId}-tf-rate`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
+                            {tTeachers.fields.hourlyRate}
+                          </label>
+                          <input
+                            id={`${formId}-tf-rate`}
+                            type="number"
+                            min="10"
+                            max="1000"
+                            placeholder={tTeachers.fields.hourlyRate}
+                            value={teacherForm.hourlyRate ?? 50}
+                            onChange={(e) => setTeacherForm((p) => ({ ...p, hourlyRate: Number(e.target.value) }))}
+                            className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                      </div>
 
-                <div className="grid lg:grid-cols-2 gap-6">
-                  <form onSubmit={addTeacher} className="wn-dashboard-surface space-y-3">
-                    <h3 className="font-bold text-[var(--wn-heading)] flex items-center gap-2">
-                      <Plus size={18} aria-hidden="true" />
-                      <span>{tTeachers.addTitle}</span>
-                    </h3>
-                    {teacherFormFields.map((field) => (
-                      <div key={field.key}>
-                        <label htmlFor={`${formId}-tf-${field.key}`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-                          {field.label}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3 text-xs">
+                        <label className="block space-y-1">
+                          <span className="font-bold text-[var(--wn-heading)]">
+                            {isRTL ? 'الصورة الشخصية للمعلم (اختياري الآن أو من ملف 360)' : 'Profile Photo (optional)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(e) => setTeacherFiles((p) => ({ ...p, profilePhoto: e.target.files?.[0] || null }))}
+                            className="block w-full text-xs text-[var(--wn-text-secondary)]"
+                          />
                         </label>
-                        <input
-                          id={`${formId}-tf-${field.key}`}
-                          required={field.required}
-                          type={field.type}
-                          placeholder={field.label}
-                          value={teacherForm[field.key]}
-                          onChange={(e) => setTeacherForm((p) => ({ ...p, [field.key]: e.target.value }))}
-                          className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
-                        />
-                      </div>
-                    ))}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label htmlFor={`${formId}-tf-country`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-                          {tTeachers.fields.country}
+                        <label className="block space-y-1">
+                          <span className="font-bold text-[var(--wn-heading)]">
+                            {isRTL ? 'فيديو التلاوة النموذجية (اختياري الآن أو من ملف 360)' : 'Recitation Video (optional)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm,video/quicktime"
+                            onChange={(e) => setTeacherFiles((p) => ({ ...p, recitationVideo: e.target.files?.[0] || null }))}
+                            className="block w-full text-xs text-[var(--wn-text-secondary)]"
+                          />
                         </label>
-                        <input
-                          id={`${formId}-tf-country`}
-                          placeholder={tTeachers.fields.country}
-                          value={teacherForm.country}
-                          onChange={(e) => setTeacherForm((p) => ({ ...p, country: e.target.value }))}
-                          className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
-                        />
                       </div>
-                      <div>
-                        <label htmlFor={`${formId}-tf-city`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-                          {tTeachers.fields.city}
-                        </label>
+
+                      <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-text-primary)] min-h-11 py-1 cursor-pointer">
                         <input
-                          id={`${formId}-tf-city`}
-                          placeholder={tTeachers.fields.city}
-                          value={teacherForm.city}
-                          onChange={(e) => setTeacherForm((p) => ({ ...p, city: e.target.value }))}
-                          className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
+                          type="checkbox"
+                          checked={teacherForm.isPublic !== false}
+                          onChange={(e) => setTeacherForm((p) => ({ ...p, isPublic: e.target.checked }))}
+                          className="w-4 h-4 accent-[var(--wn-emerald)]"
                         />
-                      </div>
+                        <span>{isRTL ? 'يظهر للعام في صفحة المعلمين فور اكتمال اعتماده' : 'Visible in public directory once approved'}</span>
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={addingTeacher}
+                        className="w-full min-h-[44px] py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                      >
+                        {addingTeacher && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
+                        <span>{addingTeacher ? tTeachers.fields.submitting : tTeachers.fields.submitReview}</span>
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {teachersSubTab === 'archived' && (
+                  <div className="wn-dashboard-surface space-y-4">
+                    <div>
+                      <h3 className="font-bold text-[var(--wn-heading)]">
+                        {isRTL ? 'أرشيف المعلمين الموقوفين والمرفوضين' : 'Suspended & Rejected Teachers Archive'}
+                      </h3>
+                      <p className="text-xs text-[var(--wn-text-secondary)] mt-1">
+                        {isRTL
+                          ? 'يمكنك فتح ملف أي معلم موقوف أو مرفوض لإعادة تفعيله، أو تطهير ملفاته السحابية، أو حذفه بأمان.'
+                          : 'Inspect suspended or rejected teachers to restore access, purge cloud assets, or delete safely.'}
+                      </p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label htmlFor={`${formId}-tf-gender`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-                          {tTeachers.fields.gender}
-                        </label>
-                        <select
-                          id={`${formId}-tf-gender`}
-                          value={teacherForm.gender || 'male'}
-                          onChange={(e) => setTeacherForm((p) => ({ ...p, gender: e.target.value }))}
-                          className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
-                          aria-label={tTeachers.fields.gender}
-                        >
-                          <option value="male">{tTeachers.fields.genderMale}</option>
-                          <option value="female">{tTeachers.fields.genderFemale}</option>
-                        </select>
+                    {archivedTeachers.length === 0 ? (
+                      <EmptyState icon={Users} title={isRTL ? 'لا يوجد معلمون موقوفون أو مرفوضون حالياً' : 'No suspended or rejected teachers'} />
+                    ) : (
+                      <div className="wn-admin-teachers-list__rows">
+                        {archivedTeachers.map((teacher) => (
+                          <article key={teacher._id} className="wn-admin-teachers-list__row">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback}</strong>
+                                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] border border-[var(--wn-status-danger-border)]">
+                                  {teacher.status === 'suspended' ? (isRTL ? 'موقوف' : 'Suspended') : (isRTL ? 'مرفوض' : 'Rejected')}
+                                </span>
+                              </div>
+                              <small>{teacher.user?.email || tTeachers.noEmail} · {teacher.personalInfo?.phone || tc.dash}</small>
+                            </div>
+                            <div className="wn-admin-teachers-list__actions">
+                              <button type="button" className="is-primary min-h-[44px]" onClick={() => openTeacherDossier(teacher._id)}>
+                                {isRTL ? 'مراجعة / استعادة من 360' : 'Inspect / Restore'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteItem('teacher', teacher._id, teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback)}
+                                className="min-h-[44px] px-3 py-1.5 rounded-lg border border-[var(--wn-status-danger-border)] bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)] text-xs font-bold inline-flex items-center gap-1"
+                              >
+                                <Trash2 size={13} aria-hidden="true" />
+                                <span>{tTeachers.deleteBtn}</span>
+                              </button>
+                            </div>
+                          </article>
+                        ))}
                       </div>
-                      <div>
-                        <label htmlFor={`${formId}-tf-rate`} className="block text-xs font-semibold text-[var(--wn-text-secondary)] mb-1">
-                          {tTeachers.fields.hourlyRate}
-                        </label>
-                        <input
-                          id={`${formId}-tf-rate`}
-                          type="number"
-                          min="10"
-                          max="1000"
-                          placeholder={tTeachers.fields.hourlyRate}
-                          value={teacherForm.hourlyRate ?? 50}
-                          onChange={(e) => setTeacherForm((p) => ({ ...p, hourlyRate: Number(e.target.value) }))}
-                          className="w-full min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-2 text-sm"
-                        />
-                      </div>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-text-primary)] min-h-[44px] py-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={teacherForm.autoApprove !== false}
-                        onChange={(e) => setTeacherForm((p) => ({ ...p, autoApprove: e.target.checked }))}
-                        className="w-4 h-4 accent-[var(--wn-emerald)]"
-                      />
-                      <span>{tTeachers.fields.autoApprove}</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs font-bold text-[var(--wn-text-primary)] min-h-11 py-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={teacherForm.isPublic !== false}
-                        onChange={(e) => setTeacherForm((p) => ({ ...p, isPublic: e.target.checked }))}
-                        className="w-4 h-4 accent-[var(--wn-emerald)]"
-                      />
-                      <span>{isRTL ? 'ظاهر للعام في صفحة المعلمين والموقع' : 'Visible in public teacher directory'}</span>
-                    </label>
-                    <button
-                      type="submit"
-                      disabled={addingTeacher}
-                      className="w-full min-h-[44px] py-2 bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)] text-[var(--wn-text-inverse)] rounded-lg text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-60"
-                    >
-                      {addingTeacher && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
-                      <span>
-                        {addingTeacher
-                          ? tTeachers.fields.submitting
-                          : teacherForm.autoApprove !== false
-                            ? tTeachers.fields.submitAuto
-                            : tTeachers.fields.submitReview}
-                      </span>
-                    </button>
-                  </form>
+                    )}
+                  </div>
+                )}
 
+                {teachersSubTab === 'active' && (
                   <div className="wn-dashboard-surface wn-admin-teachers-list">
                     <div className="wn-admin-teachers-list__head">
                       <div>
                         <h3>{tTeachers.approvedTitle.replace('{count}', String(approved.length))}</h3>
                         <p>{tTeachers.approvedDesc}</p>
                       </div>
-                      <button
-                        type="button"
-                        className="wn-btn wn-btn--secondary min-h-[44px] inline-flex items-center gap-1.5 disabled:opacity-60"
-                        onClick={refreshTeachersSection}
-                        disabled={refreshingTeachers || loading}
-                      >
-                        <RefreshCw size={14} className={refreshingTeachers ? 'animate-spin' : ''} aria-hidden="true" />
-                        <span>{tTeachers.refresh}</span>
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(pending.length + pendingProfileChanges.length) > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setTeachersSubTab('review')}
+                            className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[var(--wn-status-warn-bg)] text-[var(--wn-status-warn-text)] border border-[var(--wn-status-warn-border)] text-xs font-bold"
+                          >
+                            {isRTL
+                              ? `طلبات بانتظار المراجعة (${pending.length + pendingProfileChanges.length})`
+                              : `Pending Reviews (${pending.length + pendingProfileChanges.length})`}
+                          </button>
+                        ) : null}
+                        <select
+                          value={teacherGenderFilter}
+                          onChange={(e) => setTeacherGenderFilter(e.target.value)}
+                          aria-label={tTeachers.fields.gender}
+                          className="min-h-[44px] border border-[var(--wn-border)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg px-3 py-1.5 text-xs font-semibold"
+                        >
+                          <option value="all">{isRTL ? 'الكل (معلمون ومعلمات)' : 'All Genders'}</option>
+                          <option value="male">{isRTL ? 'المعلمون (الرجال)' : 'Male Teachers'}</option>
+                          <option value="female">{isRTL ? 'المعلمات (السيدات)' : 'Female Teachers'}</option>
+                        </select>
+                      </div>
                     </div>
                     <label className="wn-admin-teachers-list__search">
                       <span>{tTeachers.searchLabel}</span>
@@ -1354,9 +1588,10 @@ export default function AdminDashboard() {
                         {filteredApprovedTeachers.map((teacher) => {
                           const isPublicTeacher = teacher.isPublic !== false;
                           const isTogglingPublic = togglingTeacherPublicId === teacher._id;
+                          const ops = teacher.operationalMetrics || {};
                           return (
                             <article key={teacher._id} className="wn-admin-teachers-list__row">
-                              <div>
+                              <div className="space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <strong>{teacher.user?.name || teacher.personalInfo?.fullName || ta.dossiers.reviewQueue.teacherFallback}</strong>
                                   <span
@@ -1370,6 +1605,18 @@ export default function AdminDashboard() {
                                       ? (isRTL ? 'ظاهر للعام' : 'Public')
                                       : (isRTL ? 'مخفي عن العام' : 'Hidden')}
                                   </span>
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--wn-surface-soft)] border border-[var(--wn-border)] text-[var(--wn-text-secondary)]">
+                                    {isRTL
+                                      ? `${ops.activeCirclesCount || 0} حلقات · ${ops.enrolledStudentsCount || 0} طلاب`
+                                      : `${ops.activeCirclesCount || 0} circles · ${ops.enrolledStudentsCount || 0} students`}
+                                  </span>
+                                  {Number(ops.overdueSessionsCount || 0) > 0 || Number(ops.missingReportsCount || 0) > 0 ? (
+                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--wn-status-warn-bg)] text-[var(--wn-status-warn-text)] border border-[var(--wn-status-warn-border)]">
+                                      {isRTL
+                                        ? `تنبيهات: ${Number(ops.overdueSessionsCount || 0) + Number(ops.missingReportsCount || 0)}`
+                                        : `Alerts: ${Number(ops.overdueSessionsCount || 0) + Number(ops.missingReportsCount || 0)}`}
+                                    </span>
+                                  ) : null}
                                 </div>
                                 <small>
                                   {[teacher.personalInfo?.country, teacher.personalInfo?.city].filter(Boolean).join(', ') || tTeachers.locationMissing}
@@ -1426,7 +1673,7 @@ export default function AdminDashboard() {
                       </div>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1506,7 +1753,7 @@ export default function AdminDashboard() {
           <TeacherReviewDossier
             dossier={teacherDossier}
             loading={teacherDossierLoading}
-            onClose={() => setTeacherDossier(null)}
+            onClose={closeTeacherDossier}
             onChecklist={updateTeacherChecklist}
             onReview={review}
             onOpenDocument={openTeacherDocument}
@@ -1516,6 +1763,15 @@ export default function AdminDashboard() {
             onPreviewPublic={previewPublicTeacher}
             onUpdateAdminSettings={updateTeacherAdminSettings}
             onDeleteTeacher={(id, label) => deleteItem('teacher', id, label)}
+            onSafeSuspendTeacher={(id, label) => setTeacherSafeModal({ teacherId: id, label, mode: 'suspend' })}
+            onRefreshDossier={async (id) => {
+              await openTeacherDossier(id);
+              await loadTeachersTab().catch(() => {});
+            }}
+            onOpenStudent={(sId) => {
+              closeTeacherDossier();
+              openStudentDossier(sId);
+            }}
           />
         )}
 
@@ -1523,13 +1779,22 @@ export default function AdminDashboard() {
           <Student360Dossier
             dossier={studentDossier}
             loading={studentDossierLoading}
-            onClose={() => setStudentDossier(null)}
+            onClose={closeStudentDossier}
             onOpenGuardian={openFamilyDossier}
-            onOpenTeacher={openTeacherDossier}
+            onOpenTeacher={(tId) => {
+              closeStudentDossier();
+              openTeacherDossier(tId);
+            }}
             onOpenHomeworkAudio={openStudentHomeworkAudio}
-            onMessageStudent={(studentId) => { setStudentDossier(null); setSupportStudent(studentId); setTab('messages'); }}
+            onMessageStudent={(studentId) => { closeStudentDossier(); setSupportStudent(studentId); setTab('messages'); }}
             onUpdateStudent={updateStudentAdminProfile}
             onDeleteStudent={(id, label) => deleteItem('student', id, label)}
+            onRefreshStudent={openStudentDossier}
+            onNavigateSubscriptions={() => {
+              closeStudentDossier();
+              navigate(localizedPath('/admin/subscriptions', locale));
+            }}
+            approvedTeachers={approved}
           />
         )}
 
@@ -1537,10 +1802,22 @@ export default function AdminDashboard() {
           <Family360Dossier
             dossier={familyDossier}
             loading={familyDossierLoading}
-            onClose={() => setFamilyDossier(null)}
+            onClose={closeFamilyDossier}
             onOpenStudent={openStudentDossier}
+            onRefreshFamily={openFamilyDossier}
           />
         )}
+
+        <TeacherSafeActionModal
+          modalState={teacherSafeModal}
+          onClose={() => setTeacherSafeModal(null)}
+          onCompleted={async (teacherId) => {
+            if (String(teacherDossier?.teacher?._id) === String(teacherId)) {
+              closeTeacherDossier();
+            }
+            await load();
+          }}
+        />
 
         <Modal
           isOpen={Boolean(payoutModal)}

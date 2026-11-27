@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, Loader2, Phone, RefreshCw, UserCheck, XCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
+import AdminQuickDossierHost from '../AdminDashboard/AdminQuickDossierHost';
 import EmptyState from '../../components/shared/EmptyState';
 import Modal from '../../components/shared/Modal';
 import SEOHead from '../../components/SEOHead';
@@ -155,6 +156,7 @@ export default function AdminTrials() {
   const dash = t.adminPortal.common.dash;
   const intlLocale = resolveIntlLocale(locale);
   const cancelReasonId = useId();
+  const dossierRef = useRef(null);
   const showLoadError = toast.error;
   const [filter, setFilter] = useState('all');
   const [trials, setTrials] = useState([]);
@@ -228,6 +230,7 @@ export default function AdminTrials() {
       onChange={handleTabChange}
       onNavigate={handleAdminRoute}
       onLogout={logout}
+      search={<AdminQuickDossierHost ref={dossierRef} approvedTeachers={teachers} onChanged={load} />}
     >
       <SEOHead page={{ title: pt.seoTitle, description: pt.seoDesc, noindex: true, canonical: false }} />
       <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
@@ -327,10 +330,14 @@ export default function AdminTrials() {
                     </p>
                     <p className="text-xs text-[var(--wn-text-secondary)]">
                       {trial.studentUser ? (
-                        <span className="inline-flex items-center gap-1 text-[var(--wn-emerald)]">
+                        <button
+                          type="button"
+                          onClick={() => dossierRef.current?.openStudent(trial.studentUser._id || trial.studentUser)}
+                          className="inline-flex items-center gap-1 text-[var(--wn-emerald)] font-semibold hover:underline"
+                        >
                           <UserCheck size={12} aria-hidden="true" />
                           {formatMsg(pt.card.linkedAccount, { name: trial.studentUser.name || trial.studentUser.email || pt.card.studentFallback })}
-                        </span>
+                        </button>
                       ) : pt.card.noAccount}
                       {trial.referenceNumber ? <> · {pt.card.refPrefix} <span dir="ltr">{trial.referenceNumber}</span></> : null}
                       {' · '}{formatDate(trial.createdAt, intlLocale, dash, true)}
@@ -339,7 +346,18 @@ export default function AdminTrials() {
                     {trial.assignedTeacher ? (
                       <div className="space-y-1">
                         <p className="text-sm text-[var(--wn-text-primary)]">
-                          {pt.card.teacher}: <strong>{teacherName(trial.assignedTeacher, pt.card.teacherFallback)}</strong>
+                          {pt.card.teacher}:{' '}
+                          {trial.assignedTeacher._id ? (
+                            <button
+                              type="button"
+                              onClick={() => dossierRef.current?.openTeacher(trial.assignedTeacher._id)}
+                              className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4"
+                            >
+                              {teacherName(trial.assignedTeacher, pt.card.teacherFallback)}
+                            </button>
+                          ) : (
+                            <strong>{teacherName(trial.assignedTeacher, pt.card.teacherFallback)}</strong>
+                          )}
                           {session?.scheduledAt ? <> · {pt.card.scheduledAt}: <strong>{formatDate(session.scheduledAt, intlLocale, dash, true)}</strong></> : null}
                         </p>
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--wn-status-success-bg)] text-[var(--wn-status-success-text)] px-2.5 py-0.5 text-xs font-semibold">

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Eye, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
+import AdminQuickDossierHost from '../AdminDashboard/AdminQuickDossierHost';
 import EmptyState from '../../components/shared/EmptyState';
 import Modal from '../../components/shared/Modal';
 import SEOHead from '../../components/SEOHead';
@@ -31,6 +32,7 @@ export default function AdminPayments() {
   const pa = t.payments.admin;
   const intlLocale = resolveIntlLocale(locale);
   const rejectReasonId = useId();
+  const dossierRef = useRef(null);
   const showLoadError = toast.error;
   const [filter, setFilter] = useState('pending');
   const [payments, setPayments] = useState([]);
@@ -159,6 +161,7 @@ export default function AdminPayments() {
       onChange={handleTabChange}
       onNavigate={handleAdminRoute}
       onLogout={logout}
+      search={<AdminQuickDossierHost ref={dossierRef} onChanged={load} />}
     >
       <SEOHead page={{ title: pa.seoTitle, description: pa.seoDesc, noindex: true, canonical: false }} />
       <div className="wn-admin-payment-readable">
@@ -233,7 +236,17 @@ export default function AdminPayments() {
                 <div key={payment.id} className="wn-dashboard-surface">
                   <div className="flex flex-wrap justify-between gap-4">
                     <div className="space-y-1">
-                      <h3 className="font-bold text-[var(--wn-heading)]">{payment.student?.name || pa.card.studentFallback}</h3>
+                      {payment.student?._id ? (
+                        <button
+                          type="button"
+                          onClick={() => dossierRef.current?.openStudent(payment.student._id)}
+                          className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4 text-start"
+                        >
+                          {payment.student?.name || pa.card.studentFallback}
+                        </button>
+                      ) : (
+                        <h3 className="font-bold text-[var(--wn-heading)]">{payment.student?.name || pa.card.studentFallback}</h3>
+                      )}
                       <p className="text-sm text-[var(--wn-text-secondary)]">{payment.student?.email}</p>
                       <p className="text-sm text-[var(--wn-text-primary)]">
                         {payment.kind === 'subscription'
@@ -249,11 +262,23 @@ export default function AdminPayments() {
                           <p>{pa.card.sessions}: <strong>{payment.subscription?.sessionCount || t.adminPortal.common.dash}</strong></p>
                           <p>
                             {pa.card.preferredTutor}:{' '}
-                            <strong>
-                              {payment.subscription?.preferredTeacher?.personalInfo?.fullName
-                                || payment.subscription?.preferredTeacher?.user?.name
-                                || t.adminPortal.common.dash}
-                            </strong>
+                            {payment.subscription?.preferredTeacher?._id ? (
+                              <button
+                                type="button"
+                                onClick={() => dossierRef.current?.openTeacher(payment.subscription.preferredTeacher._id)}
+                                className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4"
+                              >
+                                {payment.subscription?.preferredTeacher?.personalInfo?.fullName
+                                  || payment.subscription?.preferredTeacher?.user?.name
+                                  || t.adminPortal.common.dash}
+                              </button>
+                            ) : (
+                              <strong>
+                                {payment.subscription?.preferredTeacher?.personalInfo?.fullName
+                                  || payment.subscription?.preferredTeacher?.user?.name
+                                  || t.adminPortal.common.dash}
+                              </strong>
+                            )}
                           </p>
                         </div>
                       ) : null}

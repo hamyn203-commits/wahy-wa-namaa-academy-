@@ -22,7 +22,7 @@ function durationOptionsFor(plan) {
 
 export default function SubscriptionCircleCard({ circle, teachers = [], allStudents = [], onChanged }) {
   const toast = useToast();
-  const { locale, t } = useI18n();
+  const { locale, isRTL, t } = useI18n();
   const ps = t.payments.subscriptions;
   const psc = ps.card;
   const dash = t.adminPortal.common.dash;
@@ -39,6 +39,7 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
   const [editName, setEditName] = useState(circle.name || '');
   const [editTeacherId, setEditTeacherId] = useState(circle.teacher?._id || '');
   const [addStudentId, setAddStudentId] = useState('');
+  const [grantScholarship, setGrantScholarship] = useState(false);
   const [confirmDeleteCircle, setConfirmDeleteCircle] = useState(false);
   const [confirmRemoveStudent, setConfirmRemoveStudent] = useState(null);
 
@@ -113,9 +114,13 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
     if (!addStudentId) return toast.error(ps.toasts.selectStudentFirst);
     setWorking(true);
     try {
-      await api.post(`/api/subscriptions/admin/circles/${circle._id}/students`, { studentId: addStudentId }, { auth: true });
+      await api.post(`/api/subscriptions/admin/circles/${circle._id}/students`, {
+        studentId: addStudentId,
+        grantScholarship,
+      }, { auth: true });
       toast.success(ps.toasts.studentAdded);
       setAddStudentId('');
+      setGrantScholarship(false);
       await onChanged();
     } catch (error) {
       toast.error(error.message || ps.toasts.studentAddFailed);
@@ -387,7 +392,7 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
           </table>
 
           {allStudents.length > 0 && circle.studentCount < circle.capacity ? (
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--wn-border)]">
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--wn-border)]">
               <select
                 value={addStudentId}
                 onChange={(e) => setAddStudentId(e.target.value)}
@@ -401,6 +406,15 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
                     <option key={s._id} value={s._id}>{s.name} ({s.email})</option>
                   ))}
               </select>
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--wn-heading)] cursor-pointer min-h-[44px] px-2.5 rounded-lg border border-[var(--wn-border)] bg-[var(--wn-surface-soft)]">
+                <input
+                  type="checkbox"
+                  checked={grantScholarship}
+                  onChange={(e) => setGrantScholarship(e.target.checked)}
+                  className="w-4 h-4 accent-[var(--wn-emerald)]"
+                />
+                <span>{isRTL ? 'منحة دراسية (بدون اشتراك مدفوع)' : 'Grant scholarship (no paid sub)'}</span>
+              </label>
               <button
                 type="button"
                 disabled={working || !addStudentId}

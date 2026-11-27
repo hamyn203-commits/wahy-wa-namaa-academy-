@@ -179,7 +179,7 @@ async function streamAdminTeacherAsset(reference, res, { fallbackContentType = '
   return res.sendFile(absolutePath);
 }
 
-function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, profileChange = null) {
+function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, profileChange = null, extra = {}) {
   const raw = teacher.toObject ? teacher.toObject() : teacher;
   const documents = raw.documents || {};
   const media = raw.media || {};
@@ -199,12 +199,14 @@ function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, 
       availability: raw.availability || [],
       status: raw.status,
       isVerified: raw.isVerified,
+      assetsPurgedAt: raw.assetsPurgedAt || null,
       reviewNotes: raw.reviewNotes || [],
       reviewChecklist: raw.reviewChecklist || [],
       reviewStartedAt: raw.reviewStartedAt,
       reviewCompletedAt: raw.reviewCompletedAt,
       rating: raw.rating,
       stats: raw.stats,
+      earnings: raw.earnings || { totalEarned: 0, pendingEarnings: 0, withdrawnEarnings: 0 },
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       documents: {
@@ -222,16 +224,19 @@ function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, 
         ijazatCount: (documents.ijazat || []).filter(Boolean).length,
       },
       media: {
-        profilePhoto: Boolean(media.profilePhoto && media.profilePhoto !== '/default-teacher.png'),
-        introductionVideo: Boolean(media.introductionVideo && media.introductionVideo !== '/default-teacher.png'),
-        recitationVideo: Boolean(media.recitationVideo && media.recitationVideo !== '/default-teacher.png'),
-        teachingMethodVideo: Boolean(media.teachingMethodVideo && media.teachingMethodVideo !== '/default-teacher.png'),
+        profilePhoto: Boolean(media.profilePhoto && media.profilePhoto !== '/default-teacher.png' && !String(media.profilePhoto).toLowerCase().includes('placeholder')),
+        introductionVideo: Boolean(media.introductionVideo && media.introductionVideo !== '/default-teacher.png' && !String(media.introductionVideo).toLowerCase().includes('placeholder')),
+        recitationVideo: Boolean(media.recitationVideo && media.recitationVideo !== '/default-teacher.png' && !String(media.recitationVideo).toLowerCase().includes('placeholder')),
+        teachingMethodVideo: Boolean(media.teachingMethodVideo && media.teachingMethodVideo !== '/default-teacher.png' && !String(media.teachingMethodVideo).toLowerCase().includes('placeholder')),
         additionalVideosCount: (media.additionalVideos || []).filter(Boolean).length,
         audioRecordingsCount: (media.audioRecordings || []).filter(Boolean).length,
       },
     },
     gate,
     activity,
+    circles: extra.circles || [],
+    assignedStudents: extra.assignedStudents || [],
+    walletSummary: extra.walletSummary || null,
     audit: auditEntries.map((entry) => ({
       _id: entry._id,
       action: entry.action,
@@ -244,6 +249,24 @@ function teacherDossierPayload(teacher, gate, auditEntries = [], activity = {}, 
       _id: profileChange._id,
       status: profileChange.status,
       changedFields: profileChange.changedFields || [],
+      current: {
+        personalInfo: {
+          fullName: raw.personalInfo?.fullName || '',
+          city: raw.personalInfo?.city || '',
+        },
+        academicInfo: {
+          university: raw.academicInfo?.university || '',
+          faculty: raw.academicInfo?.faculty || '',
+          qualification: raw.academicInfo?.qualification || '',
+        },
+        quranInfo: {
+          teachingExperience: raw.quranInfo?.teachingExperience ?? 0,
+          numberOfIjazat: raw.quranInfo?.numberOfIjazat ?? 0,
+        },
+        user: {
+          bio: raw.user?.bio || '',
+        },
+      },
       proposed: {
         personalInfo: profileChange.proposed?.personalInfo || {},
         academicInfo: profileChange.proposed?.academicInfo || {},
@@ -1520,7 +1543,12 @@ router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req,
 
     if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
 
-    const [auditEntries, activityAgg, distinctStudents, profileChange] = await Promise.all([
+    const GroupCircleModel = require('../models/GroupCircle');
+    const StudentSubscriptionModel = require('../models/StudentSubscription');
+    const TeacherLedgerModel = require('../models/TeacherLedger');
+    const canQueryExtra = Boolean(mongoose.connection?.db) || GroupCircleModel.find !== mongoose.Model.find;
+
+    const [auditEntries, activityAgg, distinctStudents, profileChange, teacherCircles, lockedSubs, ledgerEntries] = await Promise.all([
       AdminAuditLog.find({ entityType: 'teacher', entityId: String(teacher._id) })
         .populate('actor', 'name email')
         .sort({ createdAt: -1 })
@@ -1542,7 +1570,71 @@ router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req,
         .sort({ createdAt: -1 })
         .populate('reviewedBy', 'name email')
         .lean(),
+      canQueryExtra
+        ? GroupCircleModel.find({ teacher: teacher._id, status: { $nin: ['completed', 'cancelled'] } })
+            .populate('students', 'name email currentLevel preferredTrack')
+            .select('name code status capacity students schedule timezone subscriptionPlanKey subscriptionSection')
+            .sort({ createdAt: -1 })
+            .limit(40)
+            .lean()
+            .catch(() => [])
+        : [],
+      canQueryExtra
+        ? StudentSubscriptionModel.find({
+            preferredTeacher: teacher._id,
+            status: { $in: ['awaiting_placement', 'placed', 'active', 'paused'] },
+          })
+            .populate('student', 'name email phone currentLevel preferredTrack')
+            .populate('circle', 'name code')
+            .select('student circle planKey status sessionsRemaining sessionCount isScholarship createdAt')
+            .sort({ createdAt: -1 })
+            .limit(60)
+            .lean()
+            .catch(() => [])
+        : [],
+      canQueryExtra
+        ? TeacherLedgerModel.find({ teacher: teacher._id })
+            .select('type amount currency status payoutMethod referenceNumber notes createdAt processedAt')
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean()
+            .catch(() => [])
+        : [],
     ]);
+
+    const assignedMap = new Map();
+    for (const sub of lockedSubs || []) {
+      if (!sub.student?._id) continue;
+      assignedMap.set(String(sub.student._id), {
+        _id: sub.student._id,
+        name: sub.student.name,
+        email: sub.student.email,
+        level: sub.student.currentLevel,
+        track: sub.student.preferredTrack,
+        circleName: sub.circle?.name || null,
+        subscriptionStatus: sub.status,
+        sessionsRemaining: sub.sessionsRemaining,
+        sessionCount: sub.sessionCount,
+        isScholarship: Boolean(sub.isScholarship),
+      });
+    }
+    for (const circle of teacherCircles || []) {
+      for (const s of circle.students || []) {
+        if (!s?._id || assignedMap.has(String(s._id))) continue;
+        assignedMap.set(String(s._id), {
+          _id: s._id,
+          name: s.name,
+          email: s.email,
+          level: s.currentLevel,
+          track: s.preferredTrack,
+          circleName: circle.name,
+          subscriptionStatus: circle.status === 'active' ? 'active' : 'placed',
+          sessionsRemaining: null,
+          sessionCount: null,
+          isScholarship: false,
+        });
+      }
+    }
 
     const gate = buildTeacherReviewGate(teacher);
     return res.json(teacherDossierPayload(
@@ -1553,12 +1645,186 @@ router.get('/admin/:id/review-dossier', protect, authorize('admin'), async (req,
         totalSessions: activityAgg[0]?.totalSessions || 0,
         completedSessions: activityAgg[0]?.completedSessions || 0,
         acceptedSessions: activityAgg[0]?.acceptedSessions || 0,
-        distinctStudents: distinctStudents.length,
+        distinctStudents: Math.max(distinctStudents.length, assignedMap.size),
       },
       profileChange,
+      {
+        circles: (teacherCircles || []).map((c) => ({
+          _id: c._id,
+          name: c.name,
+          code: c.code,
+          status: c.status,
+          capacity: c.capacity,
+          studentCount: Array.isArray(c.students) ? c.students.length : 0,
+          schedule: c.schedule || [],
+          timezone: c.timezone || 'Africa/Cairo',
+          planKey: c.subscriptionPlanKey || '',
+          section: c.subscriptionSection || 'men_children',
+        })),
+        assignedStudents: Array.from(assignedMap.values()),
+        walletSummary: {
+          earnings: teacher.earnings || { totalEarned: 0, pendingEarnings: 0, withdrawnEarnings: 0 },
+          recentLedger: ledgerEntries || [],
+        },
+      },
     ));
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.put('/admin/:id/assets', protect, authorize('admin'), async (req, res) => {
+  try {
+    const uploadedFiles = req.body?.uploadedFiles && typeof req.body.uploadedFiles === 'object'
+      ? req.body.uploadedFiles
+      : {};
+
+    const publicKeys = ['profilePhoto', 'introductionVideo', 'recitationVideo', 'teachingMethodVideo'];
+    const privateKeys = ['idCardFront', 'idCardBack', 'graduationCertificate'];
+    const updatedFields = [];
+
+    if (isMockMode && !isDBConnected()) {
+      const mockTeacher = findMockTeacherById(req.params.id);
+      if (!mockTeacher) return res.status(404).json({ error: 'Teacher not found' });
+      mockTeacher.media = mockTeacher.media || {};
+      mockTeacher.documents = mockTeacher.documents || {};
+      for (const key of publicKeys) {
+        const ref = String(uploadedFiles[key]?.url || uploadedFiles[key]?.pathname || uploadedFiles[key] || '').trim();
+        if (ref) {
+          mockTeacher.media[key] = ref;
+          updatedFields.push(`media.${key}`);
+        }
+      }
+      for (const key of privateKeys) {
+        const ref = String(uploadedFiles[key]?.url || uploadedFiles[key]?.pathname || uploadedFiles[key] || '').trim();
+        if (ref) {
+          mockTeacher.documents[key] = ref;
+          updatedFields.push(`documents.${key}`);
+        }
+      }
+      return res.json({ success: true, updatedFields, gate: buildTeacherReviewGate(mockTeacher) });
+    }
+
+    const teacher = await Teacher.findById(req.params.id).select('+storageOwner');
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+
+    for (const key of publicKeys) {
+      const ref = String(uploadedFiles[key]?.url || uploadedFiles[key]?.pathname || uploadedFiles[key] || '').trim();
+      if (!ref) continue;
+      if (!objectStorage.isOwnedObjectReference(ref, 'teacher-public', req.user.id)) {
+        return res.status(400).json({ error: `Invalid uploaded media reference for ${key}`, code: 'INVALID_ASSET_OWNER' });
+      }
+      teacher.media = teacher.media || {};
+      teacher.media[key] = ref;
+      updatedFields.push(`media.${key}`);
+    }
+
+    for (const key of privateKeys) {
+      const ref = String(uploadedFiles[key]?.url || uploadedFiles[key]?.pathname || uploadedFiles[key] || '').trim();
+      if (!ref) continue;
+      if (!objectStorage.isOwnedObjectReference(ref, 'teacher-private', req.user.id)) {
+        return res.status(400).json({ error: `Invalid uploaded document reference for ${key}`, code: 'INVALID_ASSET_OWNER' });
+      }
+      teacher.documents = teacher.documents || {};
+      teacher.documents[key] = ref;
+      if (key === 'idCardFront') teacher.documents.idCard = ref;
+      if (key === 'graduationCertificate') teacher.documents.graduationCertificateAvailable = true;
+      updatedFields.push(`documents.${key}`);
+    }
+
+    if (!updatedFields.length) {
+      return res.status(400).json({ error: 'لم يتم إرفاق أي ملفات جديدة' });
+    }
+
+    // Ensure core videos remain distinct when multiple videos are present
+    if (!coreMediaAreDistinct(teacher.media || {})) {
+      return res.status(409).json({
+        error: 'يجب أن تكون فيديوهات التعريف والتلاوة وطريقة التدريس ملفات مختلفة غير مكررة',
+        code: 'TEACHER_CORE_MEDIA_MUST_BE_DISTINCT',
+      });
+    }
+
+    const existingOwners = String(teacher.storageOwner || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!existingOwners.includes(String(req.user.id))) {
+      existingOwners.push(String(req.user.id));
+    }
+    teacher.storageOwner = existingOwners.join(',');
+    teacher.assetsPurgedAt = undefined;
+    await teacher.save();
+
+    const gate = buildTeacherReviewGate(teacher);
+    await logAdminAction({
+      req,
+      action: 'teacher.admin-assets.uploaded',
+      entityType: 'teacher',
+      entityId: teacher._id,
+      reason: String(req.body?.reason || 'رفع ملفات المعلم مباشرة من لوحة الإدارة').slice(0, 240),
+      metadata: { updatedFields, readiness: gate.readiness },
+    }).catch(() => {});
+
+    return res.json({ success: true, updatedFields, gate });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
+  }
+});
+
+router.put('/admin/:id/review-checklist-bulk', protect, authorize('admin'), async (req, res) => {
+  try {
+    const keys = Array.isArray(req.body?.keys)
+      ? req.body.keys.map((k) => String(k || '').trim()).filter(Boolean)
+      : [];
+    const status = String(req.body?.status || 'approved').trim();
+    if (!keys.length || status !== 'approved') {
+      return res.status(400).json({ error: 'يرجى تحديد بنود صالحة للاعتماد الجماعي' });
+    }
+
+    const teacher = await Teacher.findById(req.params.id);
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+
+    const preGate = buildTeacherReviewGate(teacher);
+    const gateByKey = new Map((preGate.items || []).map((item) => [item.key, item]));
+    const appliedKeys = [];
+
+    for (const key of keys) {
+      const itemState = gateByKey.get(key);
+      if (!itemState || !itemState.available) continue;
+      const existing = teacher.reviewChecklist.find((entry) => entry.key === key);
+      if (existing) {
+        existing.status = 'approved';
+        existing.note = '';
+        existing.reviewedBy = req.user.id;
+        existing.reviewedAt = new Date();
+      } else {
+        teacher.reviewChecklist.push({
+          key,
+          status: 'approved',
+          note: '',
+          reviewedBy: req.user.id,
+          reviewedAt: new Date(),
+        });
+      }
+      appliedKeys.push(key);
+    }
+
+    if (!teacher.reviewStartedAt) teacher.reviewStartedAt = new Date();
+    await teacher.save();
+
+    const gate = buildTeacherReviewGate(teacher);
+    await logAdminAction({
+      req,
+      action: 'teacher.review-checklist.bulk-approved',
+      entityType: 'teacher',
+      entityId: teacher._id,
+      reason: 'اعتماد جماعي لبنود الملف المتاحة بعد الفحص',
+      metadata: { appliedKeys, readiness: gate.readiness },
+    }).catch(() => {});
+
+    return res.json({ success: true, appliedKeys, gate, reviewChecklist: teacher.reviewChecklist });
+  } catch (error) {
+    return res.status(400).json({ error: safeErrorMessage(error, 400) });
   }
 });
 

@@ -59,8 +59,12 @@ function collectTeacherAssetReferences(teacher) {
 }
 
 function ownerCandidates(teacher, user) {
+  const storedOwners = String(teacher?.storageOwner || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
   const values = [
-    teacher?.storageOwner,
+    ...storedOwners,
     user?._id,
     user?.id,
     user?.email,
