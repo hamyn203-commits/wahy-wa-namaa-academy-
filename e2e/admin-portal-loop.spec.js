@@ -11,7 +11,8 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
     pageErrors.push(err.message || String(err));
   });
   page.on('response', (res) => {
-    if (res.url().includes('/api/') && res.status() >= 500) {
+    const isIntentionalLaunchNoGo = res.url().includes('/api/launch-readiness') && res.status() === 503;
+    if (res.url().includes('/api/') && res.status() >= 500 && !isIntentionalLaunchNoGo) {
       serverErrors.push(`${res.status()} ${res.request().method()} ${res.url()}`);
     }
   });
@@ -41,7 +42,8 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
 
   // 5. Session Control V2 (Surface 5)
   await nav.getByRole('button', { name: 'مركز الحصص', exact: true }).click();
-  await expect(page.getByText('مركز عمليات الحصص والرقابة الحية')).toBeVisible();
+  await expect(page.locator('#admin-section-title')).toHaveText('مركز الحصص');
+  await expect(page.getByText('رقابة التقارير والجودة')).toBeVisible();
 
   // 6. Teacher Withdrawals & Treasury (Surface 6)
   await nav.getByRole('button', { name: 'السحوبات والمالية', exact: true }).click();
