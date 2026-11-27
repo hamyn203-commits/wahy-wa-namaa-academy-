@@ -20,7 +20,14 @@ function durationOptionsFor(plan) {
   return [30, 45, 60, 90, 120].filter((value) => value >= min && value <= max);
 }
 
-export default function SubscriptionCircleCard({ circle, teachers = [], allStudents = [], onChanged }) {
+export default function SubscriptionCircleCard({
+  circle,
+  teachers = [],
+  allStudents = [],
+  onChanged,
+  onOpenStudent,
+  onOpenTeacher,
+}) {
   const toast = useToast();
   const { locale, isRTL, t } = useI18n();
   const ps = t.payments.subscriptions;
@@ -61,6 +68,12 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
   const circlePlanName = locale === 'ar'
     ? (circle.plan?.name?.ar || circle.plan?.name?.en)
     : (circle.plan?.name?.en || circle.plan?.name?.ar);
+
+  const compatibleEditTeachers = teachers.filter((teacherItem) => {
+    if (String(teacherItem._id) === String(circle.teacher?._id)) return false;
+    if (circle.section === 'ladies' && teacherItem.gender && teacherItem.gender !== 'female') return false;
+    return true;
+  });
 
   const start = async () => {
     if (working) return;
@@ -218,7 +231,19 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
             </button>
           </div>
           <p className="text-sm text-[var(--wn-text-secondary)]">
-            {teacher} · {circlePlanName || dash} · {circle.section === 'ladies' ? ps.awaitingCard.sectionLadies : ps.awaitingCard.sectionMenChildren}
+            {circle.teacher?._id && onOpenTeacher ? (
+              <button
+                type="button"
+                onClick={() => onOpenTeacher(circle.teacher._id)}
+                className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4"
+              >
+                {teacher}
+              </button>
+            ) : (
+              teacher
+            )}
+            {' · '}
+            {circlePlanName || dash} · {circle.section === 'ladies' ? ps.awaitingCard.sectionLadies : ps.awaitingCard.sectionMenChildren}
           </p>
           <p className="text-xs text-[var(--wn-text-tertiary)]">{circle.code}</p>
         </div>
@@ -271,7 +296,7 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
                 className="block w-full min-h-[44px] border border-[var(--wn-border)] rounded-lg p-2 text-sm bg-[var(--wn-surface)] text-[var(--wn-text-primary)]"
               >
                 <option value={circle.teacher?._id || ''}>{teacher}</option>
-                {teachers.filter((teacherItem) => String(teacherItem._id) !== String(circle.teacher?._id)).map((teacherItem) => (
+                {compatibleEditTeachers.map((teacherItem) => (
                   <option key={teacherItem._id} value={teacherItem._id}>{teacherItem.name}</option>
                 ))}
               </select>
@@ -366,7 +391,19 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
             <tbody>
               {roster.map((item) => (
                 <tr key={item._id} className="border-b border-[var(--wn-border)]">
-                  <td className="p-2 whitespace-nowrap">{item.student?.name || ps.awaitingCard.studentFallback}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {item.student?._id && onOpenStudent ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenStudent(item.student._id)}
+                        className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4 text-start"
+                      >
+                        {item.student?.name || ps.awaitingCard.studentFallback}
+                      </button>
+                    ) : (
+                      item.student?.name || ps.awaitingCard.studentFallback
+                    )}
+                  </td>
                   <td className="p-2 whitespace-nowrap">{item.sessionCount} {psc.table.sessionUnit}</td>
                   <td className="p-2 whitespace-nowrap">{item.sessionsUsed}</td>
                   <td className="p-2 whitespace-nowrap">{item.sessionsRemaining}</td>
@@ -402,6 +439,7 @@ export default function SubscriptionCircleCard({ circle, teachers = [], allStude
                 <option value="">{psc.addStudentPlaceholder}</option>
                 {allStudents
                   .filter((s) => !roster.some((r) => String(r.student?._id) === String(s._id)))
+                  .filter((s) => (circle.section === 'ladies' ? s.gender === 'female' : true))
                   .map((s) => (
                     <option key={s._id} value={s._id}>{s.name} ({s.email})</option>
                   ))}

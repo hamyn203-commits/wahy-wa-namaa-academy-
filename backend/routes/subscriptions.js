@@ -425,6 +425,162 @@ router.delete('/:id/draft', protect, authorize('student', 'guardian'), async (re
 });
 
 
+router.get('/admin/ledger', protect, authorize('admin'), async (req, res) => {
+  try {
+    const requestedFocus = String(req.query.focus || 'all').trim().toLowerCase();
+    const allowedFocus = new Set([
+      'all',
+      'low_balance',
+      'renewal_queued',
+      'pending_payment',
+      'payment_review',
+      'paused',
+      'active',
+      'scholarships',
+    ]);
+    const focus = allowedFocus.has(requestedFocus) ? requestedFocus : 'all';
+
+    const requestedSection = String(req.query.section || 'all').trim().toLowerCase();
+    const sectionFilter = ['men_children', 'ladies'].includes(requestedSection) ? requestedSection : 'all';
+    const rawQ = String(req.query.q || '').trim().slice(0, 120).toLowerCase();
+
+    if (isMockMode && !isDBConnected()) {
+      const allSubs = getMockSubscriptions();
+      const summary = {
+        awaitingPlacement: allSubs.filter((s) => s.status === 'awaiting_placement').length,
+        activePackages: allSubs.filter((s) => ['active', 'placed'].includes(s.status)).length,
+        lowBalance: allSubs.filter((s) => ['active', 'placed'].includes(s.status) && Number(s.sessionsRemaining ?? 99) <= 2).length,
+        renewalQueued: allSubs.filter((s) => s.status === 'renewal_queued').length,
+        pendingPayment: allSubs.filter((s) => s.status === 'pending_payment').length,
+        paymentReview: allSubs.filter((s) => s.status === 'payment_review').length,
+        paused: allSubs.filter((s) => s.status === 'paused').length,
+        scholarships: allSubs.filter((s) => Boolean(s.isScholarship)).length,
+      };
+      const filtered = allSubs
+        .filter((s) => {
+          if (sectionFilter !== 'all' && s.section !== sectionFilter) return false;
+          if (focus === 'low_balance') return ['active', 'placed'].includes(s.status) && Number(s.sessionsRemaining ?? 99) <= 2;
+          if (focus === 'scholarships') return Boolean(s.isScholarship);
+          if (focus !== 'all') return s.status === focus;
+          return true;
+        })
+        .map((s) => {
+          const student = findMockUserById(s.student?._id || s.student) || { _id: s.student, name: 'طالب', email: '' };
+          const teacherObj = findMockTeacherById(s.preferredTeacher?._id || s.preferredTeacher);
+          const preferredTeacher = teacherObj
+            ? { ...teacherObj, user: findMockUserById(teacherObj.user) || { name: teacherObj.personalInfo?.fullName } }
+            : null;
+          const circle = s.circle ? findMockCircleById(s.circle?._id || s.circle) : null;
+          return { ...serializeSubscription(s), student, preferredTeacher, circle };
+        });
+      return res.json({ success: true, summary, subscriptions: filtered });
+    }
+
+    const query = {};
+    if (sectionFilter !== 'all') query.section = sectionFilter;
+    if (focus === 'low_balance') {
+      query.status = { $in: ['active', 'placed'] };
+      query.sessionsRemaining = { $lte: 2 };
+    } else if (focus === 'scholarships') {
+      query.isScholarship = true;
+    } else if (focus !== 'all') {
+      query.status = focus;
+    } else {
+      query.status = {
+        $in: [
+          'active',
+          'placed',
+          'awaiting_placement',
+          'renewal_queued',
+          'payment_review',
+          'pending_payment',
+          'paused',
+          'completed',
+        ],
+      };
+    }
+
+    const [items, countsFacet] = await Promise.all([
+      StudentSubscription.find(query)
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .limit(150)
+        .populate('student', 'name email phone whatsappPhone gender age currentLevel preferredTrack')
+        .populate({
+          path: 'preferredTeacher',
+          select: 'personalInfo user status',
+          populate: { path: 'user', select: 'name email' },
+        })
+        .populate('circle', 'name code status schedule timezone')
+        .lean(),
+      mongoose.connection.readyState === 1 && typeof StudentSubscription.aggregate === 'function'
+        ? StudentSubscription.aggregate([
+            {
+              $facet: {
+                byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
+                lowBalance: [
+                  { $match: { status: { $in: ['active', 'placed'] }, sessionsRemaining: { $lte: 2 } } },
+                  { $count: 'count' },
+                ],
+                scholarships: [
+                  { $match: { isScholarship: true, status: { $nin: ['cancelled', 'expired'] } } },
+                  { $count: 'count' },
+                ],
+              },
+            },
+          ]).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    const statusCounts = new Map();
+    const facet = countsFacet?.[0] || {};
+    for (const row of facet.byStatus || []) {
+      statusCounts.set(row._id, Number(row.count) || 0);
+    }
+
+    const summary = {
+      awaitingPlacement: statusCounts.get('awaiting_placement') || 0,
+      activePackages: (statusCounts.get('active') || 0) + (statusCounts.get('placed') || 0),
+      lowBalance: facet.lowBalance?.[0]?.count || 0,
+      renewalQueued: statusCounts.get('renewal_queued') || 0,
+      pendingPayment: statusCounts.get('pending_payment') || 0,
+      paymentReview: statusCounts.get('payment_review') || 0,
+      paused: statusCounts.get('paused') || 0,
+      scholarships: facet.scholarships?.[0]?.count || 0,
+    };
+
+    let rows = items.map((sub) => ({
+      ...serializeSubscription(sub),
+      isScholarship: Boolean(sub.isScholarship),
+      student: sub.student,
+      preferredTeacher: sub.preferredTeacher,
+      circle: sub.circle,
+    }));
+
+    if (rawQ) {
+      rows = rows.filter((row) => {
+        const hay = [
+          row.student?.name,
+          row.student?.email,
+          row.student?.phone,
+          row.preferredTeacher?.personalInfo?.fullName,
+          row.preferredTeacher?.user?.name,
+          row.circle?.name,
+          row.circle?.code,
+          row.pricingSnapshot?.nameAr,
+          row.pricingSnapshot?.nameEn,
+          row.planKey,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(rawQ);
+      });
+    }
+
+    return res.json({ success: true, summary, subscriptions: rows });
+  } catch (error) {
+    console.error('Admin subscription ledger error:', error.message);
+    return res.status(500).json({ error: 'فشل تحميل سجل الاشتراكات' });
+  }
+});
+
 router.get('/admin/placements', protect, authorize('admin'), async (req, res) => {
   try {
     const requestedStatus = String(req.query.status || 'awaiting_placement').trim();
