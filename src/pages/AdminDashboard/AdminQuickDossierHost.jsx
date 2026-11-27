@@ -1,4 +1,4 @@
-import { useCallback, useImperativeHandle, useState, forwardRef } from 'react';
+import { useCallback, useImperativeHandle, useRef, useState, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../context/ToastProvider';
 import { useI18n } from '../../i18n';
@@ -26,57 +26,99 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
   const [teacherDossier, setTeacherDossier] = useState(null);
   const [teacherLoading, setTeacherLoading] = useState(false);
   const [teacherSafeModal, setTeacherSafeModal] = useState(null);
+  const studentReqRef = useRef(0);
+  const familyReqRef = useRef(0);
+  const teacherReqRef = useRef(0);
+
+  const closeStudent = useCallback(() => {
+    studentReqRef.current += 1;
+    setStudentDossier(null);
+    setStudentLoading(false);
+  }, []);
+
+  const closeGuardian = useCallback(() => {
+    familyReqRef.current += 1;
+    setFamilyDossier(null);
+    setFamilyLoading(false);
+  }, []);
+
+  const closeTeacher = useCallback(() => {
+    teacherReqRef.current += 1;
+    setTeacherDossier(null);
+    setTeacherLoading(false);
+  }, []);
 
   const openStudent = useCallback(async (studentId) => {
     if (!studentId) return;
-    setFamilyDossier(null);
-    setTeacherDossier(null);
+    closeGuardian();
+    closeTeacher();
+    const reqId = ++studentReqRef.current;
     setStudentLoading(true);
     setStudentDossier({ student: { _id: studentId } });
     try {
       const res = await api.get(`/api/admin/people/students/${studentId}`, { auth: true });
-      setStudentDossier(res);
+      if (studentReqRef.current === reqId) {
+        setStudentDossier(res);
+      }
     } catch (err) {
-      setStudentDossier(null);
-      toast.error(err.message || tt.dossierLoadFailed);
+      if (studentReqRef.current === reqId) {
+        setStudentDossier(null);
+        toast.error(err.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setStudentLoading(false);
+      if (studentReqRef.current === reqId) {
+        setStudentLoading(false);
+      }
     }
-  }, [toast, tt.dossierLoadFailed]);
+  }, [closeGuardian, closeTeacher, toast, tt.dossierLoadFailed]);
 
   const openGuardian = useCallback(async (guardianId) => {
     if (!guardianId) return;
-    setStudentDossier(null);
-    setTeacherDossier(null);
+    closeStudent();
+    closeTeacher();
+    const reqId = ++familyReqRef.current;
     setFamilyLoading(true);
     setFamilyDossier({ guardian: { _id: guardianId } });
     try {
       const res = await api.get(`/api/admin/people/guardians/${guardianId}`, { auth: true });
-      setFamilyDossier(res);
+      if (familyReqRef.current === reqId) {
+        setFamilyDossier(res);
+      }
     } catch (err) {
-      setFamilyDossier(null);
-      toast.error(err.message || tt.familyLoadFailed);
+      if (familyReqRef.current === reqId) {
+        setFamilyDossier(null);
+        toast.error(err.message || tt.familyLoadFailed);
+      }
     } finally {
-      setFamilyLoading(false);
+      if (familyReqRef.current === reqId) {
+        setFamilyLoading(false);
+      }
     }
-  }, [toast, tt.familyLoadFailed]);
+  }, [closeStudent, closeTeacher, toast, tt.familyLoadFailed]);
 
   const openTeacher = useCallback(async (teacherId) => {
     if (!teacherId) return;
-    setStudentDossier(null);
-    setFamilyDossier(null);
+    closeStudent();
+    closeGuardian();
+    const reqId = ++teacherReqRef.current;
     setTeacherLoading(true);
     setTeacherDossier({ teacher: { _id: teacherId } });
     try {
       const res = await api.get(`/api/teachers/admin/${teacherId}/review-dossier`, { auth: true });
-      setTeacherDossier(res);
+      if (teacherReqRef.current === reqId) {
+        setTeacherDossier(res);
+      }
     } catch (err) {
-      setTeacherDossier(null);
-      toast.error(err.message || tt.dossierLoadFailed);
+      if (teacherReqRef.current === reqId) {
+        setTeacherDossier(null);
+        toast.error(err.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setTeacherLoading(false);
+      if (teacherReqRef.current === reqId) {
+        setTeacherLoading(false);
+      }
     }
-  }, [toast, tt.dossierLoadFailed]);
+  }, [closeStudent, closeGuardian, toast, tt.dossierLoadFailed]);
 
   useImperativeHandle(ref, () => ({
     openStudent,
@@ -144,7 +186,7 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
   const reviewTeacher = async (teacherId, action, note = '') => {
     try {
       await api.put(`/api/teachers/admin/${teacherId}/review`, { action, note }, { auth: true });
-      setTeacherDossier(null);
+      closeTeacher();
       await onChanged?.();
       return true;
     } catch (err) {
@@ -178,11 +220,11 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
         <Student360Dossier
           dossier={studentDossier}
           loading={studentLoading}
-          onClose={() => setStudentDossier(null)}
+          onClose={closeStudent}
           onOpenGuardian={openGuardian}
           onOpenTeacher={openTeacher}
           onMessageStudent={(sId) => {
-            setStudentDossier(null);
+            closeStudent();
             navigate(`${localizedPath('/admin', locale)}?tab=messages&student=${encodeURIComponent(sId)}`);
           }}
           onUpdateStudent={updateStudentProfile}
@@ -191,7 +233,7 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
             await onChanged?.();
           }}
           onNavigateSubscriptions={() => {
-            setStudentDossier(null);
+            closeStudent();
             navigate(localizedPath('/admin/subscriptions', locale));
           }}
           approvedTeachers={approvedTeachers}
@@ -202,7 +244,7 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
         <Family360Dossier
           dossier={familyDossier}
           loading={familyLoading}
-          onClose={() => setFamilyDossier(null)}
+          onClose={closeGuardian}
           onOpenStudent={openStudent}
           onRefreshFamily={openGuardian}
         />
@@ -212,7 +254,7 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
         <TeacherReviewDossier
           dossier={teacherDossier}
           loading={teacherLoading}
-          onClose={() => setTeacherDossier(null)}
+          onClose={closeTeacher}
           onChecklist={updateChecklist}
           onReview={reviewTeacher}
           onOpenDocument={(id, kind, idx) => fetchAsset(`/api/teachers/admin/${id}/document/${kind}${Number.isInteger(idx) ? `/${idx}` : ''}?reason=teacher-review`)}
@@ -246,7 +288,7 @@ const AdminQuickDossierHost = forwardRef(function AdminQuickDossierHost({
         modalState={teacherSafeModal}
         onClose={() => setTeacherSafeModal(null)}
         onCompleted={async (tId) => {
-          if (String(teacherDossier?.teacher?._id) === String(tId)) setTeacherDossier(null);
+          if (String(teacherDossier?.teacher?._id) === String(tId)) closeTeacher();
           await onChanged?.();
         }}
       />

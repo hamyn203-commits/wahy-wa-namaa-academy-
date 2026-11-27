@@ -140,6 +140,27 @@ export default function AdminDashboard() {
   const [studentDossierLoading, setStudentDossierLoading] = useState(false);
   const [familyDossier, setFamilyDossier] = useState(null);
   const [familyDossierLoading, setFamilyDossierLoading] = useState(false);
+  const teacherDossierReqRef = useRef(0);
+  const studentDossierReqRef = useRef(0);
+  const familyDossierReqRef = useRef(0);
+
+  const closeTeacherDossier = useCallback(() => {
+    teacherDossierReqRef.current += 1;
+    setTeacherDossier(null);
+    setTeacherDossierLoading(false);
+  }, []);
+
+  const closeStudentDossier = useCallback(() => {
+    studentDossierReqRef.current += 1;
+    setStudentDossier(null);
+    setStudentDossierLoading(false);
+  }, []);
+
+  const closeFamilyDossier = useCallback(() => {
+    familyDossierReqRef.current += 1;
+    setFamilyDossier(null);
+    setFamilyDossierLoading(false);
+  }, []);
 
   const navigateAdmin = useCallback((target) => {
     if (typeof target !== 'string') return;
@@ -470,7 +491,7 @@ export default function AdminDashboard() {
         'request-changes': tt.teacherChangesRequested,
       };
       toast.success(labels[action] || tt.teacherUpdated);
-      setTeacherDossier(null);
+      closeTeacherDossier();
       await loadCore();
       return true;
     } catch (error) {
@@ -480,16 +501,24 @@ export default function AdminDashboard() {
   };
 
   const openTeacherDossier = async (teacherId) => {
+    if (!teacherId) return;
+    const reqId = ++teacherDossierReqRef.current;
     setTeacherDossierLoading(true);
     setTeacherDossier({ teacher: { _id: teacherId } });
     try {
       const result = await api.get(`/api/teachers/admin/${teacherId}/review-dossier`, { auth: true });
-      setTeacherDossier(result);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossier(result);
+      }
     } catch (error) {
-      setTeacherDossier(null);
-      toast.error(error.message || tt.dossierLoadFailed);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossier(null);
+        toast.error(error.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setTeacherDossierLoading(false);
+      if (teacherDossierReqRef.current === reqId) {
+        setTeacherDossierLoading(false);
+      }
     }
   };
 
@@ -512,33 +541,47 @@ export default function AdminDashboard() {
 
   const openStudentDossier = async (studentId) => {
     if (!studentId) return;
-    setFamilyDossier(null);
+    closeFamilyDossier();
+    const reqId = ++studentDossierReqRef.current;
     setStudentDossierLoading(true);
     setStudentDossier({ student: { _id: studentId } });
     try {
       const result = await api.get(`/api/admin/people/students/${studentId}`, { auth: true });
-      setStudentDossier(result);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossier(result);
+      }
     } catch (error) {
-      setStudentDossier(null);
-      toast.error(error.message || tt.dossierLoadFailed);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossier(null);
+        toast.error(error.message || tt.dossierLoadFailed);
+      }
     } finally {
-      setStudentDossierLoading(false);
+      if (studentDossierReqRef.current === reqId) {
+        setStudentDossierLoading(false);
+      }
     }
   };
 
   const openFamilyDossier = async (guardianId) => {
     if (!guardianId) return;
-    setStudentDossier(null);
+    closeStudentDossier();
+    const reqId = ++familyDossierReqRef.current;
     setFamilyDossierLoading(true);
     setFamilyDossier({ guardian: { _id: guardianId } });
     try {
       const result = await api.get(`/api/admin/people/guardians/${guardianId}`, { auth: true });
-      setFamilyDossier(result);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossier(result);
+      }
     } catch (error) {
-      setFamilyDossier(null);
-      toast.error(error.message || tt.familyLoadFailed);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossier(null);
+        toast.error(error.message || tt.familyLoadFailed);
+      }
     } finally {
-      setFamilyDossierLoading(false);
+      if (familyDossierReqRef.current === reqId) {
+        setFamilyDossierLoading(false);
+      }
     }
   };
 
@@ -925,10 +968,10 @@ export default function AdminDashboard() {
       toast.success(tt.deleted);
       setConfirmDeleteModal(null);
       if (type === 'teacher' && String(teacherDossier?.teacher?._id) === String(id)) {
-        setTeacherDossier(null);
+        closeTeacherDossier();
       }
       if (type === 'student' && String(studentDossier?.student?._id) === String(id)) {
-        setStudentDossier(null);
+        closeStudentDossier();
       }
       if (type === 'lesson') await loadLessons(selectedCourse);
       else if (type === 'course') await loadCourses();
@@ -1710,7 +1753,7 @@ export default function AdminDashboard() {
           <TeacherReviewDossier
             dossier={teacherDossier}
             loading={teacherDossierLoading}
-            onClose={() => setTeacherDossier(null)}
+            onClose={closeTeacherDossier}
             onChecklist={updateTeacherChecklist}
             onReview={review}
             onOpenDocument={openTeacherDocument}
@@ -1726,7 +1769,7 @@ export default function AdminDashboard() {
               await loadTeachersTab().catch(() => {});
             }}
             onOpenStudent={(sId) => {
-              setTeacherDossier(null);
+              closeTeacherDossier();
               openStudentDossier(sId);
             }}
           />
@@ -1736,19 +1779,19 @@ export default function AdminDashboard() {
           <Student360Dossier
             dossier={studentDossier}
             loading={studentDossierLoading}
-            onClose={() => setStudentDossier(null)}
+            onClose={closeStudentDossier}
             onOpenGuardian={openFamilyDossier}
             onOpenTeacher={(tId) => {
-              setStudentDossier(null);
+              closeStudentDossier();
               openTeacherDossier(tId);
             }}
             onOpenHomeworkAudio={openStudentHomeworkAudio}
-            onMessageStudent={(studentId) => { setStudentDossier(null); setSupportStudent(studentId); setTab('messages'); }}
+            onMessageStudent={(studentId) => { closeStudentDossier(); setSupportStudent(studentId); setTab('messages'); }}
             onUpdateStudent={updateStudentAdminProfile}
             onDeleteStudent={(id, label) => deleteItem('student', id, label)}
             onRefreshStudent={openStudentDossier}
             onNavigateSubscriptions={() => {
-              setStudentDossier(null);
+              closeStudentDossier();
               navigate(localizedPath('/admin/subscriptions', locale));
             }}
             approvedTeachers={approved}
@@ -1759,7 +1802,7 @@ export default function AdminDashboard() {
           <Family360Dossier
             dossier={familyDossier}
             loading={familyDossierLoading}
-            onClose={() => setFamilyDossier(null)}
+            onClose={closeFamilyDossier}
             onOpenStudent={openStudentDossier}
             onRefreshFamily={openFamilyDossier}
           />
@@ -1770,7 +1813,7 @@ export default function AdminDashboard() {
           onClose={() => setTeacherSafeModal(null)}
           onCompleted={async (teacherId) => {
             if (String(teacherDossier?.teacher?._id) === String(teacherId)) {
-              setTeacherDossier(null);
+              closeTeacherDossier();
             }
             await load();
           }}
