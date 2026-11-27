@@ -98,15 +98,15 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
   const initialBlogTitle = `مقال تجريبي ${stamp}`;
   const updatedBlogTitle = `مقال مميز محدث ${stamp}`;
 
-  await page.getByLabel('المعرّف النصي (slug)').fill(blogSlug);
-  await page.getByLabel('العنوان').fill(initialBlogTitle);
-  await page.getByLabel('مقتطف').fill('مقتطف قصير للمقال');
-  await page.getByLabel('المحتوى').fill('محتوى تفصيلي للمقال التجريبي في لوحة الإدارة.');
+  await page.getByLabel('المعرّف النصي (slug)', { exact: true }).fill(blogSlug);
+  await page.getByLabel('العنوان', { exact: true }).fill(initialBlogTitle);
+  await page.getByLabel('مقتطف', { exact: true }).fill('مقتطف قصير للمقال');
+  await page.getByLabel('المحتوى', { exact: true }).fill('محتوى تفصيلي للمقال التجريبي في لوحة الإدارة.');
   await page.getByRole('button', { name: 'نشر', exact: true }).first().click();
   await expect(page.getByText(initialBlogTitle)).toBeVisible();
 
   await page.getByRole('button', { name: `تعديل ${initialBlogTitle}` }).click();
-  await page.getByLabel('العنوان').fill(updatedBlogTitle);
+  await page.getByLabel('العنوان', { exact: true }).fill(updatedBlogTitle);
   await page.getByLabel('تمييز المقال في واجهة المدونة').check();
   await page.getByRole('button', { name: 'حفظ تعديلات المقال', exact: true }).click();
   await expect(page.getByText(updatedBlogTitle)).toBeVisible();
@@ -115,7 +115,7 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
   // 10. Growth, Donations, Careers & Video Library (Surface 10)
   await nav.getByRole('button', { name: 'التحليلات والنمو', exact: true }).click();
   await expect(page.getByRole('button', { name: 'العرض الشامل', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /طلبات التوظيف/ }).click();
+  await page.getByRole('button', { name: /طلبات التوظيف/ }).first().click();
   await expect(page.getByPlaceholder('بحث في طلبات التوظيف...')).toBeVisible();
 
   // 11. Forensic Audit Log Verification (Surface 11)
@@ -126,7 +126,7 @@ test('admin portal closed-loop gate: all 15 surfaces, course/lesson/blog edit fl
 
   // 12. System & Launch Readiness Gate (Surface 12)
   await nav.getByRole('button', { name: 'النظام والجاهزية', exact: true }).click();
-  await expect(page.getByText('جاهزية الإطلاق العام')).toBeVisible();
+  await expect(page.getByText('جاهزية الإطلاق العام').first()).toBeVisible();
 
   // 13–15. Standalone Operational Routes: Trials, Payments, Subscriptions
   await page.goto('/ar/admin/trials');
