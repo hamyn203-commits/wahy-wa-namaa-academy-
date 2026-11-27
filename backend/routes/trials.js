@@ -486,35 +486,63 @@ function sanitizeTrialForTeacher(item) {
 }
 
 // @route   GET /api/trials
-// @desc    Get all trial requests with filters (status, track)
+// @desc    Get all trial requests with filters (status, track, gender, q, preferredTeacherGender)
 // @access  Protected (admin, teacher)
 router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
-  const { status, track, gender, page = 1, limit = 20 } = req.query;
+  const { status, track, gender, preferredTeacherGender, q, page = 1, limit = 20 } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
-  const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const cleanSearch = String(q || '').trim().slice(0, 80);
 
   if (isMockMode && !isDBConnected()) {
     let filtered = [...MOCK_TRIALS];
-    if (status) filtered = filtered.filter(t => t.status === status);
-    if (track) filtered = filtered.filter(t => t.preferredTrack === track);
-    if (gender) filtered = filtered.filter(t => t.gender === gender);
+    if (status && status !== 'all') filtered = filtered.filter((t) => t.status === status);
+    if (track && track !== 'all') filtered = filtered.filter((t) => t.preferredTrack === track);
+    if (gender && gender !== 'all') filtered = filtered.filter((t) => t.gender === gender);
+    if (preferredTeacherGender && preferredTeacherGender !== 'all') {
+      filtered = filtered.filter((t) => t.preferredTeacherGender === preferredTeacherGender);
+    }
+    if (cleanSearch) {
+      const term = cleanSearch.toLowerCase();
+      filtered = filtered.filter((t) =>
+        [t.studentName, t.guardianName, t.whatsappPhone, t.email, t.referenceNumber]
+          .some((val) => String(val || '').toLowerCase().includes(term))
+      );
+    }
+    const mockSummary = {
+      totalAll: MOCK_TRIALS.length,
+      pending: MOCK_TRIALS.filter((t) => t.status === 'pending').length,
+      scheduled: MOCK_TRIALS.filter((t) => t.status === 'scheduled').length,
+      completed: MOCK_TRIALS.filter((t) => t.status === 'completed').length,
+      no_show: MOCK_TRIALS.filter((t) => t.status === 'no_show').length,
+      cancelled: MOCK_TRIALS.filter((t) => t.status === 'cancelled').length,
+      linkedStudents: MOCK_TRIALS.filter((t) => Boolean(t.studentUser)).length,
+    };
     return res.json({
       success: true,
       trials: filtered,
+      ...(req.user.role === 'admin' ? { summary: mockSummary } : {}),
       pagination: {
         page: pageNum,
         limit: limitNum,
         total: filtered.length,
-        pages: 1
-      }
+        pages: 1,
+      },
     });
   }
   try {
     const filter = {};
 
-    if (status) filter.status = status;
-    if (track) filter.preferredTrack = track;
-    if (gender) filter.gender = gender;
+    if (status && status !== 'all') filter.status = status;
+    if (track && track !== 'all') filter.preferredTrack = track;
+    if (gender && gender !== 'all') filter.gender = gender;
+    if (
+      req.user.role === 'admin'
+      && preferredTeacherGender
+      && ['male', 'female', 'any'].includes(String(preferredTeacherGender))
+    ) {
+      filter.preferredTeacherGender = String(preferredTeacherGender);
+    }
 
     // Teachers may only access trial requests explicitly assigned to them.
     if (req.user.role === 'teacher') {
@@ -525,9 +553,32 @@ router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
       filter.assignedTeacher = teacherDoc._id;
     }
 
-    const skip = (pageNum - 1) * limitNum;
+    if (cleanSearch) {
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'i');
+      filter.$or = req.user.role === 'admin'
+        ? [
+            { studentName: rx },
+            { guardianName: rx },
+            { whatsappPhone: rx },
+            { phone: rx },
+            { email: rx },
+            { referenceNumber: rx },
+          ]
+        : [
+            { studentName: rx },
+            { guardianName: rx },
+            { referenceNumber: rx },
+          ];
+    }
 
-    const [trials, total] = await Promise.all([
+    const skip = (pageNum - 1) * limitNum;
+    const canAggregateSummary =
+      req.user.role === 'admin'
+      && typeof TrialRequest.aggregate === 'function'
+      && (Boolean(mongoose.connection?.db) || TrialRequest.aggregate !== mongoose.Model.aggregate);
+
+    const [trials, total, aggRows] = await Promise.all([
       TrialRequest.find(filter)
         .populate({
           path: 'assignedTeacher',
@@ -541,16 +592,64 @@ router.get('/', protect, authorize('admin', 'teacher'), async (req, res) => {
         .skip(skip)
         .limit(limitNum)
         .lean(),
-      TrialRequest.countDocuments(filter)
+      TrialRequest.countDocuments(filter),
+      canAggregateSummary
+        ? Promise.resolve(
+            TrialRequest.aggregate([
+              {
+                $group: {
+                  _id: null,
+                  totalAll: { $sum: 1 },
+                  pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+                  scheduled: { $sum: { $cond: [{ $eq: ['$status', 'scheduled'] }, 1, 0] } },
+                  completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+                  no_show: { $sum: { $cond: [{ $eq: ['$status', 'no_show'] }, 1, 0] } },
+                  cancelled: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } },
+                  linkedStudents: {
+                    $sum: {
+                      $cond: [{ $ne: [{ $ifNull: ['$studentUser', null] }, null] }, 1, 0],
+                    },
+                  },
+                },
+              },
+            ])
+          ).catch(() => [])
+        : Promise.resolve(null),
     ]);
 
     const presentedTrials = req.user.role === 'teacher'
       ? (trials || []).map(sanitizeTrialForTeacher)
       : trials;
 
+    let summary;
+    if (req.user.role === 'admin') {
+      const row = Array.isArray(aggRows) && aggRows[0] ? aggRows[0] : null;
+      const list = Array.isArray(trials) ? trials : [];
+      summary = row
+        ? {
+            totalAll: Number(row.totalAll || 0),
+            pending: Number(row.pending || 0),
+            scheduled: Number(row.scheduled || 0),
+            completed: Number(row.completed || 0),
+            no_show: Number(row.no_show || 0),
+            cancelled: Number(row.cancelled || 0),
+            linkedStudents: Number(row.linkedStudents || 0),
+          }
+        : {
+            totalAll: Number(total || list.length),
+            pending: list.filter((t) => t.status === 'pending').length,
+            scheduled: list.filter((t) => t.status === 'scheduled').length,
+            completed: list.filter((t) => t.status === 'completed').length,
+            no_show: list.filter((t) => t.status === 'no_show').length,
+            cancelled: list.filter((t) => t.status === 'cancelled').length,
+            linkedStudents: list.filter((t) => Boolean(t.studentUser)).length,
+          };
+    }
+
     res.json({
       success: true,
       trials: presentedTrials,
+      ...(summary ? { summary } : {}),
       pagination: {
         page: pageNum,
         limit: limitNum,

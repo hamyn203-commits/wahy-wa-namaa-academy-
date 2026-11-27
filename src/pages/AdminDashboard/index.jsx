@@ -87,6 +87,8 @@ export default function AdminDashboard() {
   const [teacherQuery, setTeacherQuery] = useState('');
   const [teacherGenderFilter, setTeacherGenderFilter] = useState('all');
   const [messages, setMessages] = useState([]);
+  const [contactSummary, setContactSummary] = useState(null);
+  const [updatingMessageStatusId, setUpdatingMessageStatusId] = useState(null);
   const [courses, setCourses] = useState([]);
   const [blogPosts, setBlogPosts] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -296,8 +298,9 @@ export default function AdminDashboard() {
   }, [formatPendingLoadError]);
 
   const loadMessages = useCallback(async () => {
-    const r = await api.get('/api/contact', { auth: true });
+    const r = await api.get('/api/contact?limit=80', { auth: true });
     setMessages(r.messages || []);
+    if (r.summary) setContactSummary(r.summary);
   }, []);
 
   const loadCourses = useCallback(async () => {
@@ -697,10 +700,30 @@ export default function AdminDashboard() {
       toast.success(tt.replySent);
       setReplyText((p) => ({ ...p, [id]: '' }));
       await loadMessages();
+      api.get('/api/admin/command-center', { auth: true }).then((cc) => {
+        if (cc) setCommandCenter(cc);
+      }).catch(() => {});
     } catch (e) {
       toast.error(e.message || tt.replyFailed);
     } finally {
       setSendingReplyId(null);
+    }
+  };
+
+  const updateContactMessageStatus = async (id, nextStatus) => {
+    if (!id || updatingMessageStatusId) return;
+    setUpdatingMessageStatusId(id);
+    try {
+      await api.put(`/api/contact/${id}/status`, { status: nextStatus }, { auth: true });
+      toast.success(isRTL ? 'تم تحديث حالة الرسالة بنجاح' : 'Message status updated');
+      await loadMessages();
+      api.get('/api/admin/command-center', { auth: true }).then((cc) => {
+        if (cc) setCommandCenter(cc);
+      }).catch(() => {});
+    } catch (e) {
+      toast.error(e.message || tt.loadFailed);
+    } finally {
+      setUpdatingMessageStatusId(null);
     }
   };
 
@@ -1064,7 +1087,7 @@ export default function AdminDashboard() {
     teachers: Math.max(pending.length, actionCountById['teacher-review'] || 0) + pendingProfileChanges.length,
     payments: actionCountById['manual-payments'] || 0,
     withdrawals: actionCountById.payouts || 0,
-    messages: actionCountById.messages || 0,
+    messages: (actionCountById['support-unread'] || 0) + (actionCountById.messages || 0),
     trials: actionCountById['trial-requests'] || 0,
     subscriptions: actionCountById['awaiting-placement'] || 0,
     sessions: (actionCountById['overdue-sessions'] || 0) + (actionCountById['missing-session-reports'] || 0),
@@ -1224,11 +1247,16 @@ export default function AdminDashboard() {
               <AdminMessagesTab
                 supportStudent={supportStudent}
                 onSelectStudent={setSupportStudent}
+                onOpenStudent={openStudentDossier}
                 messages={messages}
+                contactSummary={contactSummary}
                 replyText={replyText}
                 onChangeReplyText={(id, val) => setReplyText((p) => ({ ...p, [id]: val }))}
                 onSendReply={sendReply}
                 sendingReplyId={sendingReplyId}
+                onUpdateMessageStatus={updateContactMessageStatus}
+                updatingMessageStatusId={updatingMessageStatusId}
+                onRefreshMessages={loadMessages}
                 onDeleteMessage={(id, label) => deleteItem('message', id, label)}
               />
             )}

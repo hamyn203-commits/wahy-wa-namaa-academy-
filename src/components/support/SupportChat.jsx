@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { CheckCheck, ImagePlus, Loader2, MessageCircle, Mic, RefreshCw, Send, Square, Volume2 } from 'lucide-react';
+import { CheckCheck, ImagePlus, Loader2, MessageCircle, Mic, RefreshCw, Send, Sparkles, Square, UserRound, Volume2 } from 'lucide-react';
 import api from '../../lib/api';
 import { uploadFileDirect } from '../../lib/fileUpload';
 import { useI18n } from '../../i18n';
@@ -150,7 +150,22 @@ function SupportAttachmentViewer({ studentId, messageId, attachmentType, attachm
   );
 }
 
-export default function SupportChat({ studentId = 'me', admin = false }) {
+const ADMIN_QUICK_REPLIES = {
+  ar: [
+    { label: 'استلام إيصال الدفع', body: 'وعليكم السلام ورحمة الله، تم استلام إيصال الدفع وجارٍ مراجعته وتفعيل الباقة فوراً بإذن الله.' },
+    { label: 'تأكيد التسكين بالحلقة', body: 'تم تسكينك في الحلقة بنجاح، ويمكنك متابعة مواعيد الحصص والدخول إليها من تبويب (حصصي) في لوحة الطالب.' },
+    { label: 'طريقة دخول الحصة', body: 'يرجى تحديث الصفحة ثم الضغط على زر الدخول للقاعة المباشرة من تبويب (حصصي) قبل الموعد بـ 10 دقائق.' },
+    { label: 'تنسيق مع المعلم', body: 'تم إبلاغ المعلم بملاحظتك وجارٍ تنسيق الموعد وإشعارك بالتحديث فوراً.' },
+  ],
+  en: [
+    { label: 'Receipt received', body: 'Assalamu Alaikum! We received your payment receipt and are activating your package shortly.' },
+    { label: 'Circle placement ready', body: 'You have been placed in your circle! Check the My Sessions tab on your dashboard for upcoming class times.' },
+    { label: 'How to join class', body: 'Please refresh the page and click Join Live Classroom from My Sessions up to 10 minutes before start time.' },
+    { label: 'Coordinating with teacher', body: 'We shared your note with the teacher and will confirm the updated schedule right away.' },
+  ],
+};
+
+export default function SupportChat({ studentId = 'me', admin = false, onOpenStudent = null }) {
   const { locale, dir, t } = useI18n();
   const sc = t.supportChat;
   const intlLocale = resolveIntlLocale(locale);
@@ -415,13 +430,35 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
     <section className="wn-support-chat" aria-label={sc.ariaLabel} dir={dir}>
       <header className="wn-support-chat__header">
         <span className="wn-support-icon"><MessageCircle size={23} aria-hidden="true" /></span>
-        <div>
+        <div className="min-w-0">
           <h2>{admin ? student?.name || sc.adminTitle : sc.studentTitle}</h2>
           <p>{admin ? sc.adminSubtitle : sc.studentSubtitle}</p>
         </div>
-        <button type="button" onClick={refresh} disabled={refreshing} aria-label={sc.refreshAria}>
-          <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
-        </button>
+        {admin && onOpenStudent && studentId && studentId !== 'me' ? (
+          <div className="ms-auto inline-flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onOpenStudent(student?._id || studentId)}
+              className="min-h-[44px] px-3 py-2 rounded-lg bg-[var(--wn-surface-soft)] hover:bg-[var(--wn-emerald-soft)] border border-[var(--wn-border)] text-xs font-bold text-[var(--wn-heading)] inline-flex items-center gap-1.5 transition"
+            >
+              <UserRound size={15} aria-hidden="true" />
+              <span>{locale === 'ar' ? 'ملف الطالب 360' : 'Student 360'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={refreshing}
+              aria-label={sc.refreshAria}
+              className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-2.5 rounded-lg bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald)]"
+            >
+              <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={refresh} disabled={refreshing} aria-label={sc.refreshAria}>
+            <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
+          </button>
+        )}
       </header>
       <div className="wn-support-sync" role="status">{syncError ? sc.syncError : sc.syncOk}</div>
       <div className="wn-support-chat__messages" ref={view} role="log" aria-live="polite" aria-relevant="additions">
@@ -480,6 +517,25 @@ export default function SupportChat({ studentId = 'me', admin = false }) {
         )}
         <div ref={bottom} />
       </div>
+      {admin ? (
+        <div className="px-5 pt-3 flex flex-wrap items-center gap-1.5 border-t border-[var(--wn-border)] bg-[var(--wn-surface)]">
+          <span className="text-[0.7rem] font-bold text-[var(--wn-text-secondary)] inline-flex items-center gap-1 me-1">
+            <Sparkles size={12} className="text-[var(--wn-gold)]" aria-hidden="true" />
+            <span>{locale === 'ar' ? 'ردود سريعة:' : 'Quick replies:'}</span>
+          </span>
+          {(locale === 'ar' ? ADMIN_QUICK_REPLIES.ar : ADMIN_QUICK_REPLIES.en).map((tpl) => (
+            <button
+              key={tpl.label}
+              type="button"
+              disabled={sending || recording}
+              onClick={() => setText((prev) => (prev.trim() ? `${prev.trim()}\n${tpl.body}` : tpl.body))}
+              className="px-2.5 py-1 rounded-full border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] hover:border-[var(--wn-emerald)] hover:text-[var(--wn-emerald)] text-[0.72rem] font-semibold text-[var(--wn-text-primary)] transition disabled:opacity-50"
+            >
+              {tpl.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <form onSubmit={send} className="wn-support-compose">
         <label htmlFor={`support-text-${studentId}`}>{sc.yourMessage}</label>
         <textarea

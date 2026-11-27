@@ -150,7 +150,8 @@ async function validateBookingSlot({ teacher, scheduledAt, timezone, duration = 
 router.get('/available-slots/:teacherId', async (req, res) => {
   try {
     const days = Math.min(21, Math.max(1, Number(req.query.days || 14)));
-    const duration = 60;
+    const requestedDuration = Number(req.query.duration);
+    const duration = [30, 45, 60, 90].includes(requestedDuration) ? requestedDuration : 60;
 
     if (
       isMockMode
@@ -1547,6 +1548,30 @@ router.put('/:id/complete', protect, authorize('teacher'), async (req, res) => {
           },
           data: { ...payload.data, actionUrl: '/guardian/dashboard' },
         });
+        if (!wasAlreadyCompleted) {
+          const { publishAutomatedConversationCard } = require('../services/chatService');
+          const ev = evaluation || session.teacherEvaluation || {};
+          publishAutomatedConversationCard({
+            teacherDoc: teacher,
+            studentId: session.student,
+            senderUserId: req.user.id,
+            senderName: teacher?.personalInfo?.fullName || req.user.name || 'المعلم',
+            kind: 'session_summary',
+            clientId: `sess_sum_${String(session._id)}`,
+            activityCard: {
+              cardType: 'session_summary',
+              sessionId: session._id,
+              title: isTrial ? 'ملخص الحصة التجريبية المكتملة' : 'ملخص إنجاز الحصة القرآنية',
+              surahRecited: String(ev.surahRecited || '').slice(0, 120),
+              fromAyah: Number(ev.fromAyah) || null,
+              toAyah: Number(ev.toAyah) || null,
+              memorizationScore: ev.memorization ? Math.min(10, Number(ev.memorization) * 2) : null,
+              tajweedScore: ev.tajweed ? Math.min(10, Number(ev.tajweed) * 2) : null,
+              nextHomework: String(ev.nextHomework || '').slice(0, 500),
+              notes: String(ev.overallNotes || '').slice(0, 800),
+            },
+          }).catch(() => {});
+        }
       } else if (session.type === 'group_circle') {
         const studentIds = [...new Set(
           (session.attendance || [])
