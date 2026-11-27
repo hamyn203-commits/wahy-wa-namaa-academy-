@@ -1,10 +1,12 @@
 const { safeErrorMessage } = require('../utils/safeError');
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const JobApplication = require('../models/JobApplication');
 const JOBS = require('../config/careers');
 const { protect, authorize } = require('../middleware/auth');
 const { notifyAdmin } = require('../services/growthNotify');
+const { logAdminAction } = require('../services/adminAudit');
 
 router.get('/jobs', (req, res) => {
   res.json({ jobs: JOBS });
@@ -76,6 +78,9 @@ router.post('/apply', async (req, res) => {
 
 router.put('/applications/:id/status', protect, authorize('admin'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'معرف الطلب غير صالح' });
+    }
     const { status } = req.body;
     const allowedStatuses = ['new', 'reviewing', 'interview', 'hired', 'rejected'];
     if (!allowedStatuses.includes(status)) {
@@ -87,6 +92,13 @@ router.put('/applications/:id/status', protect, authorize('admin'), async (req, 
       { new: true, runValidators: true }
     );
     if (!app) return res.status(404).json({ error: 'الطلب غير موجود' });
+    await logAdminAction({
+      req,
+      action: `career_application.status.${status}`,
+      entityType: 'job_application',
+      entityId: app._id,
+      metadata: { position: app.position, status },
+    }).catch(() => {});
     res.json(app);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
@@ -95,10 +107,25 @@ router.put('/applications/:id/status', protect, authorize('admin'), async (req, 
 
 router.get('/applications', protect, authorize('admin'), async (req, res) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 50, status, q } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-    const filter = status ? { status: String(status) } : {};
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const allowedStatuses = ['new', 'reviewing', 'interview', 'hired', 'rejected'];
+    const filter = status && status !== 'all' && allowedStatuses.includes(String(status))
+      ? { status: String(status) }
+      : {};
+    const cleanSearch = String(q || '').trim().slice(0, 80);
+    if (cleanSearch) {
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'i');
+      filter.$or = [
+        { name: rx },
+        { email: rx },
+        { phone: rx },
+        { position: rx },
+        { coverLetter: rx },
+      ];
+    }
     const skip = (pageNum - 1) * limitNum;
     const [applications, total] = await Promise.all([
       JobApplication.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
