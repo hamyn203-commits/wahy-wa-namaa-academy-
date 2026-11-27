@@ -991,22 +991,37 @@ router.post('/session-control/:id/nudge-teacher', protect, authorize('admin'), a
 
 router.get('/audit', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
-    return res.json({ entries: [] });
+    return res.json({ entries: [], total: 0 });
   }
   try {
     const filter = {};
-    if (req.query.entityType) filter.entityType = String(req.query.entityType);
+    if (req.query.entityType && req.query.entityType !== 'all') {
+      filter.entityType = String(req.query.entityType);
+    }
     if (req.query.entityId) filter.entityId = String(req.query.entityId);
     if (req.query.action) filter.action = String(req.query.action);
 
-    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
+    const cleanSearch = String(req.query.q || '').trim().slice(0, 80);
+    if (cleanSearch) {
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'i');
+      filter.$or = [
+        { action: rx },
+        { entityType: rx },
+        { entityId: rx },
+        { reason: rx },
+        { 'request.path': rx },
+      ];
+    }
+
+    const limit = Math.max(1, Math.min(300, Number(req.query.limit) || 150));
     const entries = await AdminAuditLog.find(filter)
       .populate('actor', 'name email')
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
 
-    return res.json({ entries });
+    return res.json({ entries, total: Array.isArray(entries) ? entries.length : 0 });
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 500) });
   }
@@ -2406,12 +2421,31 @@ router.put('/courses/:id', protect, authorize('admin'), async (req, res) => {
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ error: 'الدورة غير موجودة' });
 
-    const { titleAr, titleEn, descAr, descEn, price, priceEgp, compareAtUsd, compareAtEgp, status, image } = req.body;
-    if (titleAr) { course.title.ar = titleAr; if (!titleEn) course.title.en = titleAr; }
-    if (titleEn) course.title.en = titleEn;
-    if (descAr) course.description.ar = descAr;
-    if (descEn) course.description.en = descEn;
-    if (price != null) course.price = price;
+    const {
+      titleAr, titleEn, descAr, descEn, slug, instructorId, programs,
+      category, level, price, priceEgp, compareAtUsd, compareAtEgp, status, image,
+    } = req.body;
+
+    if (instructorId !== undefined && instructorId !== '') {
+      if (!mongoose.Types.ObjectId.isValid(String(instructorId))) {
+        return res.status(400).json({ error: 'معرف المعلم غير صالح' });
+      }
+      course.instructor = instructorId;
+    }
+    if (typeof slug === 'string' && slug.trim()) {
+      course.slug = slug.trim().toLowerCase().replace(/\s+/g, '-');
+    }
+    if (titleAr) { course.title.ar = String(titleAr).trim(); if (!titleEn) course.title.en = String(titleAr).trim(); }
+    if (titleEn) course.title.en = String(titleEn).trim();
+    if (typeof descAr === 'string') course.description.ar = descAr.trim();
+    if (typeof descEn === 'string') course.description.en = descEn.trim();
+    if (Array.isArray(programs)) {
+      const validPrograms = new Set(['kids', 'reverts', 'women', 'general']);
+      course.programs = programs.filter((p) => validPrograms.has(String(p)));
+    }
+    if (category) course.category = String(category).trim();
+    if (level) course.level = String(level).trim();
+    if (price != null) course.price = Math.max(0, Number(price));
     if (priceEgp !== undefined) {
       const { buildRegionalCoursePrices } = require('../config/coursePricing');
       const { regionalPrices, compareAtPrices } = buildRegionalCoursePrices({
@@ -2632,7 +2666,7 @@ router.get('/blog', protect, authorize('admin'), async (req, res) => {
 
 router.post('/blog', protect, authorize('admin'), async (req, res) => {
   try {
-    const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, status = 'published' } = req.body;
+    const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, featured, status = 'published' } = req.body;
     const cleanTitleAr = String(titleAr || '').trim();
     const cleanSlug = String(slug || '').trim().toLowerCase().replace(/\s+/g, '-');
     if (!cleanTitleAr || !cleanSlug) {
@@ -2643,17 +2677,29 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
       const adminUser = await User.findById(req.user.id).select('name').lean();
       authorName = adminUser?.name || 'إدارة الأكاديمية';
     }
-    const post = await Blog.create({
+    const payload = {
       slug: cleanSlug,
       title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
       excerpt: { ar: excerptAr || '', en: excerptAr || '' },
       content: { ar: contentAr || '', en: contentAr || '' },
       coverImage: coverImage || '',
       category: category || 'general',
+      featured: Boolean(featured),
       author: req.user.id,
       authorName,
       status,
-    });
+    };
+    let post;
+    try {
+      post = await Blog.create(payload);
+    } catch (createErr) {
+      if (String(createErr?.message || '').includes('of text index contains an array')) {
+        await Blog.collection?.dropIndex?.('title.ar_text_title.en_text_tags_1').catch(() => {});
+        post = await Blog.create(payload);
+      } else {
+        throw createErr;
+      }
+    }
     await logAdminAction({
       req,
       action: 'blog.created',
@@ -2674,14 +2720,27 @@ router.put('/blog/:id', protect, authorize('admin'), async (req, res) => {
     }
     const post = await Blog.findById(req.params.id);
     if (!post) return res.status(404).json({ error: 'المقال غير موجود' });
-    const { titleAr, titleEn, contentAr, excerptAr, status, featured, coverImage } = req.body;
-    if (titleAr) post.title.ar = titleAr;
-    if (titleEn) post.title.en = titleEn;
-    if (contentAr) post.content.ar = contentAr;
-    if (excerptAr) post.excerpt.ar = excerptAr;
+    const { slug, titleAr, titleEn, contentAr, excerptAr, category, status, featured, coverImage } = req.body;
+    if (typeof slug === 'string' && slug.trim()) {
+      post.slug = slug.trim().toLowerCase().replace(/\s+/g, '-');
+    }
+    if (titleAr) {
+      post.title.ar = String(titleAr).trim();
+      if (!titleEn && !post.title?.en) post.title.en = String(titleAr).trim();
+    }
+    if (titleEn) post.title.en = String(titleEn).trim();
+    if (typeof contentAr === 'string' && contentAr.trim()) {
+      post.content = post.content || {};
+      post.content.ar = contentAr;
+    }
+    if (typeof excerptAr === 'string') {
+      post.excerpt = post.excerpt || {};
+      post.excerpt.ar = excerptAr;
+    }
+    if (category) post.category = String(category).trim();
     if (status) post.status = status;
-    if (featured != null) post.featured = featured;
-    if (coverImage) post.coverImage = coverImage;
+    if (featured != null) post.featured = Boolean(featured);
+    if (coverImage !== undefined) post.coverImage = coverImage;
     await post.save();
     await logAdminAction({
       req,

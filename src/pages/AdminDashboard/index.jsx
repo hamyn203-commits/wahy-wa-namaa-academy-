@@ -106,8 +106,8 @@ export default function AdminDashboard() {
   const [reviewPromptModal, setReviewPromptModal] = useState(null);
 
   const [courseForm, setCourseForm] = useState({ titleAr: '', slug: '', instructorId: '', price: 0, priceEgp: '', descAr: '', programs: [] });
-  const [lessonForm, setLessonForm] = useState({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', duration: 10 });
-  const [blogForm, setBlogForm] = useState({ slug: '', titleAr: '', excerptAr: '', contentAr: '' });
+  const [lessonForm, setLessonForm] = useState({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', textAr: '', duration: 10 });
+  const [blogForm, setBlogForm] = useState({ slug: '', titleAr: '', excerptAr: '', contentAr: '', featured: false });
 
   const [uploading, setUploading] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -355,9 +355,9 @@ export default function AdminDashboard() {
   const loadGrowth = useCallback(async () => {
     const [sum, don, apps, vids] = await Promise.all([
       api.get('/api/admin/growth/summary', { auth: true }),
-      api.get('/api/donations', { auth: true }),
-      api.get('/api/careers/applications', { auth: true }),
-      api.get('/api/videos?limit=50', { auth: true }),
+      api.get('/api/donations?limit=100', { auth: true }),
+      api.get('/api/careers/applications?limit=100', { auth: true }),
+      api.get('/api/videos?limit=100', { auth: true }),
     ]);
     setGrowthSummary(sum);
     setDonations(don.donations || []);
@@ -811,6 +811,18 @@ export default function AdminDashboard() {
     }
   };
 
+  const updateCourse = async (courseId, payload) => {
+    try {
+      await api.put(`/api/admin/courses/${courseId}`, payload, { auth: true });
+      toast.success(isRTL ? 'تم تحديث بيانات الدورة بنجاح' : 'Course updated');
+      await loadCourses();
+      return true;
+    } catch (e) {
+      toast.error(e.message || tt.courseToggleFailed);
+      return false;
+    }
+  };
+
   const addLesson = async (e) => {
     e.preventDefault();
     if (!selectedCourse || addingLesson) return;
@@ -818,12 +830,24 @@ export default function AdminDashboard() {
     try {
       await api.post(`/api/admin/courses/${selectedCourse}/lessons`, lessonForm, { auth: true });
       toast.success(tt.lessonAdded);
-      setLessonForm({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', duration: 10 });
+      setLessonForm({ titleAr: '', type: 'video', videoUrl: '', youtubeUrl: '', textAr: '', duration: 10 });
       await loadLessons(selectedCourse);
     } catch (e) {
       toast.error(e.message || tt.lessonAddFailed);
     } finally {
       setAddingLesson(false);
+    }
+  };
+
+  const updateLesson = async (lessonId, payload) => {
+    try {
+      await api.put(`/api/admin/lessons/${lessonId}`, payload, { auth: true });
+      toast.success(isRTL ? 'تم تحديث الدرس بنجاح' : 'Lesson updated');
+      if (selectedCourse) await loadLessons(selectedCourse);
+      return true;
+    } catch (e) {
+      toast.error(e.message || tt.lessonAddFailed);
+      return false;
     }
   };
 
@@ -850,12 +874,24 @@ export default function AdminDashboard() {
     try {
       await api.post('/api/admin/blog', blogForm, { auth: true });
       toast.success(tt.blogPublished);
-      setBlogForm({ slug: '', titleAr: '', excerptAr: '', contentAr: '' });
+      setBlogForm({ slug: '', titleAr: '', excerptAr: '', contentAr: '', featured: false });
       await loadBlog();
     } catch (e) {
       toast.error(e.message || tt.blogToggleFailed);
     } finally {
       setCreatingBlog(false);
+    }
+  };
+
+  const updateBlog = async (blogId, payload) => {
+    try {
+      await api.put(`/api/admin/blog/${blogId}`, payload, { auth: true });
+      toast.success(isRTL ? 'تم تحديث المقال بنجاح' : 'Article updated');
+      await loadBlog();
+      return true;
+    } catch (e) {
+      toast.error(e.message || tt.blogToggleFailed);
+      return false;
     }
   };
 
@@ -1742,6 +1778,7 @@ export default function AdminDashboard() {
                 onSeedDemoCourse={seedDemoCourse}
                 onSeedOfficialCatalog={seedOfficialCatalog}
                 onAddCourse={addCourse}
+                onUpdateCourse={updateCourse}
                 onSelectCourse={(id) => {
                   setSelectedCourse(id);
                   loadLessons(id);
@@ -1749,6 +1786,7 @@ export default function AdminDashboard() {
                 onToggleCourseStatus={toggleCourseStatus}
                 onDeleteItem={deleteItem}
                 onAddLesson={addLesson}
+                onUpdateLesson={updateLesson}
                 onUploadVideo={uploadVideo}
               />
             )}
@@ -1761,6 +1799,7 @@ export default function AdminDashboard() {
                 creatingBlog={creatingBlog}
                 togglingBlogId={togglingBlogId}
                 onAddBlog={addBlog}
+                onUpdateBlog={updateBlog}
                 onToggleBlogStatus={toggleBlogStatus}
                 onDeleteItem={deleteItem}
               />

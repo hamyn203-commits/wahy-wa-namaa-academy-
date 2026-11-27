@@ -168,8 +168,9 @@ router.get('/config', async (_req, res) => {
 
 router.get('/', protect, authorize('admin'), async (req, res) => {
   const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
-  const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+  const limitNum = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
   const status = req.query.status ? String(req.query.status).trim() : '';
+  const cleanSearch = String(req.query.q || '').trim().slice(0, 80);
 
   if (!isDBConnected()) {
     if (!isMockMode) {
@@ -182,7 +183,18 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
   }
   try {
     const allowedStatuses = ['pledged', 'confirmed', 'cancelled'];
-    const filter = status && allowedStatuses.includes(status) ? { status } : {};
+    const filter = status && status !== 'all' && allowedStatuses.includes(status) ? { status } : {};
+    if (cleanSearch) {
+      const escaped = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'i');
+      filter.$or = [
+        { name: rx },
+        { email: rx },
+        { phone: rx },
+        { category: rx },
+        { message: rx },
+      ];
+    }
     const skip = (pageNum - 1) * limitNum;
     const [donations, total] = await Promise.all([
       Donation.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limitNum),
