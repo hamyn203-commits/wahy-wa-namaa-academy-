@@ -1051,6 +1051,284 @@ router.get('/teachers/pending', protect, authorize('admin'), async (req, res) =>
   }
 });
 
+router.get('/teachers/directory', protect, authorize('admin'), async (req, res) => {
+  try {
+    const requestedStatus = String(req.query.status || 'approved').trim();
+    const gender = ['male', 'female'].includes(req.query.gender) ? req.query.gender : 'all';
+    const visibility = ['public', 'hidden'].includes(req.query.visibility) ? req.query.visibility : 'all';
+    const q = String(req.query.q || '').trim().slice(0, 120);
+    const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
+    const limit = Math.max(1, Math.min(60, Number.parseInt(req.query.limit, 10) || 24));
+
+    if (isMockMode && !isDBConnected()) {
+      const allTeachers = getMockTeachers().map((t) => ({
+        ...t,
+        user: findMockUserById(t.user?._id || t.user) || { _id: t.user, name: t.personalInfo?.fullName || 'معلم', email: '' },
+      }));
+      const counts = {
+        approved: allTeachers.filter((t) => t.status === 'approved').length,
+        pendingReview: allTeachers.filter((t) => ['pending', 'under-review'].includes(t.status)).length,
+        suspended: allTeachers.filter((t) => t.status === 'suspended').length,
+        rejected: allTeachers.filter((t) => t.status === 'rejected').length,
+      };
+      const filtered = allTeachers.filter((t) => {
+        if (requestedStatus === 'approved' && t.status !== 'approved') return false;
+        if (requestedStatus === 'pending' && !['pending', 'under-review'].includes(t.status)) return false;
+        if (requestedStatus === 'archived' && !['suspended', 'rejected'].includes(t.status)) return false;
+        if (['suspended', 'rejected', 'under-review'].includes(requestedStatus) && t.status !== requestedStatus) return false;
+        if (gender !== 'all' && t.personalInfo?.gender !== gender) return false;
+        if (visibility === 'public' && t.isPublic === false) return false;
+        if (visibility === 'hidden' && t.isPublic !== false) return false;
+        if (q) {
+          const lower = q.toLowerCase();
+          return [t.personalInfo?.fullName, t.user?.name, t.user?.email, t.personalInfo?.country, t.personalInfo?.city]
+            .some((val) => String(val || '').toLowerCase().includes(lower));
+        }
+        return true;
+      });
+      const total = filtered.length;
+      const teachers = filtered.slice((page - 1) * limit, page * limit).map((t) => ({
+        ...t,
+        operationalMetrics: {
+          activeCirclesCount: 0,
+          enrolledStudentsCount: 0,
+          lockedSubscriptionsCount: 0,
+          pendingSessionsCount: 0,
+          overdueSessionsCount: 0,
+          missingReportsCount: 0,
+        },
+      }));
+      return res.json({
+        teachers,
+        total,
+        page,
+        limit,
+        pages: Math.max(1, Math.ceil(total / limit)),
+        counts,
+      });
+    }
+
+    const filter = {};
+    if (requestedStatus === 'approved') {
+      filter.status = 'approved';
+      filter.isVerified = true;
+    } else if (requestedStatus === 'pending') {
+      filter.status = { $in: ['pending', 'under-review'] };
+    } else if (requestedStatus === 'archived') {
+      filter.status = { $in: ['suspended', 'rejected'] };
+    } else if (['suspended', 'rejected', 'under-review'].includes(requestedStatus)) {
+      filter.status = requestedStatus;
+    }
+
+    if (gender !== 'all') {
+      filter['personalInfo.gender'] = gender;
+    }
+    if (visibility === 'public') {
+      filter.isPublic = { $ne: false };
+    } else if (visibility === 'hidden') {
+      filter.isPublic = false;
+    }
+
+    if (q) {
+      const escaped = q.replace(/[|\\{}()[\]^$+*?.-]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      const matchedUsers = await User.find({
+        role: 'teacher',
+        $or: [{ name: regex }, { email: regex }, { phone: regex }],
+      }).select('_id').limit(100).lean();
+      const matchedUserIds = matchedUsers.map((u) => u._id);
+      filter.$or = [
+        { 'personalInfo.fullName': regex },
+        { 'personalInfo.country': regex },
+        { 'personalInfo.city': regex },
+        { 'personalInfo.phone': regex },
+        ...(matchedUserIds.length ? [{ user: { $in: matchedUserIds } }] : []),
+        ...(mongoose.Types.ObjectId.isValid(q) ? [{ _id: q }] : []),
+      ];
+    }
+
+    const [
+      rawTeachers,
+      total,
+      approvedCount,
+      pendingReviewCount,
+      suspendedCount,
+      rejectedCount,
+    ] = await Promise.all([
+      Teacher.find(filter)
+        .select('-documents -storageOwner')
+        .populate('user', 'name email phone avatar isActive lastLogin')
+        .sort({ isFeatured: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Teacher.countDocuments(filter),
+      Teacher.countDocuments({ status: 'approved', isVerified: true }),
+      Teacher.countDocuments({ status: { $in: ['pending', 'under-review'] } }),
+      Teacher.countDocuments({ status: 'suspended' }),
+      Teacher.countDocuments({ status: 'rejected' }),
+    ]);
+
+    const teacherIds = rawTeachers.map((t) => t._id);
+    const now = new Date();
+    const canAggregate = Boolean(mongoose.connection?.db) || GroupCircle.aggregate !== mongoose.Model.aggregate;
+
+    const [circleAgg, subAgg, pendingSessAgg, overdueSessAgg, missingReportAgg] = teacherIds.length && canAggregate
+      ? await Promise.all([
+          GroupCircle.aggregate([
+            { $match: { teacher: { $in: teacherIds }, status: { $nin: ['completed', 'cancelled'] } } },
+            {
+              $group: {
+                _id: '$teacher',
+                circlesCount: { $sum: 1 },
+                studentsCount: { $sum: { $size: { $ifNull: ['$students', []] } } },
+              },
+            },
+          ]).catch(() => []),
+          StudentSubscription.aggregate([
+            {
+              $match: {
+                preferredTeacher: { $in: teacherIds },
+                status: { $in: ['awaiting_placement', 'placed', 'active', 'paused'] },
+              },
+            },
+            { $group: { _id: '$preferredTeacher', count: { $sum: 1 } } },
+          ]).catch(() => []),
+          Session.aggregate([
+            { $match: { teacher: { $in: teacherIds }, status: 'pending' } },
+            { $group: { _id: '$teacher', count: { $sum: 1 } } },
+          ]).catch(() => []),
+          Session.aggregate([
+            { $match: { teacher: { $in: teacherIds }, status: 'accepted', scheduledAt: { $lt: now } } },
+            { $group: { _id: '$teacher', count: { $sum: 1 } } },
+          ]).catch(() => []),
+          Session.aggregate([
+            { $match: { teacher: { $in: teacherIds }, ...buildMissingReportMongoFilter() } },
+            { $group: { _id: '$teacher', count: { $sum: 1 } } },
+          ]).catch(() => []),
+        ])
+      : [[], [], [], [], []];
+
+    const circleMap = new Map(circleAgg.map((r) => [String(r._id), r]));
+    const subMap = new Map(subAgg.map((r) => [String(r._id), r.count]));
+    const pendingSessMap = new Map(pendingSessAgg.map((r) => [String(r._id), r.count]));
+    const overdueSessMap = new Map(overdueSessAgg.map((r) => [String(r._id), r.count]));
+    const missingRepMap = new Map(missingReportAgg.map((r) => [String(r._id), r.count]));
+
+    const teachers = rawTeachers.map((t) => {
+      const tid = String(t._id);
+      const circleStats = circleMap.get(tid);
+      return {
+        ...t,
+        operationalMetrics: {
+          activeCirclesCount: circleStats?.circlesCount || 0,
+          enrolledStudentsCount: circleStats?.studentsCount || 0,
+          lockedSubscriptionsCount: subMap.get(tid) || 0,
+          pendingSessionsCount: pendingSessMap.get(tid) || 0,
+          overdueSessionsCount: overdueSessMap.get(tid) || 0,
+          missingReportsCount: missingRepMap.get(tid) || 0,
+        },
+      };
+    });
+
+    return res.json({
+      teachers,
+      total,
+      page,
+      limit,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      counts: {
+        approved: approvedCount,
+        pendingReview: pendingReviewCount,
+        suspended: suspendedCount,
+        rejected: rejectedCount,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
+router.get('/teachers/:id/impact', protect, authorize('admin'), async (req, res) => {
+  try {
+    if (isMockMode && !isDBConnected()) {
+      const mockTeacher = findMockTeacherById(req.params.id);
+      if (!mockTeacher) return res.status(404).json({ error: 'المعلم غير موجود' });
+      const circles = getMockCircles().filter((c) => String(c.teacher) === String(mockTeacher._id) && c.status !== 'completed');
+      const compatibleTeachers = getMockTeachers()
+        .filter((t) => String(t._id) !== String(mockTeacher._id) && t.status === 'approved' && t.personalInfo?.gender === mockTeacher.personalInfo?.gender)
+        .map((t) => ({ _id: t._id, name: t.personalInfo?.fullName || 'معلم', gender: t.personalInfo?.gender }));
+      return res.json({
+        teacherId: String(mockTeacher._id),
+        circles: circles.map((c) => ({ _id: c._id, name: c.name, studentCount: (c.students || []).length, status: c.status })),
+        activeCirclesCount: circles.length,
+        futureSessionsCount: 0,
+        upcomingSessionsCount: 0,
+        lockedSubscriptionsCount: getMockSubscriptions().filter((s) => String(s.preferredTeacher) === String(mockTeacher._id)).length,
+        replacementTeachers: compatibleTeachers,
+        compatibleTeachers,
+      });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid teacher id' });
+    }
+    const teacher = await Teacher.findById(req.params.id).select('personalInfo status isVerified').lean();
+    if (!teacher) return res.status(404).json({ error: 'المعلم غير موجود' });
+
+    const [circles, upcomingSessionsCount, lockedSubscriptionsCount, compatibleTeachers] = await Promise.all([
+      GroupCircle.find({ teacher: teacher._id, status: { $nin: ['completed', 'cancelled'] } })
+        .select('_id name code status gender subscriptionSection students')
+        .lean(),
+      Session.countDocuments({
+        teacher: teacher._id,
+        status: { $in: ['pending', 'accepted'] },
+        scheduledAt: { $gt: new Date() },
+      }),
+      StudentSubscription.countDocuments({
+        preferredTeacher: teacher._id,
+        status: { $nin: ['cancelled', 'expired', 'completed'] },
+      }),
+      Teacher.find({
+        _id: { $ne: teacher._id },
+        status: 'approved',
+        isVerified: true,
+        ...(teacher.personalInfo?.gender ? { 'personalInfo.gender': teacher.personalInfo.gender } : {}),
+      })
+        .select('_id personalInfo.fullName personalInfo.gender user')
+        .populate('user', 'name email')
+        .sort({ isFeatured: -1, createdAt: -1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    const formattedCompatible = compatibleTeachers.map((t) => ({
+      _id: t._id,
+      name: t.personalInfo?.fullName || t.user?.name || 'معلم',
+      email: t.user?.email || '',
+      gender: t.personalInfo?.gender || 'male',
+    }));
+
+    return res.json({
+      teacherId: String(teacher._id),
+      circles: circles.map((c) => ({
+        _id: c._id,
+        name: c.name,
+        code: c.code,
+        status: c.status,
+        studentCount: Array.isArray(c.students) ? c.students.length : 0,
+      })),
+      activeCirclesCount: circles.length,
+      futureSessionsCount: upcomingSessionsCount,
+      upcomingSessionsCount,
+      lockedSubscriptionsCount,
+      replacementTeachers: formattedCompatible,
+      compatibleTeachers: formattedCompatible,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: safeErrorMessage(error, 500) });
+  }
+});
+
 router.get('/donations', protect, authorize('admin'), async (req, res) => {
   if (isMockMode && !isDBConnected()) {
     return res.json({ donations: [], pagination: { page: 1, limit: 20, total: 0 } });
@@ -1201,6 +1479,35 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
       emailVerified: true,
     });
 
+    const uploadedFiles = req.body?.uploadedFiles && typeof req.body.uploadedFiles === 'object'
+      ? req.body.uploadedFiles
+      : {};
+    const resolveAdminUpload = (field, purpose, fallback) => {
+      const ref = String(uploadedFiles[field]?.url || uploadedFiles[field]?.pathname || uploadedFiles[field] || '').trim();
+      if (!ref) return fallback;
+      if (!objectStorage.isOwnedObjectReference(ref, purpose, req.user.id)) {
+        const err = new Error('ملف مرفوع غير صالح أو لا يخص جلسة الإدارة الحالية');
+        err.status = 400;
+        throw err;
+      }
+      return ref;
+    };
+
+    const resolvedProfilePhoto = resolveAdminUpload('profilePhoto', 'teacher-public', PLACEHOLDER);
+    const resolvedRecitationVideo = resolveAdminUpload('recitationVideo', 'teacher-public', PLACEHOLDER);
+    const resolvedIntroVideo = resolveAdminUpload('introductionVideo', 'teacher-public', '');
+    const resolvedMethodVideo = resolveAdminUpload('teachingMethodVideo', 'teacher-public', '');
+    const resolvedIdFront = resolveAdminUpload('idCardFront', 'teacher-private', 'not-provided');
+    const resolvedIdBack = resolveAdminUpload('idCardBack', 'teacher-private', 'not-provided');
+    const hasAdminExternalAsset = [
+      resolvedProfilePhoto,
+      resolvedRecitationVideo,
+      resolvedIntroVideo,
+      resolvedMethodVideo,
+      resolvedIdFront,
+      resolvedIdBack,
+    ].some((v) => v && v !== PLACEHOLDER && v !== 'not-provided');
+
     const teacher = await Teacher.create({
       user: user._id,
       personalInfo: {
@@ -1230,13 +1537,19 @@ router.post('/teachers', protect, authorize('admin'), async (req, res) => {
         sanad: String(sanad || '').trim(),
         specializations: normalizedSpecs.length ? normalizedSpecs : ['tajweed', 'children'],
       },
-      documents: { idCard: PLACEHOLDER, graduationCertificate: PLACEHOLDER },
-      media: {
-        profilePhoto: PLACEHOLDER,
-        introductionVideo: PLACEHOLDER,
-        recitationVideo: PLACEHOLDER,
-        teachingMethodVideo: PLACEHOLDER,
+      documents: {
+        idCard: resolvedIdFront !== 'not-provided' ? resolvedIdFront : PLACEHOLDER,
+        idCardFront: resolvedIdFront,
+        idCardBack: resolvedIdBack,
+        graduationCertificate: PLACEHOLDER,
       },
+      media: {
+        profilePhoto: resolvedProfilePhoto,
+        introductionVideo: resolvedIntroVideo,
+        recitationVideo: resolvedRecitationVideo,
+        teachingMethodVideo: resolvedMethodVideo,
+      },
+      ...(hasAdminExternalAsset ? { storageOwner: String(req.user.id) } : {}),
       status: 'pending',
       isVerified: false,
       hourlyRate: Math.max(0, Number(hourlyRate ?? 50)),
@@ -1578,24 +1891,77 @@ router.put('/teachers/:id', protect, authorize('admin'), async (req, res) => {
           userDoc.sessionsRevokedAt = new Date();
           await userDoc.save();
         }
-        if (Boolean(require('mongoose').connection?.db) || Session.updateMany !== require('mongoose').Model.updateMany) {
-          await Session.updateMany(
-            {
-              teacher: teacher._id,
-              status: { $in: ['pending', 'accepted'] },
-              scheduledAt: { $gt: new Date() },
-            },
-            { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }
-          ).catch(() => {});
-        }
-        if (Boolean(require('mongoose').connection?.db) || StudentSubscription.updateMany !== require('mongoose').Model.updateMany) {
-          await StudentSubscription.updateMany(
-            {
-              preferredTeacher: teacher._id,
-              status: { $nin: ['cancelled', 'expired'] },
-            },
-            { $set: { preferredTeacher: null } }
-          ).catch(() => {});
+        const replacementTeacherId = String(req.body?.replacementTeacherId || '').trim();
+        if (replacementTeacherId && mongoose.Types.ObjectId.isValid(replacementTeacherId)) {
+          if (String(replacementTeacherId) === String(teacher._id)) {
+            return res.status(400).json({ error: 'لا يمكن تعيين نفس المعلم الموقوف كبديل' });
+          }
+          const replacement = await Teacher.findById(replacementTeacherId);
+          if (!replacement || replacement.status !== 'approved' || replacement.isVerified !== true) {
+            return res.status(409).json({
+              error: 'يجب أن يكون المعلم البديل معتمداً وموثقاً قبل نقل الحلقات والطلاب إليه',
+              code: 'REPLACEMENT_TEACHER_NOT_APPROVED',
+            });
+          }
+          const activeCircles = await GroupCircle.find({
+            teacher: teacher._id,
+            status: { $nin: ['completed', 'cancelled'] },
+          }).select('gender subscriptionSection');
+          for (const circle of activeCircles) {
+            try {
+              assertGenderAndAgeCompatibility({
+                teacher: replacement,
+                circleGender: circle.gender,
+                section: circle.subscriptionSection,
+              });
+            } catch (safeguardErr) {
+              return res.status(409).json({
+                error: safeguardErr.publicMessage || 'جنس المعلم البديل غير متوافق مع إحدى حلقات المعلم',
+                code: 'GENDER_SEPARATION_VIOLATION',
+              });
+            }
+          }
+          await Promise.all([
+            GroupCircle.updateMany(
+              { teacher: teacher._id, status: { $nin: ['completed', 'cancelled'] } },
+              { $set: { teacher: replacement._id } }
+            ),
+            Session.updateMany(
+              {
+                teacher: teacher._id,
+                status: { $in: ['pending', 'accepted'] },
+                scheduledAt: { $gt: new Date() },
+              },
+              { $set: { teacher: replacement._id } }
+            ),
+            StudentSubscription.updateMany(
+              {
+                preferredTeacher: teacher._id,
+                status: { $nin: ['cancelled', 'expired', 'completed'] },
+              },
+              { $set: { preferredTeacher: replacement._id } }
+            ),
+          ]);
+        } else {
+          if (Boolean(require('mongoose').connection?.db) || Session.updateMany !== require('mongoose').Model.updateMany) {
+            await Session.updateMany(
+              {
+                teacher: teacher._id,
+                status: { $in: ['pending', 'accepted'] },
+                scheduledAt: { $gt: new Date() },
+              },
+              { $set: { status: 'cancelled', cancellationReason: 'Teacher deactivated' } }
+            ).catch(() => {});
+          }
+          if (Boolean(require('mongoose').connection?.db) || StudentSubscription.updateMany !== require('mongoose').Model.updateMany) {
+            await StudentSubscription.updateMany(
+              {
+                preferredTeacher: teacher._id,
+                status: { $nin: ['cancelled', 'expired'] },
+              },
+              { $set: { preferredTeacher: null } }
+            ).catch(() => {});
+          }
         }
       }
     } else if (typeof isVerified === 'boolean') {

@@ -1,7 +1,8 @@
-/* Teacher review: readable RTL hierarchy, clear decisions and private in-page media. */
+/* Teacher review & 360 dossiers: readable RTL hierarchy, semantic tokens for Light/Dark modes, and private in-page media. */
 .wn-admin-dossier-backdrop .wn-admin-dossier {
   width: min(1100px, 98vw);
-  background: #f5f8f7;
+  background: var(--wn-surface-soft);
+  color: var(--wn-text-primary);
 }
 .wn-admin-dossier .wn-admin-dossier__header {
   align-items: center;
@@ -36,7 +37,8 @@
   width: 44px;
   display: grid;
   place-items: center;
-  background: #eef3f1;
+  background: var(--wn-surface-mint);
+  color: var(--wn-heading);
 }
 .wn-admin-dossier .wn-admin-dossier__body {
   display: block;
@@ -47,9 +49,9 @@
 .wn-admin-dossier .wn-admin-review-gate,
 .wn-admin-dossier .wn-admin-dossier__section {
   padding: clamp(16px, 2vw, 24px);
-  border: 1px solid #dfe9e5;
+  border: 1px solid var(--wn-border);
   border-radius: 18px;
-  background: #fff;
+  background: var(--wn-surface);
   margin-bottom: 18px;
   scroll-margin-top: 16px;
 }
@@ -79,8 +81,8 @@
   padding: 13px 15px;
   border-radius: 12px;
   border-inline-start: 3px solid var(--wn-emerald);
-  background: #f3f8f5;
-  color: #345348;
+  background: var(--wn-surface-mint);
+  color: var(--wn-text-primary);
   font-size: 14px;
   line-height: 1.9;
 }
@@ -88,7 +90,7 @@
   margin-top: 18px;
 }
 .wn-admin-dossier .wn-admin-review-group + .wn-admin-review-group {
-  border-top: 1px solid #e7eeea;
+  border-top: 1px solid var(--wn-border);
   padding-top: 20px;
 }
 .wn-admin-dossier .wn-admin-review-group__heading {
@@ -101,20 +103,20 @@
 .wn-admin-dossier .wn-admin-review-group__heading h3 {
   font-size: 17px;
   font-weight: 850;
-  color: #0b4237;
+  color: var(--wn-heading);
 }
 .wn-admin-dossier .wn-admin-review-group__heading p {
   font-size: 13px;
   line-height: 1.8;
-  color: #637970;
+  color: var(--wn-text-secondary);
 }
 .wn-admin-dossier .wn-admin-review-group__heading > span {
   white-space: nowrap;
   flex-shrink: 0;
   padding: 7px 11px;
-  background: #edf5f0;
+  background: var(--wn-emerald-soft);
   border-radius: 999px;
-  color: #1a624d;
+  color: var(--wn-emerald-dark);
   font-size: 12px;
   font-weight: 700;
 }
@@ -131,17 +133,17 @@
   gap: 15px;
   padding: 16px;
   border-radius: 14px;
-  border: 1px solid #e0eae5;
-  background: #fcfefd;
+  border: 1px solid var(--wn-border);
+  background: var(--wn-surface-soft);
   min-width: 0;
 }
 .wn-admin-dossier .wn-admin-review-checklist > article.is-approved {
-  border-color: #b9dcca;
-  background: #f4fbf6;
+  border-color: var(--wn-border-mint);
+  background: var(--wn-surface-mint);
 }
 .wn-admin-dossier .wn-admin-review-checklist > article.is-changes-requested {
-  border-color: #e9c8bd;
-  background: #fffbf9;
+  border-color: var(--wn-status-warn-border);
+  background: var(--wn-status-warn-bg);
 }
 .wn-admin-dossier .wn-admin-review-checklist__label {
   gap: 11px;
@@ -167,15 +169,15 @@
   margin-top: 9px;
   font-size: 13px;
   line-height: 1.8;
-  color: #546e63;
+  color: var(--wn-text-secondary);
 }
 .wn-admin-dossier .wn-admin-review-checklist__label p.wn-admin-review-checklist__missing-text,
 .wn-admin-dossier .wn-admin-review-checklist__label p.wn-admin-review-checklist__note {
   margin-top: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #fff0ea;
-  color: #994b2d;
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
   font-size: 12px;
   line-height: 1.8;
   overflow-wrap: anywhere;
@@ -196,8 +198,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #e8f4f0;
-  color: #11614c;
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
 }
 .wn-admin-dossier .wn-admin-review-checklist__actions button:disabled {
   opacity: .48;
@@ -218,15 +220,16 @@
 .wn-admin-dossier .wn-admin-dossier__value {
   min-width: 0;
   padding: 13px;
-  background: #f4f8f6;
+  background: var(--wn-surface-soft);
 }
 .wn-admin-dossier .wn-admin-dossier__value span {
   font-size: 12px;
-  color: #677e73;
+  color: var(--wn-text-secondary);
 }
 .wn-admin-dossier .wn-admin-dossier__value strong {
   font-size: 14px;
   line-height: 1.7;
+  color: var(--wn-heading);
 }
 .wn-admin-dossier .wn-admin-dossier__asset-grid {
   gap: 12px;
@@ -285,7 +288,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #fff;
+  background: var(--wn-surface);
   border-radius: 18px;
   box-shadow: 0 24px 80px rgba(0,0,0,.28);
 }
@@ -296,19 +299,19 @@
   justify-content: space-between;
   gap: 14px;
   padding: 15px 20px;
-  background: #fff;
+  background: var(--wn-surface);
 }
 .wn-admin-asset-viewer__header {
-  border-bottom: 1px solid #e5eeea;
+  border-bottom: 1px solid var(--wn-border);
 }
 .wn-admin-asset-viewer__header h3 {
   font-size: 19px;
   font-weight: 850;
-  color: #0b4237;
+  color: var(--wn-heading);
 }
 .wn-admin-asset-viewer__header p {
   font-size: 13px;
-  color: #617569;
+  color: var(--wn-text-secondary);
 }
 .wn-admin-asset-viewer__header button {
   min-width: 44px;
@@ -316,7 +319,8 @@
   display: grid;
   place-items: center;
   border-radius: 9px;
-  background: #eef3f0;
+  background: var(--wn-surface-soft);
+  color: var(--wn-heading);
 }
 .wn-admin-asset-viewer__content {
   min-height: 180px;
@@ -327,7 +331,7 @@
   gap: 12px;
   padding: 18px;
   overflow: auto;
-  background: #101d1b;
+  background: var(--wn-surface-sunken);
 }
 .wn-admin-asset-viewer__content img,
 .wn-admin-asset-viewer__content video,
@@ -344,7 +348,7 @@
 .wn-admin-asset-viewer__content iframe {
   min-height: 60dvh;
   border: 0;
-  background: #fff;
+  background: var(--wn-surface);
 }
 .wn-admin-asset-viewer__content audio { width: min(100%,630px); }
 .wn-admin-asset-viewer__message {
@@ -352,32 +356,32 @@
   font-size: 14px;
   line-height: 1.85;
   text-align: center;
-  color: #e7eee9;
+  color: var(--wn-text-primary);
 }
-.wn-admin-asset-viewer__message.is-error { color: #ffd5c7; }
+.wn-admin-asset-viewer__message.is-error { color: var(--wn-status-danger-text); }
 .wn-admin-asset-viewer__metadata {
   padding: 9px 16px;
-  background: #eaf3ef;
-  border-top: 1px solid #cfdfd7;
-  color: #174739;
+  background: var(--wn-surface-mint);
+  border-top: 1px solid var(--wn-border-mint);
+  color: var(--wn-heading);
   font-size: 12px;
   line-height: 1.8;
   text-align: center;
   overflow-wrap: anywhere;
 }
 .wn-admin-asset-viewer__panel > .wn-admin-asset-viewer__message.is-error {
-  background: #fff4ea;
-  color: #894622;
+  background: var(--wn-status-warn-bg);
+  color: var(--wn-status-warn-text);
   margin: 0;
   padding: 10px 15px;
 }
 .wn-admin-asset-viewer__footer button.wn-admin-asset-viewer__retry {
-  background: #e5f4ec;
-  color: #135a45;
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
 }
 
 .wn-admin-asset-viewer__footer {
-  border-top: 1px solid #e5eeea;
+  border-top: 1px solid var(--wn-border);
 }
 .wn-admin-asset-viewer__footer a,
 .wn-admin-asset-viewer__footer button {
@@ -393,12 +397,12 @@
   text-decoration: none;
 }
 .wn-admin-asset-viewer__footer a {
-  background: #eaf5ef;
-  color: #126146;
+  background: var(--wn-emerald-soft);
+  color: var(--wn-emerald-dark);
 }
 .wn-admin-asset-viewer__footer button {
-  background: #0b4439;
-  color: #fff;
+  background: var(--wn-emerald);
+  color: var(--wn-text-inverse);
 }
 @media (max-width: 860px) {
   .wn-admin-dossier .wn-admin-review-checklist { grid-template-columns: 1fr; }

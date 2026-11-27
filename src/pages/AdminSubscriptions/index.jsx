@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Plus, RefreshCw, UsersRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdminDashboardShell from '../AdminDashboard/AdminDashboardShell';
+import AdminQuickDossierHost from '../AdminDashboard/AdminQuickDossierHost';
 import EmptyState from '../../components/shared/EmptyState';
 import SEOHead from '../../components/SEOHead';
 import Skeleton from '../../components/shared/Skeleton';
@@ -32,6 +33,7 @@ export default function AdminSubscriptions() {
   const circlesTabId = useId();
   const awaitingPanelId = useId();
   const circlesPanelId = useId();
+  const dossierRef = useRef(null);
   const showLoadError = toast.error;
   const [tab, setTab] = useState('awaiting');
   const [subscriptions, setSubscriptions] = useState([]);
@@ -219,6 +221,7 @@ export default function AdminSubscriptions() {
       onChange={handleTabChange}
       onNavigate={handleAdminRoute}
       onLogout={logout}
+      search={<AdminQuickDossierHost ref={dossierRef} approvedTeachers={teachers} onChanged={load} />}
     >
       <SEOHead page={{ title: ps.seoTitle, description: ps.seoDesc, noindex: true, canonical: false }} />
       <div className="space-y-5" dir={dir}>
@@ -440,12 +443,35 @@ export default function AdminSubscriptions() {
               return (
                 <article key={item._id} className="wn-dashboard-surface grid md:grid-cols-2 gap-5">
                   <div className="space-y-2">
-                    <h3 className="font-bold text-lg text-[var(--wn-heading)]">{item.student?.name || ps.awaitingCard.studentFallback}</h3>
+                    {item.student?._id ? (
+                      <button
+                        type="button"
+                        onClick={() => dossierRef.current?.openStudent(item.student._id)}
+                        className="font-bold text-lg text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4 text-start"
+                      >
+                        {item.student?.name || ps.awaitingCard.studentFallback}
+                      </button>
+                    ) : (
+                      <h3 className="font-bold text-lg text-[var(--wn-heading)]">{item.student?.name || ps.awaitingCard.studentFallback}</h3>
+                    )}
                     <p className="text-sm text-[var(--wn-text-secondary)]">{item.student?.email}</p>
                     <p className="text-sm text-[var(--wn-text-primary)]">
                       {formatMsg(ps.awaitingCard.planLine, { plan: planName(item), price: (item.pricePerSessionMinor || 0) / 100 })}
                     </p>
-                    <p className="text-sm text-[var(--wn-text-primary)]">{ps.awaitingCard.preferredTutor}: <strong>{teacherName(item)}</strong></p>
+                    <p className="text-sm text-[var(--wn-text-primary)]">
+                      {ps.awaitingCard.preferredTutor}:{' '}
+                      {item.preferredTeacher?._id ? (
+                        <button
+                          type="button"
+                          onClick={() => dossierRef.current?.openTeacher(item.preferredTeacher._id)}
+                          className="font-bold text-[var(--wn-heading)] hover:text-[var(--wn-emerald)] underline decoration-dotted underline-offset-4"
+                        >
+                          {teacherName(item)}
+                        </button>
+                      ) : (
+                        <strong>{teacherName(item)}</strong>
+                      )}
+                    </p>
                     <p className="text-sm text-[var(--wn-text-primary)]">
                       {ps.awaitingCard.sectionLabel}: {item.section === 'ladies' ? ps.awaitingCard.sectionLadies : ps.awaitingCard.sectionMenChildren} · {ps.awaitingCard.ageLabel}: {item.student?.age || t.adminPortal.common.dash}
                     </p>

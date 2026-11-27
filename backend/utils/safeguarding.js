@@ -100,13 +100,13 @@ function assertGenderAndAgeCompatibility({
   }
 
   if (normalizedCircleGender && teacher) {
-    if (['girls', 'women'].includes(normalizedCircleGender) && teacherGender !== 'female') {
+    if (['girls', 'women', 'female'].includes(normalizedCircleGender) && teacherGender !== 'female') {
       throw safeguardingError(
         'CIRCLE_TEACHER_GENDER_MISMATCH',
         'حلقات الفتيات والسيدات مخصصة للمعلمات فقط'
       );
     }
-    if (['boys', 'men'].includes(normalizedCircleGender) && teacherGender !== 'male') {
+    if (['boys', 'men', 'male'].includes(normalizedCircleGender) && teacherGender !== 'male') {
       throw safeguardingError(
         'CIRCLE_TEACHER_GENDER_MISMATCH',
         'حلقات البنين والرجال مخصصة للمعلمين الرجال فقط'
