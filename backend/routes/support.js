@@ -269,9 +269,19 @@ router.get('/inbox', authorize('admin'), async (req, res, next) => {
       { $sort: { 'latest.createdAt': -1, 'latest._id': -1 } }, { $limit: 51 },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'student' } },
       { $unwind: '$student' },
-      { $project: { _id: 0, student: { _id: '$student._id', name: '$student.name' }, latest: { _id: '$latest._id', senderRole: '$latest.senderRole', text: '$latest.text', hasAudio: '$latest.hasAudio', audioDuration: '$latest.audioDuration', hasAttachment: '$latest.hasAttachment', attachmentType: '$latest.attachmentType', attachmentName: '$latest.attachmentName', readAt: '$latest.readAt', createdAt: '$latest.createdAt' }, unread: 1 } },
+      { $project: { _id: 0, student: { _id: '$student._id', name: '$student.name', email: '$student.email', phone: '$student.phone', whatsappPhone: '$student.whatsappPhone', enrollmentSection: '$student.enrollmentSection' }, latest: { _id: '$latest._id', senderRole: '$latest.senderRole', text: '$latest.text', hasAudio: '$latest.hasAudio', audioDuration: '$latest.audioDuration', hasAttachment: '$latest.hasAttachment', attachmentType: '$latest.attachmentType', attachmentName: '$latest.attachmentName', readAt: '$latest.readAt', createdAt: '$latest.createdAt' }, unread: 1 } },
     ]);
-    res.json({ conversations: rows.slice(0, 50), nextBefore: rows.length > 50 ? String(rows[49].latest._id) : null });
+    const conversations = rows.slice(0, 50);
+    const unreadConversations = conversations.filter((r) => Number(r.unread || 0) > 0).length;
+    const unreadMessages = conversations.reduce((sum, r) => sum + Number(r.unread || 0), 0);
+    res.json({
+      conversations,
+      nextBefore: rows.length > 50 ? String(rows[49].latest._id) : null,
+      summary: {
+        unreadConversations,
+        unreadMessages,
+      },
+    });
   } catch (error) { next(error); }
 });
 

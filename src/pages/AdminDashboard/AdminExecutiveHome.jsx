@@ -1,6 +1,7 @@
 import {
   Activity, ArrowLeft, ArrowRight, BookOpen, Calendar, CalendarClock, CheckCircle2,
-  CreditCard, DollarSign, GraduationCap, ServerCog, Sparkles, Users, WalletCards,
+  CreditCard, DollarSign, GraduationCap, History, MessageSquare, Radio, RefreshCw,
+  ServerCog, Sparkles, Users, WalletCards,
 } from 'lucide-react';
 import Skeleton from '../../components/shared/Skeleton';
 import { useI18n } from '../../i18n';
@@ -12,13 +13,34 @@ const ACTION_META = {
   'teacher-review': { icon: GraduationCap, tone: 'danger' },
   'manual-payments': { icon: CreditCard, tone: 'danger' },
   payouts: { icon: WalletCards, tone: 'warning' },
+  'support-unread': { icon: MessageSquare, tone: 'danger' },
   messages: { icon: Activity, tone: 'warning' },
   'guardian-links': { icon: Users, tone: 'info' },
   'overdue-sessions': { icon: Calendar, tone: 'danger' },
   'missing-session-reports': { icon: BookOpen, tone: 'warning' },
   'trial-requests': { icon: CalendarClock, tone: 'warning' },
   'awaiting-placement': { icon: Users, tone: 'warning' },
+  'low-balance-subscriptions': { icon: RefreshCw, tone: 'warning' },
 };
+
+function formatAuditActionLabel(action = '', isRTL = true) {
+  const key = String(action || '');
+  const mapAr = {
+    'teacher.approved': 'اعتماد معلم',
+    'teacher.rejected': 'رفض طلب معلم',
+    'teacher.updated': 'تحديث إعدادات معلم',
+    'trial.assigned': 'تعيين معلم لحصة تجريبية',
+    'trial.rescheduled': 'إعادة جدولة حصة تجريبية',
+    'trial.assessed': 'تقييم حصة تجريبية',
+    'payment.manual.approved': 'اعتماد إيصال دفع يدوي',
+    'payment.manual.rejected': 'رفض إيصال دفع يدوي',
+    'subscription.placed': 'تسكين طالب في حلقة',
+    'finance.teacher.bonus': 'تسوية مالية / مكافأة لمعلم',
+    'contact_message.replied': 'الرد على رسالة تواصل',
+  };
+  if (isRTL && mapAr[key]) return mapAr[key];
+  return key.replace(/[._]/g, ' ');
+}
 
 function compactNumber(value, intlLocale) {
   const number = Number(value || 0);
@@ -85,6 +107,13 @@ export default function AdminExecutiveHome({
   const healthPercent = features.length ? Math.round((healthyFeatures / features.length) * 100) : 100;
   const totalPending = Number(commandCenter?.summary?.totalPendingActions || 0);
   const pendingTeachersCount = Array.isArray(pendingTeachers) ? pendingTeachers.length : 0;
+  const livePulse = commandCenter?.livePulse || {};
+  const recentAudit = Array.isArray(commandCenter?.recentAudit) ? commandCenter.recentAudit.slice(0, 6) : [];
+  const liveRoomsNow = Number(livePulse.liveRoomsNow || 0);
+  const todayTotal = Number(livePulse.todaySessionsTotal || 0);
+  const todayCompleted = Number(livePulse.todaySessionsCompleted || 0);
+  const unreadSupport = Number(livePulse.unreadSupportMessages || 0);
+  const lowBalanceCount = Number(livePulse.lowBalanceSubscriptions || 0);
 
   const handleAction = (item) => {
     if (!item?.actionUrl) return;
@@ -137,6 +166,102 @@ export default function AdminExecutiveHome({
           />
         </section>
       )}
+
+      {/* Live Daily Operations Pulse Strip */}
+      <section
+        aria-label={isRTL ? 'نبض التشغيل الحي اليوم' : 'Live daily operations pulse'}
+        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3"
+      >
+        <button
+          type="button"
+          onClick={() => onNavigate?.('/admin?tab=sessions&focus=live')}
+          className="wn-dashboard-surface p-3.5 text-start flex items-center justify-between gap-3 hover:border-[var(--wn-emerald)] transition"
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+              {isRTL ? 'غرف مباشرة جارية الآن' : 'Live Classrooms Now'}
+            </span>
+            <strong className="text-lg font-extrabold text-[var(--wn-heading)] mt-0.5 block">
+              {compactNumber(liveRoomsNow, intlLocale)}
+            </strong>
+            <small className="text-[0.72rem] text-[var(--wn-text-tertiary)]">
+              {liveRoomsNow > 0
+                ? (isRTL ? 'اضغط للمراقبة الحية الفورية' : 'Click to observe live rooms')
+                : (isRTL ? 'لا توجد غرف مفتوحة اللحظة' : 'No active rooms right now')}
+            </small>
+          </div>
+          <span className={`p-2.5 rounded-xl shrink-0 ${liveRoomsNow > 0 ? 'bg-[var(--wn-emerald-soft)] text-[var(--wn-emerald)] animate-pulse' : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-tertiary)]'}`}>
+            <Radio size={18} aria-hidden="true" />
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.('/admin?tab=sessions&focus=today')}
+          className="wn-dashboard-surface p-3.5 text-start flex items-center justify-between gap-3 hover:border-[var(--wn-emerald)] transition"
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+              {isRTL ? 'إنجاز حصص اليوم' : 'Today’s Sessions Progress'}
+            </span>
+            <strong className="text-lg font-extrabold text-[var(--wn-heading)] mt-0.5 block" dir="ltr">
+              {todayCompleted} / {todayTotal}
+            </strong>
+            <small className="text-[0.72rem] text-[var(--wn-text-tertiary)]">
+              {todayTotal > 0
+                ? (isRTL ? `اكتمل ${Math.round((todayCompleted / todayTotal) * 100)}% من جدول اليوم` : `${Math.round((todayCompleted / todayTotal) * 100)}% completed today`)
+                : (isRTL ? 'لا توجد حصص مجدولة اليوم' : 'No sessions scheduled today')}
+            </small>
+          </div>
+          <span className="p-2.5 rounded-xl shrink-0 bg-[var(--wn-surface-mint)] text-[var(--wn-emerald)]">
+            <CalendarClock size={18} aria-hidden="true" />
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.('/admin?tab=messages')}
+          className="wn-dashboard-surface p-3.5 text-start flex items-center justify-between gap-3 hover:border-[var(--wn-emerald)] transition"
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+              {isRTL ? 'دعم الطلاب الحي (غير مقروء)' : 'Unread Student Support'}
+            </span>
+            <strong className={`text-lg font-extrabold mt-0.5 block ${unreadSupport > 0 ? 'text-[var(--wn-status-danger-text)]' : 'text-[var(--wn-heading)]'}`}>
+              {compactNumber(unreadSupport, intlLocale)}
+            </strong>
+            <small className="text-[0.72rem] text-[var(--wn-text-tertiary)]">
+              {unreadSupport > 0
+                ? (isRTL ? 'رسائل طلاب بانتظار الرد المباشر' : 'Student messages awaiting reply')
+                : (isRTL ? 'كل محادثات الطلاب مقروءة' : 'All student chats caught up')}
+            </small>
+          </div>
+          <span className={`p-2.5 rounded-xl shrink-0 ${unreadSupport > 0 ? 'bg-[var(--wn-status-danger-bg)] text-[var(--wn-status-danger-text)]' : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-tertiary)]'}`}>
+            <MessageSquare size={18} aria-hidden="true" />
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.('/admin/subscriptions')}
+          className="wn-dashboard-surface p-3.5 text-start flex items-center justify-between gap-3 hover:border-[var(--wn-emerald)] transition"
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+              {isRTL ? 'باقات قاربت على النفاد' : 'Low-Balance Subscriptions'}
+            </span>
+            <strong className={`text-lg font-extrabold mt-0.5 block ${lowBalanceCount > 0 ? 'text-[var(--wn-badge-gold-text)]' : 'text-[var(--wn-heading)]'}`}>
+              {compactNumber(lowBalanceCount, intlLocale)}
+            </strong>
+            <small className="text-[0.72rem] text-[var(--wn-text-tertiary)]">
+              {isRTL ? 'رصيد حصتين أو أقل (فرصة تجديد)' : '2 or fewer sessions remaining'}
+            </small>
+          </div>
+          <span className={`p-2.5 rounded-xl shrink-0 ${lowBalanceCount > 0 ? 'bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)]' : 'bg-[var(--wn-surface-soft)] text-[var(--wn-text-tertiary)]'}`}>
+            <RefreshCw size={18} aria-hidden="true" />
+          </span>
+        </button>
+      </section>
 
       <section className="wn-admin-exec-workspace">
         <article id="admin-action-center" className="wn-admin-exec-panel wn-admin-exec-panel--priority">
@@ -233,6 +358,64 @@ export default function AdminExecutiveHome({
           />
         </article>
       </section>
+
+      {recentAudit.length > 0 ? (
+        <section
+          aria-label={isRTL ? 'آخر القرارات الإدارية في سجل التدقيق' : 'Recent administrative audit activity'}
+          className="wn-dashboard-surface space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-[var(--wn-surface-soft)] text-[var(--wn-emerald)]">
+                <History size={17} aria-hidden="true" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-[var(--wn-heading)]">
+                  {isRTL ? 'آخر العمليات الموثقة في سجل التدقيق' : 'Recent Audited Admin Decisions'}
+                </h3>
+                <p className="text-xs text-[var(--wn-text-secondary)]">
+                  {isRTL ? 'شفافية فورية لآخر القرارات الإدارية المتخذة على المنصة.' : 'Live stream of the latest audited administrative actions.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSelectTab?.('audit')}
+              className="min-h-[38px] px-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] text-xs font-bold text-[var(--wn-text-primary)] hover:border-[var(--wn-emerald)] inline-flex items-center gap-1.5"
+            >
+              <span>{isRTL ? 'عرض سجل التدقيق الكامل' : 'Full Audit Log'}</span>
+              <DirectionArrow size={13} aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {recentAudit.map((entry) => (
+              <div
+                key={entry._id}
+                className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <strong className="text-xs font-bold text-[var(--wn-heading)]">
+                    {formatAuditActionLabel(entry.action, isRTL)}
+                  </strong>
+                  <span className="text-[0.68rem] px-2 py-0.5 rounded-full bg-[var(--wn-surface)] border border-[var(--wn-border)] text-[var(--wn-text-secondary)] shrink-0">
+                    {entry.entityType || 'admin'}
+                  </span>
+                </div>
+                {entry.reason ? (
+                  <p className="text-xs text-[var(--wn-text-secondary)] line-clamp-1">{entry.reason}</p>
+                ) : null}
+                <div className="flex items-center justify-between gap-2 text-[0.7rem] text-[var(--wn-text-tertiary)] pt-1 border-t border-[var(--wn-border)]">
+                  <span className="truncate">{entry.actor?.name || entry.actor?.email || (isRTL ? 'مشرف' : 'Admin')}</span>
+                  <span className="whitespace-nowrap">
+                    {entry.createdAt ? new Date(entry.createdAt).toLocaleString(intlLocale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

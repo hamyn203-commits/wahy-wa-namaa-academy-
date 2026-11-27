@@ -22,6 +22,7 @@ const GroupCircle = require('../models/GroupCircle');
 const StudentSubscription = require('../models/StudentSubscription');
 const LiveSession = require('../models/LiveSession');
 const Review = require('../models/Review');
+const SupportMessage = require('../models/SupportMessage');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { protect, authorize } = require('../middleware/auth');
 const objectStorage = require('../services/objectStorage');
@@ -150,6 +151,14 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         totalPendingActions: 0,
         criticalActions: 0,
       },
+      livePulse: {
+        liveRoomsNow: 0,
+        todaySessionsTotal: 0,
+        todaySessionsCompleted: 0,
+        unreadSupportMessages: 0,
+        newContactMessages: 0,
+        lowBalanceSubscriptions: 0,
+      },
       actions: [],
       recentAudit: [],
     });
@@ -157,6 +166,10 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
 
   try {
     const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+
     const [
       pendingTeachers,
       pendingManualPayments,
@@ -169,6 +182,11 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
       recentAudit,
       pendingTrialRequests,
       awaitingPlacementSubscriptions,
+      unreadSupportMessages,
+      lowBalanceSubscriptions,
+      liveRoomsNow,
+      todaySessionsTotal,
+      todaySessionsCompleted,
     ] = await Promise.all([
       Teacher.countDocuments({ status: { $in: ['pending', 'under-review'] } }),
       Payment.countDocuments({
@@ -202,7 +220,24 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         .limit(12)
         .lean(),
       require('../models/TrialRequest').countDocuments({ status: 'pending' }),
-      require('../models/StudentSubscription').countDocuments({ status: 'awaiting_placement' }),
+      StudentSubscription.countDocuments({ status: 'awaiting_placement' }),
+      Promise.resolve(SupportMessage.countDocuments({ senderRole: 'student', readAt: null })).catch(() => 0),
+      Promise.resolve(
+        StudentSubscription.countDocuments({
+          status: 'active',
+          sessionsRemaining: { $gt: 0, $lte: 2 },
+        })
+      ).catch(() => 0),
+      Promise.resolve(LiveSession.countDocuments({ isLive: true, endedAt: null })).catch(() => 0),
+      Promise.resolve(
+        Session.countDocuments({ scheduledAt: { $gte: startOfToday, $lt: endOfToday } })
+      ).catch(() => 0),
+      Promise.resolve(
+        Session.countDocuments({
+          scheduledAt: { $gte: startOfToday, $lt: endOfToday },
+          status: 'completed',
+        })
+      ).catch(() => 0),
     ]);
 
     const actions = [
@@ -228,8 +263,15 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         actionUrl: '/admin?tab=withdrawals',
       },
       {
+        id: 'support-unread',
+        label: 'محادثات دعم طلاب غير مقروءة',
+        count: unreadSupportMessages,
+        severity: unreadSupportMessages ? 'high' : 'ok',
+        actionUrl: '/admin?tab=messages',
+      },
+      {
         id: 'messages',
-        label: 'رسائل جديدة',
+        label: 'رسائل تواصل جديدة',
         count: newMessages,
         severity: newMessages ? 'medium' : 'ok',
         actionUrl: '/admin?tab=messages',
@@ -269,6 +311,13 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
         severity: awaitingPlacementSubscriptions ? 'high' : 'ok',
         actionUrl: '/admin/subscriptions',
       },
+      {
+        id: 'low-balance-subscriptions',
+        label: 'باقات طلاب قاربت على النفاد (حصتان أو أقل)',
+        count: lowBalanceSubscriptions,
+        severity: lowBalanceSubscriptions ? 'medium' : 'ok',
+        actionUrl: '/admin/subscriptions',
+      },
     ];
 
     const totalPendingActions = actions.reduce((sum, item) => sum + Number(item.count || 0), 0);
@@ -280,6 +329,14 @@ router.get('/command-center', protect, authorize('admin'), async (req, res) => {
       summary: {
         totalPendingActions,
         criticalActions,
+      },
+      livePulse: {
+        liveRoomsNow: Number(liveRoomsNow || 0),
+        todaySessionsTotal: Number(todaySessionsTotal || 0),
+        todaySessionsCompleted: Number(todaySessionsCompleted || 0),
+        unreadSupportMessages: Number(unreadSupportMessages || 0),
+        newContactMessages: Number(newMessages || 0),
+        lowBalanceSubscriptions: Number(lowBalanceSubscriptions || 0),
       },
       actions,
       recentTeachers,

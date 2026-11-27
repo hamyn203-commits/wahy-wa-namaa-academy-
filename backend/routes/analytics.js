@@ -1,8 +1,11 @@
 const crypto = require('crypto');
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const SiteVisit = require('../models/SiteVisit');
 const TeacherFunnelSession = require('../models/TeacherFunnelSession');
+const TrialRequest = require('../models/TrialRequest');
+const StudentSubscription = require('../models/StudentSubscription');
 const { protect, authorize } = require('../middleware/auth');
 const { resolveClientIp } = require('../middleware/userRateLimit');
 const { safeErrorMessage } = require('../utils/safeError');
@@ -535,6 +538,36 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
     }
     const funnelTotal = funnelCounts.visited + funnelCounts.in_progress + funnelCounts.submitted;
 
+    const canQueryAcademyConversion =
+      Boolean(mongoose.connection?.db)
+      || TrialRequest.countDocuments !== mongoose.Model.countDocuments
+      || StudentSubscription.countDocuments !== mongoose.Model.countDocuments;
+
+    let academyConversion = {
+      trialsRequested: 0,
+      trialsScheduled: 0,
+      trialsCompleted: 0,
+      activeSubscriptions: 0,
+      trialCompletionRate: 0,
+    };
+    if (canQueryAcademyConversion) {
+      const [trialsRequested, trialsScheduled, trialsCompleted, activeSubscriptions] = await Promise.all([
+        Promise.resolve(TrialRequest.countDocuments({ createdAt: { $gte: since } })).catch(() => 0),
+        Promise.resolve(TrialRequest.countDocuments({ createdAt: { $gte: since }, status: 'scheduled' })).catch(() => 0),
+        Promise.resolve(TrialRequest.countDocuments({ createdAt: { $gte: since }, status: 'completed' })).catch(() => 0),
+        Promise.resolve(StudentSubscription.countDocuments({ status: 'active' })).catch(() => 0),
+      ]);
+      const reqCount = Number(trialsRequested || 0);
+      const compCount = Number(trialsCompleted || 0);
+      academyConversion = {
+        trialsRequested: reqCount,
+        trialsScheduled: Number(trialsScheduled || 0),
+        trialsCompleted: compCount,
+        activeSubscriptions: Number(activeSubscriptions || 0),
+        trialCompletionRate: reqCount > 0 ? Math.round((compCount / reqCount) * 1000) / 10 : 0,
+      };
+    }
+
     return res.json({
       days,
       timezone: ACADEMY_TIMEZONE,
@@ -563,6 +596,7 @@ router.get('/admin/overview', protect, authorize('admin'), async (req, res) => {
         submitted: funnelCounts.submitted,
         completionRate: funnelTotal > 0 ? Math.round((funnelCounts.submitted / funnelTotal) * 1000) / 10 : 0,
       },
+      academyConversion,
     });
   } catch (error) {
     return res.status(500).json({ error: safeErrorMessage(error, 'Failed to load analytics overview') });
@@ -574,9 +608,11 @@ router.get('/admin/teacher-funnel', protect, authorize('admin'), async (req, res
     const days = parseDaysWindow(req.query.days, 30);
     const statusFilter = cleanString(String(req.query.status || 'all'), 20).toLowerCase();
     const platformFilter = cleanString(String(req.query.platform || 'all'), 20).toLowerCase();
+    const maxStepRaw = Number(req.query.maxStep);
+    const maxStepFilter = [1, 2, 3, 4, 5].includes(maxStepRaw) ? maxStepRaw : 0;
     const search = cleanString(String(req.query.search || ''), 80);
     const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 25));
+    const limit = Math.min(200, Math.max(5, Number(req.query.limit) || 25));
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const baseMatch = { startedAt: { $gte: since } };
@@ -587,6 +623,9 @@ router.get('/admin/teacher-funnel', protect, authorize('admin'), async (req, res
     const listMatch = { ...baseMatch };
     if (VALID_FUNNEL_STATUSES.has(statusFilter)) {
       listMatch.status = statusFilter;
+    }
+    if (maxStepFilter > 0) {
+      listMatch.maxStep = maxStepFilter;
     }
     if (search) {
       const rx = new RegExp(escapeRegex(search), 'i');

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity, CheckCircle2, Clock, Copy, ExternalLink, Filter, Globe,
+  Activity, CheckCircle2, Clock, Copy, Download, ExternalLink, Filter, Globe,
   GraduationCap, Loader2, MessageCircle, Monitor, RefreshCw, Search,
-  Smartphone, Tablet, TrendingUp, UserCheck, UserMinus, Users, UserX,
+  Smartphone, Sparkles, Tablet, TrendingUp, UserCheck, UserMinus, Users, UserX,
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -89,9 +89,11 @@ export default function AdminAnalyticsTab() {
   const [days, setDays] = useState(30);
   const [platform, setPlatform] = useState('all');
   const [funnelStatus, setFunnelStatus] = useState('all');
+  const [maxStepFilter, setMaxStepFilter] = useState(0);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const [overview, setOverview] = useState(null);
   const [funnel, setFunnel] = useState(null);
@@ -110,6 +112,7 @@ export default function AdminAnalyticsTab() {
         page: String(page),
         limit: '20',
       });
+      if (maxStepFilter > 0) funnelParams.set('maxStep', String(maxStepFilter));
       if (searchQuery) funnelParams.set('search', searchQuery);
 
       const [ov, fn] = await Promise.all([
@@ -123,7 +126,7 @@ export default function AdminAnalyticsTab() {
     } finally {
       setLoading(false);
     }
-  }, [days, platform, funnelStatus, page, searchQuery, isRTL]);
+  }, [days, platform, funnelStatus, maxStepFilter, page, searchQuery, isRTL]);
 
   useEffect(() => {
     loadData();
@@ -147,6 +150,72 @@ export default function AdminAnalyticsTab() {
       toast.error(isRTL ? 'تعذر النسخ التلقائي — انسخ الرابط يدوياً.' : 'Could not copy automatically.');
     }
   };
+
+  const exportTeacherLeadsCsv = async () => {
+    if (exportingCsv) return;
+    setExportingCsv(true);
+    try {
+      const exportParams = new URLSearchParams({
+        days: String(days),
+        platform,
+        status: funnelStatus,
+        page: '1',
+        limit: '200',
+      });
+      if (maxStepFilter > 0) exportParams.set('maxStep', String(maxStepFilter));
+      if (searchQuery) exportParams.set('search', searchQuery);
+      const data = await api.get(`/api/analytics/admin/teacher-funnel?${exportParams.toString()}`, { auth: true });
+      const list = data?.sessions || [];
+      if (!list.length) {
+        toast.error(isRTL ? 'لا توجد سجلات لتصديرها في الفلتر الحالي.' : 'No records to export in current filter.');
+        return;
+      }
+      const csvEscape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+      const headers = [
+        isRTL ? 'الاسم الكامل' : 'Full Name',
+        isRTL ? 'واتساب' : 'WhatsApp',
+        isRTL ? 'الهاتف' : 'Phone',
+        isRTL ? 'البريد الإلكتروني' : 'Email',
+        isRTL ? 'الدولة' : 'Country',
+        isRTL ? 'الجنس' : 'Gender',
+        isRTL ? 'الحالة' : 'Status',
+        isRTL ? 'أعلى خطوة' : 'Max Step',
+        isRTL ? 'المصدر' : 'Source',
+        isRTL ? 'المنصة' : 'Platform',
+        isRTL ? 'آخر نشاط' : 'Last Active',
+      ];
+      const rows = list.map((s) => [
+        s.fullName || '',
+        s.whatsapp || '',
+        s.phone || '',
+        s.email || '',
+        s.country || '',
+        s.gender || '',
+        s.status || '',
+        `${s.maxStep || 1}/5`,
+        s.source || 'direct',
+        s.platform || 'web',
+        s.lastActiveAt ? new Date(s.lastActiveAt).toISOString() : '',
+      ].map(csvEscape).join(','));
+      const csvContent = `\uFEFF${headers.map(csvEscape).join(',')}\n${rows.join('\n')}`;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `teacher-funnel-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(isRTL ? `تم تصدير ${list.length} سجل للمتقدمين بنجاح` : `Exported ${list.length} applicant leads`);
+    } catch (err) {
+      toast.error(err.message || (isRTL ? 'تعذر تصدير الملف' : 'CSV export failed'));
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
+  const academyConversion = overview?.academyConversion || null;
 
   const summary = overview?.summary || {};
   const peakHour = summary.peakHour || { hour: 0, visits: 0 };
@@ -507,6 +576,62 @@ export default function AdminAnalyticsTab() {
         </div>
       </section>
 
+      {/* SECTION 1.5: Student Trial-to-Subscription Conversion Pulse */}
+      {academyConversion ? (
+        <section className="wn-dashboard-surface space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-[var(--wn-heading)] flex items-center gap-2">
+                <Sparkles size={16} className="text-[var(--wn-gold)]" aria-hidden="true" />
+                <span>{isRTL ? 'مسار تحويل الطلاب (من الحصة التجريبية إلى الاشتراك النشط)' : 'Student Trial-to-Subscription Conversion'}</span>
+              </h3>
+              <p className="text-xs text-[var(--wn-text-secondary)] mt-0.5">
+                {isRTL
+                  ? `ملخص أداء الحصص التجريبية خلال آخر ${days} يوم والاشتراكات الفعالة حالياً.`
+                  : `Trial booking performance over the last ${days} days and currently active paid subscriptions.`}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3">
+              <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+                {isRTL ? `طلبات التجريبي (${days} يوم)` : `Trial Requests (${days}d)`}
+              </span>
+              <strong className="text-xl font-extrabold text-[var(--wn-heading)] mt-1 block">
+                {academyConversion.trialsRequested}
+              </strong>
+            </div>
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3">
+              <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+                {isRTL ? 'حصص تجريبية مجدولة' : 'Scheduled Trials'}
+              </span>
+              <strong className="text-xl font-extrabold text-[var(--wn-heading)] mt-1 block">
+                {academyConversion.trialsScheduled}
+              </strong>
+            </div>
+            <div className="rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface-soft)] p-3">
+              <span className="text-xs font-semibold text-[var(--wn-text-secondary)] block">
+                {isRTL ? 'تجريبيات مكتملة ومقيّمة' : 'Completed & Assessed'}
+              </span>
+              <strong className="text-xl font-extrabold text-[var(--wn-emerald)] mt-1 block">
+                {academyConversion.trialsCompleted}
+                <small className="text-xs font-semibold text-[var(--wn-text-tertiary)] ms-1.5">
+                  ({academyConversion.trialCompletionRate}%)
+                </small>
+              </strong>
+            </div>
+            <div className="rounded-xl border border-[var(--wn-border-mint)] bg-[var(--wn-surface-mint)] p-3">
+              <span className="text-xs font-semibold text-[var(--wn-badge-emerald-text)] block">
+                {isRTL ? 'الاشتراكات المدفوعة النشطة' : 'Active Paid Subscriptions'}
+              </span>
+              <strong className="text-xl font-extrabold text-[var(--wn-heading)] mt-1 block">
+                {academyConversion.activeSubscriptions}
+              </strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {/* SECTION 2: Teacher Registration Funnel */}
       <section className="space-y-4 pt-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -573,26 +698,55 @@ export default function AdminAnalyticsTab() {
           />
         </div>
 
-        {/* 5-Step Funnel Progress Bars */}
+        {/* 5-Step Funnel Progress Bars (Interactive Click-to-Filter) */}
         <div className="wn-dashboard-surface">
-          <h4 className="font-bold text-[var(--wn-heading)] mb-3">
-            {isRTL ? 'أين يتوقف المعلمون داخل خطوات التسجيل؟' : 'Step-by-Step Drop-off Breakdown'}
-          </h4>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h4 className="font-bold text-[var(--wn-heading)]">
+                {isRTL ? 'أين يتوقف المعلمون داخل خطوات التسجيل؟ (اضغط على أي خطوة للتصفية)' : 'Step-by-Step Drop-off Breakdown (Click a step to filter)'}
+              </h4>
+            </div>
+            {maxStepFilter > 0 ? (
+              <button
+                type="button"
+                onClick={() => { setPage(1); setMaxStepFilter(0); }}
+                className="min-h-[32px] px-3 rounded-full text-xs font-bold bg-[var(--wn-gold-soft)] text-[var(--wn-badge-gold-text)] border border-[var(--wn-gold)]/40"
+              >
+                {isRTL ? `تصفية نشطة: الخطوة ${maxStepFilter} (${stepLabels[maxStepFilter]}) ×` : `Active filter: Step ${maxStepFilter} ×`}
+              </button>
+            ) : null}
+          </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-6 gap-3">
             {(funnel?.stepBreakdown || []).map((row) => {
               const total = funnelSummary.total || 1;
               const pct = Math.round((row.reached / total) * 100);
               const isFinal = row.key === 'submitted';
+              const isSelectedStep = !isFinal && maxStepFilter === row.step;
               return (
-                <div
+                <button
+                  type="button"
                   key={row.key}
-                  className={`rounded-xl border p-3 flex flex-col gap-2 ${
-                    isFinal
-                      ? 'border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)]'
-                      : 'border-[var(--wn-border)] bg-[var(--wn-surface-soft)]'
+                  onClick={() => {
+                    setPage(1);
+                    if (isFinal) {
+                      setMaxStepFilter(0);
+                      setFunnelStatus('submitted');
+                    } else if (maxStepFilter === row.step) {
+                      setMaxStepFilter(0);
+                    } else {
+                      setMaxStepFilter(row.step);
+                      if (funnelStatus === 'submitted') setFunnelStatus('in_progress');
+                    }
+                  }}
+                  className={`rounded-xl border p-3 flex flex-col gap-2 text-start transition ${
+                    isSelectedStep
+                      ? 'border-[var(--wn-emerald)] ring-2 ring-[var(--wn-emerald)]/30 bg-[var(--wn-surface-mint)]'
+                      : isFinal
+                        ? 'border-[var(--wn-border-mint)] bg-[var(--wn-emerald-soft)] hover:border-[var(--wn-emerald)]'
+                        : 'border-[var(--wn-border)] bg-[var(--wn-surface-soft)] hover:border-[var(--wn-border-strong)]'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs font-bold">
+                  <div className="flex items-center justify-between w-full text-xs font-bold">
                     <span className="text-[var(--wn-text-secondary)]">
                       {isFinal ? <CheckCircle2 size={14} className="text-[var(--wn-emerald)] inline" aria-hidden="true" /> : `0${row.step}`}
                     </span>
@@ -601,13 +755,13 @@ export default function AdminAnalyticsTab() {
                   <div className="text-xs font-bold text-[var(--wn-heading)] leading-snug">
                     {stepLabels[row.step]}
                   </div>
-                  <div className="h-2 rounded-full bg-[var(--wn-border)] overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-[var(--wn-border)] overflow-hidden">
                     <div
                       className={`h-full rounded-full ${isFinal ? 'bg-[var(--wn-emerald)]' : 'bg-[var(--wn-gold)]'}`}
                       style={{ width: `${Math.min(100, pct)}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-[0.72rem] text-[var(--wn-text-secondary)]">
+                  <div className="flex items-center justify-between w-full text-[0.72rem] text-[var(--wn-text-secondary)]">
                     <span>{isRTL ? `وصلوا: ${row.reached}` : `Reached: ${row.reached}`}</span>
                     {!isFinal && row.stoppedHere > 0 ? (
                       <span className="text-[var(--wn-text-danger)] font-bold">
@@ -615,7 +769,7 @@ export default function AdminAnalyticsTab() {
                       </span>
                     ) : null}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -647,15 +801,26 @@ export default function AdminAnalyticsTab() {
               ))}
             </div>
 
-            <div className="relative min-w-[230px]">
-              <Search size={15} className="absolute top-1/2 -translate-y-1/2 start-3 text-[var(--wn-text-tertiary)]" aria-hidden="true" />
-              <input
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder={isRTL ? 'بحث بالاسم أو الهاتف أو البريد...' : 'Search name, phone, email...'}
-                className="w-full min-h-[40px] ps-9 pe-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] text-xs text-[var(--wn-text-primary)]"
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[220px]">
+                <Search size={15} className="absolute top-1/2 -translate-y-1/2 start-3 text-[var(--wn-text-tertiary)]" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder={isRTL ? 'بحث بالاسم أو الهاتف أو البريد...' : 'Search name, phone, email...'}
+                  className="w-full min-h-[40px] ps-9 pe-3 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] text-xs text-[var(--wn-text-primary)]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={exportTeacherLeadsCsv}
+                disabled={exportingCsv}
+                className="min-h-[40px] px-3.5 rounded-xl border border-[var(--wn-border)] bg-[var(--wn-surface)] text-xs font-bold text-[var(--wn-text-primary)] hover:border-[var(--wn-emerald)] inline-flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {exportingCsv ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Download size={14} aria-hidden="true" />}
+                <span>{isRTL ? 'تصدير CSV' : 'Export CSV'}</span>
+              </button>
             </div>
           </div>
 
