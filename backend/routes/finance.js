@@ -8,6 +8,7 @@ const User = require('../models/User');
 const Payment = require('../models/Payment');
 const { SUPPORTED_CURRENCIES } = require('../utils/paymentIntegrity');
 const { logAdminAction } = require('../services/adminAudit');
+const { notifyUser } = require('../utils/notify');
 const { protect, authorize } = require('../middleware/auth');
 const {
   MIN_PAYOUT_EGP,
@@ -498,19 +499,48 @@ router.get('/admin/payouts', protect, authorize('admin'), async (req, res) => {
       return res.json({ success: true, payouts: [] });
     }
 
-    const status = String(req.query.status || 'all');
+    const status = String(req.query.status || 'all').trim();
+    const currency = String(req.query.currency || 'all').trim().toUpperCase();
+    const method = String(req.query.method || 'all').trim().toLowerCase();
+    const rawQ = String(req.query.q || '').trim().slice(0, 120).toLowerCase();
+
     const filter = { type: 'payout' };
     if (status !== 'all') filter.status = status;
+    if (['EGP', 'USD'].includes(currency)) filter.currency = currency;
+    if (['instapay', 'vodafone_cash', 'bank_transfer', 'paypal'].includes(method)) {
+      filter.payoutMethod = method;
+    }
 
-    const payouts = await TeacherLedger.find(filter)
+    let payouts = await TeacherLedger.find(filter)
       .populate({
         path: 'teacher',
-        select: 'personalInfo user',
-        populate: { path: 'user', select: 'name email phone' },
+        select: 'personalInfo user hourlyRate',
+        populate: { path: 'user', select: 'name email phone whatsappPhone' },
       })
+      .populate('processedBy', 'name email')
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
+
+    if (rawQ) {
+      payouts = payouts.filter((item) => {
+        const hay = [
+          item.teacher?.personalInfo?.fullName,
+          item.teacher?.user?.name,
+          item.teacher?.user?.email,
+          item.teacher?.user?.phone,
+          item.referenceNumber,
+          item.payoutDetails?.ipaAddress,
+          item.payoutDetails?.phone,
+          item.payoutDetails?.bankName,
+          item.payoutDetails?.bankAccountNumber,
+          item.payoutDetails?.accountHolderName,
+          item.payoutDetails?.paypalEmail,
+          item.notes,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(rawQ);
+      });
+    }
 
     return res.json({ success: true, payouts });
   } catch (error) {
@@ -589,6 +619,53 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
       },
     }).catch(() => {});
 
+    if (mongoose.connection.readyState === 1) {
+      const teacherUserId = payout.teacher?.user?._id || payout.teacher?.user;
+      if (teacherUserId) {
+        const refSuffixAr = payout.referenceNumber ? ` (مرجع التحويل: ${payout.referenceNumber})` : '';
+        const refSuffixEn = payout.referenceNumber ? ` (Ref: ${payout.referenceNumber})` : '';
+        const noteSuffixAr = payout.notes ? ` — ملاحظة: ${payout.notes}` : '';
+        const noteSuffixEn = payout.notes ? ` — Note: ${payout.notes}` : '';
+        const notifCopy = targetStatus === 'completed'
+          ? {
+              title: { ar: 'تم تحويل مستحقاتك المالية', en: 'Your payout has been transferred' },
+              message: {
+                ar: `تم إتمام تحويل مبلغ ${payout.amount} ${payout.currency}${refSuffixAr}.${noteSuffixAr}`,
+                en: `Your payout of ${payout.amount} ${payout.currency} has been completed${refSuffixEn}.${noteSuffixEn}`,
+              },
+            }
+          : targetStatus === 'processing'
+            ? {
+                title: { ar: 'طلب السحب قيد التنفيذ البنكي', en: 'Payout transfer in progress' },
+                message: {
+                  ar: `بدأت الإدارة إجراءات تحويل مبلغ ${payout.amount} ${payout.currency} إلى حسابك.`,
+                  en: `Administration has started processing your ${payout.amount} ${payout.currency} payout.`,
+                },
+              }
+            : {
+                title: { ar: 'تحديث بخصوص طلب السحب', en: 'Payout request update' },
+                message: {
+                  ar: `تعذر إتمام طلب سحب ${payout.amount} ${payout.currency} وتمت إعادة المبلغ لرصيدك المتاح.${noteSuffixAr}`,
+                  en: `Your ${payout.amount} ${payout.currency} payout request was declined and returned to your available balance.${noteSuffixEn}`,
+                },
+              };
+        notifyUser(teacherUserId, {
+          type: 'system',
+          ...notifCopy,
+          data: {
+            actionUrl: '/teacher/dashboard',
+            metadata: {
+              payoutId: String(payout._id),
+              status: targetStatus,
+              amount: payout.amount,
+              currency: payout.currency,
+            },
+          },
+          priority: 'high',
+        }).catch(() => {});
+      }
+    }
+
     res.json({
       success: true,
       message: 'تمت معالجة وتحديث طلب السحب بنجاح',
@@ -599,6 +676,82 @@ router.put('/admin/payouts/:id/process', protect, authorize('admin'), async (req
     const message = error?.publicMessage || 'تعذر معالجة طلب السحب حالياً';
     res.status(status).json({
       error: message,
+      ...(error?.code ? { code: error.code } : {}),
+    });
+  }
+});
+
+router.post('/admin/bonus', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { teacherId, amount, currency = 'EGP', reason, idempotencyKey } = req.body || {};
+    const { recordTeacherBonus } = require('../services/teacherFinance');
+    const headerKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+    const cleanReason = String(reason || '').trim().slice(0, 500);
+
+    if (shouldUseMockFinance()) {
+      if (!teacherId || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !cleanReason) {
+        return res.status(400).json({ error: 'بيانات المكافأة غير مكتملة' });
+      }
+      const mockTx = {
+        _id: `mock-bonus-${Date.now()}`,
+        teacher: teacherId,
+        type: 'bonus',
+        amount: fromMinor(toMinor(amount)),
+        currency: String(currency || 'EGP').toUpperCase() === 'USD' ? 'USD' : 'EGP',
+        status: 'completed',
+        notes: cleanReason,
+        createdAt: new Date().toISOString(),
+      };
+      await logAdminAction({
+        req,
+        action: 'teacher_ledger.bonus',
+        entityType: 'TeacherLedger',
+        entityId: mockTx._id,
+        reason: cleanReason,
+        metadata: { teacherId: String(teacherId), amount: mockTx.amount, currency: mockTx.currency },
+      }).catch(() => {});
+      return res.status(201).json({ success: true, transaction: mockTx });
+    }
+
+    const entry = await recordTeacherBonus({
+      teacherId,
+      amount,
+      currency,
+      reason,
+      adminUserId: req.user.id,
+      idempotencyKey: idempotencyKey || headerKey,
+    });
+
+    await logAdminAction({
+      req,
+      action: 'teacher_ledger.bonus',
+      entityType: 'TeacherLedger',
+      entityId: entry._id,
+      reason: cleanReason,
+      metadata: { teacherId: String(entry.teacher), amount: entry.amount, currency: entry.currency },
+    }).catch(() => {});
+
+    if (mongoose.connection.readyState === 1) {
+      const teacherDoc = await Teacher.findById(entry.teacher).select('user').lean().catch(() => null);
+      if (teacherDoc?.user) {
+        notifyUser(teacherDoc.user, {
+          type: 'system',
+          title: { ar: 'مكافأة مالية مضافة لمحفظتك', en: 'Bonus credited to your wallet' },
+          message: {
+            ar: `تمت إضافة مكافأة بقيمة ${entry.amount} ${entry.currency} إلى رصيدك: ${cleanReason}`,
+            en: `A bonus of ${entry.amount} ${entry.currency} has been added to your wallet: ${cleanReason}`,
+          },
+          data: { actionUrl: '/teacher/dashboard', metadata: { ledgerId: String(entry._id) } },
+          priority: 'high',
+        }).catch(() => {});
+      }
+    }
+
+    return res.status(201).json({ success: true, transaction: entry });
+  } catch (error) {
+    const status = error?.status || 400;
+    return res.status(status).json({
+      error: error?.publicMessage || 'تعذر تسجيل المكافأة المالية',
       ...(error?.code ? { code: error.code } : {}),
     });
   }

@@ -947,30 +947,131 @@ router.get('/admin/manual', protect, authorize('admin'), async (req, res) => {
     const allowedStatuses = new Set(['pending', 'succeeded', 'failed', 'all']);
     const status = allowedStatuses.has(requestedStatus) ? requestedStatus : 'pending';
 
+    const requestedMethod = String(req.query.method || 'all').trim().toLowerCase();
+    const allowedMethods = new Set(['instapay', 'mobile_wallet', 'bank_transfer', 'all']);
+    const methodFilter = allowedMethods.has(requestedMethod) ? requestedMethod : 'all';
+
+    const requestedKind = String(req.query.kind || 'all').trim().toLowerCase();
+    const allowedKinds = new Set(['subscription', 'course_enrollment', 'all']);
+    const kindFilter = allowedKinds.has(requestedKind) ? requestedKind : 'all';
+
+    const rawQ = String(req.query.q || '').trim().slice(0, 120);
+
     const query = {
       provider: 'manual',
-      kind: { $in: ['course_enrollment', 'subscription'] },
+      kind: kindFilter === 'all' ? { $in: ['course_enrollment', 'subscription'] } : kindFilter,
     };
     if (status !== 'all') query.status = status;
+    if (methodFilter !== 'all') query['manual.method'] = methodFilter;
 
-    const payments = await Payment.find(query)
+    let payments = await Payment.find(query)
       .sort({ createdAt: -1 })
-      .limit(100)
+      .limit(150)
       .populate('student', 'name email phone whatsappPhone')
       .populate('course', 'title slug price currency')
       .populate({
         path: 'subscription',
-        select: 'planKey section sessionCount sessionsRemaining status preferredTeacher renewalOf circle pricingSnapshot',
+        select: 'planKey section sessionCount sessionsRemaining status preferredTeacher renewalOf circle pricingSnapshot isScholarship',
         populate: {
           path: 'preferredTeacher',
           select: 'personalInfo user',
           populate: { path: 'user', select: 'name email avatar' },
         },
       })
+      .populate('manual.submittedBy', 'name email phone role')
       .populate('manual.reviewedBy', 'name email')
       .select('+manual.proofReference');
 
+    if (rawQ) {
+      const needle = rawQ.toLowerCase();
+      payments = payments.filter((p) => {
+        const hay = [
+          p.manual?.transferReference,
+          p.manual?.method,
+          p.student?.name,
+          p.student?.email,
+          p.student?.phone,
+          p.student?.whatsappPhone,
+          p.manual?.submittedBy?.name,
+          p.manual?.submittedBy?.email,
+          p.course?.slug,
+          p.course?.title?.ar,
+          p.course?.title?.en,
+          p.subscription?.pricingSnapshot?.nameAr,
+          p.subscription?.pricingSnapshot?.nameEn,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(needle);
+      });
+    }
+
+    const summary = {
+      counts: { pending: 0, succeeded: 0, failed: 0, total: 0 },
+      amountsMinor: {
+        pending: { EGP: 0, USD: 0 },
+        succeeded: { EGP: 0, USD: 0 },
+      },
+      byMethod: { instapay: 0, mobile_wallet: 0, bank_transfer: 0 },
+    };
+
+    const canAggregate = mongoose.connection.readyState === 1 && typeof Payment.aggregate === 'function';
+    if (canAggregate) {
+      const agg = await Payment.aggregate([
+        {
+          $match: {
+            provider: 'manual',
+            kind: { $in: ['course_enrollment', 'subscription'] },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              status: '$status',
+              currency: '$currency',
+              method: '$manual.method',
+            },
+            count: { $sum: 1 },
+            totalMinor: { $sum: '$amountMinor' },
+          },
+        },
+      ]).catch(() => []);
+
+      for (const row of agg) {
+        const st = row._id?.status;
+        const curr = row._id?.currency === 'USD' ? 'USD' : 'EGP';
+        const m = row._id?.method;
+        const cnt = Number(row.count) || 0;
+        const minor = Number(row.totalMinor) || 0;
+        if (st === 'pending' || st === 'succeeded' || st === 'failed') {
+          summary.counts[st] += cnt;
+          summary.counts.total += cnt;
+        }
+        if (st === 'pending' || st === 'succeeded') {
+          summary.amountsMinor[st][curr] = (summary.amountsMinor[st][curr] || 0) + minor;
+        }
+        if (m && summary.byMethod[m] !== undefined && st === 'pending') {
+          summary.byMethod[m] += cnt;
+        }
+      }
+    } else {
+      for (const p of payments) {
+        const st = p.status;
+        const curr = p.currency === 'USD' ? 'USD' : 'EGP';
+        const m = p.manual?.method;
+        if (st === 'pending' || st === 'succeeded' || st === 'failed') {
+          summary.counts[st] += 1;
+          summary.counts.total += 1;
+        }
+        if (st === 'pending' || st === 'succeeded') {
+          summary.amountsMinor[st][curr] += Number(p.amountMinor) || 0;
+        }
+        if (m && summary.byMethod[m] !== undefined && st === 'pending') {
+          summary.byMethod[m] += 1;
+        }
+      }
+    }
+
     return res.json({
+      summary,
       payments: payments.map((payment) => ({
         id: String(payment._id),
         kind: payment.kind,
@@ -988,6 +1089,11 @@ router.get('/admin/manual', protect, authorize('admin'), async (req, res) => {
         manual: {
           method: payment.manual?.method || null,
           transferReference: payment.manual?.transferReference || null,
+          proofFilename: payment.manual?.proofFilename || null,
+          proofContentType: payment.manual?.proofContentType || null,
+          proofSize: payment.manual?.proofSize || null,
+          proofShortHash: payment.manual?.proofHash ? String(payment.manual.proofHash).slice(0, 12) : null,
+          submittedBy: payment.manual?.submittedBy || null,
           submittedAt: payment.manual?.submittedAt || null,
           reviewedAt: payment.manual?.reviewedAt || null,
           reviewedBy: payment.manual?.reviewedBy || null,

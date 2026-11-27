@@ -826,6 +826,87 @@ async function recordTeacherDeduction({
   );
 }
 
+async function recordTeacherBonus({
+  teacherId,
+  amount,
+  currency = 'EGP',
+  reason,
+  adminUserId,
+  idempotencyKey,
+}) {
+  const numAmount = Number(amount);
+  const curr = String(currency || 'EGP').trim().toUpperCase();
+  const cleanReason = String(reason || '').trim().slice(0, 500);
+
+  if (!teacherId || !mongoose.Types.ObjectId.isValid(String(teacherId))) {
+    throw createFinanceError(400, 'معرف المعلم غير صالح', 'INVALID_TEACHER_ID');
+  }
+  if (!Number.isFinite(numAmount) || numAmount <= 0 || Math.abs(Math.round(numAmount * 100) - (numAmount * 100)) > 1e-6) {
+    throw createFinanceError(400, 'مبلغ المكافأة غير صالح', 'INVALID_BONUS_AMOUNT');
+  }
+  if (!['EGP', 'USD'].includes(curr)) {
+    throw createFinanceError(400, 'العملة يجب أن تكون EGP أو USD', 'INVALID_BONUS_CURRENCY');
+  }
+  if (!cleanReason) {
+    throw createFinanceError(400, 'سبب المكافأة أو التسوية مطلوب', 'BONUS_REASON_REQUIRED');
+  }
+
+  const normalizedAmount = fromMinor(toMinor(numAmount));
+  const cleanKey = idempotencyKey
+    ? `admin-bonus:${String(idempotencyKey).trim().slice(0, 180)}`
+    : undefined;
+
+  await ensureLegacyOpeningEntries(teacherId);
+
+  return withInProcessTeacherLock(teacherId, () =>
+    runWithOptionalMongoTransaction(async (dbSession) => {
+      const teacher = await attachSession(Teacher.findById(teacherId), dbSession);
+      if (!teacher) {
+        throw createFinanceError(404, 'لم يتم العثور على ملف المعلم', 'TEACHER_NOT_FOUND');
+      }
+
+      if (dbSession && typeof Teacher.updateOne === 'function') {
+        await Teacher.updateOne(
+          { _id: teacherId },
+          { $inc: { ledgerLockVersion: 1 } },
+          { session: dbSession }
+        );
+      }
+
+      if (cleanKey) {
+        const existing = await attachSession(TeacherLedger.findOne({ idempotencyKey: cleanKey }), dbSession);
+        if (existing) return existing;
+      }
+
+      const bonusDoc = {
+        teacher: teacher._id,
+        type: 'bonus',
+        amount: normalizedAmount,
+        currency: curr,
+        status: 'completed',
+        processedBy: adminUserId,
+        processedAt: new Date(),
+        notes: cleanReason,
+        description: `مكافأة إدارية: ${cleanReason.slice(0, 120)}`,
+        ...(cleanKey ? { idempotencyKey: cleanKey } : {}),
+      };
+
+      try {
+        const created = await TeacherLedger.create(
+          [bonusDoc],
+          dbSession ? { session: dbSession } : undefined
+        );
+        return Array.isArray(created) ? created[0] : created;
+      } catch (error) {
+        if (error?.code === 11000 && cleanKey) {
+          return attachSession(TeacherLedger.findOne({ idempotencyKey: cleanKey }), dbSession);
+        }
+        throw error;
+      }
+    })
+  );
+}
+
 module.exports = {
   MIN_PAYOUT_EGP,
   MIN_PAYOUT_USD,
@@ -843,5 +924,6 @@ module.exports = {
   requestTeacherPayout,
   processTeacherPayout,
   recordTeacherDeduction,
+  recordTeacherBonus,
   listTeacherTransactions,
 };

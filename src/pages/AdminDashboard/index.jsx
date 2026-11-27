@@ -409,7 +409,7 @@ export default function AdminDashboard() {
       if (tab === 'messages') await loadMessages();
       if (tab === 'courses') await Promise.all([loadApprovedTeachers().catch(() => {}), loadCourses()]);
       if (tab === 'blog') await loadBlog();
-      if (tab === 'withdrawals') await loadWithdrawals();
+      if (tab === 'withdrawals') await Promise.all([loadApprovedTeachers().catch(() => {}), loadWithdrawals()]);
       if (tab === 'growth') await loadGrowth();
       if (tab === 'audit') await loadAudit();
     } catch (e) {
@@ -922,13 +922,14 @@ export default function AdminDashboard() {
   const submitPayoutDecision = async (e) => {
     e.preventDefault();
     if (!payoutModal || submittingPayout) return;
-    const { withdrawal, action, referenceNumber, notes } = payoutModal;
+    const { withdrawal, action, referenceNumber, receiptUrl, notes } = payoutModal;
     setSubmittingPayout(true);
     try {
       if (withdrawal.source === 'ledger') {
         await api.put(`/api/finance/admin/payouts/${withdrawal._id}/process`, {
           action,
           referenceNumber: referenceNumber?.trim() || '',
+          receiptUrl: receiptUrl?.trim() || undefined,
           notes: notes?.trim() || '',
         }, { auth: true });
       } else {
@@ -937,7 +938,13 @@ export default function AdminDashboard() {
           adminNote: notes?.trim() || referenceNumber?.trim() || '',
         }, { auth: true });
       }
-      toast.success(action === 'approve' ? tt.payoutApproved : tt.payoutRejected);
+      toast.success(
+        action === 'approve'
+          ? tt.payoutApproved
+          : action === 'processing'
+            ? (isRTL ? 'تم تحويل حالة الطلب إلى جاري التنفيذ البنكي' : 'Payout marked as processing')
+            : tt.payoutRejected
+      );
       setPayoutModal(null);
       await loadWithdrawals();
       await loadCore();
@@ -949,7 +956,7 @@ export default function AdminDashboard() {
   };
 
   const reviewWithdraw = (withdrawal, action) => {
-    setPayoutModal({ withdrawal, action, referenceNumber: '', notes: '' });
+    setPayoutModal({ withdrawal, action, referenceNumber: withdrawal.referenceNumber || '', receiptUrl: withdrawal.receiptUrl || '', notes: withdrawal.notes || '' });
   };
 
   const executeDeleteItem = async (type, id) => {
@@ -1732,7 +1739,13 @@ export default function AdminDashboard() {
             )}
 
             {tab === 'withdrawals' && (
-              <AdminWithdrawalsTab withdrawals={withdrawals} onReviewWithdraw={reviewWithdraw} />
+              <AdminWithdrawalsTab
+                withdrawals={withdrawals}
+                approvedTeachers={approved}
+                onReviewWithdraw={reviewWithdraw}
+                onReload={loadWithdrawals}
+                onOpenTeacher={openTeacherDossier}
+              />
             )}
 
             {tab === 'growth' && (
@@ -1822,9 +1835,15 @@ export default function AdminDashboard() {
         <Modal
           isOpen={Boolean(payoutModal)}
           onClose={() => setPayoutModal(null)}
-          title={payoutModal?.action === 'approve' ? twModal.approveTitle : twModal.rejectTitle}
+          title={
+            payoutModal?.action === 'approve'
+              ? twModal.approveTitle
+              : payoutModal?.action === 'processing'
+                ? (isRTL ? 'بدء إجراءات التحويل البنكي' : 'Mark Payout as Processing')
+                : twModal.rejectTitle
+          }
           disableClose={submittingPayout}
-          maxWidth="460px"
+          maxWidth="480px"
         >
           {payoutModal && (
             <form onSubmit={submitPayoutDecision} className="space-y-4">
@@ -1845,25 +1864,42 @@ export default function AdminDashboard() {
               </div>
 
               {payoutModal.action === 'approve' ? (
-                <div>
-                  <label htmlFor={`${formId}-payout-ref`} className="block text-xs font-semibold text-[var(--wn-text-primary)] mb-1">
-                    {twModal.refLabel}
-                  </label>
-                  <input
-                    id={`${formId}-payout-ref`}
-                    required
-                    type="text"
-                    value={payoutModal.referenceNumber}
-                    onChange={(e) => setPayoutModal({ ...payoutModal, referenceNumber: e.target.value })}
-                    placeholder={twModal.refPlaceholder}
-                    className="w-full min-h-[44px] border border-[var(--wn-border-strong)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg p-2.5 text-sm"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label htmlFor={`${formId}-payout-ref`} className="block text-xs font-semibold text-[var(--wn-text-primary)] mb-1">
+                      {twModal.refLabel}
+                    </label>
+                    <input
+                      id={`${formId}-payout-ref`}
+                      required
+                      type="text"
+                      value={payoutModal.referenceNumber}
+                      onChange={(e) => setPayoutModal({ ...payoutModal, referenceNumber: e.target.value })}
+                      placeholder={twModal.refPlaceholder}
+                      className="w-full min-h-[44px] border border-[var(--wn-border-strong)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg p-2.5 text-sm"
+                    />
+                  </div>
+                  {payoutModal.withdrawal.source === 'ledger' ? (
+                    <div>
+                      <label htmlFor={`${formId}-payout-receipt`} className="block text-xs font-semibold text-[var(--wn-text-primary)] mb-1">
+                        {isRTL ? 'رابط إيصال التحويل HTTPS (اختياري)' : 'HTTPS Receipt URL (optional)'}
+                      </label>
+                      <input
+                        id={`${formId}-payout-receipt`}
+                        type="url"
+                        value={payoutModal.receiptUrl || ''}
+                        onChange={(e) => setPayoutModal({ ...payoutModal, receiptUrl: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full min-h-[44px] border border-[var(--wn-border-strong)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg p-2.5 text-sm"
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : null}
 
               <div>
                 <label htmlFor={`${formId}-payout-notes`} className="block text-xs font-semibold text-[var(--wn-text-primary)] mb-1">
-                  {payoutModal.action === 'approve' ? twModal.notesApprove : twModal.notesReject}
+                  {payoutModal.action === 'reject' ? twModal.notesReject : twModal.notesApprove}
                 </label>
                 <textarea
                   id={`${formId}-payout-notes`}
@@ -1871,7 +1907,7 @@ export default function AdminDashboard() {
                   rows={3}
                   value={payoutModal.notes}
                   onChange={(e) => setPayoutModal({ ...payoutModal, notes: e.target.value })}
-                  placeholder={payoutModal.action === 'approve' ? twModal.notesPlaceholderApprove : twModal.notesPlaceholderReject}
+                  placeholder={payoutModal.action === 'reject' ? twModal.notesPlaceholderReject : twModal.notesPlaceholderApprove}
                   className="w-full border border-[var(--wn-border-strong)] bg-[var(--wn-surface)] text-[var(--wn-text-primary)] rounded-lg p-2.5 text-sm"
                 />
               </div>
@@ -1889,9 +1925,9 @@ export default function AdminDashboard() {
                   type="submit"
                   disabled={submittingPayout}
                   className={`min-h-[44px] px-4 py-2 text-sm text-[var(--wn-text-inverse)] font-semibold rounded-lg inline-flex items-center gap-1.5 disabled:opacity-60 ${
-                    payoutModal.action === 'approve'
-                      ? 'bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)]'
-                      : 'bg-[var(--wn-danger)] hover:opacity-90'
+                    payoutModal.action === 'reject'
+                      ? 'bg-[var(--wn-danger)] hover:opacity-90'
+                      : 'bg-[var(--wn-emerald)] hover:bg-[var(--wn-emerald-hover)]'
                   }`}
                 >
                   {submittingPayout && <Loader2 size={15} className="animate-spin" aria-hidden="true" />}
@@ -1900,7 +1936,9 @@ export default function AdminDashboard() {
                       ? twModal.submitting
                       : payoutModal.action === 'approve'
                         ? twModal.confirmApprove
-                        : twModal.confirmReject}
+                        : payoutModal.action === 'processing'
+                          ? (isRTL ? 'تأكيد بدء التحويل' : 'Mark Processing')
+                          : twModal.confirmReject}
                   </span>
                 </button>
               </div>
