@@ -2666,7 +2666,7 @@ router.get('/blog', protect, authorize('admin'), async (req, res) => {
 
 router.post('/blog', protect, authorize('admin'), async (req, res) => {
   try {
-    const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, status = 'published' } = req.body;
+    const { slug, titleAr, titleEn, excerptAr, contentAr, coverImage, category, featured, status = 'published' } = req.body;
     const cleanTitleAr = String(titleAr || '').trim();
     const cleanSlug = String(slug || '').trim().toLowerCase().replace(/\s+/g, '-');
     if (!cleanTitleAr || !cleanSlug) {
@@ -2677,17 +2677,29 @@ router.post('/blog', protect, authorize('admin'), async (req, res) => {
       const adminUser = await User.findById(req.user.id).select('name').lean();
       authorName = adminUser?.name || 'إدارة الأكاديمية';
     }
-    const post = await Blog.create({
+    const payload = {
       slug: cleanSlug,
       title: { ar: cleanTitleAr, en: String(titleEn || cleanTitleAr).trim() },
       excerpt: { ar: excerptAr || '', en: excerptAr || '' },
       content: { ar: contentAr || '', en: contentAr || '' },
       coverImage: coverImage || '',
       category: category || 'general',
+      featured: Boolean(featured),
       author: req.user.id,
       authorName,
       status,
-    });
+    };
+    let post;
+    try {
+      post = await Blog.create(payload);
+    } catch (createErr) {
+      if (String(createErr?.message || '').includes('of text index contains an array')) {
+        await Blog.collection?.dropIndex?.('title.ar_text_title.en_text_tags_1').catch(() => {});
+        post = await Blog.create(payload);
+      } else {
+        throw createErr;
+      }
+    }
     await logAdminAction({
       req,
       action: 'blog.created',

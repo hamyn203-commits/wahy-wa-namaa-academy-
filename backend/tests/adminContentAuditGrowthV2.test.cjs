@@ -257,3 +257,71 @@ test('Audit search, Careers status validation/audit, and Donations search enforc
     Donation.countDocuments = origDonCount;
   }
 });
+
+test('Blog schema avoids invalid compound multikey+text index and POST /api/admin/blog self-heals legacy index + supports featured', async () => {
+  // Ensure no compound text index mixes 'text' with non-text multikey 'tags: 1'
+  for (const [spec] of Blog.schema.indexes()) {
+    const values = Object.values(spec);
+    if (values.includes('text')) {
+      assert.notEqual(spec.tags, 1, 'Compound text index must not combine text with multikey tags: 1');
+    }
+  }
+
+  const origUserFindById = User.findById;
+  const origBlogCreate = Blog.create;
+  const origAuditCreate = AdminAuditLog.create;
+  const origCollection = Blog.collection;
+
+  const adminId = new mongoose.Types.ObjectId().toString();
+  const adminToken = generateAccessToken({ id: adminId, role: 'admin', tokenVersion: 0 });
+  User.findById = (id) => (
+    String(id) === adminId
+      ? makeQuery({ _id: adminId, name: 'مشرف الاختبار', role: 'admin', isActive: true, tokenVersion: 0 })
+      : makeQuery(null)
+  );
+  AdminAuditLog.create = async (doc) => doc;
+
+  let attempts = 0;
+  let droppedIndex = null;
+  let createdPayload = null;
+  Object.defineProperty(Blog, 'collection', {
+    value: {
+      dropIndex: async (name) => {
+        droppedIndex = name;
+      },
+    },
+    configurable: true,
+  });
+  Blog.create = async (payload) => {
+    attempts += 1;
+    if (attempts === 1) {
+      throw new Error("Field 'tags' of text index contains an array in document");
+    }
+    createdPayload = payload;
+    return { _id: new mongoose.Types.ObjectId(), ...payload };
+  };
+
+  try {
+    const res = await request('/api/admin/blog', {
+      method: 'POST',
+      token: adminToken,
+      body: {
+        slug: 'Self Heal Post',
+        titleAr: 'مقال معالجة الفهرس',
+        excerptAr: 'مقتطف',
+        contentAr: 'محتوى المقال',
+        featured: true,
+      },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(attempts, 2);
+    assert.equal(droppedIndex, 'title.ar_text_title.en_text_tags_1');
+    assert.equal(createdPayload.slug, 'self-heal-post');
+    assert.equal(createdPayload.featured, true);
+  } finally {
+    User.findById = origUserFindById;
+    Blog.create = origBlogCreate;
+    AdminAuditLog.create = origAuditCreate;
+    Object.defineProperty(Blog, 'collection', { value: origCollection, configurable: true });
+  }
+});

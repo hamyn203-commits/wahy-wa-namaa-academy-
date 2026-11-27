@@ -117,7 +117,18 @@ router.get('/:slug', async (req, res) => {
 
 router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
-    const post = await Blog.create(sanitizeBlogPayload(req.body || {}));
+    const payload = sanitizeBlogPayload(req.body || {});
+    let post;
+    try {
+      post = await Blog.create(payload);
+    } catch (createErr) {
+      if (String(createErr?.message || '').includes('of text index contains an array')) {
+        await Blog.collection?.dropIndex?.('title.ar_text_title.en_text_tags_1').catch(() => {});
+        post = await Blog.create(payload);
+      } else {
+        throw createErr;
+      }
+    }
     res.status(201).json(post);
   } catch (error) {
     res.status(400).json({ error: safeErrorMessage(error, 400) });
